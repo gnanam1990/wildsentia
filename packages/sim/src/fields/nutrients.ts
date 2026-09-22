@@ -1,4 +1,7 @@
-import { NUTRIENT_PER_KG_BIOMASS, type Agent, type Patch } from '@vana/shared';
+import {
+  NUTRIENT_PER_KG_BIOMASS, carcassMass,
+  type Agent, type Carcass, type Patch,
+} from '@vana/shared';
 
 export interface NutrientLedger {
   /** Nutrients that entered the world with immigrants. Subtracted so arrivals are not creation. */
@@ -7,13 +10,22 @@ export interface NutrientLedger {
   exported: number;
 }
 
-export function totalNutrients(patches: Patch[], agents: Agent[], ledger: NutrientLedger): number {
+export function totalNutrients(
+  patches: Patch[],
+  agents: Agent[],
+  ledger: NutrientLedger,
+  carcasses: readonly Carcass[] = [],
+): number {
   let total = 0;
   for (const p of patches) {
     total += p.soilNutrients + (p.plant.grass + p.plant.browse) * NUTRIENT_PER_KG_BIOMASS;
   }
   for (const a of agents) {
     if (a.alive) total += a.massKg * NUTRIENT_PER_KG_BIOMASS;
+  }
+  // A dead animal's mass sits in its carcass until scavengers and decay move it into the soil.
+  for (const c of carcasses) {
+    total += carcassMass(c.biomass) * NUTRIENT_PER_KG_BIOMASS;
   }
   return total - ledger.imported + ledger.exported;
 }

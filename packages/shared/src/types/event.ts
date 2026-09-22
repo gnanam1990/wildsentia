@@ -4,7 +4,9 @@ import type { WorldTime } from '../time.js';
 export type EventType =
   | 'agent_spawned' | 'goal_selected' | 'fed' | 'drank' | 'rested'
   | 'moved' | 'starved' | 'died' | 'immigration' | 'season_changed'
-  | 'maintenance';
+  | 'maintenance'
+  | 'hunt' | 'scavenged' | 'fled' | 'carcass_created' | 'carcass_stage'
+  | 'nutrients_returned';
 
 export type Confidence = 'authoritative' | 'high' | 'medium' | 'low';
 

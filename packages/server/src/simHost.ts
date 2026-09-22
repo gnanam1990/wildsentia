@@ -28,7 +28,6 @@ export class SimHost {
   readonly #events: EventStore;
   readonly #snapshots: SnapshotStore;
   readonly #options: Required<SimHostOptions>;
-  #publishedEventCount = 0;
   #worldHoursSinceSnapshot = 0;
   #timer: NodeJS.Timeout | null = null;
   #ticking = false;
@@ -62,7 +61,6 @@ export class SimHost {
 
     if (snapshot === null) {
       this.world = createWorld(this.worldOptions);
-      this.#publishedEventCount = 0;
       await this.flush();
       return { restoredFrom: null, rolledBackEvents: 0 };
     }
@@ -74,7 +72,6 @@ export class SimHost {
     }
 
     this.world = restoreSnapshot(snapshot, this.worldOptions);
-    this.#publishedEventCount = this.world.log.size();
 
     // Events written after the newest snapshot belong to a timeline that did not survive the
     // restart. Remove them and say so out loud rather than leaving an inconsistent history.
@@ -99,13 +96,14 @@ export class SimHost {
     return { restoredFrom: snapshot.worldTime, rolledBackEvents: orphaned };
   }
 
-  /** Writes any simulation events not yet persisted. */
+  /**
+   * Drains the simulation's event buffer into Postgres. Taking rather than copying is what keeps
+   * a world that runs for months from filling the heap with its own history.
+   */
   async flush(): Promise<void> {
-    const all = this.world.log.all();
-    if (all.length <= this.#publishedEventCount) return;
-    const pending = all.slice(this.#publishedEventCount) as WorldEvent[];
+    const pending: WorldEvent[] = this.world.log.take();
+    if (pending.length === 0) return;
     await this.#events.appendBatch(pending);
-    this.#publishedEventCount = all.length;
   }
 
   async snapshotNow(): Promise<void> {

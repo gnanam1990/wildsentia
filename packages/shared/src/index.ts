@@ -5,3 +5,4 @@ export * from './types/patch.js';
 export * from './types/species.js';
 export * from './types/agent.js';
 export * from './types/event.js';
+export * from './types/carcass.js';

@@ -26,6 +26,23 @@ export interface SpeciesConfig {
     eats: Array<{ target: 'grass' | 'browse' | 'meat'; preference: number }>;
     dailyIntakeKg: number;
     waterNeedLPerDay: number;
+    canScavenge: boolean;
+    /** 0-1 resistance to the pathogens a carcass carries. Vultures are near 1; jackals are not. */
+    carrionTolerance: number;
+  };
+  hunting?: {
+    preferredPrey: string[];
+    /** How well this predator hides while approaching, before terrain is considered. */
+    stalkConcealment: number;
+    commitDistanceM: number;
+    /** Success against an unaware, healthy adult in the open, before every modifier. */
+    baseSuccess: number;
+    staminaCostPerChase: number;
+  };
+  social: {
+    structure: 'solitary' | 'pair' | 'herd' | 'troop' | 'pack' | 'family';
+    groupSize: [min: number, max: number];
+    alarmSharing: boolean;
   };
   lifecycle: { maxAgeDays: number; baselineMortalityPerDay: number };
 }

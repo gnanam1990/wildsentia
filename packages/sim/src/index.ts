@@ -10,3 +10,6 @@ export * from './agents/goals.js';
 export * from './agents/perception.js';
 export * from './agents/behaviours.js';
 export * from './snapshot.js';
+export * from './fields/decomposition.js';
+export * from './agents/predation.js';
+export * from './agents/archetypes.js';

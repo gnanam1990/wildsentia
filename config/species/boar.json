@@ -1,0 +1,69 @@
+{
+  "id": "boar",
+  "displayName": "Wild boar",
+  "archetype": "omnivore_rooter",
+  "trophicRole": [
+    "omnivore",
+    "scavenger"
+  ],
+  "body": {
+    "adultMassKg": 75,
+    "shoulderHeightM": 0.85
+  },
+  "locomotion": {
+    "walkMs": 1.1,
+    "trotMs": 4.0,
+    "sprintMs": 11.0,
+    "sprintStaminaS": 35,
+    "terrainCost": {
+      "shola": 1.0,
+      "grassland": 1.0,
+      "riparian": 1.0,
+      "rock": 1.7,
+      "marsh": 1.1,
+      "water": 3.0
+    }
+  },
+  "senses": {
+    "sightRangeM": 60,
+    "hearingRangeM": 200,
+    "smellRangeM": 450
+  },
+  "escape": {
+    "detectionDistanceM": 70,
+    "flightInitiationM": 25,
+    "evasiveness": 0.5
+  },
+  "diet": {
+    "eats": [
+      {
+        "target": "grass",
+        "preference": 0.5
+      },
+      {
+        "target": "browse",
+        "preference": 0.3
+      },
+      {
+        "target": "meat",
+        "preference": 0.2
+      }
+    ],
+    "dailyIntakeKg": 5,
+    "waterNeedLPerDay": 7,
+    "canScavenge": true,
+    "carrionTolerance": 0.7
+  },
+  "social": {
+    "structure": "herd",
+    "groupSize": [
+      3,
+      10
+    ],
+    "alarmSharing": true
+  },
+  "lifecycle": {
+    "maxAgeDays": 3600,
+    "baselineMortalityPerDay": 0.0005
+  }
+}

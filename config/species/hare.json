@@ -1,0 +1,60 @@
+{
+  "id": "hare",
+  "displayName": "Hare",
+  "archetype": "herd_grazer",
+  "trophicRole": [
+    "grazer"
+  ],
+  "body": {
+    "adultMassKg": 2.5,
+    "shoulderHeightM": 0.22
+  },
+  "locomotion": {
+    "walkMs": 0.8,
+    "trotMs": 4.0,
+    "sprintMs": 16.0,
+    "sprintStaminaS": 18,
+    "terrainCost": {
+      "shola": 1.0,
+      "grassland": 1.0,
+      "riparian": 1.0,
+      "rock": 1.4,
+      "marsh": 1.7,
+      "water": 3.0
+    }
+  },
+  "senses": {
+    "sightRangeM": 150,
+    "hearingRangeM": 300,
+    "smellRangeM": 90
+  },
+  "escape": {
+    "detectionDistanceM": 120,
+    "flightInitiationM": 15,
+    "evasiveness": 0.92
+  },
+  "diet": {
+    "eats": [
+      {
+        "target": "grass",
+        "preference": 1.0
+      }
+    ],
+    "dailyIntakeKg": 0.3,
+    "waterNeedLPerDay": 0.3,
+    "canScavenge": false,
+    "carrionTolerance": 0.0
+  },
+  "social": {
+    "structure": "solitary",
+    "groupSize": [
+      1,
+      2
+    ],
+    "alarmSharing": false
+  },
+  "lifecycle": {
+    "maxAgeDays": 1500,
+    "baselineMortalityPerDay": 0.0016
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "id": "elephant",
+  "displayName": "Asian elephant",
+  "archetype": "mega_herbivore",
+  "trophicRole": [
+    "browser",
+    "grazer"
+  ],
+  "body": {
+    "adultMassKg": 3200,
+    "shoulderHeightM": 2.7
+  },
+  "locomotion": {
+    "walkMs": 1.2,
+    "trotMs": 3.0,
+    "sprintMs": 6.5,
+    "sprintStaminaS": 20,
+    "terrainCost": {
+      "shola": 1.0,
+      "grassland": 1.0,
+      "riparian": 1.0,
+      "rock": 2.6,
+      "marsh": 1.3,
+      "water": 3.0
+    }
+  },
+  "senses": {
+    "sightRangeM": 80,
+    "hearingRangeM": 900,
+    "smellRangeM": 500
+  },
+  "escape": {
+    "detectionDistanceM": 70,
+    "flightInitiationM": 25,
+    "evasiveness": 0.15
+  },
+  "diet": {
+    "eats": [
+      {
+        "target": "browse",
+        "preference": 0.65
+      },
+      {
+        "target": "grass",
+        "preference": 0.35
+      }
+    ],
+    "dailyIntakeKg": 150,
+    "waterNeedLPerDay": 160,
+    "canScavenge": false,
+    "carrionTolerance": 0.0
+  },
+  "social": {
+    "structure": "family",
+    "groupSize": [
+      3,
+      8
+    ],
+    "alarmSharing": true
+  },
+  "lifecycle": {
+    "maxAgeDays": 21000,
+    "baselineMortalityPerDay": 8e-05
+  }
+}

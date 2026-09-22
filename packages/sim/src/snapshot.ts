@@ -1,4 +1,4 @@
-import type { Agent, Patch, RngState, WorldTime } from '@vana/shared';
+import type { Agent, Carcass, Patch, RngState, WorldTime } from '@vana/shared';
 import type { NutrientLedger } from './fields/nutrients.js';
 import { SIM_VERSION, World, type WorldOptions } from './world.js';
 
@@ -11,6 +11,8 @@ export interface Snapshot {
   ledger: NutrientLedger;
   agentSeq: number;
   rngState: RngState;
+  carcasses: Carcass[];
+  carcassSeq: number;
 }
 
 export function takeSnapshot(world: World): Snapshot {
@@ -24,6 +26,8 @@ export function takeSnapshot(world: World): Snapshot {
     ledger: { ...world.ledger },
     agentSeq: state.agentSeq,
     rngState: state.rngState,
+    carcasses: structuredClone(world.carcasses),
+    carcassSeq: state.carcassSeq,
   };
 }
 
@@ -41,9 +45,11 @@ export function restoreSnapshot(snapshot: Snapshot, options: WorldOptions): Worl
   world.patches.push(...structuredClone(snapshot.patches));
   world.agents.length = 0;
   world.agents.push(...structuredClone(snapshot.agents));
+  world.carcasses.length = 0;
+  world.carcasses.push(...structuredClone(snapshot.carcasses ?? []));
   world.ledger.imported = snapshot.ledger.imported;
   world.ledger.exported = snapshot.ledger.exported;
-  world.__importState(snapshot.worldTime, snapshot.agentSeq, snapshot.rngState);
+  world.__importState(snapshot.worldTime, snapshot.agentSeq, snapshot.rngState, snapshot.carcassSeq ?? 0);
 
   return world;
 }

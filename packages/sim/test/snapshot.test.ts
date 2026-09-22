@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fileURLToPath } from 'node:url';
-import { createWorld } from '../src/world.js';
+import { SIM_VERSION, createWorld } from '../src/world.js';
 import { restoreSnapshot, takeSnapshot } from '../src/snapshot.js';
 
 const speciesDir = fileURLToPath(new URL('../../../config/species', import.meta.url));
@@ -32,7 +32,7 @@ describe('snapshots', () => {
 
   it('records the sim version so an incompatible snapshot is detectable', () => {
     const w = createWorld(options);
-    expect(takeSnapshot(w).simVersion).toBe('sim_0.1.0');
+    expect(takeSnapshot(w).simVersion).toBe(SIM_VERSION);
     expect(() => restoreSnapshot({ ...takeSnapshot(w), simVersion: 'sim_9.9.9' }, options))
       .toThrow(/version/i);
   });

@@ -50,6 +50,22 @@ export const SpeciesConfigSchema = z
         .min(1),
       dailyIntakeKg: z.number().positive(),
       waterNeedLPerDay: z.number().positive(),
+      canScavenge: z.boolean(),
+      carrionTolerance: z.number().min(0).max(1),
+    }),
+    hunting: z
+      .object({
+        preferredPrey: z.array(z.string()).min(1),
+        stalkConcealment: z.number().min(0).max(1),
+        commitDistanceM: z.number().positive(),
+        baseSuccess: z.number().min(0).max(1),
+        staminaCostPerChase: z.number().min(0).max(1),
+      })
+      .optional(),
+    social: z.object({
+      structure: z.enum(['solitary', 'pair', 'herd', 'troop', 'pack', 'family']),
+      groupSize: z.tuple([z.number().int().positive(), z.number().int().positive()]),
+      alarmSharing: z.boolean(),
     }),
     lifecycle: z.object({
       maxAgeDays: z.number().positive(),
@@ -59,6 +75,20 @@ export const SpeciesConfigSchema = z
   .superRefine((cfg, ctx) => {
     if (cfg.locomotion.sprintMs <= cfg.locomotion.walkMs) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'sprintMs must exceed walkMs' });
+    }
+    const eatsMeat = cfg.diet.eats.some((e) => e.target === 'meat');
+    const isPredator = cfg.archetype === 'apex_predator' || cfg.archetype === 'pack_predator';
+    if (isPredator && cfg.hunting === undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'a predator archetype requires a hunting block' });
+    }
+    if (eatsMeat && !isPredator && !cfg.diet.canScavenge) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'a species that eats meat must either hunt or scavenge',
+      });
+    }
+    if (cfg.social.groupSize[0] > cfg.social.groupSize[1]) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'groupSize min must not exceed max' });
     }
   });
 

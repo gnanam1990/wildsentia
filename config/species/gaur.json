@@ -1,0 +1,65 @@
+{
+  "id": "gaur",
+  "displayName": "Gaur",
+  "archetype": "mega_herbivore",
+  "trophicRole": [
+    "grazer",
+    "browser"
+  ],
+  "body": {
+    "adultMassKg": 850,
+    "shoulderHeightM": 1.7
+  },
+  "locomotion": {
+    "walkMs": 1.0,
+    "trotMs": 3.5,
+    "sprintMs": 9.0,
+    "sprintStaminaS": 30,
+    "terrainCost": {
+      "shola": 1.0,
+      "grassland": 1.0,
+      "riparian": 1.0,
+      "rock": 2.2,
+      "marsh": 1.8,
+      "water": 3.0
+    }
+  },
+  "senses": {
+    "sightRangeM": 100,
+    "hearingRangeM": 220,
+    "smellRangeM": 200
+  },
+  "escape": {
+    "detectionDistanceM": 80,
+    "flightInitiationM": 35,
+    "evasiveness": 0.3
+  },
+  "diet": {
+    "eats": [
+      {
+        "target": "grass",
+        "preference": 0.7
+      },
+      {
+        "target": "browse",
+        "preference": 0.3
+      }
+    ],
+    "dailyIntakeKg": 32,
+    "waterNeedLPerDay": 40,
+    "canScavenge": false,
+    "carrionTolerance": 0.0
+  },
+  "social": {
+    "structure": "herd",
+    "groupSize": [
+      4,
+      14
+    ],
+    "alarmSharing": true
+  },
+  "lifecycle": {
+    "maxAgeDays": 8000,
+    "baselineMortalityPerDay": 0.00016
+  }
+}

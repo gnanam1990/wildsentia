@@ -1,0 +1,60 @@
+{
+  "id": "langur",
+  "displayName": "Langur",
+  "archetype": "arboreal_troop",
+  "trophicRole": [
+    "browser"
+  ],
+  "body": {
+    "adultMassKg": 13,
+    "shoulderHeightM": 0.6
+  },
+  "locomotion": {
+    "walkMs": 1.0,
+    "trotMs": 3.5,
+    "sprintMs": 8.0,
+    "sprintStaminaS": 50,
+    "terrainCost": {
+      "shola": 0.7,
+      "grassland": 1.4,
+      "riparian": 1.0,
+      "rock": 1.2,
+      "marsh": 1.8,
+      "water": 3.0
+    }
+  },
+  "senses": {
+    "sightRangeM": 200,
+    "hearingRangeM": 240,
+    "smellRangeM": 60
+  },
+  "escape": {
+    "detectionDistanceM": 160,
+    "flightInitiationM": 60,
+    "evasiveness": 0.8
+  },
+  "diet": {
+    "eats": [
+      {
+        "target": "browse",
+        "preference": 1.0
+      }
+    ],
+    "dailyIntakeKg": 1.1,
+    "waterNeedLPerDay": 1.2,
+    "canScavenge": false,
+    "carrionTolerance": 0.0
+  },
+  "social": {
+    "structure": "troop",
+    "groupSize": [
+      8,
+      30
+    ],
+    "alarmSharing": true
+  },
+  "lifecycle": {
+    "maxAgeDays": 7300,
+    "baselineMortalityPerDay": 0.00032
+  }
+}

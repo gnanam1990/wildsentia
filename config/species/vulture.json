@@ -1,0 +1,60 @@
+{
+  "id": "vulture",
+  "displayName": "White-rumped vulture",
+  "archetype": "scavenger_flyer",
+  "trophicRole": [
+    "scavenger"
+  ],
+  "body": {
+    "adultMassKg": 5.5,
+    "shoulderHeightM": 0.8
+  },
+  "locomotion": {
+    "walkMs": 0.6,
+    "trotMs": 1.5,
+    "sprintMs": 18.0,
+    "sprintStaminaS": 3600,
+    "terrainCost": {
+      "shola": 1.0,
+      "grassland": 1.0,
+      "riparian": 1.0,
+      "rock": 1.0,
+      "marsh": 1.0,
+      "water": 1.0
+    }
+  },
+  "senses": {
+    "sightRangeM": 2000,
+    "hearingRangeM": 100,
+    "smellRangeM": 20
+  },
+  "escape": {
+    "detectionDistanceM": 300,
+    "flightInitiationM": 40,
+    "evasiveness": 0.95
+  },
+  "diet": {
+    "eats": [
+      {
+        "target": "meat",
+        "preference": 1.0
+      }
+    ],
+    "dailyIntakeKg": 0.9,
+    "waterNeedLPerDay": 0.4,
+    "canScavenge": true,
+    "carrionTolerance": 0.98
+  },
+  "social": {
+    "structure": "pair",
+    "groupSize": [
+      1,
+      12
+    ],
+    "alarmSharing": false
+  },
+  "lifecycle": {
+    "maxAgeDays": 7300,
+    "baselineMortalityPerDay": 0.00022
+  }
+}

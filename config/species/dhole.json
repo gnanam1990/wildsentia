@@ -1,0 +1,71 @@
+{
+  "id": "dhole",
+  "displayName": "Dhole",
+  "archetype": "pack_predator",
+  "trophicRole": [
+    "mesopredator"
+  ],
+  "body": {
+    "adultMassKg": 17,
+    "shoulderHeightM": 0.5
+  },
+  "locomotion": {
+    "walkMs": 1.4,
+    "trotMs": 6.0,
+    "sprintMs": 13.0,
+    "sprintStaminaS": 180,
+    "terrainCost": {
+      "shola": 1.0,
+      "grassland": 1.0,
+      "riparian": 1.0,
+      "rock": 1.2,
+      "marsh": 1.4,
+      "water": 3.0
+    }
+  },
+  "senses": {
+    "sightRangeM": 140,
+    "hearingRangeM": 260,
+    "smellRangeM": 300
+  },
+  "escape": {
+    "detectionDistanceM": 60,
+    "flightInitiationM": 20,
+    "evasiveness": 0.55
+  },
+  "diet": {
+    "eats": [
+      {
+        "target": "meat",
+        "preference": 1.0
+      }
+    ],
+    "dailyIntakeKg": 2.2,
+    "waterNeedLPerDay": 2,
+    "canScavenge": true,
+    "carrionTolerance": 0.55
+  },
+  "hunting": {
+    "preferredPrey": [
+      "chital",
+      "sambar",
+      "hare"
+    ],
+    "stalkConcealment": 0.35,
+    "commitDistanceM": 90,
+    "baseSuccess": 0.63,
+    "staminaCostPerChase": 0.18
+  },
+  "social": {
+    "structure": "pack",
+    "groupSize": [
+      4,
+      9
+    ],
+    "alarmSharing": true
+  },
+  "lifecycle": {
+    "maxAgeDays": 3600,
+    "baselineMortalityPerDay": 0.00028
+  }
+}

@@ -10,6 +10,7 @@ One shared, server-authoritative wildlife simulation. You can watch it. You cann
 **M1 — simulation core: complete.** Headless, deterministic, nutrient-conserving.
 **M2 — shared world: complete.** Runs 24/7, persists to Postgres, survives restart, streams to many viewers.
 **M3 — observer client: complete.** A browser renders the live world; every number on screen came off the wire.
+**M4 — food web: complete.** Twelve species, predation, scavenging, decomposition, and a closed nutrient cycle.
 
 | Gate | Result |
 |---|---|
@@ -21,7 +22,11 @@ One shared, server-authoritative wildlife simulation. You can watch it. You cann
 | Client write attempt | rejected — no write path exists |
 | Terrain draw calls | **6** against a budget of 150 |
 | Rendered from one batch | 400 patches, 25,472 grass tufts, 2,380 trees |
-| Tests | 132 across 26 files |
+| Ten world-years, one seed | 29,082,323 events, zero failures, 69 s |
+| Hunt success | **23.7%** against a 20–35% target |
+| Nutrient drift over ten years | **2.2×10⁻⁸** — through 23,156 deaths and 146,939 scavenger feedings |
+| Carcasses returned to soil | 22,837 of 23,156; the rest still decaying |
+| Tests | 205 across 29 files |
 
 ## Packages
 
@@ -88,10 +93,26 @@ The client holds no simulation. It receives `world` and `animals` frames and ren
 - **Nutrients are conserved.** Drift beyond tolerance fails the build.
 - **Every significant change emits an event with an id.** Narration without an event id is not possible.
 
+## The food web
+
+Death is not an end state; it is a transfer. An animal that dies becomes a carcass carrying its
+own mass, split into muscle, organ, hide and bone. Predators and scavengers take the soft tissue
+first, insects and fungi work through the rest, and every gram removed lands in that patch's soil
+nutrients — which is what the grass grows from. Decay runs faster in the monsoon than in the dry
+season, so *when* an animal died changes how long it is there.
+
+Twelve species run on seven behaviour archetypes, all read from `config/species/`. Which goals an
+animal can even consider is decided by its archetype, so a sambar cannot decide to hunt and a
+tiger cannot decide to graze, however hungry either gets.
+
+Predation resolves in a pure function from simulation variables alone — concealment, canopy cover,
+herd vigilance, stamina, condition, distance at commit. A failed hunt records the stage it reached,
+so it can be explained afterwards from the record rather than narrated from imagination.
+
 ## What is not built yet
 
-Predation, carcasses and decomposition (M4); reproduction, genetics
-and lineage (M5); parental teaching (M6); thought bubbles and narration (M7); life replay (M8).
+Reproduction and genetics (M5), so populations decline toward their immigration floors rather than
+breeding back. Parental teaching (M6). Thought bubbles and narration (M7). Life replay (M8).
 Sign-in accounts are deferred: the `viewers` and `follows` tables exist, but no provider is wired,
 and viewer counts work on connection identity alone.
 

@@ -1,0 +1,60 @@
+{
+  "id": "squirrel",
+  "displayName": "Giant squirrel",
+  "archetype": "arboreal_troop",
+  "trophicRole": [
+    "browser"
+  ],
+  "body": {
+    "adultMassKg": 2,
+    "shoulderHeightM": 0.25
+  },
+  "locomotion": {
+    "walkMs": 0.9,
+    "trotMs": 3.0,
+    "sprintMs": 7.0,
+    "sprintStaminaS": 25,
+    "terrainCost": {
+      "shola": 0.6,
+      "grassland": 2.0,
+      "riparian": 1.0,
+      "rock": 1.5,
+      "marsh": 2.5,
+      "water": 3.0
+    }
+  },
+  "senses": {
+    "sightRangeM": 120,
+    "hearingRangeM": 140,
+    "smellRangeM": 40
+  },
+  "escape": {
+    "detectionDistanceM": 90,
+    "flightInitiationM": 35,
+    "evasiveness": 0.88
+  },
+  "diet": {
+    "eats": [
+      {
+        "target": "browse",
+        "preference": 1.0
+      }
+    ],
+    "dailyIntakeKg": 0.18,
+    "waterNeedLPerDay": 0.2,
+    "canScavenge": false,
+    "carrionTolerance": 0.0
+  },
+  "social": {
+    "structure": "pair",
+    "groupSize": [
+      1,
+      2
+    ],
+    "alarmSharing": true
+  },
+  "lifecycle": {
+    "maxAgeDays": 7300,
+    "baselineMortalityPerDay": 0.0006
+  }
+}
