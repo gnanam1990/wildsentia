@@ -1,0 +1,18 @@
+{
+  "id": "sambar",
+  "displayName": "Sambar deer",
+  "archetype": "herd_grazer",
+  "trophicRole": ["grazer", "browser"],
+  "body": { "adultMassKg": 220, "shoulderHeightM": 1.35 },
+  "locomotion": {
+    "walkMs": 1.1, "trotMs": 4.0, "sprintMs": 11.0, "sprintStaminaS": 45,
+    "terrainCost": { "shola": 1.2, "grassland": 1.0, "riparian": 1.1, "rock": 1.8, "marsh": 1.5, "water": 3.0 }
+  },
+  "senses": { "sightRangeM": 120, "hearingRangeM": 260, "smellRangeM": 180 },
+  "escape": { "detectionDistanceM": 90, "flightInitiationM": 45, "evasiveness": 0.62 },
+  "diet": {
+    "eats": [{ "target": "grass", "preference": 0.6 }, { "target": "browse", "preference": 0.4 }],
+    "dailyIntakeKg": 11, "waterNeedLPerDay": 14
+  },
+  "lifecycle": { "maxAgeDays": 5400, "baselineMortalityPerDay": 0.00035 }
+}

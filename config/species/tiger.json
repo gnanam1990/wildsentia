@@ -1,0 +1,15 @@
+{
+  "id": "tiger",
+  "displayName": "Tiger",
+  "archetype": "apex_predator",
+  "trophicRole": ["apex_predator"],
+  "body": { "adultMassKg": 190, "shoulderHeightM": 1.0 },
+  "locomotion": {
+    "walkMs": 1.3, "trotMs": 5.0, "sprintMs": 15.0, "sprintStaminaS": 25,
+    "terrainCost": { "shola": 1.0, "grassland": 1.1, "riparian": 1.0, "rock": 1.3, "marsh": 1.6, "water": 2.0 }
+  },
+  "senses": { "sightRangeM": 160, "hearingRangeM": 300, "smellRangeM": 120 },
+  "escape": { "detectionDistanceM": 40, "flightInitiationM": 10, "evasiveness": 0.4 },
+  "diet": { "eats": [{ "target": "meat", "preference": 1.0 }], "dailyIntakeKg": 8, "waterNeedLPerDay": 10 },
+  "lifecycle": { "maxAgeDays": 5400, "baselineMortalityPerDay": 0.00018 }
+}

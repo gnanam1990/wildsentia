@@ -1,0 +1,28 @@
+import { NUTRIENT_PER_KG_BIOMASS, type Agent, type Patch } from '@vana/shared';
+
+export interface NutrientLedger {
+  /** Nutrients that entered the world with immigrants. Subtracted so arrivals are not creation. */
+  imported: number;
+  /** Nutrients that left with emigrants. Added back so departures are not destruction. */
+  exported: number;
+}
+
+export function totalNutrients(patches: Patch[], agents: Agent[], ledger: NutrientLedger): number {
+  let total = 0;
+  for (const p of patches) {
+    total += p.soilNutrients + (p.plant.grass + p.plant.browse) * NUTRIENT_PER_KG_BIOMASS;
+  }
+  for (const a of agents) {
+    if (a.alive) total += a.massKg * NUTRIENT_PER_KG_BIOMASS;
+  }
+  return total - ledger.imported + ledger.exported;
+}
+
+export function assertNutrientsConserved(baseline: number, actual: number, tolerance = 1e-3): void {
+  const drift = Math.abs(actual - baseline);
+  if (drift > tolerance) {
+    throw new Error(
+      `nutrient conservation violated: baseline=${baseline} actual=${actual} drift=${drift} tolerance=${tolerance}`,
+    );
+  }
+}
