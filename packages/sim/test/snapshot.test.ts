@@ -18,6 +18,18 @@ describe('snapshots', () => {
     expect(restored.totalNutrients()).toBeCloseTo(w.totalNutrients(), 6);
   });
 
+  it('continues from the restored state with identical results', () => {
+    const w = createWorld(options);
+    for (let h = 0; h < 100; h++) w.step(1);
+    const restored = restoreSnapshot(JSON.parse(JSON.stringify(takeSnapshot(w))), options);
+
+    for (let h = 0; h < 50; h++) { w.step(1); restored.step(1); }
+
+    expect(restored.now()).toBe(w.now());
+    expect(restored.agents.map((a) => [a.id, a.patchId, a.alive, a.drives.hunger]))
+      .toEqual(w.agents.map((a) => [a.id, a.patchId, a.alive, a.drives.hunger]));
+  });
+
   it('records the sim version so an incompatible snapshot is detectable', () => {
     const w = createWorld(options);
     expect(takeSnapshot(w).simVersion).toBe('sim_0.1.0');

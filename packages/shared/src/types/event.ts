@@ -3,7 +3,8 @@ import type { WorldTime } from '../time.js';
 
 export type EventType =
   | 'agent_spawned' | 'goal_selected' | 'fed' | 'drank' | 'rested'
-  | 'moved' | 'starved' | 'died' | 'immigration' | 'season_changed';
+  | 'moved' | 'starved' | 'died' | 'immigration' | 'season_changed'
+  | 'maintenance';
 
 export type Confidence = 'authoritative' | 'high' | 'medium' | 'low';
 

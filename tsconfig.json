@@ -3,6 +3,7 @@
   "references": [
     { "path": "./packages/shared" },
     { "path": "./packages/sim" },
+    { "path": "./packages/server" },
     { "path": "./packages/runner" }
   ]
 }

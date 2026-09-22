@@ -1,3 +1,5 @@
+export type RngState = [number, number, number, number];
+
 export interface Rng {
   next(): number;
   range(min: number, max: number): number;
@@ -5,6 +7,9 @@ export interface Rng {
   bool(p: number): boolean;
   gaussian(mean: number, sd: number): number;
   fork(label: string): Rng;
+  /** The four sfc32 words. A restored stream continues exactly where this one left off. */
+  exportState(): RngState;
+  importState(state: RngState): void;
 }
 
 function hashLabel(label: string): number {
@@ -51,6 +56,13 @@ export function createRng(seed: number, label: string): Rng {
     },
     fork: (childLabel) =>
       createRng((seed ^ hashLabel(childLabel)) >>> 0, `${label}/${childLabel}/${forkCounter++}`),
+    exportState: () => [a >>> 0, b >>> 0, c >>> 0, d >>> 0],
+    importState: (state) => {
+      a = state[0] >>> 0;
+      b = state[1] >>> 0;
+      c = state[2] >>> 0;
+      d = state[3] >>> 0;
+    },
   };
   return rng;
 }

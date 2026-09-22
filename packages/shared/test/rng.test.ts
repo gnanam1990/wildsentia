@@ -24,4 +24,25 @@ describe('createRng', () => {
   it('forks into an independent but deterministic stream', () => {
     expect(createRng(1, 'p').fork('child').next()).toEqual(createRng(1, 'p').fork('child').next());
   });
+
+  it('round-trips its state so a restored stream continues identically', () => {
+    const a = createRng(5, 's');
+    for (let i = 0; i < 50; i++) a.next();
+    const state = a.exportState();
+
+    const b = createRng(999, 'different');
+    b.importState(state);
+
+    expect(Array.from({ length: 20 }, () => b.next())).toEqual(Array.from({ length: 20 }, () => a.next()));
+  });
+
+  it('exports four unsigned 32-bit words', () => {
+    const state = createRng(5, 's').exportState();
+    expect(state).toHaveLength(4);
+    for (const word of state) {
+      expect(Number.isInteger(word)).toBe(true);
+      expect(word).toBeGreaterThanOrEqual(0);
+      expect(word).toBeLessThanOrEqual(0xffffffff);
+    }
+  });
 });

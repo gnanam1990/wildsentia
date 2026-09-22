@@ -1,7 +1,7 @@
 import {
   NUTRIENT_PER_KG_BIOMASS, PATCH_COUNT, WORLD_SECONDS_PER_HOUR,
   createRng, seasonAt,
-  type Agent, type Patch, type Rng, type SpeciesConfig, type WorldTime,
+  type Agent, type Patch, type Rng, type RngState, type SpeciesConfig, type WorldTime,
 } from '@vana/shared';
 import { buildGrid } from './grid.js';
 import { loadSpeciesDir } from './config/loader.js';
@@ -60,14 +60,20 @@ export class World {
   }
 
   /** @internal — used only by the snapshot codec. */
-  __exportState(): { time: WorldTime; agentSeq: number; seed: number } {
-    return { time: this.#time, agentSeq: this.#agentSeq, seed: this.#options.seed };
+  __exportState(): { time: WorldTime; agentSeq: number; seed: number; rngState: RngState } {
+    return {
+      time: this.#time,
+      agentSeq: this.#agentSeq,
+      seed: this.#options.seed,
+      rngState: this.#rng.exportState(),
+    };
   }
 
   /** @internal — used only by the snapshot codec. */
-  __importState(time: WorldTime, agentSeq: number): void {
+  __importState(time: WorldTime, agentSeq: number, rngState: RngState): void {
     this.#time = time;
     this.#agentSeq = agentSeq;
+    this.#rng.importState(rngState);
   }
 
   #spawn(speciesId: string, immigrant: boolean): Agent {
