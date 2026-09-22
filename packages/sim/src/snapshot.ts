@@ -13,6 +13,10 @@ export interface Snapshot {
   rngState: RngState;
   carcasses: Carcass[];
   carcassSeq: number;
+  deceased: Agent[];
+  groupSeq: number;
+  groups: Array<[string, { speciesId: string; memberIds: string[] }]>;
+  pedigree: Array<[string, { mother: string | null; father: string | null }]>;
 }
 
 export function takeSnapshot(world: World): Snapshot {
@@ -28,6 +32,10 @@ export function takeSnapshot(world: World): Snapshot {
     rngState: state.rngState,
     carcasses: structuredClone(world.carcasses),
     carcassSeq: state.carcassSeq,
+    deceased: structuredClone(world.deceased),
+    groupSeq: state.groupSeq,
+    groups: structuredClone(state.groups),
+    pedigree: structuredClone(state.pedigree),
   };
 }
 
@@ -47,9 +55,15 @@ export function restoreSnapshot(snapshot: Snapshot, options: WorldOptions): Worl
   world.agents.push(...structuredClone(snapshot.agents));
   world.carcasses.length = 0;
   world.carcasses.push(...structuredClone(snapshot.carcasses ?? []));
+  world.deceased.length = 0;
+  world.deceased.push(...structuredClone(snapshot.deceased ?? []));
   world.ledger.imported = snapshot.ledger.imported;
   world.ledger.exported = snapshot.ledger.exported;
-  world.__importState(snapshot.worldTime, snapshot.agentSeq, snapshot.rngState, snapshot.carcassSeq ?? 0);
+  world.__importState(
+    snapshot.worldTime, snapshot.agentSeq, snapshot.rngState,
+    snapshot.carcassSeq ?? 0, snapshot.groupSeq ?? 0,
+    snapshot.groups ?? [], snapshot.pedigree ?? [],
+  );
 
   return world;
 }

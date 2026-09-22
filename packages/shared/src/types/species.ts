@@ -1,4 +1,5 @@
 import type { HabitatType } from './patch.js';
+import type { LifeStage } from './agent.js';
 
 export type Archetype =
   | 'apex_predator' | 'pack_predator' | 'herd_grazer'
@@ -44,5 +45,22 @@ export interface SpeciesConfig {
     groupSize: [min: number, max: number];
     alarmSharing: boolean;
   };
-  lifecycle: { maxAgeDays: number; baselineMortalityPerDay: number };
+  lifecycle: {
+    maxAgeDays: number;
+    baselineMortalityPerDay: number;
+    stages: Array<{
+      name: LifeStage;
+      startDays: number;
+      /** Fraction of adult mass at the start of this stage. */
+      sizeFactor: number;
+      dependent: boolean;
+      mortalityPerDay: number;
+    }>;
+    sexualMaturityDays: number;
+    gestationDays: number;
+    litterSize: [min: number, max: number];
+    interBirthIntervalDays: number;
+    weanDays: number;
+    dispersalDays: number;
+  };
 }

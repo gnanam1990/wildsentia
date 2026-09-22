@@ -53,7 +53,7 @@
     ],
     "stalkConcealment": 0.35,
     "commitDistanceM": 90,
-    "baseSuccess": 0.63,
+    "baseSuccess": 0.34,
     "staminaCostPerChase": 0.18
   },
   "social": {
@@ -66,6 +66,52 @@
   },
   "lifecycle": {
     "maxAgeDays": 3600,
-    "baselineMortalityPerDay": 0.00028
+    "baselineMortalityPerDay": 0.00028,
+    "stages": [
+      {
+        "name": "newborn",
+        "startDays": 0,
+        "sizeFactor": 0.12,
+        "dependent": true,
+        "mortalityPerDay": 0.00168
+      },
+      {
+        "name": "juvenile",
+        "startDays": 35,
+        "sizeFactor": 0.35,
+        "dependent": true,
+        "mortalityPerDay": 0.00084
+      },
+      {
+        "name": "subadult",
+        "startDays": 330,
+        "sizeFactor": 0.72,
+        "dependent": false,
+        "mortalityPerDay": 0.00042
+      },
+      {
+        "name": "adult",
+        "startDays": 700,
+        "sizeFactor": 1.0,
+        "dependent": false,
+        "mortalityPerDay": 0.00028
+      },
+      {
+        "name": "elder",
+        "startDays": 2700,
+        "sizeFactor": 0.92,
+        "dependent": false,
+        "mortalityPerDay": 0.00112
+      }
+    ],
+    "sexualMaturityDays": 700,
+    "gestationDays": 63,
+    "litterSize": [
+      4,
+      8
+    ],
+    "interBirthIntervalDays": 365,
+    "weanDays": 70,
+    "dispersalDays": 330
   }
 }

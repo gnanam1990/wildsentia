@@ -55,6 +55,52 @@
   },
   "lifecycle": {
     "maxAgeDays": 7300,
-    "baselineMortalityPerDay": 0.0006
+    "baselineMortalityPerDay": 0.0006,
+    "stages": [
+      {
+        "name": "newborn",
+        "startDays": 0,
+        "sizeFactor": 0.12,
+        "dependent": true,
+        "mortalityPerDay": 0.0036
+      },
+      {
+        "name": "juvenile",
+        "startDays": 30,
+        "sizeFactor": 0.35,
+        "dependent": true,
+        "mortalityPerDay": 0.0018
+      },
+      {
+        "name": "subadult",
+        "startDays": 150,
+        "sizeFactor": 0.72,
+        "dependent": false,
+        "mortalityPerDay": 0.0009
+      },
+      {
+        "name": "adult",
+        "startDays": 400,
+        "sizeFactor": 1.0,
+        "dependent": false,
+        "mortalityPerDay": 0.0006
+      },
+      {
+        "name": "elder",
+        "startDays": 5475,
+        "sizeFactor": 0.92,
+        "dependent": false,
+        "mortalityPerDay": 0.0024
+      }
+    ],
+    "sexualMaturityDays": 400,
+    "gestationDays": 30,
+    "litterSize": [
+      1,
+      2
+    ],
+    "interBirthIntervalDays": 180,
+    "weanDays": 60,
+    "dispersalDays": 150
   }
 }

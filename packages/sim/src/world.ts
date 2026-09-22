@@ -1,5 +1,5 @@
 import {
-  NUTRIENT_PER_KG_BIOMASS, PATCH_COUNT, WORLD_SECONDS_PER_HOUR,
+  NUTRIENT_PER_KG_BIOMASS, PATCH_COUNT, WORLD_SECONDS_PER_DAY, WORLD_SECONDS_PER_HOUR,
   createRng, seasonAt,
   type Agent, type Carcass, type DeathCause, type Patch, type Rng,
   type RngState, type SpeciesConfig, type WorldTime,
@@ -15,8 +15,14 @@ import { updateDrives } from './agents/drives.js';
 import { perceive, type WorldView } from './agents/perception.js';
 import { selectGoal } from './agents/goals.js';
 import { executeGoal, type WorldServices } from './agents/behaviours.js';
+import { foundingTraits } from './agents/genetics.js';
+import { Pedigree } from './agents/pedigree.js';
+import { mortalityFor, stageFor, targetMass } from './agents/lifecycle.js';
+import {
+  assessMate, attemptCourtship, birth, conceive, isReadyToGiveBirth, isReceptive,
+} from './agents/reproduction.js';
 
-export const SIM_VERSION = 'sim_0.2.0';
+export const SIM_VERSION = 'sim_0.3.0';
 
 export interface WorldOptions {
   seed: number;
@@ -29,11 +35,18 @@ export interface WorldOptions {
 
 export class World {
   readonly patches: Patch[];
+  /** Living animals only. The dead move to `deceased` so they leave every per-tick loop. */
   readonly agents: Agent[] = [];
+  /** Permanent record. A death removes an animal from the world, never from its history. */
+  readonly deceased: Agent[] = [];
   readonly carcasses: Carcass[] = [];
   readonly log: EventLog;
   readonly ledger: NutrientLedger = { imported: 0, exported: 0 };
   readonly species: Map<string, SpeciesConfig>;
+  readonly pedigree = new Pedigree();
+  readonly #agentsById = new Map<string, Agent>();
+  readonly #livingBySpecies = new Map<string, number>();
+  births = 0;
 
   #time: WorldTime = 0;
   #agentSeq = 0;
@@ -41,6 +54,9 @@ export class World {
   readonly #rng: Rng;
   readonly #options: WorldOptions;
   readonly #agentsByPatch = new Map<number, Agent[]>();
+  /** Herds, troops, packs and families: the spec's group entity, kept light. */
+  readonly #groups = new Map<string, { speciesId: string; memberIds: string[] }>();
+  #groupSeq = 0;
   readonly #carcassesByPatch = new Map<number, Carcass[]>();
 
   constructor(options: WorldOptions) {
@@ -58,7 +74,7 @@ export class World {
   now(): WorldTime { return this.#time; }
 
   livingCount(speciesId: string): number {
-    return this.agents.reduce((n, a) => n + (a.alive && a.speciesId === speciesId ? 1 : 0), 0);
+    return this.#livingBySpecies.get(speciesId) ?? 0;
   }
 
   totalNutrients(): number {
@@ -66,19 +82,63 @@ export class World {
   }
 
   /** @internal — used only by the snapshot codec. */
-  __exportState(): { time: WorldTime; agentSeq: number; carcassSeq: number; seed: number; rngState: RngState } {
+  __exportState(): {
+    time: WorldTime; agentSeq: number; carcassSeq: number; groupSeq: number;
+    seed: number; rngState: RngState;
+    groups: Array<[string, { speciesId: string; memberIds: string[] }]>;
+    pedigree: ReturnType<Pedigree['toJSON']>;
+  } {
     return {
       time: this.#time, agentSeq: this.#agentSeq, carcassSeq: this.#carcassSeq,
+      groupSeq: this.#groupSeq,
       seed: this.#options.seed, rngState: this.#rng.exportState(),
+      groups: [...this.#groups.entries()],
+      pedigree: this.pedigree.toJSON(),
     };
   }
 
-  /** @internal — used only by the snapshot codec. */
-  __importState(time: WorldTime, agentSeq: number, rngState: RngState, carcassSeq = 0): void {
+  /**
+   * @internal — used only by the snapshot codec.
+   *
+   * Everything the world carries has to come back, not just the clock: without the groups a
+   * restored herd forgets it is a herd, and without the pedigree it forgets who its parents
+   * were and will happily breed with its own sibling.
+   */
+  __importState(
+    time: WorldTime,
+    agentSeq: number,
+    rngState: RngState,
+    carcassSeq = 0,
+    groupSeq = 0,
+    groups: Array<[string, { speciesId: string; memberIds: string[] }]> = [],
+    pedigreeEntries: ReturnType<Pedigree['toJSON']> = [],
+  ): void {
     this.#time = time;
     this.#agentSeq = agentSeq;
     this.#carcassSeq = carcassSeq;
+    this.#groupSeq = groupSeq;
     this.#rng.importState(rngState);
+
+    this.#groups.clear();
+    for (const [groupId, group] of groups) this.#groups.set(groupId, group);
+
+    this.pedigree.clear();
+    for (const [childId, parents] of pedigreeEntries) {
+      this.pedigree.record(childId, parents.mother, parents.father);
+    }
+
+    // Rebuild the indexes that are derived from the agent list.
+    this.#agentsById.clear();
+    this.#livingBySpecies.clear();
+    for (const agent of this.agents) {
+      this.#agentsById.set(agent.id, agent);
+      if (agent.alive) {
+        this.#livingBySpecies.set(
+          agent.speciesId, (this.#livingBySpecies.get(agent.speciesId) ?? 0) + 1,
+        );
+      }
+    }
+    for (const agent of this.deceased) this.#agentsById.set(agent.id, agent);
   }
 
   #view(): WorldView {
@@ -87,6 +147,7 @@ export class World {
       agentsInPatch: (patchId) => this.#agentsByPatch.get(patchId) ?? [],
       carcassesInPatch: (patchId) => this.#carcassesByPatch.get(patchId) ?? [],
       speciesOf: (speciesId) => this.species.get(speciesId)!,
+      groupPatch: (groupId) => this.#groupPatch(groupId),
     };
   }
 
@@ -98,6 +159,48 @@ export class World {
         this.#retireCarcass(carcass);
       },
     };
+  }
+
+  /** Where a group is: the patch holding the most of its living members. */
+  #groupPatch(groupId: string): number | null {
+    const group = this.#groups.get(groupId);
+    if (group === undefined) return null;
+
+    const byPatch = new Map<number, number>();
+    for (const memberId of group.memberIds) {
+      const member = this.#agentsById.get(memberId);
+      if (member === undefined || !member.alive) continue;
+      byPatch.set(member.patchId, (byPatch.get(member.patchId) ?? 0) + 1);
+    }
+
+    let bestPatch: number | null = null;
+    let bestCount = 0;
+    for (const [patchId, count] of byPatch) {
+      if (count > bestCount) { bestCount = count; bestPatch = patchId; }
+    }
+    return bestPatch;
+  }
+
+  #assignGroup(agent: Agent, cfg: SpeciesConfig): void {
+    const structure = cfg.social.structure;
+    if (structure === 'solitary') return;
+
+    const [, max] = cfg.social.groupSize;
+    for (const [groupId, group] of this.#groups) {
+      if (group.speciesId !== agent.speciesId) continue;
+      const living = group.memberIds.filter((id) => this.#agentsById.get(id)?.alive === true).length;
+      if (living >= max) continue;
+      group.memberIds.push(agent.id);
+      agent.groupId = groupId;
+      // Join the group where it stands, rather than appearing somewhere it is not.
+      const home = this.#groupPatch(groupId);
+      if (home !== null) agent.patchId = home;
+      return;
+    }
+
+    const groupId = `${agent.speciesId}_grp_${(this.#groupSeq++).toString(16)}`;
+    this.#groups.set(groupId, { speciesId: agent.speciesId, memberIds: [agent.id] });
+    agent.groupId = groupId;
   }
 
   #reindex(): void {
@@ -121,18 +224,32 @@ export class World {
     if (!cfg) throw new Error(`unknown species: ${speciesId}`);
 
     const patchId = this.#rng.int(PATCH_COUNT);
+    // Founders and immigrants arrive as adults of a spread of ages, so a population does not
+    // reach sexual maturity in lockstep.
+    const ageDays = cfg.lifecycle.sexualMaturityDays
+      + this.#rng.range(0, cfg.lifecycle.maxAgeDays * 0.35);
     const agent: Agent = {
       id: `${speciesId}_${(this.#agentSeq++).toString(16).padStart(4, '0')}`,
       speciesId, bornAt: this.#time, massKg: cfg.body.adultMassKg, patchId,
       state: 'resting', currentGoal: 'wander', alternativeGoal: null, goalScore: 0,
       targetId: null, stamina: 1,
+      sex: this.#rng.bool(0.5) ? 'female' : 'male',
+      ageDays,
+      lifeStage: stageFor(ageDays, cfg),
+      traits: foundingTraits(this.#rng),
+      motherId: null, fatherId: null, generation: 0,
+      dependentOn: null, pregnantSince: null, lastBirthAt: null, offspringIds: [],
       drives: {
-        hunger: this.#rng.range(0.1, 0.5), thirst: this.#rng.range(0.1, 0.5),
+        hunger: this.#rng.range(0.05, 0.35), thirst: this.#rng.range(0.05, 0.35),
         fatigue: this.#rng.range(0.1, 0.4), fear: 0,
       },
       alive: true,
     };
     this.agents.push(agent);
+    this.#agentsById.set(agent.id, agent);
+    this.#livingBySpecies.set(speciesId, (this.#livingBySpecies.get(speciesId) ?? 0) + 1);
+    this.pedigree.record(agent.id, null, null);
+    this.#assignGroup(agent, cfg);
     if (immigrant) this.ledger.imported += agent.massKg * NUTRIENT_PER_KG_BIOMASS;
 
     this.log.append({
@@ -149,6 +266,9 @@ export class World {
   #kill(agent: Agent, cause: DeathCause, killerId: string | null): Carcass {
     agent.alive = false;
     agent.state = 'dead';
+    this.#livingBySpecies.set(
+      agent.speciesId, Math.max(0, (this.#livingBySpecies.get(agent.speciesId) ?? 1) - 1),
+    );
 
     const carcass = makeCarcass(
       `carc_${(this.#carcassSeq++).toString(16).padStart(4, '0')}`,
@@ -174,6 +294,100 @@ export class World {
     });
     return carcass;
   }
+
+  /** Looks for a mate in the same patch. Returns true when courtship consumed the tick. */
+  #tryBreed(agent: Agent, cfg: SpeciesConfig, view: ReturnType<World['__viewForTest']>): boolean {
+    if (!isReceptive(agent, cfg, this.#time)) return false;
+    // Only females carry the pregnancy, so only they initiate here; males are assessed.
+    if (agent.sex !== 'female') return false;
+
+    // Look across the patch and its neighbours. Animals three hundred metres apart are well
+    // within sight of one another; confining courtship to a single patch made mating a matter
+    // of luck rather than of being in the same herd.
+    let best: ReturnType<typeof assessMate> = null;
+    let bestPatchId = agent.patchId;
+    for (const patchId of [agent.patchId, ...this.patches[agent.patchId]!.neighbours]) {
+      for (const other of view.agentsInPatch(patchId)) {
+        if (!other.alive || other.speciesId !== agent.speciesId) continue;
+        if (!isReceptive(other, cfg, this.#time)) continue;
+        const assessment = assessMate(agent, other, this.pedigree);
+        if (assessment !== null && (best === null || assessment.score > best.score)) {
+          best = assessment;
+          bestPatchId = patchId;
+        }
+      }
+    }
+    if (best === null) return false;
+    // Go to him rather than courting across a field.
+    if (bestPatchId !== agent.patchId) { agent.patchId = bestPatchId; return true; }
+
+    // Crowding is measured over the patch and its neighbours, which is the range an animal
+    // can actually perceive.
+    let localDensity = 0;
+    for (const patchId of [agent.patchId, ...this.patches[agent.patchId]!.neighbours]) {
+      for (const other of view.agentsInPatch(patchId)) {
+        if (other.alive && other.speciesId === agent.speciesId) localDensity++;
+      }
+    }
+    const groupMax = cfg.social.groupSize[1];
+    const succeeded = attemptCourtship(agent, best.candidate, this.#rng, localDensity, groupMax);
+    this.log.append({
+      type: 'courtship', worldTime: this.#time, simVersion: SIM_VERSION, patchId: agent.patchId,
+      actors: [agent.id, best.candidate.id],
+      conditions: { species: agent.speciesId, relatedness: best.relatedness },
+      outcome: succeeded ? 'success' : 'failure', effects: {},
+      causalParents: [], confidence: 'authoritative',
+    });
+    if (!succeeded) return true;
+
+    conceive(agent, best.candidate, this.#time);
+    return true;
+  }
+
+  #giveBirth(mother: Agent, cfg: SpeciesConfig): void {
+    const fatherId = mother.targetId;
+    const father = fatherId == null ? null : this.#agentsById.get(fatherId) ?? null;
+
+    const result = birth(
+      mother, father, cfg, this.patches[mother.patchId]!, this.pedigree, this.#rng, this.#time,
+      () => `${mother.speciesId}_${(this.#agentSeq++).toString(16).padStart(4, '0')}`,
+    );
+
+    for (const child of result.newborns) {
+      this.agents.push(child);
+      this.#agentsById.set(child.id, child);
+      this.#livingBySpecies.set(
+        child.speciesId, (this.#livingBySpecies.get(child.speciesId) ?? 0) + 1,
+      );
+      // A calf belongs to its mother's herd from birth.
+      if (mother.groupId != null) {
+        child.groupId = mother.groupId;
+        this.#groups.get(mother.groupId)?.memberIds.push(child.id);
+      }
+      this.births++;
+      this.log.append({
+        type: 'born', worldTime: this.#time, simVersion: SIM_VERSION, patchId: child.patchId,
+        actors: [child.id, mother.id, ...(father === null ? [] : [father.id])],
+        conditions: {
+          species: child.speciesId, sex: child.sex, generation: child.generation,
+          coatVariant: child.traits.coatVariant,
+        },
+        outcome: 'success', effects: { massKg: child.massKg },
+        causalParents: [], confidence: 'authoritative',
+      });
+    }
+
+    if (result.newborns.length === 0) {
+      this.log.append({
+        type: 'courtship', worldTime: this.#time, simVersion: SIM_VERSION, patchId: mother.patchId,
+        actors: [mother.id], conditions: { reason: 'no_nutrients_for_litter' },
+        outcome: 'failure', effects: {}, causalParents: [], confidence: 'authoritative',
+      });
+    }
+  }
+
+  /** @internal — lets the breed helper share the world view type. */
+  __viewForTest(): WorldView { return this.#view(); }
 
   #retireCarcass(carcass: Carcass): void {
     const index = this.carcasses.indexOf(carcass);
@@ -216,6 +430,16 @@ export class World {
       if (isSpent(carcass)) this.#retireCarcass(carcass);
     }
 
+    // Move the tick's dead into the permanent record and out of every loop that follows.
+    if (this.agents.some((a) => !a.alive)) {
+      for (let i = this.agents.length - 1; i >= 0; i--) {
+        const agent = this.agents[i]!;
+        if (agent.alive) continue;
+        this.deceased.push(agent);
+        this.agents.splice(i, 1);
+      }
+    }
+
     this.#reindex();
     const view = this.#view();
     const services = this.#services();
@@ -227,12 +451,61 @@ export class World {
       updateDrives(agent, cfg, hours);
       agent.stamina = Math.min(1, (agent.stamina ?? 1) + 0.04 * hours);
 
+      agent.ageDays += hours / 24;
+      const stage = stageFor(agent.ageDays, cfg);
+      if (stage !== agent.lifeStage) {
+        agent.lifeStage = stage;
+        this.log.append({
+          type: 'life_stage', worldTime: this.#time, simVersion: SIM_VERSION,
+          patchId: agent.patchId, actors: [agent.id],
+          conditions: { stage, species: agent.speciesId },
+          outcome: 'success', effects: { ageDays: agent.ageDays },
+          causalParents: [], confidence: 'authoritative',
+        });
+      }
+
+      // Growth builds tissue out of what the animal ate, which the feeding model already
+      // returned to the soil. Drawing it back keeps the ledger exact.
+      const target = targetMass(agent, cfg);
+      if (agent.massKg < target) {
+        const growth = Math.min(target - agent.massKg, target * 0.004 * hours);
+        const patch = this.patches[agent.patchId]!;
+        const affordable = Math.min(growth, Math.max(0, patch.soilNutrients) / NUTRIENT_PER_KG_BIOMASS);
+        agent.massKg += affordable;
+        patch.soilNutrients -= affordable * NUTRIENT_PER_KG_BIOMASS;
+      }
+
+      // Dependants follow their mother and are fed by her; they do not forage for themselves.
+      if (agent.dependentOn !== null) {
+        const mother = this.#agentsById.get(agent.dependentOn);
+        if (mother === undefined || !mother.alive) {
+          // An orphan is on its own from here. It keeps whatever it already knows.
+          agent.dependentOn = null;
+        } else if (agent.ageDays >= cfg.lifecycle.dispersalDays) {
+          agent.dependentOn = null;
+          this.log.append({
+            type: 'dispersed', worldTime: this.#time, simVersion: SIM_VERSION,
+            patchId: agent.patchId, actors: [agent.id, mother.id],
+            conditions: { species: agent.speciesId, ageDays: agent.ageDays },
+            outcome: 'success', effects: {}, causalParents: [], confidence: 'authoritative',
+          });
+        } else {
+          agent.patchId = mother.patchId;
+          agent.drives.hunger = Math.min(agent.drives.hunger, mother.drives.hunger);
+          agent.drives.thirst = Math.min(agent.drives.thirst, mother.drives.thirst);
+        }
+      }
+
+      if (agent.ageDays >= cfg.lifecycle.maxAgeDays) { this.#kill(agent, 'senescence', null); continue; }
       if (agent.drives.hunger >= 1) { this.#kill(agent, 'starvation', null); continue; }
       if (agent.drives.thirst >= 1) { this.#kill(agent, 'dehydration', null); continue; }
-      if (this.#rng.bool(cfg.lifecycle.baselineMortalityPerDay * (hours / 24))) {
+      if (this.#rng.bool(mortalityFor(agent, cfg) * (hours / 24))) {
         this.#kill(agent, 'senescence', null);
         continue;
       }
+
+      if (isReadyToGiveBirth(agent, cfg, this.#time)) { this.#giveBirth(agent, cfg); continue; }
+      if (this.#tryBreed(agent, cfg, view)) continue;
 
       const percept = perceive(agent, cfg, view);
 

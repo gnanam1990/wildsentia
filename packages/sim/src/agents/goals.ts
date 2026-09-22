@@ -26,11 +26,19 @@ export function selectGoal(
   const d = agent.drives;
   const stamina = agent.stamina ?? 1;
 
-  const foodOpportunity = percept.bestFood ? Math.min(1, percept.bestFood.kg / 500) : 0.05;
-  const waterOpportunity = percept.bestWater ? Math.min(1, percept.bestWater.litres / 500) : 0.05;
+  // Opportunity is measured against what this animal actually needs, not against a fixed
+  // number of kilograms. A carcass that is a week's food for a vulture is a snack for a tiger,
+  // and scoring both against the same threshold left the vulture wandering past its dinner.
+  const dailyNeed = Math.max(species.diet.dailyIntakeKg, 0.05);
+  const waterNeed = Math.max(species.diet.waterNeedLPerDay, 0.05);
+
+  const foodOpportunity = percept.bestFood
+    ? Math.min(1, percept.bestFood.kg / (dailyNeed * 8)) : 0.05;
+  const waterOpportunity = percept.bestWater
+    ? Math.min(1, percept.bestWater.litres / (waterNeed * 8)) : 0.05;
   const preyOpportunity = percept.prey.length > 0 ? Math.min(1, percept.prey.length / 3) : 0;
   const carrionOpportunity = percept.carrion
-    ? Math.min(1, edibleMass(percept.carrion.carcass.biomass) / 20)
+    ? Math.min(1, edibleMass(percept.carrion.carcass.biomass) / (dailyNeed * 2))
     : 0;
 
   // Desperation. Past these thresholds the need outranks fear, because an animal that never
@@ -50,7 +58,15 @@ export function selectGoal(
     // Fear outranks ordinary needs but not desperate ones, and an exhausted animal cannot
     // keep running however frightened it is.
     flee: d.fear * d.fear * 1.8 * (0.35 + stamina * 0.65),
+    // Breeding is handled by the world before goals are scored, because it needs a partner
+    // and the pedigree. This entry exists so the record is complete.
+    breed: 0,
   };
+
+  // A dependant does not choose for itself. It stays with its mother and rests.
+  if (agent.dependentOn != null) {
+    return { goal: 'rest', score: 1, alternative: null };
+  }
 
   const allowed = goalsFor(species.archetype);
   const ranked = allowed

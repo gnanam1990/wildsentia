@@ -34,10 +34,22 @@ describe('World', () => {
     assertNutrientsConserved(baseline, w.totalNutrients(), 1e-2);
   });
 
-  it('keeps the population at the configured floor via immigration', () => {
-    const w = createWorld(options);
-    for (let h = 0; h < 200 * 24; h++) w.step(1);
-    expect(w.livingCount('sambar')).toBeGreaterThanOrEqual(40);
+  it('sustains the population and breeds rather than importing', () => {
+    const w = createWorld({ ...options, minPopulation: { sambar: 10 } });
+    for (let h = 0; h < 400 * 24; h++) w.step(1);
+    expect(w.livingCount('sambar')).toBeGreaterThanOrEqual(10);
+    expect(w.births).toBeGreaterThan(0);
+    for (const agent of w.agents) {
+      if (agent.motherId === null) continue;
+      expect(agent.generation).toBeGreaterThan(0);
+      expect(w.pedigree.parentsOf(agent.id)).not.toBeNull();
+    }
+  });
+
+  it('rescues a species that falls below its viability floor', () => {
+    const w = createWorld({ ...options, initialAgents: { sambar: 2 }, minPopulation: { sambar: 12 } });
+    w.step(1);
+    expect(w.livingCount('sambar')).toBeGreaterThanOrEqual(12);
     expect(w.log.all().some((e) => e.type === 'immigration')).toBe(true);
   });
 

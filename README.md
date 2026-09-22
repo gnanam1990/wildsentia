@@ -11,6 +11,7 @@ One shared, server-authoritative wildlife simulation. You can watch it. You cann
 **M2 — shared world: complete.** Runs 24/7, persists to Postgres, survives restart, streams to many viewers.
 **M3 — observer client: complete.** A browser renders the live world; every number on screen came off the wire.
 **M4 — food web: complete.** Twelve species, predation, scavenging, decomposition, and a closed nutrient cycle.
+**M5 — reproduction: complete.** Animals are born rather than imported, inherit from two named parents, and age through life stages toward death.
 
 | Gate | Result |
 |---|---|
@@ -26,7 +27,7 @@ One shared, server-authoritative wildlife simulation. You can watch it. You cann
 | Hunt success | **23.7%** against a 20–35% target |
 | Nutrient drift over ten years | **2.2×10⁻⁸** — through 23,156 deaths and 146,939 scavenger feedings |
 | Carcasses returned to soil | 22,837 of 23,156; the rest still decaying |
-| Tests | 205 across 29 files |
+| Tests | 234 across 31 files |
 
 ## Packages
 
@@ -109,11 +110,26 @@ Predation resolves in a pure function from simulation variables alone — concea
 herd vigilance, stamina, condition, distance at commit. A failed hunt records the stage it reached,
 so it can be explained afterwards from the record rather than narrated from imagination.
 
+## Lineage
+
+Every animal born in the world names two parents, inherits six traits as the mid-parent value plus
+a bounded mutation, and joins a pedigree that outlives everyone in it. Life stages — newborn,
+juvenile, subadult, adult, elder — change intake, escape ability, breeding eligibility and
+mortality, not just size. A calf follows its mother until it is weaned and then disperses.
+
+Breeding is gated the whole way: an animal must be a mature adult, in condition, past its
+inter-birth interval, and able to find an unrelated partner of the other sex nearby. Courtship can
+fail. Close pairings are refused outright, and the offspring of any that slip through carry
+depressed disease resistance — which is what makes dispersal worth anything.
+
+Newborn mass is drawn from the patch's soil nutrients, standing for the food the mother converted
+during gestation and which the feeding model had already returned there. Nothing is created from
+nothing; the ledger stays exact through birth as it does through death.
+
 ## What is not built yet
 
-Reproduction and genetics (M5), so populations decline toward their immigration floors rather than
-breeding back. Parental teaching (M6). Thought bubbles and narration (M7). Life replay (M8).
-Sign-in accounts are deferred: the `viewers` and `follows` tables exist, but no provider is wired,
+Parental teaching (M6) — the dependency period exists here precisely so that M6 has somewhere to
+put it. Thought bubbles and narration (M7). Life replay (M8). Sign-in accounts are deferred: the `viewers` and `follows` tables exist, but no provider is wired,
 and viewer counts work on connection identity alone.
 
 M1 has no reproduction, so the herbivore population declines toward its configured floor and is

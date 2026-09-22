@@ -1,4 +1,4 @@
-import type { Agent, Carcass, Patch, SpeciesConfig } from '@vana/shared';
+import { GRID_SIZE, PATCH_METRES, type Agent, type Carcass, type Patch, type SpeciesConfig } from '@vana/shared';
 
 /** What the behaviour layer is allowed to ask the world. Agents never read global state. */
 export interface WorldView {
@@ -6,6 +6,8 @@ export interface WorldView {
   agentsInPatch(patchId: number): readonly Agent[];
   carcassesInPatch(patchId: number): readonly Carcass[];
   speciesOf(speciesId: string): SpeciesConfig;
+  /** Where a group currently is, so a separated member can rejoin it. Null if the group is gone. */
+  groupPatch(groupId: string): number | null;
 }
 
 export interface Percept {
@@ -33,6 +35,36 @@ const edibleKg = (patch: Patch, species: SpeciesConfig): number => {
 const isPredator = (config: SpeciesConfig): boolean =>
   config.archetype === 'apex_predator' || config.archetype === 'pack_predator';
 
+export const MAX_PERCEPTION_RADIUS = 8;
+
+/**
+ * How many patches out a species can perceive, from the sense ranges in its config.
+ *
+ * A soaring vulture with two kilometres of sight covers far more ground than a tiger working
+ * by scent through cover, and until this existed both saw exactly one patch in each direction —
+ * which starved every wide-ranging forager in the world.
+ */
+export function perceptionRadius(config: SpeciesConfig): number {
+  const reach = Math.max(config.senses.sightRangeM, config.senses.smellRangeM);
+  return Math.min(MAX_PERCEPTION_RADIUS, Math.max(1, Math.round(reach / PATCH_METRES)));
+}
+
+function patchesWithin(patch: Patch, radius: number, patches: Patch[]): Patch[] {
+  if (radius <= 1) return [patch, ...patch.neighbours.map((id) => patches[id]!)];
+
+  const found: Patch[] = [];
+  for (let dy = -radius; dy <= radius; dy++) {
+    for (let dx = -radius; dx <= radius; dx++) {
+      const x = patch.x + dx;
+      const y = patch.y + dy;
+      if (x < 0 || y < 0 || x >= GRID_SIZE || y >= GRID_SIZE) continue;
+      if (Math.abs(dx) + Math.abs(dy) > radius) continue;
+      found.push(patches[y * GRID_SIZE + x]!);
+    }
+  }
+  return found;
+}
+
 /**
  * Agents see their own patch and its immediate neighbours, never the whole world. Everything
  * downstream — goal scores, hunts, flight — is computed from this limited view.
@@ -40,7 +72,7 @@ const isPredator = (config: SpeciesConfig): boolean =>
 export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView): Percept {
   const patch = view.patches[agent.patchId]!;
   const neighbours = patch.neighbours.map((id) => view.patches[id]!);
-  const visible = [patch, ...neighbours];
+  const visible = patchesWithin(patch, perceptionRadius(species), view.patches);
 
   let bestFood: Percept['bestFood'] = null;
   let bestWater: Percept['bestWater'] = null;

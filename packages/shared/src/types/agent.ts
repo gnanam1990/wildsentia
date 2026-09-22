@@ -6,8 +6,21 @@ export type AgentState =
   | 'stalking' | 'chasing' | 'feeding' | 'fleeing' | 'dead';
 
 export const GOAL_IDS = [
-  'find_food', 'find_water', 'rest', 'wander', 'hunt', 'scavenge', 'flee',
+  'find_food', 'find_water', 'rest', 'wander', 'hunt', 'scavenge', 'flee', 'breed',
 ] as const;
+
+export type Sex = 'male' | 'female';
+
+export const LIFE_STAGES = ['newborn', 'juvenile', 'subadult', 'adult', 'elder'] as const;
+export type LifeStage = (typeof LIFE_STAGES)[number];
+
+export const TRAIT_IDS = [
+  'sizeTendency', 'boldness', 'endurance', 'sensoryAcuity', 'diseaseResistance', 'coatVariant',
+] as const;
+export type TraitId = (typeof TRAIT_IDS)[number];
+
+/** Every trait is 0-1. Inherited once at birth and fixed for life. */
+export type Traits = Record<TraitId, number>;
 export type GoalId = (typeof GOAL_IDS)[number];
 
 export function isGoalId(value: string): value is GoalId {
@@ -28,6 +41,26 @@ export interface Agent {
   targetId?: string | null;
   /** 0-1. Spent by chases, recovered by rest. Separate from fatigue, which is whole-body. */
   stamina?: number;
+  sex: Sex;
+  ageDays: number;
+  lifeStage: LifeStage;
+  traits: Traits;
+  /** Null for a founder. Everything born in the world names both. */
+  motherId: string | null;
+  fatherId: string | null;
+  /** 0 for founders, one higher than the elder parent for everything born. */
+  generation: number;
+  /** Set while this animal still depends on its mother. */
+  dependentOn: string | null;
+  /** Where it came from last tick, so wandering becomes patrolling rather than a random walk. */
+  previousPatchId?: number | null;
+  /** The herd, troop, pack or family this animal belongs to. Null for solitary species. */
+  groupId?: string | null;
+  /** World time conception happened, or null. */
+  pregnantSince: number | null;
+  /** World time this animal last gave birth, for the inter-birth interval. */
+  lastBirthAt: number | null;
+  offspringIds: string[];
   bornAt: WorldTime;
   massKg: number;
   patchId: PatchId;

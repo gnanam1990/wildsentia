@@ -70,6 +70,21 @@ export const SpeciesConfigSchema = z
     lifecycle: z.object({
       maxAgeDays: z.number().positive(),
       baselineMortalityPerDay: z.number().min(0).max(1),
+      stages: z
+        .array(z.object({
+          name: z.enum(['newborn', 'juvenile', 'subadult', 'adult', 'elder']),
+          startDays: z.number().min(0),
+          sizeFactor: z.number().positive().max(1),
+          dependent: z.boolean(),
+          mortalityPerDay: z.number().min(0).max(1),
+        }))
+        .min(2),
+      sexualMaturityDays: z.number().positive(),
+      gestationDays: z.number().positive(),
+      litterSize: z.tuple([z.number().int().positive(), z.number().int().positive()]),
+      interBirthIntervalDays: z.number().positive(),
+      weanDays: z.number().positive(),
+      dispersalDays: z.number().positive(),
     }),
   })
   .superRefine((cfg, ctx) => {
@@ -86,6 +101,22 @@ export const SpeciesConfigSchema = z
         code: z.ZodIssueCode.custom,
         message: 'a species that eats meat must either hunt or scavenge',
       });
+    }
+    const stages = cfg.lifecycle.stages;
+    if (stages[0]?.startDays !== 0) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'the first life stage must start at day 0' });
+    }
+    for (let i = 1; i < stages.length; i++) {
+      if (stages[i]!.startDays <= stages[i - 1]!.startDays) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'life stages must start in increasing order' });
+        break;
+      }
+    }
+    if (cfg.lifecycle.litterSize[0] > cfg.lifecycle.litterSize[1]) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'litterSize min must not exceed max' });
+    }
+    if (cfg.lifecycle.weanDays > cfg.lifecycle.dispersalDays) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'an animal cannot disperse before it is weaned' });
     }
     if (cfg.social.groupSize[0] > cfg.social.groupSize[1]) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'groupSize min must not exceed max' });

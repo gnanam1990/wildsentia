@@ -6,7 +6,8 @@ export type EventType =
   | 'moved' | 'starved' | 'died' | 'immigration' | 'season_changed'
   | 'maintenance'
   | 'hunt' | 'scavenged' | 'fled' | 'carcass_created' | 'carcass_stage'
-  | 'nutrients_returned';
+  | 'nutrients_returned'
+  | 'born' | 'courtship' | 'life_stage' | 'dispersed';
 
 export type Confidence = 'authoritative' | 'high' | 'medium' | 'low';
 

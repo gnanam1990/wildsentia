@@ -15,11 +15,21 @@ export function speciesOf(id: string): SpeciesConfig {
 }
 
 export function makeAgent(speciesId: string, overrides: Partial<Agent> = {}): Agent {
+  const config = speciesOf(speciesId);
   return {
     id: `${speciesId}_test`, speciesId, bornAt: 0,
-    massKg: speciesOf(speciesId).body.adultMassKg,
+    massKg: config.body.adultMassKg,
     patchId: 0, state: 'resting', currentGoal: 'wander', alternativeGoal: null,
     goalScore: 0, targetId: null, stamina: 1,
+    sex: 'female',
+    ageDays: config.lifecycle.sexualMaturityDays + 100,
+    lifeStage: 'adult',
+    traits: {
+      sizeTendency: 0.5, boldness: 0.5, endurance: 0.5,
+      sensoryAcuity: 0.5, diseaseResistance: 0.5, coatVariant: 0.5,
+    },
+    motherId: null, fatherId: null, generation: 0,
+    dependentOn: null, pregnantSince: null, lastBirthAt: null, offspringIds: [],
     drives: { hunger: 0.2, thirst: 0.2, fatigue: 0.2, fear: 0 },
     alive: true,
     ...overrides,

@@ -46,10 +46,32 @@ function emit(
   });
 }
 
+/**
+ * Steps one patch toward a destination that may be several patches away, since perception now
+ * reaches further than a single step. Movement is still one patch per tick; only the choice of
+ * which neighbour changed.
+ */
+function stepToward(ctx: BehaviourContext, destination: number): number {
+  const here = ctx.patches[ctx.agent.patchId]!;
+  if (destination === here.id) return here.id;
+
+  const target = ctx.patches[destination]!;
+  let best = here.neighbours[0] ?? here.id;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const id of here.neighbours) {
+    const candidate = ctx.patches[id]!;
+    const distance = Math.abs(candidate.x - target.x) + Math.abs(candidate.y - target.y);
+    if (distance < bestDistance) { bestDistance = distance; best = id; }
+  }
+  return best;
+}
+
 function moveTo(ctx: BehaviourContext, patchId: number): void {
   const from = ctx.agent.patchId;
-  if (patchId === from) return;
-  ctx.agent.patchId = patchId;
+  const next = stepToward(ctx, patchId);
+  if (next === from) return;
+  ctx.agent.previousPatchId = from;
+  ctx.agent.patchId = next;
   ctx.agent.state = 'travelling';
   emit(ctx, 'moved', patchId, [ctx.agent.id], { from }, 'success', {});
 }
@@ -111,10 +133,62 @@ function rest(ctx: BehaviourContext): void {
     { fatigue: ctx.agent.drives.fatigue }, 'success', { hours: ctx.hours });
 }
 
+/**
+ * Wandering, with herd cohesion.
+ *
+ * A species whose config says it lives in herds, troops, packs or families keeps company: when
+ * it finds itself with fewer companions than its group needs, it moves toward the neighbouring
+ * patch holding the most of its own kind. Without this a herd species is just a scatter of
+ * loners that never meets a mate and never gains the collective vigilance that makes a herd
+ * worth being in.
+ */
 function wander(ctx: BehaviourContext): void {
   const options = ctx.percept.patch.neighbours;
   if (options.length === 0) { ctx.agent.state = 'resting'; return; }
-  moveTo(ctx, options[ctx.rng.int(options.length)]!);
+
+  const structure = ctx.species.social.structure;
+  const gregarious = structure === 'herd' || structure === 'troop'
+    || structure === 'pack' || structure === 'family';
+
+  if (gregarious) {
+    // Cohesion pulls an animal back only when it is genuinely alone. Holding a whole herd on
+    // one 300 m patch would strip it bare and leave everyone too hungry to breed; loose
+    // association is enough to keep a herd findable.
+    // Loose association: enough companions to keep a herd findable, few enough that they do
+    // not strip a single 300 m patch and starve themselves out of breeding condition.
+    const countHere = ctx.percept.herdSize;
+    const cohesionTarget = Math.min(3, ctx.species.social.groupSize[0]);
+
+    if (countHere < cohesionTarget) {
+      // First try the local gradient: a neighbouring patch holding more of its own kind.
+      let bestPatch: number | null = null;
+      let bestCount = countHere;
+      for (const patchId of options) {
+        let count = 0;
+        for (const other of ctx.view.agentsInPatch(patchId)) {
+          if (other.alive && other.speciesId === ctx.agent.speciesId) count++;
+        }
+        if (count > bestCount) { bestCount = count; bestPatch = patchId; }
+      }
+      if (bestPatch !== null) { moveTo(ctx, bestPatch); return; }
+
+      // A gradient only helps if there is one. Scattered across four hundred patches there is
+      // not, so a separated animal heads for where its group actually is. Without this, herd
+      // species drift apart after the first day and never meet a mate again.
+      const groupId = ctx.agent.groupId;
+      if (groupId != null) {
+        const home = ctx.view.groupPatch(groupId);
+        if (home !== null && home !== ctx.agent.patchId) { moveTo(ctx, home); return; }
+      }
+    }
+  }
+
+  // Prefer not to double back. A random walk covers ground as the square root of its steps;
+  // a patrol that keeps going covers it linearly, which is the difference between a predator
+  // that finds prey and one that starves in a world full of it.
+  const forward = options.filter((id) => id !== ctx.agent.previousPatchId);
+  const pool = forward.length > 0 ? forward : options;
+  moveTo(ctx, pool[ctx.rng.int(pool.length)]!);
 }
 
 function hunt(ctx: BehaviourContext): void {
