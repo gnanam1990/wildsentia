@@ -66,6 +66,7 @@ export function buildApi({ host, pool }: ApiDeps): FastifyInstance {
   app.get('/patches', async () => ({
     patches: host.world.patches.map((p) => ({
       id: p.id, x: p.x, y: p.y, habitat: p.habitat,
+      elevation: p.elevation, canopyCover: p.canopyCover,
       grass: p.plant.grass, browse: p.plant.browse,
       water: p.waterVolume, soilNutrients: p.soilNutrients,
     })),

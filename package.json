@@ -14,7 +14,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --build --force",
     "soak": "tsx packages/runner/src/soak.ts",
-    "dev:server": "tsx packages/server/src/index.ts"
+    "dev:server": "tsx packages/server/src/index.ts",
+    "dev:client": "npm --workspace @vana/client run dev"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

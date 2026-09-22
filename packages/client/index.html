@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Vana — The Living Wild</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <canvas id="view"></canvas>
+
+  <header class="bar">
+    <div class="brand">Vana<small>the living wild</small></div>
+    <span class="chip"><i class="pulse"></i> <b id="clock">—</b></span>
+    <span class="chip">season <b id="season">—</b></span>
+    <span class="chip" id="population">—</span>
+    <span class="spacer"></span>
+    <button id="freecam">free camera</button>
+  </header>
+
+  <aside class="panel" id="passport-panel">
+    <div id="passport"></div>
+  </aside>
+
+  <aside class="panel" id="feed-panel">
+    <h3>Event log</h3>
+    <div id="feed"></div>
+  </aside>
+
+  <p id="notice"></p>
+  <p class="hint footer">drag to orbit · scroll to zoom · click an animal to follow it</p>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
