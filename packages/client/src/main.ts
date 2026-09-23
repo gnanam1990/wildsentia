@@ -6,6 +6,7 @@ import { AnimalLayer } from './animals.js';
 import { FollowCamera } from './camera.js';
 import { Hud } from './hud.js';
 import { ThoughtBubble } from './bubble.js';
+import { LastSeen, worthRecapping } from './recap.js';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#view')!;
 const { renderer, scene, camera, sun } = createScene(canvas);
@@ -26,6 +27,16 @@ const hud = new Hud({
 
 const bubble = new ThoughtBubble(document.querySelector('#thought')!);
 
+const storage = (() => { try { return localStorage; } catch { return null; } })();
+const lastSeen = new LastSeen(storage);
+/** The animal this viewer last followed, so coming back returns them to it. */
+const lastFollowed = {
+  get(): string | null { try { return storage?.getItem('vana.followed') ?? null; } catch { return null; } },
+  set(id: string | null): void {
+    try { if (id === null) storage?.removeItem('vana.followed'); else storage?.setItem('vana.followed', id); } catch { /* optional */ }
+  },
+};
+
 let followedId: string | null = null;
 let socket: WebSocket | null = null;
 
@@ -42,8 +53,14 @@ function connect(): void {
   socket.addEventListener('close', () => { setTimeout(connect, 2000); });
 }
 
+/** Set on follow; answered once the world clock is known, before lastSeen is overwritten. */
+let recapPending: string | null = null;
+
 function watch(id: string | null): void {
   followedId = id;
+  hud.recap = null;
+  recapPending = id;
+  lastFollowed.set(id);
   void hud.refreshPassport(id).then(() => hud.render(followedId));
   if (socket?.readyState !== WebSocket.OPEN) return;
   socket.send(JSON.stringify(id === null ? { type: 'unwatch' } : { type: 'watch', actorId: id }));
@@ -83,6 +100,11 @@ document.querySelector('#freecam')!.addEventListener('click', () => { watch(null
 
 // Family members and teachers in the passport are links: follow them.
 document.querySelector('#passport')!.addEventListener('click', (event) => {
+  if ((event.target as HTMLElement).closest('[data-dismiss-recap]') !== null) {
+    hud.recap = null;
+    hud.render(followedId);
+    return;
+  }
   const link = (event.target as HTMLElement).closest<HTMLElement>('[data-follow]');
   if (link === null) return;
   event.preventDefault();
@@ -91,7 +113,17 @@ document.querySelector('#passport')!.addEventListener('click', (event) => {
 setInterval(() => { void hud.refreshPassport(followedId).then(() => hud.render(followedId)); }, 5000);
 
 connect();
-store.onChange(() => { hud.render(followedId); });
+store.onChange(() => {
+  hud.render(followedId);
+  if (followedId === null || store.world === null) return;
+  if (recapPending === followedId) {
+    recapPending = null;
+    const since = lastSeen.get(followedId);
+    const now = store.world.worldTime;
+    if (worthRecapping(since, now)) void hud.loadRecap(followedId, since!, now).then(() => hud.render(followedId));
+  }
+  lastSeen.mark(followedId, store.world.worldTime);
+});
 void hud.refreshFeed();
 setInterval(() => { void hud.refreshFeed(); }, 10_000);
 
@@ -138,11 +170,13 @@ follow.target.set(3000, 0, 3000);
 follow.distance = 900;
 frame();
 
-// Follow the first animal the server reports, so the world is not empty on arrival.
+// Return a viewer to the animal they last followed; otherwise follow the first one reported,
+// so the world is not empty on arrival.
 const stop = store.onChange(() => {
   const first = store.animals.keys().next();
   if (first.done === true) return;
   follow.distance = 22;
-  watch(first.value);
+  const previous = lastFollowed.get();
+  watch(previous !== null && store.animals.has(previous) ? previous : first.value);
   stop();
 });

@@ -68,6 +68,14 @@ maybe('EventStore', () => {
     expect(await store.deathOf('tiger_1')).toBeNull();
   });
 
+  it('returns an animal\'s events since a moment, oldest first', async () => {
+    const store = new EventStore(pool!);
+    await store.appendBatch([event('e1', 100), event('e2', 200), event('e3', 300), event('x1', 250, 'other')]);
+    expect((await store.byActorSince('a1', 150, 100)).map((e) => e.id)).toEqual(['e2', 'e3']);
+    await store.appendBatch([{ ...event('b1', 260), type: 'born' }]);
+    expect((await store.byActorSince('a1', 150, 100, ['born'])).map((e) => e.id)).toEqual(['b1']);
+  });
+
   it('counts and deletes events after a world time', async () => {
     const store = new EventStore(pool!);
     await store.appendBatch([event('fed_1', 100), event('fed_2', 200), event('fed_3', 300)]);

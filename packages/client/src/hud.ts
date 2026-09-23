@@ -59,6 +59,19 @@ export interface HudElements {
 export class Hud {
   /** The last passport fetched for the followed animal, refreshed every few seconds. */
   passport: Passport | null = null;
+  /** What happened to the followed animal while this viewer was away, until dismissed. */
+  recap: { id: string; days: number; lines: Array<{ eventId: string; text: string }> } | null = null;
+
+  async loadRecap(id: string, since: number, now: number): Promise<void> {
+    try {
+      const response = await fetch(`/api/animals/${encodeURIComponent(id)}/recap?since=${since}`);
+      if (!response.ok) return;
+      const body = (await response.json()) as { lines: Array<{ eventId: string; text: string }> };
+      this.recap = { id, days: (now - since) / 86_400, lines: body.lines };
+    } catch {
+      this.recap = null;
+    }
+  }
 
   constructor(private readonly elements: HudElements, private readonly store: WorldStore) {}
 
@@ -106,7 +119,7 @@ export class Hud {
     const identity = p === null
       ? `${animal.speciesId} &middot; patch ${animal.patchId}`
       : `${escape(p.displayName)} &middot; ${escape(p.sex)} &middot; ${escape(p.lifeStage)} &middot; ${age(p.ageDays)} &middot; generation ${p.generation}`;
-    this.elements.passport.innerHTML = `
+    this.elements.passport.innerHTML = `${this.#recapCard(followedId)}
       <h2>${animal.id}</h2>
       <div class="sub">${identity}</div>
       ${bar('Hunger', animal.drives.hunger, 'var(--clay)')}
@@ -118,6 +131,18 @@ export class Hud {
       <div class="row"><span>Watching now</span><b>${viewers ?? UNKNOWN}</b></div>
       ${p === null ? '' : this.#skills(p) + this.#lineage(p) + this.#timeline(p)}
       <p class="prov">every value above came from the simulation &middot; no model wrote this</p>`;
+  }
+
+  #recapCard(id: string): string {
+    const r = this.recap;
+    if (r === null || r.id !== id) return '';
+    const away = r.days >= 1 ? `${r.days.toFixed(1)} world days` : `${Math.round(r.days * 24)} world hours`;
+    const body = r.lines.length === 0
+      ? '<p class="hint">Nothing out of the ordinary: it ate, drank, rested and moved.</p>'
+      : r.lines.slice(-12).map((l) => `<div class="event"><div class="etype">${escape(l.text)}</div>
+          <div class="eid">${escape(l.eventId)}</div></div>`).join('');
+    return `<section class="recap"><h3>While you were away &middot; ${away}</h3>${body}
+      <button data-dismiss-recap>Got it</button></section>`;
   }
 
   #skills(p: Passport): string {

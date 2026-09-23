@@ -1,5 +1,5 @@
 import Fastify, { type FastifyInstance } from 'fastify';
-import { SKILL_IDS, formatWorldTime, seasonAt, thoughtFor, type Agent } from '@vana/shared';
+import { RECAP_EVENT_TYPES, SKILL_IDS, formatWorldTime, recapFor, seasonAt, thoughtFor, type Agent } from '@vana/shared';
 import { confidenceOf } from '@vana/sim';
 import type { Pool } from './db/pool.js';
 import { EventStore } from './db/eventStore.js';
@@ -121,6 +121,22 @@ export function buildApi({ host, pool }: ApiDeps): FastifyInstance {
       })),
     };
   });
+
+  /**
+   * While you were away (spec §10.4): what happened to an animal since `since`, one template
+   * line per significant event, each carrying its event id. Routine events are left out.
+   */
+  app.get<{ Params: { id: string }; Querystring: { since?: string } }>(
+    '/animals/:id/recap',
+    async (request, reply) => {
+      const since = Number(request.query.since);
+      if (request.query.since === undefined || !Number.isFinite(since)) {
+        return reply.code(400).send({ error: 'since_required' });
+      }
+      const missed = await events.byActorSince(request.params.id, since, 2000, RECAP_EVENT_TYPES);
+      return { since, until: host.world.now(), lines: recapFor(missed, request.params.id) };
+    },
+  );
 
   app.get<{ Params: { id: string }; Querystring: { limit?: string } }>(
     '/animals/:id/events',

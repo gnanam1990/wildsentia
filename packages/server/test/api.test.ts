@@ -71,6 +71,26 @@ maybe('read API', () => {
     for (const entry of p.timeline) expect(typeof entry.id).toBe('string');
   });
 
+  it('recaps what happened to an animal since a moment, every line tied to an event', async () => {
+    const list = (await api.inject({ method: 'GET', url: '/animals' })).json();
+    const id = list.animals[0].id;
+    const res = await api.inject({ method: 'GET', url: `/animals/${id}/recap?since=0` });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.since).toBe(0);
+    expect(body.until).toBeGreaterThan(0);
+    for (const line of body.lines) {
+      expect(typeof line.eventId).toBe('string');
+      expect(typeof line.text).toBe('string');
+    }
+  });
+
+  it('refuses a recap without a starting point', async () => {
+    const list = (await api.inject({ method: 'GET', url: '/animals' })).json();
+    const res = await api.inject({ method: 'GET', url: `/animals/${list.animals[0].id}/recap` });
+    expect(res.statusCode).toBe(400);
+  });
+
   it('refuses a passport for an animal that never existed', async () => {
     const res = await api.inject({ method: 'GET', url: '/animals/nobody_0000/passport' });
     expect(res.statusCode).toBe(404);

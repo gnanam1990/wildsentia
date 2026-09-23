@@ -69,6 +69,25 @@ export class EventStore {
   }
 
   /**
+   * An animal's events after `since`, oldest first — what a returning watcher missed. `types`
+   * narrows it to the ones worth telling; an animal away a year has a routine event every hour.
+   */
+  async byActorSince(
+    actorId: string,
+    since: number,
+    limit: number,
+    types?: readonly string[],
+  ): Promise<WorldEvent[]> {
+    const { rows } = await this.pool.query<Row>(
+      `select * from events where $1 = any(actors) and world_time > $2
+         and ($4::text[] is null or type = any($4::text[]))
+       order by world_time asc limit $3`,
+      [actorId, since, limit, types ?? null],
+    );
+    return rows.map(toEvent);
+  }
+
+  /**
    * The event recording an animal's death, however much happened to its carcass afterwards.
    * A death names the dead first and its killer second, so only the first actor counts.
    */
