@@ -29,6 +29,16 @@ Last checked: 23 September 2026. No asset enters the build without a row here (s
   .glb (`@gltf-transform/cli resize` then `webp`). The pack's vertex colours are wind masks for
   its own shader and are ignored at load; geometry is otherwise unchanged.
 
+## Higgsfield — generated models (image to 3D)
+- Source: generated for this project on higgsfield.ai (Pro plan) on 23 September 2026. A
+  reference photo from GPT Image 2.5 (`gpt_image_2_5`), then Tripo H3.1 image to 3D
+  (`tripo_h3_1_image_to_3d`, 20k face limit, PBR textures).
+- Licence: output generated on a paid Higgsfield plan, owned by the project under Higgsfield's
+  terms of service. Re-check those terms before production.
+- Used for: tiger (Tiger)
+- Animation clips: none. Unrigged and static: the animal glides rather than walks.
+- Modifications: none. Turned 180° at load (`yaw` in `packages/client/src/species.ts`) to face +z.
+
 ## File hashes (truncated sha256)
   - `animals/Deer.glb`: sha256 `75d88a0aa2f0569f`
   - `animals/Stag.glb`: sha256 `0910799eb37a9613`
@@ -36,11 +46,12 @@ Last checked: 23 September 2026. No asset enters the build without a row here (s
   - `animals/ShibaInu.glb`: sha256 `c92467b05e0e9491`
   - `animals/Fox.glb`: sha256 `71e28dc471e8d001`
   - `animals/Boar.glb`: sha256 `e6ce64f0e4ac3646`
+  - `animals/Tiger.glb`: sha256 `7d7c3d9546d1bbeb`
 
 ## Not yet modelled
-Tiger, elephant, langur, squirrel, hare and vulture have no suitable rigged model yet and are
-drawn as plain stand-ins in their own colour and size. The previous Poly-by-Google tiger (CC-BY,
-zero animations, zero skins) was removed: an unrigged model glides instead of walking.
+Elephant, langur, squirrel, hare and vulture have no model yet and are drawn as plain stand-ins
+in their own colour and size. The previous Poly-by-Google tiger (CC-BY, zero animations, zero
+skins) was removed; the Higgsfield tiger above is also unrigged, accepted as static for now.
 
 ## Before production
 Re-check every source page, record the exact downloaded version, compress (meshopt or Draco, KTX2

@@ -106,6 +106,8 @@ export class AnimalLayer {
         ? Promise.resolve({ root: standIn(visual.colour), clips: [] })
         : this.#loader.loadAsync(visual.model.file).then((gltf) => ({ root: gltf.scene, clips: gltf.animations }));
       pending = loaded.then(({ root, clips }) => {
+        // Turned before measuring, so the height and foot offset are of the model as it stands.
+        root.rotation.y = visual.model?.yaw ?? root.rotation.y;
         const tint = visual.model?.tint;
         if (tint !== undefined) {
           // Recolour a borrowed model toward its species: a Shiba's coat to a dhole's rust.
