@@ -4,6 +4,8 @@ import { createPool } from './db/pool.js';
 import { migrate } from './db/migrate.js';
 import { SimHost } from './simHost.js';
 import { buildApi } from './api.js';
+import { Narrator } from './narration/narrator.js';
+import { claudeRephraser } from './narration/claude.js';
 import { Gateway } from './gateway.js';
 
 export async function startServer(): Promise<{ close(): Promise<void> }> {
@@ -29,7 +31,15 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
       : `restored world at ${boot.restoredFrom}, rolled back ${boot.rolledBackEvents} events`,
   );
 
-  const api = buildApi({ host, pool });
+  // Narration is optional (spec §9.2): without credentials, or past the day's budget, every
+  // recap line is its template and the world carries on unchanged.
+  const rephrase = claudeRephraser();
+  const narrator = new Narrator({
+    pool, rephrase, dailyTokenBudget: Number(process.env.NARRATION_DAILY_TOKENS ?? 200_000),
+  });
+  console.log(rephrase === null ? 'narration: templates only (no API key)' : 'narration: model rephrasing on');
+
+  const api = buildApi({ host, pool, narrator });
   await api.ready();
 
   const server = createServer((req, res) => { api.server.emit('request', req, res); });

@@ -97,3 +97,4 @@ button:hover { color: var(--ink); }
 #passport .recap { margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; background: rgba(250, 247, 238, 0.08); border: 1px solid rgba(250, 247, 238, 0.18); }
 #passport .recap h3 { margin-top: 0; }
 #passport .recap button { margin-top: 8px; }
+#passport .recap .event.narrated .etype::before { content: '\270E  '; opacity: 0.6; }

@@ -82,6 +82,7 @@ maybe('read API', () => {
     for (const line of body.lines) {
       expect(typeof line.eventId).toBe('string');
       expect(typeof line.text).toBe('string');
+      expect(line.narrated).toBe(false); // no model in tests: templates only
     }
   });
 

@@ -60,13 +60,13 @@ export class Hud {
   /** The last passport fetched for the followed animal, refreshed every few seconds. */
   passport: Passport | null = null;
   /** What happened to the followed animal while this viewer was away, until dismissed. */
-  recap: { id: string; days: number; lines: Array<{ eventId: string; text: string }> } | null = null;
+  recap: { id: string; days: number; lines: Array<{ eventId: string; text: string; narrated?: boolean }> } | null = null;
 
   async loadRecap(id: string, since: number, now: number): Promise<void> {
     try {
       const response = await fetch(`/api/animals/${encodeURIComponent(id)}/recap?since=${since}`);
       if (!response.ok) return;
-      const body = (await response.json()) as { lines: Array<{ eventId: string; text: string }> };
+      const body = (await response.json()) as { lines: Array<{ eventId: string; text: string; narrated?: boolean }> };
       this.recap = { id, days: (now - since) / 86_400, lines: body.lines };
     } catch {
       this.recap = null;
@@ -139,9 +139,12 @@ export class Hud {
     const away = r.days >= 1 ? `${r.days.toFixed(1)} world days` : `${Math.round(r.days * 24)} world hours`;
     const body = r.lines.length === 0
       ? '<p class="hint">Nothing out of the ordinary: it ate, drank, rested and moved.</p>'
-      : r.lines.slice(-12).map((l) => `<div class="event"><div class="etype">${escape(l.text)}</div>
-          <div class="eid">${escape(l.eventId)}</div></div>`).join('');
+      : r.lines.slice(-12).map((l) => `<div class="event${l.narrated === true ? ' narrated' : ''}"
+          ${l.narrated === true ? 'title="Reworded by a model from this event, and checked to name the same animals and numbers"' : ''}>
+          <div class="etype">${escape(l.text)}</div><div class="eid">${escape(l.eventId)}</div></div>`).join('');
+    const reworded = r.lines.some((l) => l.narrated === true);
     return `<section class="recap"><h3>While you were away &middot; ${away}</h3>${body}
+      ${reworded ? '<p class="prov">lines marked &#9998; were reworded by a model from the event shown beside them</p>' : ''}
       <button data-dismiss-recap>Got it</button></section>`;
   }
 

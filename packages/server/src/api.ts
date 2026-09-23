@@ -1,13 +1,16 @@
 import Fastify, { type FastifyInstance } from 'fastify';
-import { RECAP_EVENT_TYPES, SKILL_IDS, formatWorldTime, recapFor, seasonAt, thoughtFor, type Agent } from '@vana/shared';
+import { RECAP_EVENT_TYPES, SKILL_IDS, formatWorldTime, seasonAt, thoughtFor, type Agent } from '@vana/shared';
 import { confidenceOf } from '@vana/sim';
 import type { Pool } from './db/pool.js';
 import { EventStore } from './db/eventStore.js';
 import type { SimHost } from './simHost.js';
+import { Narrator } from './narration/narrator.js';
 
 export interface ApiDeps {
   host: SimHost;
   pool: Pool;
+  /** Rewords recap lines through the grounding check. Without one, recaps are templates. */
+  narrator?: Narrator;
 }
 
 /**
@@ -15,9 +18,10 @@ export interface ApiDeps {
  * even if it wanted to — the shared-world promise is enforced by the absence of a write path,
  * not by a permission check that could be misconfigured.
  */
-export function buildApi({ host, pool }: ApiDeps): FastifyInstance {
+export function buildApi({ host, pool, narrator }: ApiDeps): FastifyInstance {
   const app = Fastify({ logger: false });
   const events = new EventStore(pool);
+  const narration = narrator ?? new Narrator({ pool, rephrase: null, dailyTokenBudget: 0 });
 
   app.get('/health', async () => ({ ok: true, worldTime: host.world.now() }));
 
@@ -134,7 +138,7 @@ export function buildApi({ host, pool }: ApiDeps): FastifyInstance {
         return reply.code(400).send({ error: 'since_required' });
       }
       const missed = await events.byActorSince(request.params.id, since, 2000, RECAP_EVENT_TYPES);
-      return { since, until: host.world.now(), lines: recapFor(missed, request.params.id) };
+      return { since, until: host.world.now(), lines: await narration.recap(missed, request.params.id) };
     },
   );
 
