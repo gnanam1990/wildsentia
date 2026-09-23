@@ -158,8 +158,13 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
   // food, more meat is no reason to go further: choosing by size alone sent a pack eating one
   // carcass across to the next the moment theirs held a few kilograms less, then back again,
   // so they walked instead of eating and starved beside carrion they never reached.
+  //
+  // Or by sight. A vulture smells almost nothing and sees for two kilometres from the air;
+  // found by scent alone, it found only what it stood beside and starved over country full
+  // of carcasses.
   if (species.diet.canScavenge) {
-    const reach = Math.min(MAX_PERCEPTION_RADIUS, CARRION_SEARCH_RADIUS);
+    const sightPatches = Math.round(species.senses.sightRangeM / PATCH_METRES);
+    const reach = Math.min(MAX_PERCEPTION_RADIUS, Math.max(CARRION_SEARCH_RADIUS, sightPatches));
     const enough = Math.max(species.diet.dailyIntakeKg, 0.05) * 2;
     let bestWorth = 0;
     for (const p of patchesWithin(patch, reach, view.patches)) {
@@ -172,7 +177,9 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
         && (view.speciesOf(other.speciesId).hunting?.preferredPrey ?? []).includes(agent.speciesId));
       if (guarded) continue;
       for (const candidate of view.carcassesInPatch(p.id)) {
-        if (distanceM > candidate.scentRadiusM + species.senses.smellRangeM) continue;
+        const smelt = distanceM <= candidate.scentRadiusM + species.senses.smellRangeM;
+        const seen = distanceM <= species.senses.sightRangeM;
+        if (!smelt && !seen) continue;
         const edible = candidate.biomass.muscle + candidate.biomass.organ;
         const worth = Math.min(edible, enough) / (1 + steps);
         if (worth <= bestWorth) continue;

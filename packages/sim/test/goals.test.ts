@@ -109,6 +109,23 @@ describe('perceive', () => {
     expect(perceive(cow, elephant, makeView(grid, [cow])).bestWater?.patchId).toBe(at(4, 10));
   });
 
+  it('lets a vulture spot carrion by sight from the air, far beyond its smell', () => {
+    // Vultures smell almost nothing and see for two kilometres. Carrion was found by scent
+    // alone, so a vulture found only what it stood beside, and they starved over open country
+    // full of dead deer.
+    const at = (x: number, y: number) => y * 20 + x;
+    const bird = makeAgent('vulture', { patchId: at(5, 5) });
+    const carcass = makeCarcass('far', 'x', 'chital', at(10, 5), 0, 'natural', 'authoritative', 70);
+    expect(perceive(bird, vulture, makeView(patches, [bird], [carcass])).carrion?.carcass.id).toBe('far');
+  });
+
+  it('does not let a tiger see carrion beyond its eyesight', () => {
+    const at = (x: number, y: number) => y * 20 + x;
+    const cat = makeAgent('tiger', { patchId: at(5, 5) });
+    const carcass = makeCarcass('far', 'x', 'chital', at(10, 5), 0, 'natural', 'authoritative', 70);
+    expect(perceive(cat, tiger, makeView(patches, [cat], [carcass])).carrion).toBeNull();
+  });
+
   it('does not show carrion to a species that cannot scavenge', () => {
     const grazer = makeAgent('sambar', { patchId: 10 });
     const carcass = makeCarcass('c1', 'x', 'sambar', 10, 0, 'predation', 'authoritative', 200);
