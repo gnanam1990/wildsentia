@@ -12,7 +12,7 @@ export interface SimHostOptions {
   pool: Pool;
   seed: number;
   speciesDir: string;
-  /** Live acceleration. 24 means one world hour every 2.5 real minutes. */
+  /** Live acceleration. 12 means one world hour every 5 real minutes: an animal walks at ~1 m/s. */
   worldHoursPerRealHour?: number;
   snapshotEveryWorldHours?: number;
   /** How often every animal's position and drives are sampled for life replay. */
@@ -53,7 +53,7 @@ export class SimHost {
 
   constructor(options: SimHostOptions) {
     this.#options = {
-      worldHoursPerRealHour: 24,
+      worldHoursPerRealHour: 12,
       snapshotEveryWorldHours: 1,
       trackEveryWorldHours: 6,
       housekeepingEveryWorldHours: 24,
@@ -77,6 +77,11 @@ export class SimHost {
       minPopulation: this.#options.minPopulation,
       ...(this.#options.landscape === null ? {} : { landscape: this.#options.landscape }),
     };
+  }
+
+  /** How many world hours pass per real hour, for clients pacing their animation. */
+  get worldHoursPerRealHour(): number {
+    return this.#options.worldHoursPerRealHour;
   }
 
   async boot(): Promise<BootResult> {

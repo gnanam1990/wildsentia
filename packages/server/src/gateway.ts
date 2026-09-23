@@ -124,6 +124,7 @@ export class Gateway {
     return {
       type: 'world', worldTime: now, formatted: formatWorldTime(now),
       season: seasonAt(now), population,
+      worldHoursPerRealHour: this.host.worldHoursPerRealHour,
     };
   }
 

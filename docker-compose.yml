@@ -23,6 +23,8 @@ services:
       DATABASE_URL: postgres://vana:vana@db:5432/vana
       PORT: "8080"
       WORLD_SEED: "1"
+      # One world hour every five real minutes: animals walk at about 1 m/s.
+      WORLD_HOURS_PER_REAL_HOUR: "12"
     ports: ["8080:8080"]
     restart: unless-stopped
 

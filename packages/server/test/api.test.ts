@@ -43,6 +43,7 @@ maybe('read API', () => {
     expect(['monsoon', 'transition', 'dry', 'wet']).toContain(body.season);
     expect(body.population.sambar).toBe(12);
     expect(typeof body.formatted).toBe('string');
+    expect(body.worldHoursPerRealHour).toBeGreaterThan(0);
   });
 
   it('lists living animals', async () => {

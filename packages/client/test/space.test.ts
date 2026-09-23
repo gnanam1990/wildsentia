@@ -81,4 +81,19 @@ describe('PositionTracker', () => {
     t.forgetAllExcept(new Set(['b']));
     expect(t.has('a')).toBe(false);
   });
+
+  it('walks a hop over exactly one world hour at whatever speed the server runs', () => {
+    // A hop fixed at 150 s suited 24x only. At 12x the animal walked for 150 s and then stood
+    // still for 150 s, every hour: stop-go instead of walking.
+    const t = new PositionTracker();
+    t.setWorldSpeed(12);
+    t.update('a', 0, 0);
+    t.update('a', 1, 1000);
+    expect(t.positionAt('a', 1000 + 150_000).moving).toBe(true);
+    expect(t.positionAt('a', 1000 + 300_000).moving).toBe(false);
+    t.setWorldSpeed(24);
+    t.update('a', 2, 400_000);
+    expect(t.positionAt('a', 400_000 + 150_000).moving).toBe(false);
+  });
 });
+

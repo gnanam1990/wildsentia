@@ -44,6 +44,7 @@ export function buildApi({ host, pool, narrator }: ApiDeps): FastifyInstance {
       formatted: formatWorldTime(now),
       season: seasonAt(now),
       population,
+      worldHoursPerRealHour: host.worldHoursPerRealHour,
       patches: host.world.patches.length,
       totalNutrients: host.world.totalNutrients(),
     };

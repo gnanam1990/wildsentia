@@ -158,6 +158,8 @@ setInterval(() => { void hud.refreshPassport(followedId).then(() => hud.render(f
 
 connect();
 store.onChange(() => {
+  const speed = store.world?.worldHoursPerRealHour;
+  if (speed !== undefined) animals.tracker.setWorldSpeed(speed);
   hud.render(followedId);
   if (followedId === null || store.world === null) return;
   if (recapPending === followedId) {

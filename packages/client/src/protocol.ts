@@ -20,6 +20,8 @@ export interface WorldState {
   formatted: string;
   season: string;
   population: Record<string, number>;
+  /** How many world hours pass per real hour. Undefined when the server did not say. */
+  worldHoursPerRealHour?: number | undefined;
 }
 
 type Listener = () => void;
@@ -57,6 +59,8 @@ export class WorldStore {
           population: isRecord(message.population)
             ? (message.population as Record<string, number>)
             : {},
+          worldHoursPerRealHour: typeof message.worldHoursPerRealHour === 'number'
+            ? message.worldHoursPerRealHour : undefined,
         };
         break;
       }

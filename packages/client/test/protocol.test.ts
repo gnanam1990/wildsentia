@@ -20,6 +20,14 @@ describe('WorldStore', () => {
     expect(store.animals.size).toBe(0);
   });
 
+  it('keeps the world speed the server reports, and leaves it unknown when it does not', () => {
+    const store = new WorldStore();
+    store.apply({ ...worldMsg, worldHoursPerRealHour: 12 });
+    expect(store.world!.worldHoursPerRealHour).toBe(12);
+    store.apply(worldMsg);
+    expect(store.world!.worldHoursPerRealHour).toBeUndefined();
+  });
+
   it('applies a world message', () => {
     const store = new WorldStore();
     store.apply(worldMsg);

@@ -20,8 +20,9 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
   const pool = createPool(databaseUrl);
   await migrate(pool);
 
-  // Live default is 24x real time (spec D4). Raising it is for demos and load tests only.
-  const worldHoursPerRealHour = Number(process.env.WORLD_HOURS_PER_REAL_HOUR ?? 24);
+  // Live default is 12x real time: one world hour every five real minutes, so a 300 m patch is
+  // walked at about 1 m/s, a deer's pace. Raising it is for demos and load tests.
+  const worldHoursPerRealHour = Number(process.env.WORLD_HOURS_PER_REAL_HOUR ?? 12);
 
   const host = new SimHost({ pool, seed, speciesDir, worldHoursPerRealHour });
   const boot = await host.boot();

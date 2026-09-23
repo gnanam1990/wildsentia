@@ -8,7 +8,8 @@ export const PATCH_METRES = 300;
  * than teleporting. This renders the server's resolution smoothly; it does not invent a
  * position the server never reported.
  */
-export const HOP_DURATION_MS = 150_000; // one world hour at 24x real time
+/** One world hour at the default live speed of 12x: five real minutes. */
+export const HOP_DURATION_MS = 300_000;
 
 export function patchCentre(patchId: number): { x: number; z: number } {
   return {
@@ -46,6 +47,13 @@ export interface RenderPosition {
 
 export class PositionTracker {
   readonly #tracks = new Map<string, Track>();
+  /** A hop lasts one world hour in real time, so an animal walks the whole hour, never stop-go. */
+  #hopMs = HOP_DURATION_MS;
+
+  /** Follows the speed the server reports: a world hour takes 3,600,000 / speed real ms. */
+  setWorldSpeed(worldHoursPerRealHour: number): void {
+    if (worldHoursPerRealHour > 0) this.#hopMs = 3_600_000 / worldHoursPerRealHour;
+  }
 
   has(id: string): boolean {
     return this.#tracks.has(id);
@@ -58,7 +66,7 @@ export class PositionTracker {
       // A newly seen animal appears where it is, rather than sliding in from the last patch.
       this.#tracks.set(id, {
         fromPatch: patchId, toPatch: patchId,
-        startedAt: nowMs - HOP_DURATION_MS, heading: 0,
+        startedAt: nowMs - this.#hopMs, heading: 0,
       });
       return;
     }
@@ -85,7 +93,7 @@ export class PositionTracker {
     const offset = subPatchOffset(id);
     if (track === undefined) return { x: offset.x, z: offset.z, heading: 0, moving: false };
 
-    const raw = (nowMs - track.startedAt) / HOP_DURATION_MS;
+    const raw = (nowMs - track.startedAt) / this.#hopMs;
     const t = raw <= 0 ? 0 : raw >= 1 ? 1 : raw;
     const eased = t * t * (3 - 2 * t);
 
