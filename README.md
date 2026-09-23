@@ -12,7 +12,10 @@ One shared, server-authoritative wildlife simulation. You can watch it. You cann
 **M3 — observer client: complete.** A browser renders the live world; every number on screen came off the wire.
 **M4 — food web: complete.** Twelve species, predation, scavenging, decomposition, and a closed nutrient cycle.
 **M5 — reproduction: complete.** Animals are born rather than imported, inherit from two named parents, and age through life stages toward death.
-**M5.1 — ecological balance.** Every species now persists on its own births. Immigration fell from 1,372 rescues to 84 over two world-years.
+**M5.1 — ecological balance: complete.** The forest regulates itself for five world-years and more: see *Balance*.
+**M6 — learning and teaching: complete.** Parents teach their dependent young; raised young outperform orphans.
+**M7 — the observer's story: complete.** Passports, planner-grounded thought bubbles, "while you were away" recaps, and optional model narration behind a grounding check.
+**M8 — life replay: complete.** Any animal's life replays from its recorded track and moments, five years in two minutes; the log is pruned and the long dead archived so a years-long world fits on a disk.
 
 | Gate | Result |
 |---|---|
@@ -28,7 +31,8 @@ One shared, server-authoritative wildlife simulation. You can watch it. You cann
 | Hunt success | **23.7%** against a 20–35% target |
 | Nutrient drift over ten years | **2.2×10⁻⁸** — through 23,156 deaths and 146,939 scavenger feedings |
 | Carcasses returned to soil | 22,837 of 23,156; the rest still decaying |
-| Tests | 234 across 31 files |
+| Five world-years (long gate), seed 1 | no failures; tiger 4, dhole 9, elephant 10; prey ≥ 60% of seeded |
+| Tests | 347 across 45 files |
 
 ## Packages
 
@@ -212,10 +216,24 @@ of the 63 starvation deaths.
 
 ## What is not built yet
 
-Parental teaching (M6) — the dependency period exists here precisely so that M6 has somewhere to
-put it. Thought bubbles and narration (M7). Life replay (M8). Sign-in accounts are deferred: the `viewers` and `follows` tables exist, but no provider is wired,
-and viewer counts work on connection identity alone.
+- **Models for six species.** Tiger, elephant, langur, squirrel, hare and vulture are drawn as
+  plain stand-ins in their own colour and size: no free, rigged, naturalistic model was found for
+  them, and an unrigged model glides. The spec's anchor option (ithappy's animated pack, with cubs)
+  or generated meshes rigged by hand would close this. See `packages/client/public/assets/ASSET-CREDITS.md`.
+- **Model narration against the live API.** The narrator is tested end to end with a fake model;
+  it has not yet been run with a real `ANTHROPIC_API_KEY`.
+- **Sign-in accounts.** The `viewers` and `follows` tables exist, but no provider is wired, and
+  viewer counts work on connection identity alone.
+- **Deployment hardening.** Assets are not yet compressed (meshopt/KTX2), and there is no CI
+  workflow running the suite on push.
 
-M1 has no reproduction, so the herbivore population declines toward its configured floor and is
-held there by off-map immigration. That is expected: M1 proves stability and conservation, not
-population dynamics.
+### Running an existing world on new code
+
+`SIM_VERSION` is now `sim_0.5.0`. A server holding snapshots from an earlier version refuses to
+boot rather than resume a world under different rules. Either point it at a fresh database, or
+back up and clear the old one:
+
+```bash
+docker compose exec db pg_dump -U vana -d vana -Fc > vana-before-0.5.0.dump
+docker compose exec db psql -U vana -d vana -c 'truncate events, snapshots'
+```
