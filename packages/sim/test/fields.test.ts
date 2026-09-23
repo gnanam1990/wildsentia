@@ -78,6 +78,27 @@ describe('water', () => {
     expect(grass.waterVolume).toBeLessThan(600);
   });
 
+  it('wets the soil through the monsoon and dries it through the dry season', () => {
+    // Drying used to subtract the evaporation *fraction* as an absolute amount, far more than
+    // rain could put back, so every patch's soil was bone dry by the first monsoon's end and
+    // stayed that way. Plants grew at forty percent of their rate all year, and the grazers ate
+    // the forest down a little further every year until they starved.
+    const grass = buildGrid(2).find((p) => p.habitat === 'grassland')!;
+    grass.soilMoisture = 0.3;
+    for (let h = 0; h < 45 * 24; h++) updateWater(grass, 1, 'monsoon');
+    expect(grass.soilMoisture).toBeGreaterThan(0.8);
+    for (let h = 0; h < 90 * 24; h++) updateWater(grass, 1, 'dry');
+    expect(grass.soilMoisture).toBeLessThan(0.15);
+  });
+
+  it('keeps a marsh damper than open grassland through the dry season', () => {
+    const patches = buildGrid(2);
+    const marsh = patches.find((p) => p.habitat === 'marsh')!;
+    const grass = patches.find((p) => p.habitat === 'grassland')!;
+    for (let h = 0; h < 90 * 24; h++) { updateWater(marsh, 1, 'dry'); updateWater(grass, 1, 'dry'); }
+    expect(marsh.soilMoisture).toBeGreaterThan(grass.soilMoisture + 0.1);
+  });
+
   it('refills during the monsoon', () => {
     const patch = buildGrid(2).find((p) => p.habitat === 'riparian')!;
     patch.waterVolume = 0;

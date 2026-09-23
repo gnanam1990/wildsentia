@@ -183,30 +183,32 @@ Each cause below was measured before it was fixed, and each fix has a test that 
 | Lakes dried up | Every pool fell to 445 L each dry season; all elephants and 122 gaur died of thirst | Springs and seepage feed lakes and marshes |
 | Short sight, no memory | Gaur starved in circles 2 km from pasture | Range memory when nothing in view will do |
 | Drinking rationed | Gaur commuted between water and grass until they died | An animal at water drinks its fill |
+| Soil never got wet | Drying subtracted the evaporation *fraction* as an absolute amount; soil was bone dry from the first monsoon on, so plants grew at 40% all year and forage fell every year | Moisture recharges with rain and dries in proportion: ~0.9 in the monsoon, ~0.03 at the height of the dry season |
 
 Five world-years, seed 1 (`npm run soak -- --seed 1 --days 1800`):
 
 | | seeded | end of year 5 |
 |---|---|---|
-| chital | 1,400 | 672 |
-| sambar | 450 | 228 |
-| gaur | 200 | 130 |
-| langur | 300 | 184 |
-| boar | 500 | 671 |
-| hare | 900 | 1,442 |
-| elephant | 8 | 6 |
-| tiger | 4 | 3 |
-| dhole | 12 | 13 |
+| chital | 1,400 | 691 |
+| sambar | 450 | 276 |
+| gaur | 200 | 144 |
+| langur | 300 | 165 |
+| boar | 500 | 624 |
+| hare | 900 | 1,493 |
+| elephant | 8 | 11 |
+| tiger | 4 | 7 |
+| dhole | 12 | 12 |
 
-No hard failures and no ceiling warnings. 17,872 births against 1,668 arrivals from outside,
-six generations, mean inbreeding 0.003, nutrient drift 1.9e-8. The long gate
+No hard failures and no ceiling warnings. 18,584 births against 1,234 arrivals from outside,
+six generations, nutrient drift 2.2e-8. Forage now falls to about half in the dry season and
+is back above ninety percent by the monsoon's end, every year. The long gate
 (`soak-long.test.ts`) checks that no species ends at its floor and every prey species
 keeps at least two-fifths of its seeded density.
 
-**Still out of band:** hunger is still a killer in the dry season. Over the five years 339
-sambar, 262 gaur, 257 chital and 29 elephants starved; for sambar that is close to its
-births (368). The late dry season runs short of grass for everything grazing at once. Some
-of that is how a real dry season goes, but at this scale it is the next thing to fix.
+Starvation over the five years fell from 956 deaths to 63, and no grazer starved at all.
+
+**Still out of band:** vultures. They fall from 25 to 7 over five years, and account for 51
+of the 63 starvation deaths.
 
 ## What is not built yet
 
