@@ -1,8 +1,9 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { createPool } from '../src/db/pool.js';
 import { migrate } from '../src/db/migrate.js';
+import { testDatabaseUrl } from './testDatabase.js';
 
-const url = process.env.DATABASE_URL;
+const url = testDatabaseUrl();
 const maybe = url ? describe : describe.skip;
 const pool = url ? createPool(url) : null;
 

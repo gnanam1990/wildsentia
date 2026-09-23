@@ -46,7 +46,8 @@ One shared, server-authoritative wildlife simulation. You can watch it. You cann
 npm install
 docker compose up -d db              # Postgres on :5433
 
-export DATABASE_URL=postgres://vana:vana@localhost:5433/vana
+export DATABASE_URL=postgres://vana:vana@localhost:5433/vana            # the live world
+export TEST_DATABASE_URL=postgres://vana:vana@localhost:5433/vana_test  # tests truncate this one
 npm test                             # full suite, including the one-year soak gate
 npm run typecheck
 npm run soak -- --seed 1 --days 1000 # M1 gate
@@ -55,8 +56,11 @@ npm run dev:server                   # the live world on :8080
 npm run dev:client                   # the observer on :5173
 ```
 
-Database-backed tests skip themselves when `DATABASE_URL` is unset, so `npm test` still works
-without Docker — it simply covers less.
+Database-backed tests read `TEST_DATABASE_URL`, never `DATABASE_URL`, and refuse any database
+whose name does not end in `_test`: they truncate every table, and once pointed at the live
+database they wiped the forest's history. Unset, they skip, so `npm test` still works without
+Docker — it simply covers less. A fresh `docker compose up` creates `vana_test`; on an existing
+volume, run `docker compose exec db psql -U vana -c 'create database vana_test'`.
 
 ### The live world
 

@@ -4,8 +4,9 @@ import { createPool } from '../src/db/pool.js';
 import { migrate } from '../src/db/migrate.js';
 import { EventStore } from '../src/db/eventStore.js';
 import { SnapshotStore } from '../src/db/snapshotStore.js';
+import { testDatabaseUrl } from './testDatabase.js';
 
-const url = process.env.DATABASE_URL;
+const url = testDatabaseUrl();
 const maybe = url ? describe : describe.skip;
 const pool = url ? createPool(url) : null;
 

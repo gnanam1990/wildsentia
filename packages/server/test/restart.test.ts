@@ -5,8 +5,9 @@ import { migrate } from '../src/db/migrate.js';
 import { EventStore } from '../src/db/eventStore.js';
 import { SimHost } from '../src/simHost.js';
 import { Gateway, type GatewaySocket } from '../src/gateway.js';
+import { testDatabaseUrl } from './testDatabase.js';
 
-const url = process.env.DATABASE_URL;
+const url = testDatabaseUrl();
 const maybe = url ? describe : describe.skip;
 const pool = url ? createPool(url) : null;
 const speciesDir = fileURLToPath(new URL('../../../config/species', import.meta.url));
