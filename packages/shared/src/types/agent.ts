@@ -7,6 +7,22 @@ export type AgentState =
   /** Walked out of this stretch of forest into the country around it. Alive, but gone. */
   | 'emigrated';
 
+/** Skills an animal learns, is taught, and loses with disuse (spec §8). */
+export const SKILL_IDS = [
+  'forage_efficiency', 'water_locations', 'predator_avoidance', 'stalk_technique',
+] as const;
+export type SkillId = (typeof SKILL_IDS)[number];
+
+export interface SkillState {
+  /** 0-1. 0.5 leaves the mechanic it feeds exactly as it was tuned. */
+  confidence: number;
+  successes: number;
+  failures: number;
+  lastUsed: number;
+  /** The parent who taught it most recently, or null if self-taught or innate. */
+  taughtBy: string | null;
+}
+
 export const GOAL_IDS = [
   'find_food', 'find_water', 'rest', 'wander', 'hunt', 'scavenge', 'flee', 'breed',
 ] as const;
@@ -65,6 +81,8 @@ export interface Agent {
   /** World time this animal last gave birth, for the inter-birth interval. */
   lastBirthAt: number | null;
   offspringIds: string[];
+  /** What it knows. A skill missing here is at the species' innate floor. */
+  skills?: Partial<Record<SkillId, SkillState>>;
   bornAt: WorldTime;
   massKg: number;
   patchId: PatchId;

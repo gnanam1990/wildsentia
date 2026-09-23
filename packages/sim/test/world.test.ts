@@ -63,4 +63,24 @@ describe('World', () => {
       expect(p.waterVolume).toBeGreaterThanOrEqual(0);
     }
   });
+
+  it('has mothers teach their dependent young what they do well', () => {
+    // The owner's central idea (spec §8): parents teach their young, and what they teach shapes
+    // who the young become. Every lesson that moves a pupil a tenth is recorded, naming both.
+    const w = createWorld({ ...options, minPopulation: { sambar: 10 } });
+    const lessons: Array<{ pupil: string; teacher: string; skill: string }> = [];
+    for (let h = 0; h < 400 * 24; h++) {
+      w.step(1);
+      for (const e of w.log.take()) {
+        if (e.type === 'skill_taught') {
+          lessons.push({ pupil: e.actors[0]!, teacher: e.actors[1]!, skill: String(e.conditions.skill) });
+        }
+      }
+    }
+    expect(lessons.length).toBeGreaterThan(0);
+    const everyone = new Map([...w.agents, ...w.deceased].map((a) => [a.id, a]));
+    for (const lesson of lessons) expect(everyone.get(lesson.pupil)?.motherId).toBe(lesson.teacher);
+    expect(new Set(lessons.map((l) => l.skill))).toContain('forage_efficiency');
+  });
 });
+

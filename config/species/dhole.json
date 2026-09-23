@@ -73,6 +73,13 @@
       "floaterMortalityPerDay": 0.004
     }
   },
+  "learning": {
+    "innate": {
+      "stalk_technique": 0.25,
+      "water_locations": 0.2
+    },
+    "learnRateFromParent": 0.05
+  },
   "lifecycle": {
     "maxAgeDays": 3600,
     "baselineMortalityPerDay": 0.00028,

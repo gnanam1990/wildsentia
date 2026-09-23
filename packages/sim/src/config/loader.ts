@@ -72,6 +72,13 @@ export const SpeciesConfigSchema = z
         floaterMortalityPerDay: z.number().min(0).max(1),
       }).optional(),
     }),
+    learning: z.object({
+      innate: z.record(
+        z.enum(['forage_efficiency', 'water_locations', 'predator_avoidance', 'stalk_technique']),
+        z.number().min(0).max(1),
+      ),
+      learnRateFromParent: z.number().gt(0).max(1),
+    }).optional(),
     lifecycle: z.object({
       maxAgeDays: z.number().positive(),
       baselineMortalityPerDay: z.number().min(0).max(1),

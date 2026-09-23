@@ -1,5 +1,5 @@
 import type { HabitatType } from './patch.js';
-import type { LifeStage } from './agent.js';
+import type { LifeStage, SkillId } from './agent.js';
 
 export type Archetype =
   | 'apex_predator' | 'pack_predator' | 'herd_grazer'
@@ -53,6 +53,15 @@ export interface SpeciesConfig {
       maleKm2: number;
       floaterMortalityPerDay: number;
     };
+  };
+  /**
+   * Innate floors for the skills this species uses (spec §8). A skill absent here is one the
+   * species never uses; it reads as neutral. `learnRateFromParent` is the fraction of the gap
+   * to its parent a young animal closes each time it watches her use a skill successfully.
+   */
+  learning?: {
+    innate: Partial<Record<SkillId, number>>;
+    learnRateFromParent: number;
   };
   lifecycle: {
     maxAgeDays: number;

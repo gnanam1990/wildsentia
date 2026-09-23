@@ -1,4 +1,5 @@
 import { GRID_SIZE, PATCH_METRES, type Agent, type Carcass, type Patch, type SpeciesConfig } from '@vana/shared';
+import { confidenceOf } from './learning.js';
 
 /** What the behaviour layer is allowed to ask the world. Agents never read global state. */
 export interface WorldView {
@@ -137,13 +138,20 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
   const grazes = species.diet.eats.some((e) => e.target === 'grass' || e.target === 'browse');
   const needFood = grazes && (bestFood === null || bestFood.kg < dailyNeed);
   const needWater = bestWater === null || bestWater.litres < waterNeed;
+  //
+  // How far it remembers water depends on what it was taught. At neutral confidence this is
+  // the full range; an orphan left at its innate floor knows only the water close by.
   if (needFood || needWater) {
-    for (const p of patchesWithin(patch, RANGE_MEMORY_RADIUS, view.patches)) {
+    const waterReach = Math.min(RANGE_MEMORY_RADIUS, Math.max(2,
+      Math.round(2 + 12 * confidenceOf(agent, species, 'water_locations'))));
+    const reach = needFood ? RANGE_MEMORY_RADIUS : waterReach;
+    for (const p of patchesWithin(patch, reach, view.patches)) {
       if (needFood) {
         const kg = edibleKg(p, species);
         if (kg > (bestFood?.kg ?? 0)) bestFood = { patchId: p.id, kg };
       }
-      if (needWater && p.waterVolume > (bestWater?.litres ?? 0)) {
+      const steps = Math.abs(p.x - patch.x) + Math.abs(p.y - patch.y);
+      if (needWater && steps <= waterReach && p.waterVolume > (bestWater?.litres ?? 0)) {
         bestWater = { patchId: p.id, litres: p.waterVolume };
       }
     }

@@ -1,7 +1,7 @@
 import {
   NUTRIENT_PER_KG_BIOMASS, PATCH_COUNT, WORLD_SECONDS_PER_DAY, WORLD_SECONDS_PER_HOUR,
   createRng, seasonAt,
-  type Agent, type Carcass, type DeathCause, type Patch, type Rng,
+  type Agent, type Carcass, type DeathCause, type Patch, type Rng, type SkillId,
   type RngState, type SpeciesConfig, type WorldTime,
 } from '@vana/shared';
 import { buildGrid } from './grid.js';
@@ -19,13 +19,14 @@ import { foundingTraits } from './agents/genetics.js';
 import { Pedigree } from './agents/pedigree.js';
 import { mortalityFor, stageFor, targetMass } from './agents/lifecycle.js';
 import { isFloater } from './agents/territory.js';
+import { decaySkills, experiencedSkills, recordOutcome, teach } from './agents/learning.js';
 import { EDGE_PATCHES, EDGE_PATCH_IDS, expectedExchange } from './landscape.js';
 import {
   assessMate, attemptCourtship, birth, conceive, endOestrus, isReadyToGiveBirth, isReceptive,
   packAllowsBreeding,
 } from './agents/reproduction.js';
 
-export const SIM_VERSION = 'sim_0.4.0';
+export const SIM_VERSION = 'sim_0.5.0';
 
 export interface WorldOptions {
   seed: number;
@@ -166,7 +167,31 @@ export class World {
         if (!isSpent(carcass)) return;
         this.#retireCarcass(carcass);
       },
+      practised: (agent, skill, success) => this.#practised(agent, skill, success),
     };
+  }
+
+  /**
+   * An animal used a skill. It learns from the outcome, and when it went well, any young still
+   * depending on it — always beside it — learn by watching (spec §8.2). A lesson that moves a
+   * pupil across a tenth is recorded, so who taught whom can be read back years later.
+   */
+  #practised(agent: Agent, skill: SkillId, success: boolean): void {
+    const cfg = this.species.get(agent.speciesId)!;
+    recordOutcome(agent, cfg, skill, success, this.#time);
+    if (!success) return;
+    for (const childId of agent.offspringIds) {
+      const child = this.#agentsById.get(childId);
+      if (child === undefined || !child.alive || child.dependentOn !== agent.id) continue;
+      if (!teach(child, agent, cfg, skill, this.#time)) continue;
+      this.log.append({
+        type: 'skill_taught', worldTime: this.#time, simVersion: SIM_VERSION,
+        patchId: child.patchId, actors: [child.id, agent.id],
+        conditions: { skill, species: agent.speciesId },
+        outcome: 'success', effects: { confidence: child.skills?.[skill]?.confidence ?? 0 },
+        causalParents: [], confidence: 'authoritative',
+      });
+    }
   }
 
   /** Where a group is: the patch holding the most of its living members. */
@@ -249,6 +274,7 @@ export class World {
       traits: foundingTraits(this.#rng),
       motherId: null, fatherId: null, generation: 0,
       dependentOn: null, pregnantSince: null, lastBirthAt: null, offspringIds: [],
+      skills: experiencedSkills(cfg, this.#rng, this.#time),
       drives: {
         hunger: this.#rng.range(0.05, 0.35), thirst: this.#rng.range(0.05, 0.35),
         fatigue: this.#rng.range(0.1, 0.4), fear: 0,
@@ -522,6 +548,7 @@ export class World {
       const cfg = this.species.get(agent.speciesId)!;
 
       updateDrives(agent, cfg, hours);
+      decaySkills(agent, cfg, hours, this.#time);
       agent.stamina = Math.min(1, (agent.stamina ?? 1) + 0.04 * hours);
 
       agent.ageDays += hours / 24;

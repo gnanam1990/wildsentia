@@ -60,5 +60,6 @@ export function makeServices(carcasses: Carcass[]): WorldServices {
       return carcass;
     },
     removeCarcassIfSpent() { /* the tests inspect carcasses directly */ },
+    practised() { /* learning is tested on its own */ },
   };
 }

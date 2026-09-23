@@ -7,6 +7,7 @@ import { makeCarcass } from '../src/fields/decomposition.js';
 import { makeAgent, makeView, speciesOf } from './helpers.js';
 
 const patches = buildGrid(4);
+const known = (confidence: number) => ({ confidence, successes: 0, failures: 0, lastUsed: 0, taughtBy: null });
 const sambar = speciesOf('sambar');
 const tiger = speciesOf('tiger');
 const vulture = speciesOf('vulture');
@@ -105,8 +106,21 @@ describe('perceive', () => {
     const at = (x: number, y: number) => y * 20 + x;
     for (const p of grid) p.waterVolume = 0;
     grid[at(4, 10)]!.waterVolume = 50_000;
-    const cow = makeAgent('elephant', { patchId: at(10, 10) });
+    const cow = makeAgent('elephant', { patchId: at(10, 10), skills: { water_locations: known(0.5) } });
     expect(perceive(cow, elephant, makeView(grid, [cow])).bestWater?.patchId).toBe(at(4, 10));
+  });
+
+  it('lets a young animal taught the water holes find one an orphan cannot', () => {
+    // A mother who knows the dry-season water holes raises young who find water (spec §8.2).
+    const chital = speciesOf('chital');
+    const grid = buildGrid(4);
+    const at = (x: number, y: number) => y * 20 + x;
+    for (const p of grid) p.waterVolume = 0;
+    grid[at(10, 17)]!.waterVolume = 50_000;
+    const taught = makeAgent('chital', { id: 't', patchId: at(10, 10), skills: { water_locations: known(0.8) } });
+    const orphan = makeAgent('chital', { id: 'o', patchId: at(10, 10), skills: {} });
+    expect(perceive(taught, chital, makeView(grid, [taught])).bestWater?.patchId).toBe(at(10, 17));
+    expect(perceive(orphan, chital, makeView(grid, [orphan])).bestWater).toBeNull();
   });
 
   it('lets a vulture spot carrion by sight from the air, far beyond its smell', () => {

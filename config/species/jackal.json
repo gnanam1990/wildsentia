@@ -58,6 +58,14 @@
     ],
     "alarmSharing": true
   },
+  "learning": {
+    "innate": {
+      "forage_efficiency": 0.3,
+      "water_locations": 0.2,
+      "predator_avoidance": 0.3
+    },
+    "learnRateFromParent": 0.01
+  },
   "lifecycle": {
     "maxAgeDays": 4300,
     "baselineMortalityPerDay": 0.00045,

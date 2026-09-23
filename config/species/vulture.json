@@ -53,6 +53,12 @@
     ],
     "alarmSharing": false
   },
+  "learning": {
+    "innate": {
+      "water_locations": 0.2
+    },
+    "learnRateFromParent": 0.01
+  },
   "lifecycle": {
     "maxAgeDays": 7300,
     "baselineMortalityPerDay": 0.00022,

@@ -1,8 +1,9 @@
 import {
   NUTRIENT_PER_KG_BIOMASS, edibleMass,
-  type Agent, type Carcass, type DeathCause, type Patch, type Rng,
+  type Agent, type Carcass, type DeathCause, type Patch, type Rng, type SkillId,
   type SpeciesConfig, type WorldTime,
 } from '@vana/shared';
+import { confidenceOf, skillFactor } from './learning.js';
 import { HUNGER_PER_DAY, THIRST_PER_DAY } from './drives.js';
 import type { EventLog } from '../events/log.js';
 import { choosePrey, resolveHunt } from './predation.js';
@@ -13,6 +14,8 @@ import type { Percept, WorldView } from './perception.js';
 export interface WorldServices {
   kill(victim: Agent, cause: DeathCause, killerId: string | null): Carcass;
   removeCarcassIfSpent(carcass: Carcass): void;
+  /** An animal used a skill. The world records it and lets the young beside it learn. */
+  practised(agent: Agent, skill: SkillId, success: boolean): void;
 }
 
 export interface BehaviourContext {
@@ -118,7 +121,9 @@ function feed(ctx: BehaviourContext): void {
   // feeds. A hungry one takes up to twice that, which is how it recovers rather than merely
   // breaking even.
   const ration = (ctx.species.diet.dailyIntakeKg / FORAGING_HOURS_PER_DAY) * ctx.hours;
-  const wanted = appetite(ration, ctx.agent.drives.hunger, ctx.agent.massKg, ctx.hours);
+  // A practised forager crops more in the same hour than a clumsy one.
+  const wanted = appetite(ration, ctx.agent.drives.hunger, ctx.agent.massKg, ctx.hours)
+    * skillFactor(confidenceOf(ctx.agent, ctx.species, 'forage_efficiency'), 0.7, 1.3);
   const available = patch.plant.grass + patch.plant.browse;
 
   // Move only if this patch cannot feed the animal now. Otherwise eat where it stands.
@@ -150,6 +155,7 @@ function feed(ctx: BehaviourContext): void {
     ctx.agent.drives.hunger - (eaten / ctx.species.diet.dailyIntakeKg) * HUNGER_PER_DAY,
   );
   ctx.agent.state = 'grazing';
+  if (eaten > 0) ctx.services.practised(ctx.agent, 'forage_efficiency', true);
   emit(ctx, 'fed', patch.id, [ctx.agent.id],
     { hunger: ctx.agent.drives.hunger, available }, 'success', { kg: eaten });
 }
@@ -177,6 +183,7 @@ function drink(ctx: BehaviourContext): void {
     ctx.agent.drives.thirst - (drunk / ctx.species.diet.waterNeedLPerDay) * THIRST_PER_DAY,
   );
   ctx.agent.state = 'drinking';
+  ctx.services.practised(ctx.agent, 'water_locations', true);
   emit(ctx, 'drank', patch.id, [ctx.agent.id],
     { thirst: ctx.agent.drives.thirst }, 'success', { litres: drunk });
 }
@@ -260,11 +267,14 @@ function hunt(ctx: BehaviourContext): void {
 
   const outcome = resolveHunt({
     baseSuccess: hunting.baseSuccess,
-    stalkConcealment: hunting.stalkConcealment,
+    // Taught or practised technique moves both sides of the contest.
+    stalkConcealment: Math.min(1, hunting.stalkConcealment
+      * skillFactor(confidenceOf(ctx.agent, ctx.species, 'stalk_technique'), 0.8, 1.2)),
     canopyCover: ctx.percept.patch.canopyCover,
     predatorStamina: ctx.agent.stamina ?? 1,
     predatorCondition: 1 - ctx.agent.drives.fatigue,
-    preyEvasiveness: ctx.view.speciesOf(victim.speciesId).escape.evasiveness,
+    preyEvasiveness: Math.min(1, ctx.view.speciesOf(victim.speciesId).escape.evasiveness
+      * skillFactor(confidenceOf(victim, ctx.view.speciesOf(victim.speciesId), 'predator_avoidance'), 0.8, 1.2)),
     preyCondition: 1 - victim.drives.fatigue,
     preyAlert: victim.drives.fear > 0.35,
     herdSize: choice.herdSize,
@@ -275,6 +285,10 @@ function hunt(ctx: BehaviourContext): void {
   ctx.agent.stamina = clamp01((ctx.agent.stamina ?? 1) - outcome.staminaSpent);
   // Being hunted is frightening whether or not it worked.
   victim.drives.fear = clamp01(victim.drives.fear + 0.8);
+  if (outcome.stage !== 'out_of_range') {
+    ctx.services.practised(ctx.agent, 'stalk_technique', outcome.killed);
+    if (!outcome.killed) ctx.services.practised(victim, 'predator_avoidance', true);
+  }
 
   if (!outcome.killed) {
     ctx.agent.state = 'chasing';
