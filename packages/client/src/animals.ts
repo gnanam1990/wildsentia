@@ -63,6 +63,41 @@ export class AnimalLayer {
   readonly #pending = new Set<string>();
   readonly #markerTexture = markerTexture();
 
+  /**
+   * Every animal too far away for a model is still shown: a dot in its species' colour, a
+   * constant few pixels across, all in one draw call. Without it the forest looked empty past a
+   * few hundred metres, and only whatever lived next to the camera — deer and boar — was seen.
+   */
+  readonly #dots: THREE.Points;
+  readonly #dotPositions: Float32Array;
+  readonly #dotColours: Float32Array;
+  readonly #dotIds: string[] = [];
+  static readonly MAX_DOTS = 8000;
+
+  /** The animal behind a dot a click landed on. */
+  dotIdAt(index: number): string | undefined {
+    return this.#dotIds[index];
+  }
+
+  isDots(object: THREE.Object3D): boolean {
+    return object === this.#dots;
+  }
+
+  constructor() {
+    this.#dotPositions = new Float32Array(AnimalLayer.MAX_DOTS * 3);
+    this.#dotColours = new Float32Array(AnimalLayer.MAX_DOTS * 3);
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(this.#dotPositions, 3).setUsage(THREE.DynamicDrawUsage));
+    geometry.setAttribute('color', new THREE.BufferAttribute(this.#dotColours, 3).setUsage(THREE.DynamicDrawUsage));
+    geometry.setDrawRange(0, 0);
+    this.#dots = new THREE.Points(geometry, new THREE.PointsMaterial({
+      size: 5, sizeAttenuation: false, vertexColors: true, depthWrite: false,
+    }));
+    this.#dots.name = 'animal-dots';
+    this.#dots.frustumCulled = false;
+    this.root.add(this.#dots);
+  }
+
   async #template(speciesId: string): Promise<THREE.Group> {
     const visual = visualFor(speciesId);
     let pending = this.#templates.get(speciesId);
@@ -163,6 +198,7 @@ export class AnimalLayer {
       positions.set(animal.id, this.tracker.positionAt(animal.id, nowMs));
     }
     const visible = chooseVisible(positions, focus, followedId);
+    this.#fillDots(animals, positions, visible);
 
     for (const id of visible) {
       const animal = animals.get(id)!;
@@ -188,6 +224,7 @@ export class AnimalLayer {
    * other model is released while a life is replayed; they come back when live sync resumes.
    */
   syncReplay(animal: AnimalState, position: RenderPosition): void {
+    this.#dots.geometry.setDrawRange(0, 0);
     void this.#ensureRig(animal);
     for (const [id, rig] of [...this.#rigs]) {
       if (id === animal.id) continue;
@@ -199,6 +236,33 @@ export class AnimalLayer {
     this.#place(rig, position);
     this.#animate(rig, position.moving ? 'travelling' : animal.state);
     rig.marker.visible = true;
+  }
+
+  #fillDots(
+    animals: ReadonlyMap<string, AnimalState>,
+    positions: ReadonlyMap<string, RenderPosition>,
+    modelled: ReadonlySet<string>,
+  ): void {
+    const colour = new THREE.Color();
+    let n = 0;
+    this.#dotIds.length = 0;
+    for (const [id, position] of positions) {
+      if (modelled.has(id) || n >= AnimalLayer.MAX_DOTS) continue;
+      this.#dotIds.push(id);
+      const visual = visualFor(animals.get(id)!.speciesId);
+      this.#dotPositions[n * 3] = position.x;
+      this.#dotPositions[n * 3 + 1] = this.groundHeightAt(position.x, position.z) + visual.heightM;
+      this.#dotPositions[n * 3 + 2] = position.z;
+      colour.setHex(visual.colour);
+      this.#dotColours[n * 3] = colour.r;
+      this.#dotColours[n * 3 + 1] = colour.g;
+      this.#dotColours[n * 3 + 2] = colour.b;
+      n++;
+    }
+    const geometry = this.#dots.geometry;
+    geometry.setDrawRange(0, n);
+    geometry.attributes.position!.needsUpdate = true;
+    geometry.attributes.color!.needsUpdate = true;
   }
 
   positionOf(id: string, nowMs: number): RenderPosition | null {

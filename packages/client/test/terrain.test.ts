@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { buildTerrain, countDrawCalls, makeHeightSampler, type PatchView } from '../src/terrain.js';
+import { buildTerrain, countDrawCalls, hideFarFieldNear, makeHeightSampler, type PatchView } from '../src/terrain.js';
 
 const patches: PatchView[] = Array.from({ length: 400 }, (_, id) => ({
   id, x: id % 20, y: Math.floor(id / 20),
@@ -59,5 +59,30 @@ describe('makeHeightSampler', () => {
       const hit = ray.intersectObject(ground!)[0]!;
       expect(sample(x, z), `${x},${z}`).toBeCloseTo(hit.point.y, 3);
     }
+  });
+});
+
+describe('hideFarFieldNear', () => {
+  it('hides the cheap stand-in vegetation where detailed plants are drawn, and brings it back', () => {
+    const terrain = buildTerrain(patches);
+    const grass = terrain.getObjectByName('grass') as THREE.InstancedMesh;
+    const m = new THREE.Matrix4();
+    const scaleAt = (i: number) => { grass.getMatrixAt(i, m); return new THREE.Vector3().setFromMatrixScale(m).y; };
+    const near = Array.from({ length: grass.count }, (_, i) => {
+      grass.getMatrixAt(i, m);
+      const p = new THREE.Vector3().setFromMatrixPosition(m);
+      return Math.hypot(p.x - 3000, p.z - 3000) <= 450;
+    });
+    expect(near.some(Boolean)).toBe(true);
+    expect(near.some((n) => !n)).toBe(true);
+
+    hideFarFieldNear(terrain, { x: 3000, z: 3000 }, 450);
+    near.forEach((isNear, i) => {
+      if (isNear) expect(scaleAt(i)).toBe(0);
+      else expect(scaleAt(i)).toBeGreaterThan(0);
+    });
+
+    hideFarFieldNear(terrain, { x: -5000, z: -5000 }, 450);
+    near.forEach((_, i) => expect(scaleAt(i)).toBeGreaterThan(0));
   });
 });

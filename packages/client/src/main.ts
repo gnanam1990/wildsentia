@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { WorldStore } from './protocol.js';
 import { createScene } from './scene.js';
-import { buildTerrain, countDrawCalls, makeHeightSampler, type PatchView } from './terrain.js';
+import { buildTerrain, countDrawCalls, hideFarFieldNear, makeHeightSampler, type PatchView } from './terrain.js';
+import { NEAR_RADIUS_M, NearVegetation } from './vegetation.js';
 import { AnimalLayer } from './animals.js';
 import { FollowCamera } from './camera.js';
 import { Hud } from './hud.js';
@@ -105,6 +106,10 @@ function watch(id: string | null): void {
   socket.send(JSON.stringify(id === null ? { type: 'unwatch' } : { type: 'watch', actorId: id }));
 }
 
+/** Detailed plants around the camera, and the stand-in terrain they replace there. */
+let nature: NearVegetation | null = null;
+let terrainRoot: THREE.Object3D | null = null;
+
 // Terrain comes from the server's patch state, not from anything generated here.
 void (async () => {
   const response = await fetch('/api/patches');
@@ -117,8 +122,15 @@ void (async () => {
     mesh.receiveShadow = mesh.name === 'ground';
   });
   scene.add(terrain);
+  terrainRoot = terrain;
   animals.groundHeightAt = makeHeightSampler(body.patches);
   console.info(`terrain draw calls: ${countDrawCalls(terrain)} (budget 150)`);
+
+  const vegetation = new NearVegetation(body.patches, animals.groundHeightAt);
+  await vegetation.load();
+  scene.add(vegetation.root);
+  nature = vegetation;
+  console.info(`near vegetation draw calls: ${countDrawCalls(vegetation.root)}`);
 })();
 
 // Click to follow.
@@ -128,8 +140,15 @@ canvas.addEventListener('pointerup', (event) => {
   pointer.x = (event.clientX / innerWidth) * 2 - 1;
   pointer.y = -(event.clientY / innerHeight) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
+  raycaster.params.Points = { threshold: 6 };
   const hit = raycaster.intersectObjects(animals.root.children, true)[0];
   if (!hit) return;
+  // A distant animal is a dot: clicking it follows that animal.
+  if (animals.isDots(hit.object) && hit.index !== undefined) {
+    const id = animals.dotIdAt(hit.index);
+    if (id !== undefined) watch(id);
+    return;
+  }
   let node: THREE.Object3D | null = hit.object;
   while (node !== null && !store.animals.has(node.name)) node = node.parent;
   if (node !== null) watch(node.name);
@@ -183,6 +202,11 @@ function frame(): void {
   requestAnimationFrame(frame);
   const dt = Math.min(clock.getDelta(), 0.1);
   const now = performance.now();
+
+  // Detailed plants follow the camera; the stand-ins step aside wherever they are drawn.
+  if (nature !== null && terrainRoot !== null && nature.update({ x: follow.target.x, z: follow.target.z })) {
+    hideFarFieldNear(terrainRoot, { x: follow.target.x, z: follow.target.z }, NEAR_RADIUS_M);
+  }
 
   if (replay !== null) {
     const { life } = replay;

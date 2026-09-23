@@ -136,6 +136,57 @@ const GRID = 20;
  * vertex by the habitat of the patches meeting at that corner. Corner values average whatever
  * patches touch them, so habitats blend instead of ending at a hard tile edge.
  */
+/** Metres one tile of the ground detail texture covers. */
+const DETAIL_TILE_M = 6;
+
+/**
+ * A small tiling texture of grass blades and soil flecks, generated once and deterministically
+ * (no Math.random: the same world looks the same on every screen). Multiplied into the habitat
+ * colour, it adds grain without changing the colour the simulation's habitats set.
+ */
+function groundDetail(): THREE.Texture | null {
+  if (typeof document === 'undefined') return null; // tests build terrain without a DOM
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (ctx === null) return null;
+  let seed = 20_260_923;
+  const random = (): number => {
+    seed = (Math.imul(seed, 1_664_525) + 1_013_904_223) >>> 0;
+    return seed / 4_294_967_296;
+  };
+  ctx.fillStyle = 'rgb(214,214,214)';
+  ctx.fillRect(0, 0, size, size);
+  // Soft patches of lighter and darker ground.
+  for (let i = 0; i < 90; i++) {
+    const shade = 170 + Math.floor(random() * 85);
+    ctx.fillStyle = `rgba(${shade},${shade},${shade},0.35)`;
+    ctx.beginPath();
+    ctx.arc(random() * size, random() * size, 6 + random() * 22, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Blades: short strokes, mostly upright, in lighter and darker greys.
+  for (let i = 0; i < 2600; i++) {
+    const x = random() * size;
+    const y = random() * size;
+    const shade = 150 + Math.floor(random() * 105);
+    ctx.strokeStyle = `rgba(${shade},${shade},${shade},0.8)`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + (random() - 0.5) * 3, y - 2 - random() * 5);
+    ctx.stroke();
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set((GRID * PATCH_METRES) / DETAIL_TILE_M, (GRID * PATCH_METRES) / DETAIL_TILE_M);
+  texture.anisotropy = 8;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
 function buildGroundMesh(patches: readonly PatchView[]): THREE.Mesh {
   const byId = new Map<number, PatchView>();
   for (const patch of patches) byId.set(patch.id, patch);
@@ -185,7 +236,12 @@ function buildGroundMesh(patches: readonly PatchView[]): THREE.Mesh {
 
   const mesh = new THREE.Mesh(
     geometry,
-    new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 }),
+    new THREE.MeshStandardMaterial({
+      vertexColors: true, roughness: 1, metalness: 0,
+      // The habitat colour, broken up by a fine tiled speckle of blades and soil: a single flat
+      // colour across a 300 m patch is what made the ground read as cheap.
+      map: groundDetail(),
+    }),
   );
   mesh.name = 'ground';
   mesh.receiveShadow = true;
@@ -314,6 +370,34 @@ export function buildTerrain(patches: readonly PatchView[]): THREE.Group {
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     group.add(mesh);
   }
+  // Kept so the far-field can be hidden near the camera and restored exactly (hideFarFieldNear).
+  for (const mesh of [grass, rock, trunk, canopy]) {
+    mesh.userData.base = (mesh.instanceMatrix.array as Float32Array).slice();
+  }
   group.add(ground);
   return group;
 }
+
+const FAR_FIELD = ['grass', 'rock', 'trunk', 'canopy'] as const;
+
+/**
+ * The world-wide vegetation is cheap stand-ins: cones and blocks that read as forest from a
+ * distance. Where the detailed plants are drawn around the camera, the stand-ins are hidden so
+ * the two never overlap; everywhere else they are restored exactly as built.
+ */
+export function hideFarFieldNear(terrain: THREE.Object3D, focus: { x: number; z: number }, radiusM: number): void {
+  for (const name of FAR_FIELD) {
+    const mesh = terrain.getObjectByName(name) as THREE.InstancedMesh | undefined;
+    const base = mesh?.userData.base as Float32Array | undefined;
+    if (mesh === undefined || base === undefined) continue;
+    const out = mesh.instanceMatrix.array as Float32Array;
+    for (let i = 0; i < mesh.count; i++) {
+      const o = i * 16;
+      const near = Math.hypot(base[o + 12]! - focus.x, base[o + 14]! - focus.z) <= radiusM;
+      if (near) out.fill(0, o, o + 16);
+      else out.set(base.subarray(o, o + 16), o);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+  }
+}
+

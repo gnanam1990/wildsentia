@@ -20,6 +20,15 @@ Last checked: 23 September 2026. No asset enters the build without a row here (s
 - Animation clips: idle, walk, attack, dead
 - Modifications: none.
 
+## Quaternius — Stylized Nature MegaKit (Standard, free edition)
+- Source: https://quaternius.com (the Standard edition, 68 of 116 models)
+- Licence stated in the pack's License_Standard.txt: CC0 1.0 Universal (public domain).
+- Used for: near-camera trees, grass, bushes, ferns, flowers, clover, rocks and mushrooms
+  (`nature/*.glb`, 22 models; placement and scale in `packages/client/src/vegetation.ts`)
+- Modifications: textures resized to 512 px and re-encoded as WebP, models packed as binary
+  .glb (`@gltf-transform/cli resize` then `webp`). The pack's vertex colours are wind masks for
+  its own shader and are ignored at load; geometry is otherwise unchanged.
+
 ## File hashes (truncated sha256)
   - `animals/Deer.glb`: sha256 `75d88a0aa2f0569f`
   - `animals/Stag.glb`: sha256 `0910799eb37a9613`
