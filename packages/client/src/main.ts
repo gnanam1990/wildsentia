@@ -5,6 +5,7 @@ import { buildTerrain, countDrawCalls, makeHeightSampler, type PatchView } from 
 import { AnimalLayer } from './animals.js';
 import { FollowCamera } from './camera.js';
 import { Hud } from './hud.js';
+import { ThoughtBubble } from './bubble.js';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#view')!;
 const { renderer, scene, camera, sun } = createScene(canvas);
@@ -22,6 +23,8 @@ const hud = new Hud({
   feed: document.querySelector('#feed')!,
   notice: document.querySelector('#notice')!,
 }, store);
+
+const bubble = new ThoughtBubble(document.querySelector('#thought')!);
 
 let followedId: string | null = null;
 let socket: WebSocket | null = null;
@@ -41,6 +44,7 @@ function connect(): void {
 
 function watch(id: string | null): void {
   followedId = id;
+  void hud.refreshPassport(id).then(() => hud.render(followedId));
   if (socket?.readyState !== WebSocket.OPEN) return;
   socket.send(JSON.stringify(id === null ? { type: 'unwatch' } : { type: 'watch', actorId: id }));
 }
@@ -77,6 +81,15 @@ canvas.addEventListener('pointerup', (event) => {
 
 document.querySelector('#freecam')!.addEventListener('click', () => { watch(null); });
 
+// Family members and teachers in the passport are links: follow them.
+document.querySelector('#passport')!.addEventListener('click', (event) => {
+  const link = (event.target as HTMLElement).closest<HTMLElement>('[data-follow]');
+  if (link === null) return;
+  event.preventDefault();
+  watch(link.dataset.follow ?? null);
+});
+setInterval(() => { void hud.refreshPassport(followedId).then(() => hud.render(followedId)); }, 5000);
+
 connect();
 store.onChange(() => { hud.render(followedId); });
 void hud.refreshFeed();
@@ -93,7 +106,7 @@ function frame(): void {
   const dt = Math.min(clock.getDelta(), 0.1);
   const now = performance.now();
 
-  animals.sync(store.animals, now, followedId);
+  animals.sync(store.animals, now, followedId, { x: follow.target.x, z: follow.target.z });
   animals.update(dt);
 
   if (followedId !== null) {
@@ -104,8 +117,16 @@ function frame(): void {
       sun.target.position.set(position.x, 0, position.z);
       sun.position.set(position.x + 90, 160, position.z + 70);
     }
+    // The bubble floats over the animal's head, projected into screen space.
+    const head = position === null ? null
+      : new THREE.Vector3(position.x, animals.groundHeightAt(position.x, position.z) + 3, position.z).project(camera);
+    bubble.show(
+      store.animals.get(followedId),
+      head === null || head.z > 1 ? null : { x: (head.x + 1) / 2 * innerWidth, y: (1 - head.y) / 2 * innerHeight },
+    );
   } else {
     follow.freeLook(dt);
+    bubble.show(undefined, null);
   }
   sun.target.updateMatrixWorld();
 

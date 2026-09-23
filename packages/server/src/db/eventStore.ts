@@ -68,6 +68,17 @@ export class EventStore {
     return rows.map(toEvent);
   }
 
+  /**
+   * The event recording an animal's death, however much happened to its carcass afterwards.
+   * A death names the dead first and its killer second, so only the first actor counts.
+   */
+  async deathOf(actorId: string): Promise<WorldEvent | null> {
+    const { rows } = await this.pool.query<Row>(
+      "select * from events where type = 'died' and actors[1] = $1 limit 1", [actorId],
+    );
+    return rows.length === 0 ? null : toEvent(rows[0]!);
+  }
+
   async countAfter(worldTime: number): Promise<number> {
     const { rows } = await this.pool.query<{ count: string }>(
       'select count(*) from events where world_time > $1', [worldTime],

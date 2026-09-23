@@ -4,6 +4,7 @@ import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.j
 import { clipForState } from './animation.js';
 import { PositionTracker, type RenderPosition } from './space.js';
 import type { AnimalState } from './protocol.js';
+import { chooseVisible } from './lod.js';
 
 /** Shoulder heights in metres, matching the species config on the server. */
 const SPECIES_MODEL: Record<string, { file: string; heightM: number }> = {
@@ -116,32 +117,44 @@ export class AnimalLayer {
     this.root.add(group);
   }
 
-  /** Applies the server's animal set. Anything the server stopped reporting is removed. */
-  sync(animals: ReadonlyMap<string, AnimalState>, nowMs: number, followedId: string | null): void {
+  /**
+   * Applies the server's animal set. Every animal is tracked, but only those near where the
+   * camera is looking get a model; the rest are released and rebuilt when the camera returns.
+   */
+  sync(
+    animals: ReadonlyMap<string, AnimalState>,
+    nowMs: number,
+    followedId: string | null,
+    focus: { x: number; z: number },
+  ): void {
+    const positions = new Map<string, RenderPosition>();
     for (const animal of animals.values()) {
       this.tracker.update(animal.id, animal.patchId, nowMs);
+      positions.set(animal.id, this.tracker.positionAt(animal.id, nowMs));
+    }
+    const visible = chooseVisible(positions, focus, followedId);
+
+    for (const id of visible) {
+      const animal = animals.get(id)!;
       void this.#ensureRig(animal);
-
-      const rig = this.#rigs.get(animal.id);
+      const rig = this.#rigs.get(id);
       if (!rig) continue;
-
-      const position = this.tracker.positionAt(animal.id, nowMs);
+      const position = positions.get(id)!;
       this.#place(rig, position);
       this.#animate(rig, position.moving ? 'travelling' : animal.state);
-      rig.marker.visible = animal.id === followedId;
+      rig.marker.visible = id === followedId;
     }
 
-    const live = new Set(animals.keys());
-    this.tracker.forgetAllExcept(live);
+    this.tracker.forgetAllExcept(new Set(animals.keys()));
     for (const [id, rig] of [...this.#rigs]) {
-      if (live.has(id)) continue;
+      if (visible.has(id)) continue;
       this.root.remove(rig.group);
       this.#rigs.delete(id);
     }
   }
 
   positionOf(id: string, nowMs: number): RenderPosition | null {
-    return this.#rigs.has(id) ? this.tracker.positionAt(id, nowMs) : null;
+    return this.tracker.has(id) ? this.tracker.positionAt(id, nowMs) : null;
   }
 
   update(deltaSeconds: number): void {

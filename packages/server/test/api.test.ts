@@ -52,6 +52,37 @@ maybe('read API', () => {
     expect(body.animals[0]).toHaveProperty('drives');
   });
 
+  it('gives a passport read entirely from live state and the event log', async () => {
+    const list = (await api.inject({ method: 'GET', url: '/animals' })).json();
+    const id = list.animals[0].id;
+    const res = await api.inject({ method: 'GET', url: `/animals/${id}/passport` });
+    expect(res.statusCode).toBe(200);
+    const p = res.json();
+    expect(p).toMatchObject({ id, speciesId: 'sambar', alive: true });
+    expect(['male', 'female']).toContain(p.sex);
+    expect(typeof p.ageDays).toBe('number');
+    expect(typeof p.lifeStage).toBe('string');
+    expect(p.thought.text.length).toBeGreaterThan(0);
+    expect(p.thought.basis.length).toBeGreaterThan(0);
+    expect(p.lineage).toHaveProperty('mother');
+    expect(Array.isArray(p.lineage.offspring)).toBe(true);
+    expect(p.skills.map((s: { skill: string }) => s.skill)).toContain('water_locations');
+    expect(p.death).toBeNull();
+    for (const entry of p.timeline) expect(typeof entry.id).toBe('string');
+  });
+
+  it('refuses a passport for an animal that never existed', async () => {
+    const res = await api.inject({ method: 'GET', url: '/animals/nobody_0000/passport' });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('streams what a thought bubble needs with every animal', async () => {
+    const body = (await api.inject({ method: 'GET', url: '/animals' })).json();
+    expect(body.animals[0]).toHaveProperty('alternativeGoal');
+    expect(body.animals[0]).toHaveProperty('goalScore');
+    expect(body.animals[0]).toHaveProperty('dependent');
+  });
+
   it('returns one animal with its live state', async () => {
     const list = (await api.inject({ method: 'GET', url: '/animals' })).json();
     const id = list.animals[0].id;

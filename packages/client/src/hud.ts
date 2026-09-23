@@ -17,6 +17,36 @@ const bar = (label: string, value: number | undefined, colour: string): string =
     <b>${pct(value)}</b></div>`;
 };
 
+/** The passport as the server reports it: live state and the event log, nothing authored. */
+export interface Passport {
+  id: string; speciesId: string; displayName: string; sex: string; ageDays: number;
+  lifeStage: string; generation: number; alive: boolean; massKg: number;
+  thought: { text: string; basis: string[]; confident: boolean } | null;
+  lineage: {
+    mother: { id: string; alive: boolean } | null;
+    father: { id: string; alive: boolean } | null;
+    offspring: Array<{ id: string; alive: boolean }>;
+  };
+  skills: Array<{ skill: string; confidence: number; taughtBy: string | null }>;
+  death: { cause: string; worldTime: number; eventId: string } | null;
+  timeline: Array<{ id: string; type: string; worldTime: number; outcome: string }>;
+}
+
+const escape = (text: string): string =>
+  text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+const age = (days: number): string =>
+  days >= 365 ? `${(days / 365).toFixed(1)} years` : `${Math.round(days)} days`;
+
+const SKILL_LABEL: Record<string, string> = {
+  forage_efficiency: 'Foraging', water_locations: 'Knows the water',
+  predator_avoidance: 'Evading predators', stalk_technique: 'Stalking',
+};
+
+const kinLink = (kin: { id: string; alive: boolean } | null): string => kin === null
+  ? '<span class="unknown" title="a founder or immigrant: no parent in the record">none recorded</span>'
+  : `<a href="#" data-follow="${escape(kin.id)}">${escape(kin.id)}</a>${kin.alive ? '' : ' <i>(dead)</i>'}`;
+
 export interface HudElements {
   clock: HTMLElement;
   season: HTMLElement;
@@ -27,7 +57,20 @@ export interface HudElements {
 }
 
 export class Hud {
+  /** The last passport fetched for the followed animal, refreshed every few seconds. */
+  passport: Passport | null = null;
+
   constructor(private readonly elements: HudElements, private readonly store: WorldStore) {}
+
+  async refreshPassport(id: string | null): Promise<void> {
+    if (id === null) { this.passport = null; return; }
+    try {
+      const response = await fetch(`/api/animals/${encodeURIComponent(id)}/passport`);
+      this.passport = response.ok ? (await response.json()) as Passport : null;
+    } catch {
+      this.passport = null;
+    }
+  }
 
   render(followedId: string | null): void {
     const world = this.store.world;
@@ -48,16 +91,24 @@ export class Hud {
     }
 
     const animal = this.store.animals.get(followedId);
+    const p = this.passport?.id === followedId ? this.passport : null;
     if (animal === undefined) {
-      this.elements.passport.innerHTML =
-        `<p class="hint">${followedId} is no longer reported by the simulation.</p>`;
+      this.elements.passport.innerHTML = p?.death
+        ? `<h2>${escape(p.id)}</h2><div class="sub">${escape(p.displayName)} &middot; died aged ${age(p.ageDays)}</div>
+           <div class="row"><span>Cause</span><b>${escape(p.death.cause)}</b></div>
+           <div class="row"><span>Record</span><b class="eid">${escape(p.death.eventId)}</b></div>
+           ${this.#lineage(p)}`
+        : `<p class="hint">${escape(followedId)} is no longer reported by the simulation.</p>`;
       return;
     }
 
     const viewers = this.store.viewerCounts.get(followedId);
+    const identity = p === null
+      ? `${animal.speciesId} &middot; patch ${animal.patchId}`
+      : `${escape(p.displayName)} &middot; ${escape(p.sex)} &middot; ${escape(p.lifeStage)} &middot; ${age(p.ageDays)} &middot; generation ${p.generation}`;
     this.elements.passport.innerHTML = `
       <h2>${animal.id}</h2>
-      <div class="sub">${animal.speciesId} &middot; patch ${animal.patchId}</div>
+      <div class="sub">${identity}</div>
       ${bar('Hunger', animal.drives.hunger, 'var(--clay)')}
       ${bar('Thirst', animal.drives.thirst, 'var(--mist)')}
       ${bar('Fatigue', animal.drives.fatigue, 'var(--ink-3)')}
@@ -65,7 +116,30 @@ export class Hud {
       <div class="row"><span>State</span><b>${animal.state}</b></div>
       <div class="row"><span>Goal</span><b>${animal.currentGoal}</b></div>
       <div class="row"><span>Watching now</span><b>${viewers ?? UNKNOWN}</b></div>
+      ${p === null ? '' : this.#skills(p) + this.#lineage(p) + this.#timeline(p)}
       <p class="prov">every value above came from the simulation &middot; no model wrote this</p>`;
+  }
+
+  #skills(p: Passport): string {
+    if (p.skills.length === 0) return '';
+    return `<h3>What it knows</h3>${p.skills.map((s) => `
+      ${bar(SKILL_LABEL[s.skill] ?? s.skill, s.confidence, 'var(--moss, #7fa35a)')}
+      <div class="taught">${s.taughtBy === null ? 'self-taught or innate' : `taught by ${kinLink({ id: s.taughtBy, alive: true })}`}</div>`).join('')}`;
+  }
+
+  #lineage(p: Passport): string {
+    const living = p.lineage.offspring.filter((o) => o.alive).length;
+    return `<h3>Family</h3>
+      <div class="row"><span>Mother</span><b>${kinLink(p.lineage.mother)}</b></div>
+      <div class="row"><span>Father</span><b>${kinLink(p.lineage.father)}</b></div>
+      <div class="row"><span>Young</span><b>${p.lineage.offspring.length} (${living} alive)</b></div>`;
+  }
+
+  #timeline(p: Passport): string {
+    if (p.timeline.length === 0) return '';
+    return `<h3>Life so far</h3><div class="timeline">${p.timeline.slice(0, 12).map((e) => `
+      <div class="event"><div class="etype">${escape(e.type)} <i>${escape(e.outcome)}</i></div>
+      <div class="eid">${escape(e.id)}</div></div>`).join('')}</div>`;
   }
 
   async refreshFeed(): Promise<void> {

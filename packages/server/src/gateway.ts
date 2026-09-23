@@ -133,6 +133,8 @@ export class Gateway {
       animals: this.host.world.agents.filter((a) => a.alive).map((a) => ({
         id: a.id, speciesId: a.speciesId, patchId: a.patchId,
         state: a.state, currentGoal: a.currentGoal, drives: a.drives,
+        // What the thought bubble reads; see thoughtFor in @vana/shared.
+        alternativeGoal: a.alternativeGoal, goalScore: a.goalScore, dependent: a.dependentOn !== null,
       })),
     };
   }

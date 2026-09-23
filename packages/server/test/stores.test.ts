@@ -54,6 +54,20 @@ maybe('EventStore', () => {
     expect((await store.byActor('tiger', 10)).map((e) => e.id)).toEqual(['fed_3', 'fed_1']);
   });
 
+  it('finds an animal\'s death however much happened to its carcass afterwards', async () => {
+    const store = new EventStore(pool!);
+    // A death names the dead first and its killer, if any, second.
+    const died: WorldEvent = { ...event('died_1', 100), type: 'died', actors: ['sambar_1', 'tiger_1'] };
+    const scavenged = Array.from({ length: 60 }, (_, i) =>
+      ({ ...event(`scav_${i}`, 200 + i), type: 'scavenged' as const, actors: ['vulture_1', 'sambar_1'] }));
+    await store.appendBatch([died, ...scavenged]);
+    expect((await store.byActor('sambar_1', 50)).some((e) => e.type === 'died')).toBe(false);
+    expect((await store.deathOf('sambar_1'))?.id).toBe('died_1');
+    expect(await store.deathOf('sambar_2')).toBeNull();
+    // The tiger is in that record as the killer; it is not the tiger's death.
+    expect(await store.deathOf('tiger_1')).toBeNull();
+  });
+
   it('counts and deletes events after a world time', async () => {
     const store = new EventStore(pool!);
     await store.appendBatch([event('fed_1', 100), event('fed_2', 200), event('fed_3', 300)]);

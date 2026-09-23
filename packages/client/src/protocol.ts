@@ -9,6 +9,10 @@ export interface AnimalState {
   state: string;
   currentGoal: string;
   drives: Drives;
+  /** Read by the thought bubble. Undefined when the server did not send it. */
+  alternativeGoal?: string | null | undefined;
+  goalScore?: number | undefined;
+  dependent?: boolean | undefined;
 }
 
 export interface WorldState {
@@ -70,6 +74,10 @@ export class WorldStore {
             drives: isRecord(raw.drives)
               ? (raw.drives as unknown as Drives)
               : { hunger: 0, thirst: 0, fatigue: 0, fear: 0 },
+            alternativeGoal: typeof raw.alternativeGoal === 'string' || raw.alternativeGoal === null
+              ? raw.alternativeGoal : undefined,
+            goalScore: typeof raw.goalScore === 'number' ? raw.goalScore : undefined,
+            dependent: typeof raw.dependent === 'boolean' ? raw.dependent : undefined,
           });
         }
         break;

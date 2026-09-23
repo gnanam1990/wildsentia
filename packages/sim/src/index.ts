@@ -18,3 +18,4 @@ export * from './agents/lifecycle.js';
 export * from './agents/genetics.js';
 export * from './agents/pedigree.js';
 export * from './forest.js';
+export * from './agents/learning.js';

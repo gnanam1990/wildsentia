@@ -27,6 +27,24 @@ describe('WorldStore', () => {
     expect(store.world!.population.sambar).toBe(12);
   });
 
+  it('keeps what the thought bubble reads, and leaves it unknown when the server omits it', () => {
+    const store = new WorldStore();
+    store.apply({
+      type: 'animals',
+      animals: [
+        { ...animalsMsg.animals[0], alternativeGoal: 'flee', goalScore: 0.42, dependent: false },
+        { ...animalsMsg.animals[0], id: 'sambar_0001' },
+      ],
+    });
+    const told = store.animals.get('sambar_0000')!;
+    expect(told.alternativeGoal).toBe('flee');
+    expect(told.goalScore).toBe(0.42);
+    expect(told.dependent).toBe(false);
+    const silent = store.animals.get('sambar_0001')!;
+    expect(silent.goalScore).toBeUndefined();
+    expect(silent.dependent).toBeUndefined();
+  });
+
   it('replaces the animal set on each animals message', () => {
     const store = new WorldStore();
     store.apply(animalsMsg);
