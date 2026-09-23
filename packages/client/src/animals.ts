@@ -5,13 +5,24 @@ import { clipForState } from './animation.js';
 import { PositionTracker, type RenderPosition } from './space.js';
 import type { AnimalState } from './protocol.js';
 import { chooseVisible } from './lod.js';
+import { visualFor } from './species.js';
 
-/** Shoulder heights in metres, matching the species config on the server. */
-const SPECIES_MODEL: Record<string, { file: string; heightM: number }> = {
-  sambar: { file: '/assets/animals/Deer.gltf', heightM: 1.35 },
-  tiger:  { file: '/assets/animals/Tiger.glb', heightM: 1.0 },
-};
-const FALLBACK = SPECIES_MODEL.sambar!;
+/**
+ * A plain stand-in for a species with no rigged model yet: a body and a head in the species'
+ * own colour and size. Honest about what it is, rather than borrowing another animal's shape.
+ */
+function standIn(colour: number): THREE.Group {
+  const material = new THREE.MeshStandardMaterial({ color: colour, roughness: 0.85, flatShading: true });
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 0.9, 3, 8), material);
+  body.rotation.z = Math.PI / 2;
+  body.position.y = 0.62;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.24, 10, 8), material);
+  head.position.set(0.72, 0.82, 0);
+  const root = new THREE.Group();
+  root.add(body, head);
+  root.rotation.y = -Math.PI / 2; // face +z like the loaded models
+  return root;
+}
 
 interface Rig {
   group: THREE.Group;
@@ -53,15 +64,31 @@ export class AnimalLayer {
   readonly #markerTexture = markerTexture();
 
   async #template(speciesId: string): Promise<THREE.Group> {
-    const config = SPECIES_MODEL[speciesId] ?? FALLBACK;
+    const visual = visualFor(speciesId);
     let pending = this.#templates.get(speciesId);
     if (pending === undefined) {
-      pending = this.#loader.loadAsync(config.file).then((gltf) => {
-        const root = gltf.scene;
-        root.userData.clips = gltf.animations;
+      const loaded: Promise<{ root: THREE.Group; clips: THREE.AnimationClip[] }> = visual.model === null
+        ? Promise.resolve({ root: standIn(visual.colour), clips: [] })
+        : this.#loader.loadAsync(visual.model.file).then((gltf) => ({ root: gltf.scene, clips: gltf.animations }));
+      pending = loaded.then(({ root, clips }) => {
+        const tint = visual.model?.tint;
+        if (tint !== undefined) {
+          // Recolour a borrowed model toward its species: a Shiba's coat to a dhole's rust.
+          const tinted = (material: THREE.Material): THREE.Material => {
+            const copy = material.clone() as THREE.MeshStandardMaterial;
+            copy.color?.multiply(new THREE.Color(tint));
+            return copy;
+          };
+          root.traverse((o) => {
+            const mesh = o as THREE.Mesh;
+            if (!mesh.isMesh) return;
+            mesh.material = Array.isArray(mesh.material) ? mesh.material.map(tinted) : tinted(mesh.material);
+          });
+        }
+        root.userData.clips = clips;
         const box = new THREE.Box3().setFromObject(root);
         const height = Math.max(box.max.y - box.min.y, 0.001);
-        root.userData.scale = config.heightM / height;
+        root.userData.scale = visual.heightM / height;
         root.userData.footOffset = box.min.y;
         return root;
       });
@@ -106,8 +133,11 @@ export class AnimalLayer {
     const marker = new THREE.Sprite(
       new THREE.SpriteMaterial({ map: this.#markerTexture, depthTest: false, transparent: true }),
     );
-    marker.scale.set(2.2, 2.2, 1);
-    marker.position.y = 3.2;
+    // Sized and placed for the animal: a fixed 3 m marker hid a dhole entirely.
+    const height = visualFor(animal.speciesId).heightM;
+    const size = Math.max(0.5, height * 0.8);
+    marker.scale.set(size, size, 1);
+    marker.position.y = height + size * 0.9;
     marker.visible = false;
     group.add(marker);
 

@@ -8,11 +8,15 @@
  */
 export const CLIP_PREFERENCES: Record<string, readonly string[]> = {
   resting:    ['Idle', 'Idle_2'],
-  grazing:    ['Eating', 'Idle_Headlow', 'Idle'],
-  drinking:   ['Idle_Headlow', 'Eating', 'Idle'],
+  grazing:    ['Eating', 'Idle_Headlow', 'Idle_2_HeadLow', 'Idle'],
+  drinking:   ['Idle_Headlow', 'Idle_2_HeadLow', 'Eating', 'Idle'],
   travelling: ['Walk', 'Gallop', 'Idle'],
+  // A stalk is a slow, deliberate walk; a chase and a flight are flat out.
+  stalking:   ['Walk', 'Idle'],
+  chasing:    ['Gallop', 'Walk', 'Idle'],
   fleeing:    ['Gallop', 'Walk', 'Idle'],
-  dead:       ['Death', 'Idle'],
+  feeding:    ['Eating', 'Idle_Headlow', 'Idle_2_HeadLow', 'Idle'],
+  dead:       ['Death', 'Dead', 'Idle'],
 };
 
 const FALLBACK: readonly string[] = ['Idle'];

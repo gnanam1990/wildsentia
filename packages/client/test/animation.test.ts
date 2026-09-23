@@ -44,4 +44,19 @@ describe('clipForState', () => {
   it('handles an unknown server state by idling', () => {
     expect(clipForState('brooding', DEER_CLIPS)).toBe('Idle');
   });
+
+  it('has a clip for every state the simulation reports, hunting and feeding included', () => {
+    // Stalking, chasing and feeding had no entry, so a hunting tiger played whatever it last had.
+    const FOX_CLIPS = ['Attack', 'Death', 'Eating', 'Gallop', 'Idle', 'Idle_2_HeadLow', 'Walk'];
+    expect(clipForState('stalking', FOX_CLIPS)).toBe('Walk');
+    expect(clipForState('chasing', FOX_CLIPS)).toBe('Gallop');
+    expect(clipForState('feeding', FOX_CLIPS)).toBe('Eating');
+    expect(clipForState('drinking', FOX_CLIPS)).toBe('Idle_2_HeadLow');
+  });
+
+  it('matches clip names whatever their case, as packs name them differently', () => {
+    expect(clipForState('travelling', ['idle', 'walk', 'dead'])).toBe('walk');
+    expect(clipForState('dead', ['idle', 'walk', 'dead'])).toBe('dead');
+  });
 });
+

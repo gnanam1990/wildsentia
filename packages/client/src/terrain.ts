@@ -24,15 +24,62 @@ export function patchHeight(patch: PatchView): number {
 
 export type HeightSampler = (x: number, z: number) => number;
 
-/** Ground height in metres at a world position, from the patch the position falls in. */
+/**
+ * Heights of the (GRID+1)² ground-mesh corners: each the average of the patches that meet there.
+ * The drawn ground and the height sampler both read these, so they cannot disagree.
+ */
+function cornerHeights(patches: readonly PatchView[]): { heights: Float64Array; present: Uint8Array } {
+  const byId = new Map<number, PatchView>();
+  for (const patch of patches) byId.set(patch.id, patch);
+  const heights = new Float64Array((GRID + 1) * (GRID + 1));
+  const present = new Uint8Array((GRID + 1) * (GRID + 1));
+  for (let row = 0; row <= GRID; row++) {
+    for (let col = 0; col <= GRID; col++) {
+      let sum = 0;
+      let n = 0;
+      for (const [dc, dr] of [[-1, -1], [0, -1], [-1, 0], [0, 0]] as const) {
+        const c = col + dc;
+        const r = row + dr;
+        if (c < 0 || r < 0 || c >= GRID || r >= GRID) continue;
+        const patch = byId.get(r * GRID + c);
+        if (patch === undefined) continue;
+        sum += patchHeight(patch);
+        n++;
+      }
+      const i = row * (GRID + 1) + col;
+      heights[i] = n > 0 ? sum / n : 0;
+      present[i] = n > 0 ? 1 : 0;
+    }
+  }
+  return { heights, present };
+}
+
+/**
+ * Ground height in metres at a world position: the surface of the drawn ground mesh itself,
+ * interpolated across the same two triangles per cell that three.js builds. It once returned
+ * the flat height of the patch a point fell in, and on slopes animals stood metres inside the
+ * hillside — a gaur was found 2.6 m underground, invisible.
+ */
 export function makeHeightSampler(patches: readonly PatchView[]): HeightSampler {
-  const byCell = new Map<number, number>();
-  for (const patch of patches) byCell.set(patch.id, patchHeight(patch));
+  const { heights } = cornerHeights(patches);
+  const at = (col: number, row: number): number => heights[row * (GRID + 1) + col]!;
 
   return (x, z) => {
-    const col = Math.round(x / PATCH_METRES);
-    const row = Math.round(z / PATCH_METRES);
-    return byCell.get(row * 20 + col) ?? 0;
+    // Corner (col, row) sits at (col·300 − 150, row·300 − 150): the patch centres are cell centres.
+    const gx = Math.min(GRID - 1e-9, Math.max(0, (x + PATCH_METRES / 2) / PATCH_METRES));
+    const gz = Math.min(GRID - 1e-9, Math.max(0, (z + PATCH_METRES / 2) / PATCH_METRES));
+    const col = Math.floor(gx);
+    const row = Math.floor(gz);
+    const fx = gx - col;
+    const fz = gz - row;
+    const a = at(col, row);
+    const b = at(col, row + 1);
+    const c = at(col + 1, row + 1);
+    const d = at(col + 1, row);
+    // PlaneGeometry splits each cell into triangles (a, b, d) and (b, c, d).
+    return fx + fz <= 1
+      ? a + (d - a) * fx + (b - a) * fz
+      : c + (b - c) * (1 - fx) + (d - c) * (1 - fz);
   };
 }
 
@@ -101,13 +148,13 @@ function buildGroundMesh(patches: readonly PatchView[]): THREE.Mesh {
   const colours = new Float32Array(position.count * 3);
   const colour = new THREE.Color();
   const blend = new THREE.Color();
+  const { heights, present } = cornerHeights(patches);
 
   for (let i = 0; i < position.count; i++) {
     // Vertex (col, row) sits at the corner shared by up to four patches.
     const col = i % (GRID + 1);
     const row = Math.floor(i / (GRID + 1));
 
-    let height = 0;
     let r = 0; let g = 0; let b = 0;
     let n = 0;
 
@@ -117,14 +164,13 @@ function buildGroundMesh(patches: readonly PatchView[]): THREE.Mesh {
       if (c < 0 || rw < 0 || c >= GRID || rw >= GRID) continue;
       const patch = byId.get(rw * GRID + c);
       if (patch === undefined) continue;
-      height += patchHeight(patch);
       blend.setHex(HABITAT_COLOUR[patch.habitat] ?? 0x556b3f);
       r += blend.r; g += blend.g; b += blend.b;
       n++;
     }
 
-    if (n > 0) {
-      position.setY(i, height / n);
+    if (present[i] === 1) {
+      position.setY(i, heights[i]!);
       colour.setRGB(r / n, g / n, b / n);
     } else {
       colour.setHex(0x556b3f);
@@ -198,6 +244,9 @@ export function buildTerrain(patches: readonly PatchView[]): THREE.Group {
   canopy.castShadow = true;
 
   const matrix = new THREE.Matrix4();
+  // Everything stands on the drawn surface, not on its patch's average height: on a slope the
+  // difference is metres, enough to float grass in the air or bury a tree to its crown.
+  const groundAt = makeHeightSampler(patches);
 
   let g = 0;
   for (const patch of grassPatches) {
@@ -210,11 +259,9 @@ export function buildTerrain(patches: readonly PatchView[]): THREE.Group {
     };
     for (let i = 0; i < tuftsPerPatch; i++) {
       matrix.makeScale(1, 0.5 + density, 1);
-      matrix.setPosition(
-        centre.x + (random() - 0.5) * PATCH_METRES,
-        patchHeight(patch),
-        centre.z + (random() - 0.5) * PATCH_METRES,
-      );
+      const gx = centre.x + (random() - 0.5) * PATCH_METRES;
+      const gz = centre.z + (random() - 0.5) * PATCH_METRES;
+      matrix.setPosition(gx, groundAt(gx, gz), gz);
       grass.setMatrixAt(g++, matrix);
     }
   }
@@ -230,7 +277,9 @@ export function buildTerrain(patches: readonly PatchView[]): THREE.Group {
     const centre = patchCentre(patch.id);
     for (let i = 0; i < 3; i++) {
       matrix.makeScale(1 + i * 0.3, 0.7, 1 + i * 0.2);
-      matrix.setPosition(centre.x + (i - 1) * 70, patchHeight(patch) + 0.6, centre.z + (i - 1) * 50);
+      const rx = centre.x + (i - 1) * 70;
+      const rz = centre.z + (i - 1) * 50;
+      matrix.setPosition(rx, groundAt(rx, rz) + 0.6, rz);
       rock.setMatrixAt(r++, matrix);
     }
   }
@@ -238,7 +287,6 @@ export function buildTerrain(patches: readonly PatchView[]): THREE.Group {
   let t = 0;
   for (const patch of woodedPatches) {
     const centre = patchCentre(patch.id);
-    const base = patchHeight(patch);
     let seed = (patch.id + 7919) * 2246822519;
     const random = (): number => {
       seed = (seed * 1664525 + 1013904223) >>> 0;
@@ -248,6 +296,7 @@ export function buildTerrain(patches: readonly PatchView[]): THREE.Group {
       const tx = centre.x + (random() - 0.5) * PATCH_METRES * 0.94;
       const tz = centre.z + (random() - 0.5) * PATCH_METRES * 0.94;
       const scale = 0.7 + random() * 0.9;
+      const base = groundAt(tx, tz);
 
       matrix.makeScale(scale, scale, scale);
       matrix.setPosition(tx, base, tz);

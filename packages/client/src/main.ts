@@ -8,6 +8,13 @@ import { Hud } from './hud.js';
 import { ThoughtBubble } from './bubble.js';
 import { LastSeen, worthRecapping } from './recap.js';
 import { momentsBetween, pointAt, replayDurationMs, type Life } from './replay.js';
+import { visualFor } from './species.js';
+
+/** Where the thought floats: just above the marker over this species' head. */
+const bubbleHeight = (speciesId: string | undefined): number => {
+  const height = speciesId === undefined ? 1 : visualFor(speciesId).heightM;
+  return height + Math.max(0.5, height * 0.8) * 1.6;
+};
 
 const canvas = document.querySelector<HTMLCanvasElement>('#view')!;
 const { renderer, scene, camera, sun } = createScene(canvas);
@@ -213,7 +220,11 @@ function frame(): void {
     }
     // The bubble floats over the animal's head, projected into screen space.
     const head = position === null ? null
-      : new THREE.Vector3(position.x, animals.groundHeightAt(position.x, position.z) + 3, position.z).project(camera);
+      : new THREE.Vector3(
+        position.x,
+        animals.groundHeightAt(position.x, position.z) + bubbleHeight(store.animals.get(followedId)?.speciesId),
+        position.z,
+      ).project(camera);
     bubble.show(
       store.animals.get(followedId),
       head === null || head.z > 1 ? null : { x: (head.x + 1) / 2 * innerWidth, y: (1 - head.y) / 2 * innerHeight },
