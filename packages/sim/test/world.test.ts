@@ -82,5 +82,20 @@ describe('World', () => {
     for (const lesson of lessons) expect(everyone.get(lesson.pupil)?.motherId).toBe(lesson.teacher);
     expect(new Set(lessons.map((l) => l.skill))).toContain('forage_efficiency');
   });
+
+  it('releases the long dead from memory, keeping the recently dead a newborn may still need', () => {
+    // A world that runs for years kept every animal that ever died in memory and in every
+    // hourly snapshot. The host archives them to the database and releases them here, but only
+    // once they are old enough that no pregnancy can still name them as the father.
+    const w = createWorld({ ...options, minPopulation: { sambar: 10 } });
+    for (let h = 0; h < 200 * 24; h++) w.step(1);
+    expect(w.deceased.length).toBeGreaterThan(0);
+    for (const dead of w.deceased) expect(typeof dead.departedAt).toBe('number');
+    const cutoff = 100 * WORLD_SECONDS_PER_DAY;
+    const old = w.deceased.filter((a) => a.departedAt! < cutoff).map((a) => a.id);
+    const released = w.releaseDeceased(cutoff);
+    expect(released.map((a) => a.id).sort()).toEqual(old.sort());
+    expect(w.deceased.every((a) => a.departedAt! >= cutoff)).toBe(true);
+  });
 });
 

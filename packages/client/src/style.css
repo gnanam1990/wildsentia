@@ -98,3 +98,15 @@ button:hover { color: var(--ink); }
 #passport .recap h3 { margin-top: 0; }
 #passport .recap button { margin-top: 8px; }
 #passport .recap .event.narrated .etype::before { content: '\270E  '; opacity: 0.6; }
+
+/* Life replay: a recorded life played back, never the live world. The banner says which. */
+.replay {
+  position: fixed; left: 50%; top: 72px; transform: translateX(-50%); z-index: 25;
+  min-width: 360px; max-width: 560px; padding: 10px 16px; border-radius: 12px;
+  background: rgba(20, 28, 18, 0.88); color: #f3efe2; font: 13px/1.4 system-ui, sans-serif; text-align: center;
+}
+.replay .when { font-family: var(--mono, monospace); font-size: 11px; opacity: 0.75; }
+.replay .moment { min-height: 1.4em; margin: 4px 0 8px; font-weight: 600; }
+.replay .progress { height: 3px; background: rgba(243, 239, 226, 0.2); border-radius: 2px; overflow: hidden; }
+.replay .progress i { display: block; height: 100%; width: 0; background: #b9d98a; }
+.replay button { margin-top: 8px; }

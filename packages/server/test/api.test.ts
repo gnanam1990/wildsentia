@@ -17,7 +17,7 @@ let api: FastifyInstance;
 beforeAll(async () => {
   if (!url) return;
   await migrate(pool!);
-  await pool!.query('truncate events, snapshots, follows, viewers cascade');
+  await pool!.query('truncate events, snapshots, follows, viewers, tracks, animal_archive cascade');
   const host = new SimHost({
     pool: pool!, seed: 3, speciesDir,
     initialAgents: { sambar: 12 }, minPopulation: { sambar: 12 }, landscape: null,
@@ -90,6 +90,26 @@ maybe('read API', () => {
     const list = (await api.inject({ method: 'GET', url: '/animals' })).json();
     const res = await api.inject({ method: 'GET', url: `/animals/${list.animals[0].id}/recap` });
     expect(res.statusCode).toBe(400);
+  });
+
+  it('gives a whole life to replay: where it went, and what happened', async () => {
+    const list = (await api.inject({ method: 'GET', url: '/animals' })).json();
+    const id = list.animals[0].id;
+    const res = await api.inject({ method: 'GET', url: `/animals/${id}/life` });
+    expect(res.statusCode).toBe(200);
+    const life = res.json();
+    expect(life).toMatchObject({ id, speciesId: 'sambar', alive: true });
+    expect(life.track.length).toBeGreaterThan(0);
+    for (let i = 1; i < life.track.length; i++) {
+      expect(life.track[i].worldTime).toBeGreaterThan(life.track[i - 1].worldTime);
+    }
+    expect(life.track[0]).toHaveProperty('patchId');
+    expect(Array.isArray(life.moments)).toBe(true);
+  });
+
+  it('refuses a life for an animal that never existed', async () => {
+    const res = await api.inject({ method: 'GET', url: '/animals/nobody_0000/life' });
+    expect(res.statusCode).toBe(404);
   });
 
   it('refuses a passport for an animal that never existed', async () => {

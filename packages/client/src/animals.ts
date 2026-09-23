@@ -153,6 +153,24 @@ export class AnimalLayer {
     }
   }
 
+  /**
+   * Shows one animal alone, at a position the replay computed from its recorded track. Every
+   * other model is released while a life is replayed; they come back when live sync resumes.
+   */
+  syncReplay(animal: AnimalState, position: RenderPosition): void {
+    void this.#ensureRig(animal);
+    for (const [id, rig] of [...this.#rigs]) {
+      if (id === animal.id) continue;
+      this.root.remove(rig.group);
+      this.#rigs.delete(id);
+    }
+    const rig = this.#rigs.get(animal.id);
+    if (!rig) return;
+    this.#place(rig, position);
+    this.#animate(rig, position.moving ? 'travelling' : animal.state);
+    rig.marker.visible = true;
+  }
+
   positionOf(id: string, nowMs: number): RenderPosition | null {
     return this.tracker.has(id) ? this.tracker.positionAt(id, nowMs) : null;
   }

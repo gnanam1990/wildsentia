@@ -92,4 +92,6 @@ export interface Agent {
   goalScore: number;
   drives: Drives;
   alive: boolean;
+  /** World time it died or left the forest. Absent while it is here. */
+  departedAt?: number;
 }

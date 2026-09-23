@@ -302,6 +302,7 @@ export class World {
   #kill(agent: Agent, cause: DeathCause, killerId: string | null): Carcass {
     agent.alive = false;
     agent.state = 'dead';
+    agent.departedAt = this.#time;
     this.#livingBySpecies.set(
       agent.speciesId, Math.max(0, (this.#livingBySpecies.get(agent.speciesId) ?? 1) - 1),
     );
@@ -464,6 +465,7 @@ export class World {
     const agent = leavers[this.#rng.int(leavers.length)]!;
     agent.alive = false;
     agent.state = 'emigrated';
+    agent.departedAt = this.#time;
     this.#livingBySpecies.set(speciesId, Math.max(0, (this.#livingBySpecies.get(speciesId) ?? 1) - 1));
     // Its body leaves with it, so the ledger records what went out of the forest.
     this.ledger.exported += agent.massKg * NUTRIENT_PER_KG_BIOMASS;
@@ -474,6 +476,23 @@ export class World {
       causalParents: [], confidence: 'authoritative',
     });
     return true;
+  }
+
+  /**
+   * Removes and returns the dead and departed who left before `before`, so a long-running host
+   * can archive them and keep memory and snapshots from growing without end. Anything that left
+   * recently stays: a pregnancy can still name a dead father until it comes to term.
+   */
+  releaseDeceased(before: WorldTime): Agent[] {
+    const released: Agent[] = [];
+    for (let i = this.deceased.length - 1; i >= 0; i--) {
+      const agent = this.deceased[i]!;
+      if ((agent.departedAt ?? Infinity) >= before) continue;
+      released.push(agent);
+      this.deceased.splice(i, 1);
+      this.#agentsById.delete(agent.id);
+    }
+    return released.reverse();
   }
 
   /** @internal — lets the breed helper share the world view type. */

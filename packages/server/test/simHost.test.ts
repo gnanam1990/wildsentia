@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { createPool } from '../src/db/pool.js';
 import { migrate } from '../src/db/migrate.js';
 import { EventStore } from '../src/db/eventStore.js';
+import { LifeStore } from '../src/db/lifeStore.js';
 import { SimHost } from '../src/simHost.js';
 import { FOREST_LANDSCAPE, FOREST_POPULATION } from '@vana/sim';
 import { testDatabaseUrl } from './testDatabase.js';
@@ -23,7 +24,7 @@ afterAll(async () => { await pool?.end(); });
 maybe('SimHost', () => {
   beforeEach(async () => {
     await migrate(pool!);
-    await pool!.query('truncate events, snapshots, follows, viewers cascade');
+    await pool!.query('truncate events, snapshots, follows, viewers, tracks, animal_archive cascade');
   });
 
   it('boots a fresh world when there is no snapshot', async () => {
@@ -45,6 +46,44 @@ maybe('SimHost', () => {
       expect(host.world.livingCount(speciesId)).toBe(count);
     }
     expect(host.worldOptions.landscape).toEqual(FOREST_LANDSCAPE);
+  });
+
+  it('samples where every animal is, every few world hours', async () => {
+    const host = new SimHost({ ...options(), trackEveryWorldHours: 6 });
+    await host.boot();
+    await host.advance(13);
+    const id = host.world.agents[0]!.id;
+    const track = await new LifeStore(pool!).trackOf(id);
+    expect(track.map((p) => p.worldTime)).toEqual([6 * 3600, 12 * 3600]);
+    expect(track[1]!.patchId).toBeGreaterThanOrEqual(0);
+  });
+
+  it('prunes routine events past their window, keeping the rest', async () => {
+    const host = new SimHost({ ...options(), routineRetentionWorldDays: 1, housekeepingEveryWorldHours: 24 });
+    await host.boot();
+    await host.advance(24 * 3);
+    const { rows } = await pool!.query<{ n: string }>(
+      "select count(*) as n from events where type = 'moved' and world_time < $1", [(3 - 1) * 86_400],
+    );
+    expect(Number(rows[0]!.n)).toBe(0);
+    const { rows: recent } = await pool!.query<{ n: string }>(
+      "select count(*) as n from events where type = 'moved' and world_time >= $1", [2 * 86_400],
+    );
+    expect(Number(recent[0]!.n)).toBeGreaterThan(0);
+  });
+
+  it('archives the long departed and lets the world forget them', async () => {
+    // Tigers with nothing to hunt starve within a couple of weeks.
+    const host = new SimHost({
+      ...options(), initialAgents: { tiger: 3 }, minPopulation: {},
+      archiveAfterWorldDays: 1, housekeepingEveryWorldHours: 24,
+    });
+    await host.boot();
+    await host.advance(24 * 30);
+    const { rows } = await pool!.query<{ id: string }>('select id from animal_archive');
+    expect(rows.length).toBeGreaterThan(0);
+    for (const { id } of rows) expect(host.world.deceased.some((a) => a.id === id)).toBe(false);
+    expect((await new LifeStore(pool!).archived(rows[0]!.id))?.alive).toBe(false);
   });
 
   it('persists events as the world advances', async () => {

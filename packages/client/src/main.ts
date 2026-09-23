@@ -7,6 +7,7 @@ import { FollowCamera } from './camera.js';
 import { Hud } from './hud.js';
 import { ThoughtBubble } from './bubble.js';
 import { LastSeen, worthRecapping } from './recap.js';
+import { momentsBetween, pointAt, replayDurationMs, type Life } from './replay.js';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#view')!;
 const { renderer, scene, camera, sun } = createScene(canvas);
@@ -52,6 +53,37 @@ function connect(): void {
   });
   socket.addEventListener('close', () => { setTimeout(connect, 2000); });
 }
+
+/** A life being replayed (spec §11): the record, when playback began, and how long it runs. */
+let replay: { life: Life; startedMs: number; durationMs: number; playhead: number } | null = null;
+const banner = document.querySelector<HTMLElement>('#replay')!;
+
+const dayOf = (t: number): string => {
+  const days = Math.floor(t / 86_400);
+  return `year ${Math.floor(days / 360) + 1}, day ${(days % 360) + 1}`;
+};
+
+async function startReplay(id: string): Promise<void> {
+  try {
+    const response = await fetch(`/api/animals/${encodeURIComponent(id)}/life`);
+    if (!response.ok) return;
+    const life = (await response.json()) as Life;
+    if (life.track.length === 0) return;
+    const first = life.track[0]!.worldTime;
+    const last = life.track[life.track.length - 1]!.worldTime;
+    replay = { life, startedMs: performance.now(), durationMs: replayDurationMs(last - first), playhead: first };
+    banner.hidden = false;
+    banner.querySelector('.moment')!.textContent = '';
+  } catch {
+    // The live view carries on; a replay is an extra.
+  }
+}
+
+function stopReplay(): void {
+  replay = null;
+  banner.hidden = true;
+}
+banner.querySelector('[data-stop-replay]')!.addEventListener('click', stopReplay);
 
 /** Set on follow; answered once the world clock is known, before lastSeen is overwritten. */
 let recapPending: string | null = null;
@@ -100,6 +132,11 @@ document.querySelector('#freecam')!.addEventListener('click', () => { watch(null
 
 // Family members and teachers in the passport are links: follow them.
 document.querySelector('#passport')!.addEventListener('click', (event) => {
+  const replayButton = (event.target as HTMLElement).closest<HTMLElement>('[data-replay]');
+  if (replayButton !== null) {
+    void startReplay(replayButton.dataset.replay!);
+    return;
+  }
   if ((event.target as HTMLElement).closest('[data-dismiss-recap]') !== null) {
     hud.recap = null;
     hud.render(followedId);
@@ -137,6 +174,31 @@ function frame(): void {
   requestAnimationFrame(frame);
   const dt = Math.min(clock.getDelta(), 0.1);
   const now = performance.now();
+
+  if (replay !== null) {
+    const { life } = replay;
+    const first = life.track[0]!.worldTime;
+    const last = life.track[life.track.length - 1]!.worldTime;
+    const progress = Math.min(1, (now - replay.startedMs) / replay.durationMs);
+    const playhead = first + (last - first) * progress;
+    const point = pointAt(life.track, life.id, playhead);
+    animals.syncReplay(
+      { id: life.id, speciesId: life.speciesId, patchId: 0, state: point.state, currentGoal: '', drives: point.drives },
+      point,
+    );
+    animals.update(dt);
+    follow.follow({ ...point, y: animals.groundHeightAt(point.x, point.z) }, dt);
+    for (const moment of momentsBetween(life.moments, replay.playhead, playhead)) {
+      banner.querySelector('.moment')!.textContent = moment.text;
+    }
+    replay.playhead = playhead;
+    banner.querySelector('.when')!.textContent = `${life.id} · ${dayOf(playhead)}`;
+    (banner.querySelector('.progress i') as HTMLElement).style.width = `${Math.round(progress * 100)}%`;
+    bubble.show(undefined, null);
+    renderer.render(scene, camera);
+    if (progress >= 1) stopReplay();
+    return;
+  }
 
   animals.sync(store.animals, now, followedId, { x: follow.target.x, z: follow.target.z });
   animals.update(dt);

@@ -130,6 +130,7 @@ export class Hud {
       <div class="row"><span>Goal</span><b>${animal.currentGoal}</b></div>
       <div class="row"><span>Watching now</span><b>${viewers ?? UNKNOWN}</b></div>
       ${p === null ? '' : this.#skills(p) + this.#lineage(p) + this.#timeline(p)}
+      <button data-replay="${escape(animal.id)}">Replay this life</button>
       <p class="prov">every value above came from the simulation &middot; no model wrote this</p>`;
   }
 
@@ -176,8 +177,8 @@ export class Hud {
       const body = (await response.json()) as { events: Array<Record<string, unknown>> };
       this.elements.feed.innerHTML = body.events
         .map((event) => `<div class="event">
-            <div class="etype">${String(event.type)}</div>
-            <div class="eid">${String(event.id)}</div>
+            <div class="etype">${escape(String(event.type))}</div>
+            <div class="eid">${escape(String(event.id))}</div>
           </div>`)
         .join('');
     } catch {

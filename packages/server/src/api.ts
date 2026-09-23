@@ -3,6 +3,7 @@ import { RECAP_EVENT_TYPES, SKILL_IDS, formatWorldTime, seasonAt, thoughtFor, ty
 import { confidenceOf } from '@vana/sim';
 import type { Pool } from './db/pool.js';
 import { EventStore } from './db/eventStore.js';
+import { LifeStore } from './db/lifeStore.js';
 import type { SimHost } from './simHost.js';
 import { Narrator } from './narration/narrator.js';
 
@@ -21,6 +22,13 @@ export interface ApiDeps {
 export function buildApi({ host, pool, narrator }: ApiDeps): FastifyInstance {
   const app = Fastify({ logger: false });
   const events = new EventStore(pool);
+  const life = new LifeStore(pool);
+
+  /** An animal in the running world, or one archived after it was long gone. */
+  const findAnimal = async (id: string): Promise<Agent | undefined> =>
+    host.world.agents.find((a) => a.id === id)
+    ?? host.world.deceased.find((a) => a.id === id)
+    ?? (await life.archived(id)) ?? undefined;
   const narration = narrator ?? new Narrator({ pool, rephrase: null, dailyTokenBudget: 0 });
 
   app.get('/health', async () => ({ ok: true, worldTime: host.world.now() }));
@@ -65,16 +73,16 @@ export function buildApi({ host, pool, narrator }: ApiDeps): FastifyInstance {
    */
   app.get<{ Params: { id: string } }>('/animals/:id/passport', async (request, reply) => {
     const world = host.world;
-    const find = (id: string | null): Agent | undefined => id === null
-      ? undefined
-      : world.agents.find((a) => a.id === id) ?? world.deceased.find((a) => a.id === id);
-    const agent = find(request.params.id);
+    const agent = await findAnimal(request.params.id);
     if (!agent) return reply.code(404).send({ error: 'not_found' });
     const config = world.species.get(agent.speciesId)!;
-    const kin = (id: string | null) => {
-      const other = find(id);
+    const kinOf = async (id: string | null) => {
+      const other = id === null ? undefined : await findAnimal(id);
       return other === undefined ? null : { id: other.id, alive: other.alive };
     };
+    const [mother, father, ...young] = await Promise.all(
+      [agent.motherId, agent.fatherId, ...agent.offspringIds].map((id) => kinOf(id)),
+    );
 
     const timeline = await events.byActor(agent.id, 50);
     // Asked for separately: scavenging a large carcass can push the death past the timeline's end.
@@ -103,9 +111,9 @@ export function buildApi({ host, pool, narrator }: ApiDeps): FastifyInstance {
         })
         : null,
       lineage: {
-        mother: kin(agent.motherId),
-        father: kin(agent.fatherId),
-        offspring: agent.offspringIds.map((id) => kin(id)).filter((k) => k !== null),
+        mother: mother ?? null,
+        father: father ?? null,
+        offspring: young.filter((k) => k !== null && k !== undefined),
         groupId: agent.groupId ?? null,
       },
       skills: SKILL_IDS
@@ -123,6 +131,36 @@ export function buildApi({ host, pool, narrator }: ApiDeps): FastifyInstance {
       timeline: timeline.map((e) => ({
         id: e.id, type: e.type, worldTime: e.worldTime, outcome: e.outcome, actors: e.actors,
       })),
+    };
+  });
+
+  /**
+   * A whole life to replay (spec §11): where the animal was, sampled every few world hours, and
+   * every significant thing that happened to it, each tied to its event. Positions between
+   * samples are the client's to interpolate; nothing here is invented.
+   */
+  app.get<{ Params: { id: string } }>('/animals/:id/life', async (request, reply) => {
+    const agent = await findAnimal(request.params.id);
+    if (!agent) return reply.code(404).send({ error: 'not_found' });
+    const track = await life.trackOf(agent.id);
+    if (agent.alive) {
+      const now = host.world.now();
+      if (track.length === 0 || track[track.length - 1]!.worldTime < now) {
+        track.push({
+          id: agent.id, worldTime: now, patchId: agent.patchId, state: agent.state,
+          goal: agent.currentGoal, drives: agent.drives,
+        });
+      }
+    }
+    const major = await events.byActorSince(agent.id, -1, 5000, RECAP_EVENT_TYPES);
+    return {
+      id: agent.id,
+      speciesId: agent.speciesId,
+      alive: agent.alive,
+      bornAt: agent.bornAt,
+      departedAt: agent.departedAt ?? null,
+      track: track.map(({ id: _id, ...point }) => point),
+      moments: await narration.recap(major, agent.id),
     };
   });
 
