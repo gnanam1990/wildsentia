@@ -12,6 +12,7 @@ One shared, server-authoritative wildlife simulation. You can watch it. You cann
 **M3 — observer client: complete.** A browser renders the live world; every number on screen came off the wire.
 **M4 — food web: complete.** Twelve species, predation, scavenging, decomposition, and a closed nutrient cycle.
 **M5 — reproduction: complete.** Animals are born rather than imported, inherit from two named parents, and age through life stages toward death.
+**M5.1 — ecological balance.** Every species now persists on its own births. Immigration fell from 1,372 rescues to 84 over two world-years.
 
 | Gate | Result |
 |---|---|
@@ -46,9 +47,10 @@ npm install
 docker compose up -d db              # Postgres on :5433
 
 export DATABASE_URL=postgres://vana:vana@localhost:5433/vana
-npm test                             # full suite, including the 1,000-day soak
+npm test                             # full suite, including the one-year soak gate
 npm run typecheck
 npm run soak -- --seed 1 --days 1000 # M1 gate
+VANA_LONG_SOAK=1 npx vitest run soak-long  # five world-years, ~20 minutes
 npm run dev:server                   # the live world on :8080
 npm run dev:client                   # the observer on :5173
 ```
@@ -125,6 +127,82 @@ depressed disease resistance — which is what makes dispersal worth anything.
 Newborn mass is drawn from the patch's soil nutrients, standing for the food the mother converted
 during gestation and which the feeding model had already returned there. Nothing is created from
 nothing; the ledger stays exact through birth as it does through death.
+
+## Balance
+
+The world is balanced by mechanism, not by tuning a number until the chart looks right. Each
+fix below corrected something the model was getting physically wrong:
+
+| Mechanism | Was | Now |
+|---|---|---|
+| Hunger | A flat drop per meal, so an animal stayed fed on under 2% of its ration | Falls in proportion to `eaten / dailyIntakeKg`; a day's food offsets a day's hunger |
+| Feeding hours | Ration spread over 24 hours, implying round-the-clock grazing | Spread over the ~8 hours a grazer actually feeds |
+| Gorging | Intake capped near an even trickle, leaving predators permanently hungry | A hungry animal eats up to gut capacity; daily total unchanged |
+| Regrowth | `rate × standing crop`, so a grazed-bare patch regrew at nothing | Adds a baseline from root reserves and seed rain |
+| Carrion | Found only in patches an animal could see | Found by the carcass's own scent radius |
+| Prey density | Seeded at 20 ungulates per km² | Seeded at the ~60 per km² a tiger reserve carries |
+
+The carrion fix mattered most. A dhole fills up in an hour, and with a one-patch view it walked
+away from a kill it had barely touched and killed again the next day. Predators were taking five
+animals for every one they ate. Letting carcasses be smelt from their scent radius cut kills from
+5.7 a day to 2.5 and brought chital back from 30 to 818.
+
+Two world-years, seed 1:
+
+| | before this pass | after |
+|---|---|---|
+| immigration rescues | 1,372 | **84** |
+| kills per day | 5.7 | **2.5** |
+| chital | 30 | **818** |
+| sambar | 20 | **272** |
+| gaur | 10 | **69** |
+| langur | 20 | **209** |
+
+### Regulation
+
+The first pass kept the forest alive for two years. Run for five, it emptied in the third:
+chital, sambar, langur and boar pinned at their floors, then the tigers starved with them.
+Each cause below was measured before it was fixed, and each fix has a test that failed first.
+
+| What was wrong | Evidence | Fix |
+|---|---|---|
+| Crowding cost hours, not cycles | A crowded hare's courtship failed 95% of the time, yet she conceived in a median 22 hours, against a 132-day cycle | A failed courtship ends that oestrus (`oestrusCycleDays`) |
+| Every pack female bred | 12 dholes became 56 in four months | One litter per pack at a time |
+| Carrion chosen by size alone | A pack walked between two carcasses as each was eaten down; 205 scavenge decisions a day, 11 reached a carcass | Carcasses are chosen by worth over distance |
+| Inter-birth interval counted twice | Config values are birth to birth; gestation was added on top, so chital calved every 17 months, not 10 | Conception opens `interBirthIntervalDays − gestationDays` after a birth |
+| Boar data | Two litters a year, 60% of piglets surviving | Field values: one litter, 30-50% survive |
+| No tiger ranges | Tigers bred to twelve on 36 km² | Ranges held against the same sex; floaters don't breed and die more often |
+| Kills unguarded | Boar ate 67% of every tiger kill, so tigers killed every 2.8 days | Nothing approaches a carcass something that hunts it stands over; now every 5.6 days |
+| No prey switching | Tigers kept killing chital at 41 left while boar were everywhere | Prey kind chosen by the square of its abundance |
+| Packs unbounded | Dhole packs reached 38 and multiplied | Pack-size cap and pack-against-pack ranges |
+| A sealed box | A 36 km² window has no outside to recover from | Animals cross the edge in proportion to the difference from regional density |
+| Lakes dried up | Every pool fell to 445 L each dry season; all elephants and 122 gaur died of thirst | Springs and seepage feed lakes and marshes |
+| Short sight, no memory | Gaur starved in circles 2 km from pasture | Range memory when nothing in view will do |
+| Drinking rationed | Gaur commuted between water and grass until they died | An animal at water drinks its fill |
+
+Five world-years, seed 1 (`npm run soak -- --seed 1 --days 1800`):
+
+| | seeded | end of year 5 |
+|---|---|---|
+| chital | 1,400 | 672 |
+| sambar | 450 | 228 |
+| gaur | 200 | 130 |
+| langur | 300 | 184 |
+| boar | 500 | 671 |
+| hare | 900 | 1,442 |
+| elephant | 8 | 6 |
+| tiger | 4 | 3 |
+| dhole | 12 | 13 |
+
+No hard failures and no ceiling warnings. 17,872 births against 1,668 arrivals from outside,
+six generations, mean inbreeding 0.003, nutrient drift 1.9e-8. The long gate
+(`soak-long.test.ts`) checks that no species ends at its floor and every prey species
+keeps at least two-fifths of its seeded density.
+
+**Still out of band:** hunger is still a killer in the dry season. Over the five years 339
+sambar, 262 gaur, 257 chital and 29 elephants starved; for sambar that is close to its
+births (368). The late dry season runs short of grass for everything grazing at once. Some
+of that is how a real dry season goes, but at this scale it is the next thing to fix.
 
 ## What is not built yet
 

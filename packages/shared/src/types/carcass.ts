@@ -2,7 +2,15 @@ import type { PatchId } from './patch.js';
 import type { WorldTime } from '../time.js';
 import type { Confidence } from './event.js';
 
-export type DeathCause = 'predation' | 'starvation' | 'dehydration' | 'senescence' | 'injury' | 'unknown';
+export type DeathCause =
+  | 'predation' | 'starvation' | 'dehydration'
+  /** Reached the species' maximum age. */
+  | 'senescence'
+  /** The background hazard of being alive at this life stage: disease, accident, bad luck. */
+  | 'natural'
+  /** A floater killed fighting for a range, or driven out and lost to the forest. */
+  | 'territorial'
+  | 'injury' | 'unknown';
 
 export type DecayStage = 1 | 2 | 3 | 4 | 5;
 

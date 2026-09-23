@@ -3,7 +3,9 @@ import type { WorldTime } from '../time.js';
 
 export type AgentState =
   | 'resting' | 'grazing' | 'drinking' | 'travelling'
-  | 'stalking' | 'chasing' | 'feeding' | 'fleeing' | 'dead';
+  | 'stalking' | 'chasing' | 'feeding' | 'fleeing' | 'dead'
+  /** Walked out of this stretch of forest into the country around it. Alive, but gone. */
+  | 'emigrated';
 
 export const GOAL_IDS = [
   'find_food', 'find_water', 'rest', 'wander', 'hunt', 'scavenge', 'flee', 'breed',
@@ -58,6 +60,8 @@ export interface Agent {
   groupId?: string | null;
   /** World time conception happened, or null. */
   pregnantSince: number | null;
+  /** A female whose courtship failed is not receptive again until her next cycle. */
+  nextOestrusAt?: number | null;
   /** World time this animal last gave birth, for the inter-birth interval. */
   lastBirthAt: number | null;
   offspringIds: string[];

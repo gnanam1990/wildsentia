@@ -19,6 +19,25 @@ describe('species config', () => {
     }
   });
 
+  it('gives wild boar field-reported breeding: one litter a year, most piglets lost', () => {
+    // Sows in Indian forests farrow about once a year, and half to two-thirds of piglets die in
+    // their first year. Two litters a year with most piglets surviving let boar double every
+    // few months, faster than any predator or crowding in the forest could hold them.
+    const { lifecycle } = species.get('boar')!;
+    expect(lifecycle.interBirthIntervalDays).toBeGreaterThanOrEqual(330);
+
+    let hazard = 0;
+    const stages = lifecycle.stages;
+    for (let i = 0; i < stages.length; i++) {
+      const start = stages[i]!.startDays;
+      const end = Math.min(stages[i + 1]?.startDays ?? Infinity, 365);
+      if (end > start) hazard += (end - start) * stages[i]!.mortalityPerDay;
+    }
+    const firstYearSurvival = Math.exp(-hazard);
+    expect(firstYearSurvival).toBeGreaterThanOrEqual(0.3);
+    expect(firstYearSurvival).toBeLessThanOrEqual(0.5);
+  });
+
   it('uses only the seven archetypes', () => {
     for (const config of species.values()) expect(ARCHETYPES.has(config.archetype)).toBe(true);
   });

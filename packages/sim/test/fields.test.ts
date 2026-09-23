@@ -53,6 +53,31 @@ describe('water', () => {
     expect(Number.isFinite(patch.waterVolume)).toBe(true);
   });
 
+  it('keeps a lake through the whole dry season: springs feed it when the rain stops', () => {
+    // Every pool in the forest used to dry to a few hundred litres by the dry season's end,
+    // lakes included, and the elephants and gaur died of thirst each year. Perennial water is
+    // what a dry-season forest is organised around.
+    const lake = buildGrid(2).find((p) => p.habitat === 'water')!;
+    for (let h = 0; h < 90 * 24; h++) updateWater(lake, 1, 'dry');
+    expect(lake.waterVolume).toBeGreaterThan(40_000);
+  });
+
+  it('keeps some water in a marsh through the dry season, but less than in a lake', () => {
+    const patches = buildGrid(2);
+    const marsh = patches.find((p) => p.habitat === 'marsh')!;
+    const lake = patches.find((p) => p.habitat === 'water')!;
+    for (let h = 0; h < 90 * 24; h++) { updateWater(marsh, 1, 'dry'); updateWater(lake, 1, 'dry'); }
+    expect(marsh.waterVolume).toBeGreaterThan(2_000);
+    expect(marsh.waterVolume).toBeLessThan(lake.waterVolume);
+  });
+
+  it('lets rain-fed ground dry out in the dry season', () => {
+    const grass = buildGrid(2).find((p) => p.habitat === 'grassland')!;
+    grass.waterVolume = 1_200;
+    for (let h = 0; h < 90 * 24; h++) updateWater(grass, 1, 'dry');
+    expect(grass.waterVolume).toBeLessThan(600);
+  });
+
   it('refills during the monsoon', () => {
     const patch = buildGrid(2).find((p) => p.habitat === 'riparian')!;
     patch.waterVolume = 0;

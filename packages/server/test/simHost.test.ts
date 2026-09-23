@@ -4,6 +4,7 @@ import { createPool } from '../src/db/pool.js';
 import { migrate } from '../src/db/migrate.js';
 import { EventStore } from '../src/db/eventStore.js';
 import { SimHost } from '../src/simHost.js';
+import { FOREST_LANDSCAPE, FOREST_POPULATION } from '@vana/sim';
 
 const url = process.env.DATABASE_URL;
 const maybe = url ? describe : describe.skip;
@@ -13,7 +14,7 @@ const speciesDir = fileURLToPath(new URL('../../../config/species', import.meta.
 const options = () => ({
   pool: pool!, seed: 7, speciesDir,
   snapshotEveryWorldHours: 24,
-  initialAgents: { sambar: 20 }, minPopulation: { sambar: 20 },
+  initialAgents: { sambar: 20 }, minPopulation: { sambar: 20 }, landscape: null,
 });
 
 afterAll(async () => { await pool?.end(); });
@@ -29,6 +30,20 @@ maybe('SimHost', () => {
     const result = await host.boot();
     expect(result.restoredFrom).toBeNull();
     expect(host.world.livingCount('sambar')).toBe(20);
+  });
+
+  it('boots the whole forest by default, not a single species', async () => {
+    // No population overrides: this is exactly what the live server constructs.
+    const host = new SimHost({ pool: pool!, seed: 7, speciesDir });
+    await host.boot();
+
+    const present = new Set(host.world.agents.map((a) => a.speciesId));
+    expect(present.size).toBe(12);
+    expect([...present].sort()).toEqual([...host.world.species.keys()].sort());
+    for (const [speciesId, count] of Object.entries(FOREST_POPULATION)) {
+      expect(host.world.livingCount(speciesId)).toBe(count);
+    }
+    expect(host.worldOptions.landscape).toEqual(FOREST_LANDSCAPE);
   });
 
   it('persists events as the world advances', async () => {

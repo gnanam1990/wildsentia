@@ -40,6 +40,75 @@ describe('perceive', () => {
     expect(p.carrion?.carcass.id).toBe('c1');
   });
 
+  it('goes for a nearby carcass with enough meat before a bigger one further off', () => {
+    const dhole = speciesOf('dhole');
+    const hunter = makeAgent('dhole', { patchId: 105 });
+    const near = makeCarcass('near', 'x', 'chital', 106, 0, 'predation', 'authoritative', 70);
+    const far = makeCarcass('far', 'y', 'gaur', 109, 0, 'predation', 'authoritative', 600);
+    const p = perceive(hunter, dhole, makeView(patches, [hunter], [near, far]));
+    expect(p.carrion?.carcass.id).toBe('near');
+  });
+
+  it('stays at the carcass it is eating rather than leaving for a slightly bigger one', () => {
+    // A pack eats a carcass down together. Once it holds a few kilograms less than another one
+    // nearby, choosing by size alone sends every member across to the other, which they eat
+    // down in turn, and back again. They walk instead of eating, and hunting stays off because
+    // there is always carrion in reach. That is how a pack of dholes starved in the dry season.
+    const dhole = speciesOf('dhole');
+    const hunter = makeAgent('dhole', { patchId: 105 });
+    const here = makeCarcass('here', 'x', 'chital', 105, 0, 'predation', 'authoritative', 300);
+    const there = makeCarcass('there', 'y', 'chital', 108, 0, 'predation', 'authoritative', 320);
+    const p = perceive(hunter, dhole, makeView(patches, [hunter], [here, there]));
+    expect(p.carrion?.carcass.id).toBe('here');
+  });
+
+  it('keeps a scavenger off a carcass while something that hunts it is on the kill', () => {
+    // Boar were taking two-thirds of every tiger kill, standing beside the tiger to do it, so
+    // tigers killed every two or three days instead of every week and the deer ran out.
+    const boar = speciesOf('boar');
+    const pig = makeAgent('boar', { id: 'pig', patchId: 105 });
+    const guard = makeAgent('tiger', { id: 't1', patchId: 106 });
+    const kill = makeCarcass('kill', 'x', 'chital', 106, 0, 'predation', 'authoritative', 70);
+    expect(perceive(pig, boar, makeView(patches, [pig, guard], [kill])).carrion).toBeNull();
+    const unguarded = makeCarcass('free', 'y', 'chital', 107, 0, 'natural', 'authoritative', 70);
+    expect(perceive(pig, boar, makeView(patches, [pig, guard], [kill, unguarded])).carrion?.carcass.id)
+      .toBe('free');
+  });
+
+  it('remembers food beyond sight when everything in view is grazed bare', () => {
+    // Gaur see three hundred metres. In the dry season they grazed their surroundings bare and
+    // then starved walking in circles, with hundreds of tonnes of grass a couple of kilometres
+    // away. A grazer knows its range better than it can see it.
+    const gaur = speciesOf('gaur');
+    const grid = buildGrid(4);
+    const at = (x: number, y: number) => y * 20 + x;
+    for (const p of grid) { p.plant.grass = 0; p.plant.browse = 0; }
+    grid[at(10, 16)]!.plant.grass = 5000;
+    const cow = makeAgent('gaur', { patchId: at(10, 10) });
+    expect(perceive(cow, gaur, makeView(grid, [cow])).bestFood?.patchId).toBe(at(10, 16));
+  });
+
+  it('still eats what is in sight rather than walking off to remembered pasture', () => {
+    const gaur = speciesOf('gaur');
+    const grid = buildGrid(4);
+    const at = (x: number, y: number) => y * 20 + x;
+    for (const p of grid) { p.plant.grass = 0; p.plant.browse = 0; }
+    grid[at(10, 11)]!.plant.grass = 400;
+    grid[at(10, 16)]!.plant.grass = 5000;
+    const cow = makeAgent('gaur', { patchId: at(10, 10) });
+    expect(perceive(cow, gaur, makeView(grid, [cow])).bestFood?.patchId).toBe(at(10, 11));
+  });
+
+  it('remembers water beyond sight when every pool in view is dry', () => {
+    const elephant = speciesOf('elephant');
+    const grid = buildGrid(4);
+    const at = (x: number, y: number) => y * 20 + x;
+    for (const p of grid) p.waterVolume = 0;
+    grid[at(4, 10)]!.waterVolume = 50_000;
+    const cow = makeAgent('elephant', { patchId: at(10, 10) });
+    expect(perceive(cow, elephant, makeView(grid, [cow])).bestWater?.patchId).toBe(at(4, 10));
+  });
+
   it('does not show carrion to a species that cannot scavenge', () => {
     const grazer = makeAgent('sambar', { patchId: 10 });
     const carcass = makeCarcass('c1', 'x', 'sambar', 10, 0, 'predation', 'authoritative', 200);

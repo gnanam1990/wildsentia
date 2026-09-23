@@ -13,3 +13,8 @@ export * from './snapshot.js';
 export * from './fields/decomposition.js';
 export * from './agents/predation.js';
 export * from './agents/archetypes.js';
+export * from './agents/reproduction.js';
+export * from './agents/lifecycle.js';
+export * from './agents/genetics.js';
+export * from './agents/pedigree.js';
+export * from './forest.js';

@@ -47,12 +47,18 @@ export function selectGoal(
   const hungerDesperation = Math.max(0, d.hunger - 0.80) * 4;
 
   const all: Record<GoalId, number> = {
-    find_food: d.hunger * d.hunger * (0.25 + foodOpportunity) + hungerDesperation,
-    find_water: d.thirst * d.thirst * (0.25 + waterOpportunity) + thirstDesperation,
+    // Linear in the drive, not squared. Now that eating a ration only offsets a day's hunger,
+    // an animal has to spend most of its time feeding to stay fed — and a squared term left a
+    // grazer at thirty percent hunger preferring to wander, then starving in a field of grass.
+    find_food: d.hunger * (0.3 + foodOpportunity) + hungerDesperation,
+    find_water: d.thirst * (0.3 + waterOpportunity) + thirstDesperation,
     rest: d.fatigue * d.fatigue * (1 - d.hunger * 0.5) * (1 - d.thirst * 0.5),
     wander: 0.08 + (1 - d.hunger) * (1 - d.thirst) * 0.05,
-    // A hunt is only worth starting with prey in sight and the legs to chase it.
-    hunt: d.hunger * d.hunger * preyOpportunity * stamina,
+    // A hunt is only worth starting with prey in sight and the legs to chase it — and never
+    // while there is still meat on something already dead nearby. Without this a predator
+    // abandoned a carcass it had barely touched and killed again, so the world lost five
+    // animals for every one a predator actually ate.
+    hunt: carrionOpportunity > 0.3 ? 0 : d.hunger * preyOpportunity * stamina,
     // Carrion is cheaper than a hunt, so a hungry scavenger prefers it strongly.
     scavenge: d.hunger * carrionOpportunity * 1.35,
     // Fear outranks ordinary needs but not desperate ones, and an exhausted animal cannot

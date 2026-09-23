@@ -3,8 +3,9 @@ import {
   type Agent, type Carcass, type DeathCause, type Patch, type Rng,
   type SpeciesConfig, type WorldTime,
 } from '@vana/shared';
+import { HUNGER_PER_DAY, THIRST_PER_DAY } from './drives.js';
 import type { EventLog } from '../events/log.js';
-import { resolveHunt } from './predation.js';
+import { choosePrey, resolveHunt } from './predation.js';
 import type { GoalChoice } from './goals.js';
 import type { Percept, WorldView } from './perception.js';
 
@@ -29,6 +30,37 @@ export interface BehaviourContext {
 }
 
 const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);
+
+/**
+ * Hours a day an animal actually spends feeding. `dailyIntakeKg` is a day's food, and dividing
+ * it across all twenty-four hours implied an animal that grazes around the clock — so anything
+ * that also rested, drank or fled fell behind and starved. A grazer feeds something like eight
+ * hours a day; the ration is its share of that.
+ */
+const FORAGING_HOURS_PER_DAY = 8;
+/** Drinking is quick. An animal takes its day's water in a couple of visits. */
+const DRINKING_HOURS_PER_DAY = 3;
+
+/**
+ * How much a hungry animal will take above its even ration, and the gut capacity that limits it.
+ *
+ * Animals do not eat at a constant trickle: a tiger clears twenty kilograms off a kill in an
+ * afternoon and then does not hunt for days. Capping intake near the even ration left predators
+ * permanently hungry and attempting roughly five hunts a day each, which killed five animals for
+ * every one they ate.
+ *
+ * Total daily intake is unchanged — hunger falls in proportion to `eaten / dailyIntakeKg`, so
+ * eating faster only means eating sooner, never eating more.
+ */
+const GORGE_MULTIPLIER = 8;
+const GUT_FRACTION_PER_HOUR = 0.05;
+
+function appetite(rationKg: number, hunger: number, massKg: number, hours: number): number {
+  return Math.min(
+    rationKg * (1 + hunger * GORGE_MULTIPLIER),
+    massKg * GUT_FRACTION_PER_HOUR * hours,
+  );
+}
 
 function emit(
   ctx: BehaviourContext,
@@ -82,7 +114,11 @@ function feed(ctx: BehaviourContext): void {
 
   const wanted0 = (ctx.species.diet.dailyIntakeKg / 24) * ctx.hours;
   void wanted0;
-  const wanted = (ctx.species.diet.dailyIntakeKg / 24) * ctx.hours;
+  // A ration is an hour's share of a day's food, spread over the hours an animal actually
+  // feeds. A hungry one takes up to twice that, which is how it recovers rather than merely
+  // breaking even.
+  const ration = (ctx.species.diet.dailyIntakeKg / FORAGING_HOURS_PER_DAY) * ctx.hours;
+  const wanted = appetite(ration, ctx.agent.drives.hunger, ctx.agent.massKg, ctx.hours);
   const available = patch.plant.grass + patch.plant.browse;
 
   // Move only if this patch cannot feed the animal now. Otherwise eat where it stands.
@@ -91,16 +127,28 @@ function feed(ctx: BehaviourContext): void {
     return;
   }
 
-  const eaten = Math.min(wanted, available);
-  if (eaten <= 0) { ctx.agent.state = 'travelling'; return; }
+  const wantedHere = Math.min(wanted, available);
+  if (wantedHere <= 0) { ctx.agent.state = 'travelling'; return; }
 
-  const grassShare = available > 0 ? patch.plant.grass / available : 0;
-  patch.plant.grass -= eaten * grassShare;
-  patch.plant.browse -= eaten * (1 - grassShare);
+  // Take from each pool no more than it holds, and count only what was actually taken.
+  // Splitting by `eaten * share` could overshoot a pool by one unit in the last place when an
+  // animal ate a patch bare, leaving -2e-16 kg of grass — which is still negative biomass.
+  const grassShare = patch.plant.grass / available;
+  const fromGrass = Math.min(patch.plant.grass, wantedHere * grassShare);
+  const fromBrowse = Math.min(patch.plant.browse, wantedHere - fromGrass);
+  patch.plant.grass -= fromGrass;
+  patch.plant.browse -= fromBrowse;
+  const eaten = fromGrass + fromBrowse;
   // Metabolised within the tick; the nutrients return to this patch's soil.
   patch.soilNutrients += eaten * NUTRIENT_PER_KG_BIOMASS;
 
-  ctx.agent.drives.hunger = clamp01(ctx.agent.drives.hunger - (eaten / Math.max(wanted, 1e-9)) * 0.35);
+  // Hunger is an energy deficit measured in days of intake. A full day's ration offsets
+  // exactly a day of hunger, so an animal that cannot find its ration genuinely goes
+  // hungry — which is what makes the food supply limit the population rather than
+  // decorate it. Before this, an animal stayed fed on under two percent of its ration.
+  ctx.agent.drives.hunger = clamp01(
+    ctx.agent.drives.hunger - (eaten / ctx.species.diet.dailyIntakeKg) * HUNGER_PER_DAY,
+  );
   ctx.agent.state = 'grazing';
   emit(ctx, 'fed', patch.id, [ctx.agent.id],
     { hunger: ctx.agent.drives.hunger, available }, 'success', { kg: eaten });
@@ -110,7 +158,12 @@ function drink(ctx: BehaviourContext): void {
   const patch = ctx.patches[ctx.agent.patchId]!;
   const target = ctx.percept.bestWater;
 
-  const wanted = (ctx.species.diet.waterNeedLPerDay / 24) * ctx.hours;
+  // An animal at water drinks its fill: whatever takes its thirst back to nothing. Rationed to
+  // a fraction an hour, a thirsty gaur drank for an hour, got hungry, walked off to pasture and
+  // was thirsty again before it returned, and in the dry season the herd died commuting.
+  const ration = (ctx.species.diet.waterNeedLPerDay / DRINKING_HOURS_PER_DAY) * ctx.hours;
+  const deficit = (ctx.agent.drives.thirst / THIRST_PER_DAY) * ctx.species.diet.waterNeedLPerDay;
+  const wanted = Math.max(ration, deficit);
 
   // Same rule as feeding: drink what is here unless there is not enough of it.
   if (patch.waterVolume < wanted && target !== null && target.patchId !== patch.id) {
@@ -120,7 +173,9 @@ function drink(ctx: BehaviourContext): void {
   if (patch.waterVolume <= 0) { ctx.agent.state = 'travelling'; return; }
   const drunk = Math.min(wanted, patch.waterVolume);
   patch.waterVolume -= drunk;
-  ctx.agent.drives.thirst = clamp01(ctx.agent.drives.thirst - (drunk / Math.max(wanted, 1e-9)) * 0.5);
+  ctx.agent.drives.thirst = clamp01(
+    ctx.agent.drives.thirst - (drunk / ctx.species.diet.waterNeedLPerDay) * THIRST_PER_DAY,
+  );
   ctx.agent.state = 'drinking';
   emit(ctx, 'drank', patch.id, [ctx.agent.id],
     { thirst: ctx.agent.drives.thirst }, 'success', { litres: drunk });
@@ -195,15 +250,7 @@ function hunt(ctx: BehaviourContext): void {
   const hunting = ctx.species.hunting;
   if (hunting === undefined || ctx.percept.prey.length === 0) { wander(ctx); return; }
 
-  // Prefer the weakest reachable target — the simulation's version of picking off the
-  // vulnerable. A tired, unwary animal scores lowest and is chosen first.
-  const vulnerability = (candidate: (typeof ctx.percept.prey)[number]): number =>
-    (1 - candidate.agent.drives.fatigue) * (1 - candidate.agent.drives.fear * 0.5);
-
-  let choice = ctx.percept.prey[0]!;
-  for (const candidate of ctx.percept.prey) {
-    if (vulnerability(candidate) < vulnerability(choice)) choice = candidate;
-  }
+  const choice = choosePrey(ctx.percept.prey, ctx.rng);
 
   if (choice.patchId !== ctx.agent.patchId) { moveTo(ctx, choice.patchId); return; }
 
@@ -248,21 +295,28 @@ function hunt(ctx: BehaviourContext): void {
 }
 
 function consume(ctx: BehaviourContext, carcass: Carcass): void {
-  const wanted = (ctx.species.diet.dailyIntakeKg / 24) * ctx.hours;
+  const ration = (ctx.species.diet.dailyIntakeKg / FORAGING_HOURS_PER_DAY) * ctx.hours;
+  const wanted = appetite(ration, ctx.agent.drives.hunger, ctx.agent.massKg, ctx.hours);
   const available = edibleMass(carcass.biomass);
-  const eaten = Math.min(wanted, available);
-  if (eaten <= 0) return;
+  const wantedHere = Math.min(wanted, available);
+  if (wantedHere <= 0) return;
 
-  // Take muscle before organ, in proportion to what is left.
-  const muscleShare = available > 0 ? carcass.biomass.muscle / available : 0;
-  carcass.biomass.muscle -= eaten * muscleShare;
-  carcass.biomass.organ -= eaten * (1 - muscleShare);
+  // Same exact accounting as grazing: never take more from a tissue than it holds, and count
+  // only what was actually taken, so the soil receives exactly what left the carcass.
+  const muscleShare = carcass.biomass.muscle / available;
+  const fromMuscle = Math.min(carcass.biomass.muscle, wantedHere * muscleShare);
+  const fromOrgan = Math.min(carcass.biomass.organ, wantedHere - fromMuscle);
+  carcass.biomass.muscle -= fromMuscle;
+  carcass.biomass.organ -= fromOrgan;
+  const eaten = fromMuscle + fromOrgan;
 
   const patch = ctx.patches[carcass.patchId]!;
   patch.soilNutrients += eaten * NUTRIENT_PER_KG_BIOMASS;
 
   carcass.consumers.push({ agentId: ctx.agent.id, at: ctx.worldTime, kg: eaten });
-  ctx.agent.drives.hunger = clamp01(ctx.agent.drives.hunger - (eaten / Math.max(wanted, 1e-9)) * 0.45);
+  ctx.agent.drives.hunger = clamp01(
+    ctx.agent.drives.hunger - (eaten / ctx.species.diet.dailyIntakeKg) * HUNGER_PER_DAY,
+  );
 
   // Carrion carries pathogens. Tolerance is a species trait: vultures shrug it off, jackals do not.
   const exposure = carcass.pathogenLoad * (1 - ctx.species.diet.carrionTolerance);

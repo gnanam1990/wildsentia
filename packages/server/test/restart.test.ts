@@ -13,7 +13,7 @@ const speciesDir = fileURLToPath(new URL('../../../config/species', import.meta.
 
 const opts = () => ({
   pool: pool!, seed: 42, speciesDir, snapshotEveryWorldHours: 12,
-  initialAgents: { sambar: 30 }, minPopulation: { sambar: 30 },
+  initialAgents: { sambar: 30 }, minPopulation: { sambar: 30 }, landscape: null,
 });
 
 class FakeSocket implements GatewaySocket {

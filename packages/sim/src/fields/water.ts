@@ -8,8 +8,18 @@ const EVAPORATION_FRACTION_PER_HOUR: Record<Season, number> = {
   monsoon: 0.0006, wet: 0.0012, transition: 0.0028, dry: 0.0045,
 };
 
+/**
+ * Springs and seepage, which keep flowing when the rain stops. Without them every pool in the
+ * forest, lakes included, dried to a few hundred litres by the end of the dry season and the
+ * elephants and gaur died of thirst each year. Rain-fed ground still dries out; lakes and
+ * marshes are what a dry-season forest gathers around.
+ */
+const BASEFLOW_L_PER_HOUR: Partial<Record<Patch['habitat'], number>> = {
+  water: 400, marsh: 20,
+};
+
 export function updateWater(patch: Patch, hours: number, season: Season): void {
-  const rain = RAINFALL_L_PER_HOUR[season] * hours;
+  const rain = (RAINFALL_L_PER_HOUR[season] + (BASEFLOW_L_PER_HOUR[patch.habitat] ?? 0)) * hours;
   const evaporated = patch.waterVolume * EVAPORATION_FRACTION_PER_HOUR[season] * hours;
   const capacity = patch.habitat === 'water' ? 80_000 : patch.habitat === 'marsh' ? 12_000 : 1_200;
 

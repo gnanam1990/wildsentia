@@ -50,7 +50,9 @@
       "sambar",
       "chital",
       "boar",
-      "gaur"
+      "gaur",
+      "jackal",
+      "langur"
     ],
     "stalkConcealment": 0.72,
     "commitDistanceM": 25,
@@ -63,7 +65,12 @@
       1,
       1
     ],
-    "alarmSharing": false
+    "alarmSharing": false,
+    "territory": {
+      "femaleKm2": 20,
+      "maleKm2": 60,
+      "floaterMortalityPerDay": 0.004
+    }
   },
   "lifecycle": {
     "maxAgeDays": 5400,
@@ -112,6 +119,7 @@
       3
     ],
     "interBirthIntervalDays": 700,
+    "oestrusCycleDays": 25,
     "weanDays": 180,
     "dispersalDays": 640
   }

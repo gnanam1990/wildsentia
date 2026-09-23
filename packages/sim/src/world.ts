@@ -18,11 +18,14 @@ import { executeGoal, type WorldServices } from './agents/behaviours.js';
 import { foundingTraits } from './agents/genetics.js';
 import { Pedigree } from './agents/pedigree.js';
 import { mortalityFor, stageFor, targetMass } from './agents/lifecycle.js';
+import { isFloater } from './agents/territory.js';
+import { EDGE_PATCHES, EDGE_PATCH_IDS, expectedExchange } from './landscape.js';
 import {
-  assessMate, attemptCourtship, birth, conceive, isReadyToGiveBirth, isReceptive,
+  assessMate, attemptCourtship, birth, conceive, endOestrus, isReadyToGiveBirth, isReceptive,
+  packAllowsBreeding,
 } from './agents/reproduction.js';
 
-export const SIM_VERSION = 'sim_0.3.0';
+export const SIM_VERSION = 'sim_0.4.0';
 
 export interface WorldOptions {
   seed: number;
@@ -31,6 +34,11 @@ export interface WorldOptions {
   minPopulation: Record<string, number>;
   /** Bound the in-memory event buffer for long runs. Defaults to keeping everything. */
   retainEvents?: number | 'all';
+  /**
+   * The country around this forest. `regional` is how many of each species a stretch this size
+   * holds out there; animals cross the edge in proportion to the difference, at `exchangePerDay`.
+   */
+  landscape?: { regional: Record<string, number>; exchangePerDay: number };
 }
 
 export class World {
@@ -219,11 +227,13 @@ export class World {
     }
   }
 
-  #spawn(speciesId: string, immigrant: boolean): Agent {
+  #spawn(speciesId: string, immigrant: boolean, atEdge = false): Agent {
     const cfg = this.species.get(speciesId);
     if (!cfg) throw new Error(`unknown species: ${speciesId}`);
 
-    const patchId = this.#rng.int(PATCH_COUNT);
+    const patchId = atEdge
+      ? EDGE_PATCH_IDS[this.#rng.int(EDGE_PATCH_IDS.length)]!
+      : this.#rng.int(PATCH_COUNT);
     // Founders and immigrants arrive as adults of a spread of ages, so a population does not
     // reach sexual maturity in lockstep.
     const ageDays = cfg.lifecycle.sexualMaturityDays
@@ -300,6 +310,17 @@ export class World {
     if (!isReceptive(agent, cfg, this.#time)) return false;
     // Only females carry the pregnancy, so only they initiate here; males are assessed.
     if (agent.sex !== 'female') return false;
+    if (agent.groupId != null) {
+      const group = this.#groups.get(agent.groupId);
+      const packmates = (group?.memberIds ?? [])
+        .map((id) => this.#agentsById.get(id))
+        .filter((member): member is Agent => member !== undefined);
+      const hasDependants = (mother: Agent): boolean => mother.offspringIds.some((id) => {
+        const child = this.#agentsById.get(id);
+        return child !== undefined && child.alive && child.dependentOn === mother.id;
+      });
+      if (!packAllowsBreeding(agent, cfg, packmates, hasDependants)) return false;
+    }
 
     // Look across the patch and its neighbours. Animals three hundred metres apart are well
     // within sight of one another; confining courtship to a single patch made mating a matter
@@ -338,7 +359,7 @@ export class World {
       outcome: succeeded ? 'success' : 'failure', effects: {},
       causalParents: [], confidence: 'authoritative',
     });
-    if (!succeeded) return true;
+    if (!succeeded) { endOestrus(agent, cfg, this.#time); return true; }
 
     conceive(agent, best.candidate, this.#time);
     return true;
@@ -384,6 +405,49 @@ export class World {
         outcome: 'failure', effects: {}, causalParents: [], confidence: 'authoritative',
       });
     }
+  }
+
+  #exchangeWithLandscape(hours: number): void {
+    const landscape = this.#options.landscape;
+    if (landscape === undefined) return;
+
+    for (const [speciesId, regional] of Object.entries(landscape.regional)) {
+      const expected = expectedExchange(
+        this.livingCount(speciesId), regional, landscape.exchangePerDay, hours,
+      );
+      const whole = Math.floor(Math.abs(expected));
+      const count = whole + (this.#rng.bool(Math.abs(expected) - whole) ? 1 : 0);
+      for (let i = 0; i < count; i++) {
+        if (expected > 0) this.#spawn(speciesId, true, true);
+        else if (!this.#emigrate(speciesId)) break;
+      }
+    }
+  }
+
+  /** One independent animal standing at the edge walks out. False when none is there to go. */
+  #emigrate(speciesId: string): boolean {
+    const raisingYoung = (agent: Agent): boolean => agent.offspringIds.some((id) => {
+      const child = this.#agentsById.get(id);
+      return child !== undefined && child.alive && child.dependentOn === agent.id;
+    });
+    const leavers = this.agents.filter((agent) =>
+      agent.alive && agent.speciesId === speciesId && EDGE_PATCHES.has(agent.patchId)
+      && agent.dependentOn === null && agent.pregnantSince === null && !raisingYoung(agent));
+    if (leavers.length === 0) return false;
+
+    const agent = leavers[this.#rng.int(leavers.length)]!;
+    agent.alive = false;
+    agent.state = 'emigrated';
+    this.#livingBySpecies.set(speciesId, Math.max(0, (this.#livingBySpecies.get(speciesId) ?? 1) - 1));
+    // Its body leaves with it, so the ledger records what went out of the forest.
+    this.ledger.exported += agent.massKg * NUTRIENT_PER_KG_BIOMASS;
+    this.log.append({
+      type: 'emigration', worldTime: this.#time, simVersion: SIM_VERSION, patchId: agent.patchId,
+      actors: [agent.id], conditions: { species: speciesId },
+      outcome: 'success', effects: { massKg: agent.massKg },
+      causalParents: [], confidence: 'authoritative',
+    });
+    return true;
   }
 
   /** @internal — lets the breed helper share the world view type. */
@@ -444,6 +508,15 @@ export class World {
     const view = this.#view();
     const services = this.#services();
 
+    // Rivals for range, gathered once a tick for the species that hold territories.
+    const rangeHolders = new Map<string, Agent[]>();
+    for (const agent of this.agents) {
+      if (!agent.alive || this.species.get(agent.speciesId)!.social.territory === undefined) continue;
+      const list = rangeHolders.get(agent.speciesId);
+      if (list === undefined) rangeHolders.set(agent.speciesId, [agent]);
+      else list.push(agent);
+    }
+
     for (const agent of this.agents) {
       if (!agent.alive) continue;
       const cfg = this.species.get(agent.speciesId)!;
@@ -499,13 +572,25 @@ export class World {
       if (agent.ageDays >= cfg.lifecycle.maxAgeDays) { this.#kill(agent, 'senescence', null); continue; }
       if (agent.drives.hunger >= 1) { this.#kill(agent, 'starvation', null); continue; }
       if (agent.drives.thirst >= 1) { this.#kill(agent, 'dehydration', null); continue; }
+      // The per-stage hazard is not old age — a newborn dying at six times the adult rate has
+      // not died of senescence — so it is recorded as what it is.
       if (this.#rng.bool(mortalityFor(agent, cfg) * (hours / 24))) {
-        this.#kill(agent, 'senescence', null);
+        this.#kill(agent, 'natural', null);
+        continue;
+      }
+
+      // A floater lives in someone else's range: it does not breed, and it is killed in a fight
+      // or pushed out of the forest far more often than a resident is.
+      const territory = cfg.social.territory;
+      const floater = territory !== undefined
+        && isFloater(agent, cfg, rangeHolders.get(agent.speciesId) ?? [], this.patches);
+      if (floater && this.#rng.bool(territory.floaterMortalityPerDay * (hours / 24))) {
+        this.#kill(agent, 'territorial', null);
         continue;
       }
 
       if (isReadyToGiveBirth(agent, cfg, this.#time)) { this.#giveBirth(agent, cfg); continue; }
-      if (this.#tryBreed(agent, cfg, view)) continue;
+      if (!floater && this.#tryBreed(agent, cfg, view)) continue;
 
       const percept = perceive(agent, cfg, view);
 
@@ -528,6 +613,8 @@ export class World {
         hours, worldTime: this.#time, log: this.log, rng: this.#rng, services,
       });
     }
+
+    this.#exchangeWithLandscape(hours);
 
     for (const [speciesId, floor] of Object.entries(this.#options.minPopulation)) {
       while (this.livingCount(speciesId) < floor) this.#spawn(speciesId, true);

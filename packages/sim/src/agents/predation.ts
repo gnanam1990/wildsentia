@@ -1,4 +1,4 @@
-import type { Rng } from '@vana/shared';
+import type { Agent, Rng } from '@vana/shared';
 
 export type HuntStage =
   | 'out_of_range' | 'detected' | 'prey_alerted' | 'chase_abandoned' | 'escaped' | 'killed';
@@ -81,4 +81,40 @@ export function resolveHunt(input: HuntInput, rng: Rng): HuntOutcome {
     killed: false,
     staminaSpent,
   };
+}
+
+export interface PreyCandidate {
+  agent: Agent;
+  patchId: number;
+  herdSize: number;
+}
+
+/**
+ * Picks what to go after. A predator settles on a kind of prey in proportion to the square of
+ * how many it can see: it finds what is plentiful and rarely comes across what is scarce, so a
+ * prey that has grown rare is left alone to recover (a type III response). Within that kind it
+ * picks off the most vulnerable — a tired, unwary animal first.
+ */
+export function choosePrey<T extends PreyCandidate>(candidates: readonly T[], rng: Rng): T {
+  const bySpecies = new Map<string, T[]>();
+  for (const candidate of candidates) {
+    const list = bySpecies.get(candidate.agent.speciesId);
+    if (list === undefined) bySpecies.set(candidate.agent.speciesId, [candidate]);
+    else list.push(candidate);
+  }
+
+  const kinds = [...bySpecies.values()];
+  const total = kinds.reduce((sum, list) => sum + list.length * list.length, 0);
+  let pick = rng.next() * total;
+  let chosen = kinds[kinds.length - 1]!;
+  for (const list of kinds) {
+    pick -= list.length * list.length;
+    if (pick < 0) { chosen = list; break; }
+  }
+
+  const vulnerability = (candidate: T): number =>
+    (1 - candidate.agent.drives.fatigue) * (1 - candidate.agent.drives.fear * 0.5);
+  let best = chosen[0]!;
+  for (const candidate of chosen) if (vulnerability(candidate) < vulnerability(best)) best = candidate;
+  return best;
 }

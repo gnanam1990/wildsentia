@@ -71,14 +71,14 @@
         "startDays": 0,
         "sizeFactor": 0.12,
         "dependent": true,
-        "mortalityPerDay": 0.003
+        "mortalityPerDay": 0.006
       },
       {
         "name": "juvenile",
         "startDays": 45,
         "sizeFactor": 0.35,
         "dependent": true,
-        "mortalityPerDay": 0.0015
+        "mortalityPerDay": 0.003
       },
       {
         "name": "subadult",
@@ -108,7 +108,8 @@
       4,
       8
     ],
-    "interBirthIntervalDays": 200,
+    "interBirthIntervalDays": 365,
+    "oestrusCycleDays": 21,
     "weanDays": 90,
     "dispersalDays": 220
   }

@@ -44,6 +44,15 @@ export interface SpeciesConfig {
     structure: 'solitary' | 'pair' | 'herd' | 'troop' | 'pack' | 'family';
     groupSize: [min: number, max: number];
     alarmSharing: boolean;
+    /**
+     * Ranges held against others of the same sex. An adult inside an older rival's range is a
+     * floater: it does not breed, and it dies or is driven out far more often.
+     */
+    territory?: {
+      femaleKm2: number;
+      maleKm2: number;
+      floaterMortalityPerDay: number;
+    };
   };
   lifecycle: {
     maxAgeDays: number;
@@ -60,6 +69,8 @@ export interface SpeciesConfig {
     gestationDays: number;
     litterSize: [min: number, max: number];
     interBirthIntervalDays: number;
+    /** Days between one oestrus and the next. A failed courtship waits this long to try again. */
+    oestrusCycleDays: number;
     weanDays: number;
     dispersalDays: number;
   };

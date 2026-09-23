@@ -1,6 +1,7 @@
 import type { WorldEvent } from '@vana/shared';
 import {
-  SIM_VERSION, createWorld, restoreSnapshot, takeSnapshot, type World,
+  FOREST_FLOOR, FOREST_LANDSCAPE, FOREST_POPULATION, SIM_VERSION,
+  createWorld, restoreSnapshot, takeSnapshot, type World, type WorldOptions,
 } from '@vana/sim';
 import type { Pool } from './db/pool.js';
 import { EventStore } from './db/eventStore.js';
@@ -13,8 +14,11 @@ export interface SimHostOptions {
   /** Live acceleration. 24 means one world hour every 2.5 real minutes. */
   worldHoursPerRealHour?: number;
   snapshotEveryWorldHours?: number;
+  /** Seed counts, floors and edge exchange. Each defaults to the canonical forest in @vana/sim. */
   initialAgents?: Record<string, number>;
   minPopulation?: Record<string, number>;
+  /** The country around the forest. `null` closes the edge. */
+  landscape?: NonNullable<WorldOptions['landscape']> | null;
 }
 
 export interface BootResult {
@@ -36,23 +40,22 @@ export class SimHost {
     this.#options = {
       worldHoursPerRealHour: 24,
       snapshotEveryWorldHours: 1,
-      initialAgents: { sambar: 60 },
-      minPopulation: { sambar: 20 },
+      initialAgents: FOREST_POPULATION,
+      minPopulation: FOREST_FLOOR,
+      landscape: FOREST_LANDSCAPE,
       ...options,
     };
     this.#events = new EventStore(options.pool);
     this.#snapshots = new SnapshotStore(options.pool);
   }
 
-  get worldOptions(): {
-    seed: number; speciesDir: string;
-    initialAgents: Record<string, number>; minPopulation: Record<string, number>;
-  } {
+  get worldOptions(): WorldOptions {
     return {
       seed: this.#options.seed,
       speciesDir: this.#options.speciesDir,
       initialAgents: this.#options.initialAgents,
       minPopulation: this.#options.minPopulation,
+      ...(this.#options.landscape === null ? {} : { landscape: this.#options.landscape }),
     };
   }
 

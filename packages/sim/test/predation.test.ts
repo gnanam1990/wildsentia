@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createRng } from '@vana/shared';
-import { resolveHunt, type HuntInput } from '../src/agents/predation.js';
+import { choosePrey, resolveHunt, type HuntInput } from '../src/agents/predation.js';
+import { makeAgent } from './helpers.js';
 
 const typical: HuntInput = {
   baseSuccess: 0.46,
@@ -78,5 +79,32 @@ describe('resolveHunt', () => {
       expect(outcome.staminaSpent).toBeGreaterThanOrEqual(0);
       expect(outcome.staminaSpent).toBeLessThanOrEqual(1);
     }
+  });
+});
+
+describe('choosePrey', () => {
+  const candidate = (id: string, speciesId: string, fatigue = 0.2) => ({
+    agent: makeAgent(speciesId, { id, drives: { hunger: 0.2, thirst: 0.2, fatigue, fear: 0 } }),
+    patchId: 0, herdSize: 1,
+  });
+
+  it('turns to the common prey when one kind has grown scarce', () => {
+    // A predator finds what is plentiful and rarely stumbles on what is scarce, which is what
+    // lets a scarce prey recover. Always taking the weakest animal in sight, whatever kind it
+    // was, hunted chital to their last few while boar were everywhere.
+    const seen = [
+      candidate('lone', 'chital', 0.9),
+      ...Array.from({ length: 12 }, (_, i) => candidate(`b${i}`, 'boar')),
+    ];
+    const rng = createRng(5, 'switch');
+    let chital = 0;
+    for (let i = 0; i < 1000; i++) if (choosePrey(seen, rng).agent.speciesId === 'chital') chital++;
+    // Proportional choice would take the chital one time in thirteen; switching far less.
+    expect(chital / 1000).toBeLessThan(1 / 13 / 2);
+  });
+
+  it('still takes the weakest animal of the kind it goes for', () => {
+    const seen = [candidate('fit', 'boar', 0.1), candidate('tired', 'boar', 0.9)];
+    expect(choosePrey(seen, createRng(1, 'switch')).agent.id).toBe('tired');
   });
 });

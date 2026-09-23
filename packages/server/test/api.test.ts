@@ -19,7 +19,7 @@ beforeAll(async () => {
   await pool!.query('truncate events, snapshots, follows, viewers cascade');
   const host = new SimHost({
     pool: pool!, seed: 3, speciesDir,
-    initialAgents: { sambar: 12 }, minPopulation: { sambar: 12 },
+    initialAgents: { sambar: 12 }, minPopulation: { sambar: 12 }, landscape: null,
   });
   await host.boot();
   await host.advance(24);

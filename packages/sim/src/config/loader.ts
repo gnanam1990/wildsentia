@@ -66,6 +66,11 @@ export const SpeciesConfigSchema = z
       structure: z.enum(['solitary', 'pair', 'herd', 'troop', 'pack', 'family']),
       groupSize: z.tuple([z.number().int().positive(), z.number().int().positive()]),
       alarmSharing: z.boolean(),
+      territory: z.object({
+        femaleKm2: z.number().positive(),
+        maleKm2: z.number().positive(),
+        floaterMortalityPerDay: z.number().min(0).max(1),
+      }).optional(),
     }),
     lifecycle: z.object({
       maxAgeDays: z.number().positive(),
@@ -83,11 +88,18 @@ export const SpeciesConfigSchema = z
       gestationDays: z.number().positive(),
       litterSize: z.tuple([z.number().int().positive(), z.number().int().positive()]),
       interBirthIntervalDays: z.number().positive(),
+      oestrusCycleDays: z.number().positive(),
       weanDays: z.number().positive(),
       dispersalDays: z.number().positive(),
     }),
   })
   .superRefine((cfg, ctx) => {
+    if (cfg.lifecycle.interBirthIntervalDays <= cfg.lifecycle.gestationDays) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'interBirthIntervalDays runs birth to birth, so it must exceed gestationDays',
+      });
+    }
     if (cfg.locomotion.sprintMs <= cfg.locomotion.walkMs) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'sprintMs must exceed walkMs' });
     }

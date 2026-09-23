@@ -49,7 +49,11 @@
     "preferredPrey": [
       "chital",
       "sambar",
-      "hare"
+      "hare",
+      "boar",
+      "jackal",
+      "langur",
+      "squirrel"
     ],
     "stalkConcealment": 0.35,
     "commitDistanceM": 90,
@@ -62,7 +66,12 @@
       4,
       9
     ],
-    "alarmSharing": true
+    "alarmSharing": true,
+    "territory": {
+      "femaleKm2": 40,
+      "maleKm2": 40,
+      "floaterMortalityPerDay": 0.004
+    }
   },
   "lifecycle": {
     "maxAgeDays": 3600,
@@ -111,6 +120,7 @@
       8
     ],
     "interBirthIntervalDays": 365,
+    "oestrusCycleDays": 365,
     "weanDays": 70,
     "dispersalDays": 330
   }

@@ -20,9 +20,35 @@ export function isReceptive(agent: Agent, config: SpeciesConfig, worldTime: Worl
   const condition = 1 - Math.max(agent.drives.hunger, agent.drives.thirst);
   if (condition < MIN_BREEDING_CONDITION) return false;
 
+  if (agent.sex === 'female' && agent.nextOestrusAt != null && worldTime < agent.nextOestrusAt) {
+    return false;
+  }
+
+  // The inter-birth interval runs birth to birth, as field studies report it, so she can
+  // conceive once what is left of it is no longer than a gestation.
   if (agent.sex === 'female' && agent.lastBirthAt !== null) {
     const daysSince = (worldTime - agent.lastBirthAt) / WORLD_SECONDS_PER_DAY;
-    if (daysSince < config.lifecycle.interBirthIntervalDays) return false;
+    const { interBirthIntervalDays, gestationDays } = config.lifecycle;
+    if (daysSince < interBirthIntervalDays - gestationDays) return false;
+  }
+  return true;
+}
+
+/**
+ * A pack raises one litter at a time, the dominant female's; the others help feed it. Without
+ * this every female in a pack bred at once, and twelve dholes became fifty-six in four months
+ * before most of them starved. Herds, troops and pairs are not affected.
+ */
+export function packAllowsBreeding(
+  female: Agent,
+  config: SpeciesConfig,
+  packmates: readonly Agent[],
+  hasDependants: (agent: Agent) => boolean,
+): boolean {
+  if (config.social.structure !== 'pack') return true;
+  for (const other of packmates) {
+    if (other.id === female.id || !other.alive || other.sex !== 'female') continue;
+    if (other.pregnantSince !== null || hasDependants(other)) return false;
   }
   return true;
 }
@@ -76,6 +102,15 @@ export function attemptCourtship(
   const crowding = 1 / (1 + Math.max(0, localDensity - 1) / crowdingThreshold);
   const chance = (0.35 + chooserCondition * 0.25 + candidateCondition * 0.25) * crowding;
   return rng.bool(Math.min(0.92, chance));
+}
+
+/**
+ * A courtship that fails ends this oestrus. Without this a female simply tried again the next
+ * hour, so crowding delayed conception by a day or two in a cycle of months and never slowed a
+ * population at all. Crowding now costs her whole cycles, which is how it works in the field.
+ */
+export function endOestrus(female: Agent, config: SpeciesConfig, worldTime: WorldTime): void {
+  female.nextOestrusAt = worldTime + config.lifecycle.oestrusCycleDays * WORLD_SECONDS_PER_DAY;
 }
 
 export function conceive(mother: Agent, father: Agent, worldTime: WorldTime): void {

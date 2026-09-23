@@ -72,6 +72,27 @@ describe('grazing and drinking', () => {
     expect(s.patches[s.agent.patchId]!.waterVolume).toBeLessThan(1000);
   });
 
+  it('drinks its fill in one visit to plentiful water', () => {
+    // A gaur at a waterhole drinks what it needs in minutes. Rationed to a fraction an hour, a
+    // thirsty one drank for an hour, got hungry, walked off to pasture, and was thirsty again
+    // before it came back: in the dry season, with water and grass kilometres apart, the herd
+    // died of thirst commuting between them.
+    const s = scenario('gaur', 'find_water', { drives: { thirst: 0.9 } });
+    s.patches[s.agent.patchId]!.waterVolume = 50_000;
+    s.percept.bestWater = { patchId: s.agent.patchId, litres: 50_000 };
+    executeGoal(s.ctx);
+    expect(s.agent.drives.thirst).toBeLessThan(0.05);
+  });
+
+  it('drinks no more than it needs, leaving the rest for others', () => {
+    const s = scenario('gaur', 'find_water', { drives: { thirst: 0.4 } });
+    s.patches[s.agent.patchId]!.waterVolume = 50_000;
+    s.percept.bestWater = { patchId: s.agent.patchId, litres: 50_000 };
+    executeGoal(s.ctx);
+    const gaur = s.ctx.species.diet.waterNeedLPerDay;
+    expect(50_000 - s.patches[s.agent.patchId]!.waterVolume).toBeLessThanOrEqual(gaur * 1.01);
+  });
+
   it('recovers stamina while resting', () => {
     const s = scenario('tiger', 'rest', { drives: { fatigue: 0.9 } });
     s.agent.stamina = 0.3;

@@ -104,6 +104,7 @@
       1
     ],
     "interBirthIntervalDays": 300,
+    "oestrusCycleDays": 21,
     "weanDays": 150,
     "dispersalDays": 330
   }

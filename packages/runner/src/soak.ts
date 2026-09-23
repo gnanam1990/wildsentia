@@ -1,47 +1,28 @@
 import { carcassMass } from '@vana/shared';
-import { createWorld } from '@vana/sim';
+import { FOREST_FLOOR, FOREST_LANDSCAPE, FOREST_POPULATION, createWorld } from '@vana/sim';
 
 /**
- * Standing populations for the soak, sized from the energy pyramid in spec §6.2: roughly
- * 300-500 prey animals per resident tiger across a 36 km² grid, with the herbivores in turn
- * cropping well under a third of net primary production.
+ * The soak runs the canonical forest from `@vana/sim` — the same seed counts, floors and
+ * landscape the live server boots — so a passing soak speaks for the world people watch.
  */
-export const SOAK_POPULATION: Record<string, number> = {
-  chital: 260, sambar: 150, hare: 400, langur: 140, squirrel: 120, boar: 140,
-  gaur: 60, elephant: 6,
-  tiger: 4, dhole: 12,
-  jackal: 35, vulture: 20,
-};
+export const SOAK_POPULATION = FOREST_POPULATION;
+export const SOAK_FLOOR = FOREST_FLOOR;
+export const SOAK_LANDSCAPE = FOREST_LANDSCAPE;
 
 /**
  * Intended carrying capacity for a 36 km² world, from published field densities: hares at
  * tens per km², chital at twenty-odd in good habitat, sambar nearer five, gaur two to five,
  * tigers around 0.12, dhole in packs at roughly 0.2.
  *
- * This is deliberately separate from the seed count above. Once animals breed, the number a
+ * This is deliberately separate from the seed count. Once animals breed, the number a
  * population settles at is set by the land, not by how many were placed at the start, and
  * measuring "too many" against the seed count would flag a healthy recovery as a failure.
  */
 export const SOAK_CEILING: Record<string, number> = {
-  chital: 900, sambar: 550, hare: 1400, langur: 400, squirrel: 450, boar: 500,
-  gaur: 260, elephant: 40,
+  chital: 3000, sambar: 1100, hare: 2500, langur: 800, squirrel: 700, boar: 1200,
+  gaur: 500, elephant: 40,
   tiger: 14, dhole: 40,
   jackal: 200, vulture: 90,
-};
-
-/**
- * Minimum viable population. Below this a species is rescued by dispersal from off-map
- * (spec §6.5), because a closed 36 km² patch of a much larger landscape would not really be
- * the last refuge of anything.
- *
- * These are floors, not targets. A healthy run should sit well above them and touch them rarely;
- * heavy immigration is a signal that breeding is not carrying the population.
- */
-export const SOAK_FLOOR: Record<string, number> = {
-  chital: 30, sambar: 20, hare: 40, langur: 20, squirrel: 20, boar: 20,
-  gaur: 10, elephant: 3,
-  tiger: 2, dhole: 4,
-  jackal: 6, vulture: 4,
 };
 
 export interface SoakResult {
@@ -87,6 +68,7 @@ export function runSoak({ seed, days, speciesDir }: SoakOptions): SoakResult {
     seed, speciesDir,
     initialAgents: SOAK_POPULATION,
     minPopulation: SOAK_FLOOR,
+    landscape: SOAK_LANDSCAPE,
     // A fifty-year run emits hundreds of millions of events. Keep a small window and tally
     // as we go; the numbers below are counted, never reconstructed from a retained array.
     retainEvents: 200_000,

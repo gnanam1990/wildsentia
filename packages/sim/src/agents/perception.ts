@@ -38,6 +38,16 @@ const isPredator = (config: SpeciesConfig): boolean =>
 export const MAX_PERCEPTION_RADIUS = 8;
 
 /**
+ * How far an animal knows its range beyond what it can sense: about two and a half kilometres.
+ * Consulted only when nothing in view will do, so it guides an animal out of a grazed-bare or
+ * dried-up stretch without making it walk past food it can see.
+ */
+export const RANGE_MEMORY_RADIUS = 8;
+
+/** How far out to look for carrion before the scent test decides what is actually detectable. */
+export const CARRION_SEARCH_RADIUS = 4;
+
+/**
  * How many patches out a species can perceive, from the sense ranges in its config.
  *
  * A soaring vulture with two kilometres of sight covers far more ground than a tiger working
@@ -90,10 +100,7 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
       bestWater = { patchId: p.id, litres: p.waterVolume };
     }
 
-    if (species.diet.canScavenge && carrion === null) {
-      const found = view.carcassesInPatch(p.id)[0];
-      if (found !== undefined) carrion = { carcass: found, patchId: p.id };
-    }
+
 
     const occupants = view.agentsInPatch(p.id);
 
@@ -117,6 +124,60 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
         if (!(otherSpecies.hunting?.preferredPrey ?? []).includes(agent.speciesId)) continue;
         threat = { agent: other, patchId: p.id };
         break;
+      }
+    }
+  }
+
+  // Range memory. Gaur see three hundred metres; in the dry season they grazed their
+  // surroundings bare and starved walking in circles with pasture two kilometres off, and
+  // elephants died of thirst beside a lake they could not see. Animals know their range better
+  // than their senses reach, so when nothing in view will do they head for what they remember.
+  const dailyNeed = Math.max(species.diet.dailyIntakeKg, 0.05);
+  const waterNeed = Math.max(species.diet.waterNeedLPerDay, 0.05);
+  const grazes = species.diet.eats.some((e) => e.target === 'grass' || e.target === 'browse');
+  const needFood = grazes && (bestFood === null || bestFood.kg < dailyNeed);
+  const needWater = bestWater === null || bestWater.litres < waterNeed;
+  if (needFood || needWater) {
+    for (const p of patchesWithin(patch, RANGE_MEMORY_RADIUS, view.patches)) {
+      if (needFood) {
+        const kg = edibleKg(p, species);
+        if (kg > (bestFood?.kg ?? 0)) bestFood = { patchId: p.id, kg };
+      }
+      if (needWater && p.waterVolume > (bestWater?.litres ?? 0)) {
+        bestWater = { patchId: p.id, litres: p.waterVolume };
+      }
+    }
+  }
+
+  // Carrion is found by smell, and a carcass carries its own scent radius: a dead gaur is
+  // detectable much further off than a dead hare. Searching only the patches an animal can see
+  // meant a predator walked away from a kill it had barely touched and killed again the next
+  // day, which is where most of the world's dead animals were going.
+  //
+  // Which one is worth walking to depends on distance as well as size. Past a couple of days'
+  // food, more meat is no reason to go further: choosing by size alone sent a pack eating one
+  // carcass across to the next the moment theirs held a few kilograms less, then back again,
+  // so they walked instead of eating and starved beside carrion they never reached.
+  if (species.diet.canScavenge) {
+    const reach = Math.min(MAX_PERCEPTION_RADIUS, CARRION_SEARCH_RADIUS);
+    const enough = Math.max(species.diet.dailyIntakeKg, 0.05) * 2;
+    let bestWorth = 0;
+    for (const p of patchesWithin(patch, reach, view.patches)) {
+      const steps = Math.abs(p.x - patch.x) + Math.abs(p.y - patch.y);
+      const distanceM = steps * PATCH_METRES;
+      // Nothing walks up to a carcass something that hunts it is standing over. Without this
+      // boar took two-thirds of every tiger kill, and tigers killed three times as often.
+      const guarded = view.agentsInPatch(p.id).some((other) =>
+        other.alive && other.id !== agent.id
+        && (view.speciesOf(other.speciesId).hunting?.preferredPrey ?? []).includes(agent.speciesId));
+      if (guarded) continue;
+      for (const candidate of view.carcassesInPatch(p.id)) {
+        if (distanceM > candidate.scentRadiusM + species.senses.smellRangeM) continue;
+        const edible = candidate.biomass.muscle + candidate.biomass.organ;
+        const worth = Math.min(edible, enough) / (1 + steps);
+        if (worth <= bestWorth) continue;
+        bestWorth = worth;
+        carrion = { carcass: candidate, patchId: p.id };
       }
     }
   }

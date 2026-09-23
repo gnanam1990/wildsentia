@@ -3,7 +3,8 @@ import { WORLD_SECONDS_PER_DAY, createRng } from '@vana/shared';
 import { buildGrid } from '../src/grid.js';
 import { Pedigree } from '../src/agents/pedigree.js';
 import {
-  assessMate, attemptCourtship, birth, conceive, isReadyToGiveBirth, isReceptive,
+  assessMate, attemptCourtship, birth, conceive, endOestrus, isReadyToGiveBirth, isReceptive,
+  packAllowsBreeding,
 } from '../src/agents/reproduction.js';
 import { makeAgent, speciesOf } from './helpers.js';
 
@@ -33,10 +34,92 @@ describe('isReceptive', () => {
 
   it('refuses a female inside her inter-birth interval', () => {
     const recent = makeAgent('chital', { sex: 'female', lastBirthAt: 0 });
-    const halfway = chital.lifecycle.interBirthIntervalDays / 2 * WORLD_SECONDS_PER_DAY;
-    expect(isReceptive(recent, chital, halfway)).toBe(false);
-    const later = (chital.lifecycle.interBirthIntervalDays + 1) * WORLD_SECONDS_PER_DAY;
-    expect(isReceptive(recent, chital, later)).toBe(true);
+    const { interBirthIntervalDays, gestationDays } = chital.lifecycle;
+    const tooSoon = (interBirthIntervalDays - gestationDays - 1) * WORLD_SECONDS_PER_DAY;
+    expect(isReceptive(recent, chital, tooSoon)).toBe(false);
+  });
+
+  it('lets her conceive in time to give birth again one inter-birth interval later', () => {
+    // The interval is birth to birth, as field studies report it. Waiting the whole interval
+    // before conceiving added a gestation on top: a chital calved every seventeen months
+    // instead of every ten, and an annual breeder like the dhole slipped a season every year.
+    const recent = makeAgent('chital', { sex: 'female', lastBirthAt: 0 });
+    const { interBirthIntervalDays, gestationDays } = chital.lifecycle;
+    const conceiveBy = (interBirthIntervalDays - gestationDays) * WORLD_SECONDS_PER_DAY;
+    expect(isReceptive(recent, chital, conceiveBy)).toBe(true);
+  });
+});
+
+describe('oestrus', () => {
+  it('leaves a female whose courtship failed unreceptive until her next cycle', () => {
+    const doe = makeAgent('chital', { sex: 'female' });
+    endOestrus(doe, chital, 0);
+    const cycle = chital.lifecycle.oestrusCycleDays * WORLD_SECONDS_PER_DAY;
+    expect(isReceptive(doe, chital, cycle - WORLD_SECONDS_PER_DAY)).toBe(false);
+    expect(isReceptive(doe, chital, cycle)).toBe(true);
+  });
+
+  it('makes crowding cost whole cycles, not hours', () => {
+    // A female that retried every hour conceived within a day or two however crowded she was,
+    // so crowding never slowed a population. Tried once per cycle, it does.
+    const conceptionsInAYear = (density: number): number => {
+      const rng = createRng(3, 'oestrus');
+      const doe = makeAgent('hare', { id: 'doe', sex: 'female' });
+      const buck = makeAgent('hare', { id: 'buck', sex: 'male' });
+      const hare = speciesOf('hare');
+      let conceptions = 0;
+      for (let hour = 0; hour < 365 * 24; hour++) {
+        const now = hour * 3600;
+        if (doe.pregnantSince !== null && isReadyToGiveBirth(doe, hare, now)) {
+          doe.pregnantSince = null;
+          doe.lastBirthAt = now;
+        }
+        if (!isReceptive(doe, hare, now)) continue;
+        if (attemptCourtship(doe, buck, rng, density, hare.social.groupSize[1])) {
+          conceive(doe, buck, now);
+          conceptions++;
+        } else {
+          endOestrus(doe, hare, now);
+        }
+      }
+      return conceptions;
+    };
+    expect(conceptionsInAYear(40)).toBeLessThan(conceptionsInAYear(1) / 2);
+  });
+});
+
+describe('pack breeding', () => {
+  const dhole = speciesOf('dhole');
+  const nursing = new Set<string>();
+  const hasDependants = (a: { id: string }): boolean => nursing.has(a.id);
+
+  it('lets a female breed when no packmate is carrying or raising a litter', () => {
+    const her = makeAgent('dhole', { id: 'her', sex: 'female' });
+    const mate = makeAgent('dhole', { id: 'm', sex: 'male' });
+    const sister = makeAgent('dhole', { id: 'sis', sex: 'female' });
+    expect(packAllowsBreeding(her, dhole, [her, mate, sister], hasDependants)).toBe(true);
+  });
+
+  it('stops a second female breeding while another in the pack is pregnant', () => {
+    // A dhole pack raises one litter, the dominant female's. Every female breeding at once
+    // turned twelve dholes into fifty-six in four months, then starved most of them.
+    const her = makeAgent('dhole', { id: 'her', sex: 'female' });
+    const alpha = makeAgent('dhole', { id: 'alpha', sex: 'female', pregnantSince: 0 });
+    expect(packAllowsBreeding(her, dhole, [her, alpha], hasDependants)).toBe(false);
+  });
+
+  it('stops a second female breeding while another in the pack is raising pups', () => {
+    const her = makeAgent('dhole', { id: 'her', sex: 'female' });
+    const alpha = makeAgent('dhole', { id: 'alpha', sex: 'female' });
+    nursing.add('alpha');
+    expect(packAllowsBreeding(her, dhole, [her, alpha], hasDependants)).toBe(false);
+    nursing.clear();
+  });
+
+  it('does not apply to herds', () => {
+    const doe = makeAgent('chital', { id: 'doe', sex: 'female' });
+    const other = makeAgent('chital', { id: 'o', sex: 'female', pregnantSince: 0 });
+    expect(packAllowsBreeding(doe, chital, [doe, other], hasDependants)).toBe(true);
   });
 });
 

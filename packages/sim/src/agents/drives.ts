@@ -15,6 +15,8 @@ const HUNGER_PER_DAY = 0.14;
 const THIRST_PER_DAY = 0.40;
 const FEAR_DECAY_PER_HOUR = 0.42;
 
+export { HUNGER_PER_DAY, THIRST_PER_DAY };
+
 export function updateDrives(agent: Agent, _species: SpeciesConfig, hours: number): void {
   const days = hours / 24;
   const d = agent.drives;
