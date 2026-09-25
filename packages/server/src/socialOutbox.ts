@@ -240,6 +240,10 @@ export function installSocialOutbox(app: FastifyInstance, deps: {
       notice: 'Copy only after independent editorial review. This endpoint does not post to X or any other service.' };
   });
 
+  app.get('/admin/social/x-config', async () => ({
+    enabled: Boolean(config?.xPublisher), accountId: config?.xPublisher?.accountId ?? null,
+  }));
+
   // Credential-free preparation remains a dry run even when publishing is configured.
   app.post('/admin/social/x-prepare', { bodyLimit: 1024 }, async (request, reply) => {
     const draftId = bodyOf(request).draftId;

@@ -21,8 +21,9 @@
       <p>Grounded updates from saved forest events. Review each draft before sharing anything outside Vana.</p>
     </div>
     <aside class="social-boundary" aria-label="Publication boundary">
-      <strong>Manual dry run only.</strong> This page cannot post to X or any other service. Approval is editorial status,
-      not publication. Non-empty export page retrievals are server-audited; clipboard use, local downloads and actual publication are not.
+      <strong>Private by default.</strong> Approval is editorial status, not publication. Manual export stays available;
+      X posting is only possible when separately configured on the server and explicitly confirmed for one exact draft.
+      Non-empty export page retrievals are server-audited; clipboard use and local downloads are not publication.
     </aside>
     <form id="social-login" class="social-login">
       <h2>Unlock this tab</h2>
@@ -37,7 +38,7 @@
       <div class="social-toolbar">
         <div>
           <strong>Private outbox</strong>
-          <span>Event-backed text only · no external posting</span>
+          <span>Event-backed text · external posting disabled unless separately configured</span>
         </div>
         <div class="social-actions">
           <button id="social-refresh" type="button">Refresh all</button>
@@ -68,7 +69,7 @@
         </section>
         <section id="social-export" class="social-section" aria-labelledby="social-export-title">
           <div class="social-section-head"><div><p class="social-step">03 / Export</p><h2 id="social-export-title">Approved dry-run text</h2></div></div>
-          <p>Copy a single approved update or download this page’s approved JSON. Fetching a non-empty export page is server-audited; copying, downloading and publication are not.</p>
+          <p>Copy or download approved text. If an X account is configured, review the exact outgoing post and account before a one-shot publish attempt. An uncertain result must be reconciled, never resent.</p>
           <button id="social-download" type="button" disabled>Download this page’s JSON</button>
           <p id="social-export-status" class="social-section-status" role="status"></p>
           <div id="social-export-list" class="social-list"></div>
@@ -105,6 +106,24 @@
         <button id="social-review-submit" type="submit">Confirm decision</button>
       </div>
     </form>
+  </dialog>
+  <dialog id="social-x-dialog" class="social-review" aria-labelledby="social-x-title">
+    <h2 id="social-x-title">X publication</h2>
+    <p id="social-x-account" class="social-meta"></p>
+    <label for="social-x-text">Exact outgoing post</label>
+    <textarea id="social-x-text" readonly rows="5"></textarea>
+    <p id="social-x-state" role="status" aria-live="polite"></p>
+    <div id="social-x-publish-controls">
+      <label class="social-check"><input id="social-x-check" type="checkbox" /> I authorize one attempt to publish this exact text from the account above. A timeout may still have posted it.</label>
+      <button id="social-x-publish" type="button" disabled>Publish once to X</button>
+    </div>
+    <div id="social-x-reconcile-controls" hidden>
+      <label for="social-x-post-id">X post ID for read-only verification</label>
+      <input id="social-x-post-id" inputmode="numeric" pattern="[0-9]{1,30}" autocomplete="off" aria-describedby="social-x-error" />
+      <button id="social-x-reconcile" type="button">Verify and reconcile</button>
+    </div>
+    <p id="social-x-error" class="social-error" role="alert"></p>
+    <div class="social-dialog-actions"><button id="social-x-close" type="button">Close</button></div>
   </dialog>
   <script type="module" src="/src/socialAdmin.ts"></script>
 </body>

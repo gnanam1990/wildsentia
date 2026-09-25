@@ -21,14 +21,26 @@ let generation = 0;
 let exportItems: Draft[] = [];
 let reviewTarget: { id: string; action: ReviewAction } | null = null;
 let reviewTrigger: HTMLElement | null = null;
+interface XConfig { enabled: boolean; accountId: string | null }
+interface XPlan { draftId: string; request: { body: { text: string } } }
+interface XPublication { draftId: string; status: 'unknown' | 'published'; published: boolean; xPostId: string | null }
+let xTarget: Draft | null = null;
+let xAccountId: string | null = null;
+let xTrigger: HTMLElement | null = null;
+const xAttempted = new Set<string>();
 const status = $<HTMLElement>('#social-status');
 const dialog = $<HTMLDialogElement>('#social-review');
+const xDialog = $<HTMLDialogElement>('#social-x-dialog');
 const note = $<HTMLTextAreaElement>('#social-review-note');
 const reviewError = $<HTMLElement>('#social-review-error');
 
 function lock(message = 'Tab locked. Private outbox content cleared.'): void {
-  token = ''; generation++; reviewTarget = null; exportItems = [];
+  token = ''; generation++; reviewTarget = null; xTarget = null; xAccountId = null; exportItems = [];
   if (dialog.open) dialog.close();
+  if (xDialog.open) xDialog.close();
+  $<HTMLTextAreaElement>('#social-x-text').value = ''; $('#social-x-account').textContent = '';
+  $('#social-x-state').textContent = ''; $('#social-x-error').textContent = '';
+  $<HTMLInputElement>('#social-x-post-id').value = '';
   note.value = ''; reviewError.textContent = ''; $('#social-review-copy').textContent = '';
   $<HTMLInputElement>('#social-token').value = '';
   for (const kind of sections) {
@@ -99,7 +111,59 @@ function exportCard(item: Draft): HTMLElement {
   card.append(title, paragraph(`Event ${item.eventId} · draft ${item.id}`, 'social-meta'), label, text);
   const actions = document.createElement('div'); actions.className = 'social-card-actions';
   actions.append(actionButton('Copy update text', (button) => { void copyText(item, text, button); }));
+  actions.append(actionButton('Review X status / publish', (button) => { void openX(item, button); }));
   card.append(actions); return card;
+}
+
+function showXState(publication: XPublication): void {
+  $<HTMLElement>('#social-x-publish-controls').hidden = true;
+  $<HTMLElement>('#social-x-reconcile-controls').hidden = publication.status !== 'unknown';
+  $('#social-x-state').textContent = publication.published
+    ? `Published as X post ${publication.xPostId}. This draft cannot be sent again.`
+    : 'Outcome uncertain. The post may already be public. Do not resend; verify its X post ID below.';
+  $<HTMLButtonElement>('#social-x-publish').disabled = true;
+}
+
+async function openX(item: Draft, button: HTMLButtonElement): Promise<void> {
+  if (!token || button.disabled) return;
+  const currentGeneration = generation;
+  button.disabled = true; button.textContent = 'Checking X status…';
+  try {
+    const config = await api('/admin/social/x-config') as XConfig;
+    if (!token || generation !== currentGeneration) return;
+    if (!config.enabled || !config.accountId || !/^[0-9]{1,30}$/.test(config.accountId)) {
+      status.textContent = 'X publishing is disabled on this server. Manual export remains available.'; return;
+    }
+    let publication: XPublication | null = null;
+    try { publication = await api(`/admin/social/x-publications/${item.id}`) as XPublication; }
+    catch (error) { if ((error as { status?: number }).status !== 404) throw error; }
+    let outgoing = `${item.body} [VANA record ${item.id}]`;
+    if (!publication && !xAttempted.has(item.id)) {
+      const plan = await api('/admin/social/x-prepare', { draftId: item.id }) as XPlan;
+      if (plan.draftId !== item.id || typeof plan.request?.body?.text !== 'string')
+        throw new Error('X preparation did not match this draft');
+      outgoing = plan.request.body.text;
+    }
+    if (!token || generation !== currentGeneration) return;
+    xTarget = item; xAccountId = config.accountId; xTrigger = button;
+    $('#social-x-account').textContent = `Configured X account ID: ${config.accountId}`;
+    $<HTMLTextAreaElement>('#social-x-text').value = outgoing;
+    $('#social-x-error').textContent = '';
+    $<HTMLInputElement>('#social-x-post-id').value = '';
+    $<HTMLInputElement>('#social-x-check').checked = false;
+    $<HTMLButtonElement>('#social-x-publish').disabled = true;
+    $<HTMLElement>('#social-x-publish-controls').hidden = false;
+    $<HTMLElement>('#social-x-reconcile-controls').hidden = true;
+    if (publication) showXState(publication);
+    else if (xAttempted.has(item.id)) {
+      $<HTMLElement>('#social-x-publish-controls').hidden = true;
+      $('#social-x-state').textContent = 'A publish attempt was made in this tab. Outcome could not be read. Do not retry; refresh its status later.';
+    } else $('#social-x-state').textContent = 'Not sent. Confirm only if you intend to publish this exact text publicly.';
+    xDialog.showModal();
+  } catch (error) {
+    if (token && generation === currentGeneration)
+      status.textContent = `${(error as Error).message}. Nothing was sent by this review action.`;
+  } finally { button.disabled = false; button.textContent = 'Review X status / publish'; }
 }
 
 function auditCard(item: AuditEntry): HTMLElement {
@@ -278,6 +342,64 @@ $<HTMLButtonElement>('#social-download').onclick = async () => {
 };
 $<HTMLButtonElement>('#social-review-cancel').onclick = () => dialog.close();
 dialog.addEventListener('close', () => { reviewTarget = null; if (reviewTrigger?.isConnected) reviewTrigger.focus(); reviewTrigger = null; });
+$<HTMLButtonElement>('#social-x-close').onclick = () => xDialog.close();
+xDialog.addEventListener('close', () => {
+  xTarget = null; xAccountId = null;
+  $<HTMLTextAreaElement>('#social-x-text').value = '';
+  $<HTMLInputElement>('#social-x-post-id').value = '';
+  $<HTMLInputElement>('#social-x-check').checked = false;
+  if (xTrigger?.isConnected) xTrigger.focus();
+  xTrigger = null;
+});
+$<HTMLInputElement>('#social-x-check').onchange = () => {
+  $<HTMLButtonElement>('#social-x-publish').disabled = !xTarget || !xAccountId
+    || xAttempted.has(xTarget.id) || !$<HTMLInputElement>('#social-x-check').checked;
+};
+$<HTMLButtonElement>('#social-x-publish').onclick = async () => {
+  const target = xTarget, accountId = xAccountId;
+  if (!target || !accountId || !$<HTMLInputElement>('#social-x-check').checked || xAttempted.has(target.id)) return;
+  const currentGeneration = generation;
+  xAttempted.add(target.id);
+  const button = $<HTMLButtonElement>('#social-x-publish'); button.disabled = true;
+  $('#social-x-state').textContent = 'One publication request in progress. Do not close and retry.';
+  try {
+    const result = await api('/admin/social/x-publish', { draftId: target.id }) as XPublication;
+    if (!token || generation !== currentGeneration || xTarget?.id !== target.id) return;
+    if (result.draftId !== target.id || !['published', 'unknown'].includes(result.status))
+      throw new Error('Unrecognized publication response');
+    showXState(result);
+  } catch {
+    if (!token || generation !== currentGeneration || xTarget?.id !== target.id) return;
+    try {
+      const result = await api(`/admin/social/x-publications/${target.id}`) as XPublication;
+      if (token && generation === currentGeneration && xTarget?.id === target.id) showXState(result);
+    } catch {
+      if (token && generation === currentGeneration && xTarget?.id === target.id) {
+        $<HTMLElement>('#social-x-publish-controls').hidden = true;
+        $<HTMLElement>('#social-x-reconcile-controls').hidden = false;
+        $('#social-x-state').textContent = 'Outcome not confirmed. Do not resend; check X and reconcile a matching post ID.';
+      }
+    }
+  }
+};
+$<HTMLButtonElement>('#social-x-reconcile').onclick = async () => {
+  const target = xTarget, id = $<HTMLInputElement>('#social-x-post-id').value.trim();
+  if (!target || !/^[0-9]{1,30}$/.test(id)) {
+    $('#social-x-error').textContent = 'Enter the numeric X post ID (1–30 digits).'; return;
+  }
+  const currentGeneration = generation, button = $<HTMLButtonElement>('#social-x-reconcile');
+  button.disabled = true; $('#social-x-error').textContent = '';
+  $('#social-x-state').textContent = 'Checking the post author and exact text…';
+  try {
+    const result = await api('/admin/social/x-reconcile', { draftId: target.id, xPostId: id }) as XPublication;
+    if (token && generation === currentGeneration && xTarget?.id === target.id) showXState(result);
+  } catch (error) {
+    if (token && generation === currentGeneration && xTarget?.id === target.id) {
+      $('#social-x-error').textContent = `${(error as Error).message}. Verify the exact post ID; never resend the draft.`;
+      $('#social-x-state').textContent = 'Outcome still uncertain.';
+    }
+  } finally { button.disabled = false; }
+};
 $('#social-review-form').addEventListener('submit', (event) => {
   event.preventDefault();
   const target = reviewTarget, reason = note.value.trim(), check = $<HTMLInputElement>('#social-review-check');

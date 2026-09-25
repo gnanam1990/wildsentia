@@ -102,8 +102,22 @@ describe('separate local social administration journey', () => {
     expect(source).toContain("$('#social-review-copy').textContent = ''");
     expect(source).toContain("$<HTMLInputElement>('#social-token').value = ''");
     expect(source).toContain("addEventListener('pagehide', () => lock())");
-    expect(html).toContain('clipboard use, local downloads and actual publication are not');
-    expect(html).toContain('cannot post to X');
+    expect(html).toContain('clipboard use and local downloads are not publication');
+    expect(html).toContain('X posting is only possible when separately configured');
+  });
+
+  it('offers an explicit one-shot X review and uncertain-result reconciliation path', () => {
+    expect(html).toContain('id="social-x-dialog"');
+    expect(html).toContain('id="social-x-text" readonly');
+    expect(html).toContain('id="social-x-check"');
+    expect(html).toContain('id="social-x-publish" type="button" disabled');
+    expect(html).toContain('id="social-x-post-id"');
+    expect(source).toContain("api('/admin/social/x-config')");
+    expect(source).toContain("api('/admin/social/x-prepare', { draftId: item.id })");
+    expect(source).toContain("api('/admin/social/x-publish', { draftId: target.id })");
+    expect(source).toContain("api('/admin/social/x-reconcile', { draftId: target.id, xPostId: id })");
+    expect(source).toContain('xAttempted.add(target.id)');
+    expect(source).toContain("$('#social-x-state').textContent = 'Outcome not confirmed. Do not resend;");
   });
 
   it('formats world time defensively', () => {

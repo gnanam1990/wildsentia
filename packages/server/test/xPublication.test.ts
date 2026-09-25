@@ -47,9 +47,14 @@ maybe('X publication reservation and reconciliation', () => {
   it('stays disabled by default and requires explicit approval', async () => {
     expect(socialConfig({ VANA_SOCIAL_ADMIN_TOKEN: adminToken })).toEqual({ adminToken });
     expect(() => socialConfig({ VANA_SOCIAL_ADMIN_TOKEN: adminToken, VANA_X_PUBLISH_ENABLED: '1' })).toThrow();
+    expect((await app.inject({ url: '/admin/social/x-config', headers })).json())
+      .toEqual({ enabled: true, accountId: '456' });
+    expect((await app.inject({ url: '/admin/social/x-config' })).statusCode).toBe(401);
     const disabled = buildApi({ host, pool, social: { adminToken } });
     try {
       await disabled.ready();
+      expect((await disabled.inject({ url: '/admin/social/x-config', headers })).json())
+        .toEqual({ enabled: false, accountId: null });
       expect((await disabled.inject({ method: 'POST', url: '/admin/social/x-publish', payload: { draftId }, headers })).statusCode).toBe(503);
     } finally { await disabled.close(); }
     expect((await post('/admin/social/x-publish', { draftId })).statusCode).toBe(404);
