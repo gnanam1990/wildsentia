@@ -17,7 +17,7 @@ import { CommunityLayer } from './communityLayer.js';
 import { loadLifeHistory, loadSelectedClimb, loadSelectedEncounter } from './lifeHistory.js';
 import { encounterAt, isRecordedEncounter, ReplayClock, type RecordedEncounter } from './encounterReplay.js';
 import { SPECIES_VISUALS, visualFor } from './species.js';
-import { Atmosphere, atmosphereAt } from './environment.js';
+import { Atmosphere, atmosphereAt, observerExposure } from './environment.js';
 import { characterScale, markerSize } from './appearance.js';
 import { LiveEncounterPlayer, withRecordedVisualIdentity } from './liveEncounters.js';
 import { ObserverVisibility, type ObserverSubject } from './observerVisibility.js';
@@ -643,7 +643,10 @@ function frame(): void {
   humanLabel.hidden = true;
   follow.reducedMotion = reducedMotion.matches;
   refreshEncounterPicker(now);
-  if (store.world !== null) atmosphere.update(store.world.worldTime, store.world.season, now / 1000, follow.target, reducedMotion.matches, follow.distance);
+  if (store.world !== null) {
+    atmosphere.update(store.world.worldTime, store.world.season, now / 1000, follow.target, reducedMotion.matches, follow.distance);
+    renderer.toneMappingExposure = observerExposure(atmosphereAt(store.world.worldTime, store.world.season).daylight);
+  }
 
   groundCover?.animate(now / 1000, reducedMotion.matches);
 

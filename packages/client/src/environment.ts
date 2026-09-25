@@ -9,6 +9,15 @@ export function atmosphereAt(worldTime: number, season: string) {
   return { angle, daylight, rain, sunIntensity: 0.45 + daylight * (1.85 - rain) };
 }
 
+/**
+ * Observer exposure: like eyes adjusting to the dark, night is brightened enough that dark
+ * coats (boar, gaur) read as animals rather than holes, while the sky and light colour still
+ * say it is night. Presentation only; the world's time and light are unchanged.
+ */
+export function observerExposure(daylight: number): number {
+  return 1.1 + (1 - Math.min(1, Math.max(0, daylight))) * 0.75;
+}
+
 export class Atmosphere {
   readonly rain: THREE.LineSegments;
   readonly #positions = new Float32Array(600 * 6);
