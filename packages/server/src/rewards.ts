@@ -1,11 +1,27 @@
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { keccak_256 } from '@noble/hashes/sha3.js';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Pool } from './db/pool.js';
 import { baseReceiptRpc, matchBaseUsdcReceipt, type ReceiptRpc } from './baseReceipt.js';
 
 export type RewardNetwork = 'base';
-export interface RewardConfig { adminToken: string; network: 'base'; claimPolicy: 'first_valid'; receiptRpcUrl?: string; payoutWallet?: string }
+export interface RewardConfig {
+  adminToken: string; network: 'base'; claimPolicy: 'first_valid'; receiptRpcUrl?: string; payoutWallet?: string;
+  /** Seconds an observer must have been watching the subject before a claim is accepted. */
+  minWatchSeconds?: number;
+  /** Winning claims one wallet may hold in any 24 hours. */
+  walletDailyLimit?: number;
+  /** Winning claims one network address may make in any 24 hours. */
+  clientDailyLimit?: number;
+}
+/** Anti-abuse defaults for a configured server. A config built directly (tests) leaves them off. */
+export const REWARD_LIMIT_DEFAULTS = { minWatchSeconds: 60, walletDailyLimit: 1, clientDailyLimit: 3 } as const;
+function boundedInteger(value: string | undefined, fallback: number, min: number, max: number, name: string): number {
+  if (value === undefined || value === '') return fallback;
+  const n = Number(value);
+  if (!/^[0-9]+$/.test(value) || n < min || n > max) throw new Error(`Invalid ${name}`);
+  return n;
+}
 export function rewardConfig(env: NodeJS.ProcessEnv): RewardConfig | undefined {
   // No financial/network/winner-policy default. All three are an explicit operator choice.
   if (!env.VANA_REWARD_ADMIN_TOKEN && !env.VANA_REWARD_NETWORK && !env.VANA_REWARD_POLICY
@@ -22,6 +38,9 @@ export function rewardConfig(env: NodeJS.ProcessEnv): RewardConfig | undefined {
       throw new Error('Invalid reward receipt configuration');
   }
   return { adminToken: env.VANA_REWARD_ADMIN_TOKEN!, network: 'base', claimPolicy: 'first_valid',
+    minWatchSeconds: boundedInteger(env.VANA_REWARD_MIN_WATCH_SECONDS, REWARD_LIMIT_DEFAULTS.minWatchSeconds, 0, 3600, 'VANA_REWARD_MIN_WATCH_SECONDS'),
+    walletDailyLimit: boundedInteger(env.VANA_REWARD_WALLET_DAILY_LIMIT, REWARD_LIMIT_DEFAULTS.walletDailyLimit, 1, 100, 'VANA_REWARD_WALLET_DAILY_LIMIT'),
+    clientDailyLimit: boundedInteger(env.VANA_REWARD_CLIENT_DAILY_LIMIT, REWARD_LIMIT_DEFAULTS.clientDailyLimit, 1, 1000, 'VANA_REWARD_CLIENT_DAILY_LIMIT'),
     ...(env.VANA_REWARD_RECEIPT_RPC_URL ? { receiptRpcUrl: env.VANA_REWARD_RECEIPT_RPC_URL,
       payoutWallet: walletAddress(env.VANA_REWARD_PAYOUT_WALLET, 'base')! } : {}) };
 }
@@ -51,7 +70,7 @@ const bodyOf = (request: FastifyRequest): Record<string, unknown> =>
   typeof request.body === 'object' && request.body !== null && !Array.isArray(request.body)
     ? request.body as Record<string, unknown> : {};
 const bearer = (r: FastifyRequest): string => r.headers.authorization?.match(/^Bearer ([^\s]{1,256})$/)?.[1] ?? '';
-interface Drop { id: string; actor_id: string; amount_micro: string; network: RewardNetwork; reveal_when: string; status: string }
+interface Drop { id: string; actor_id: string; amount_micro: string; network: RewardNetwork; reveal_when: string; status: string; world_id?: string | null }
 interface ReservedPayout { amount_micro: string; wallet: string; drop_status: string; claim_status: string }
 interface StoredPayout { claim_id: string; tx_hash: string; log_index: number; block_number: string; block_hash: string }
 const publicDrop = (d: Drop) => ({ id: d.id, actorId: d.actor_id, amount: displayAmount(d.amount_micro), network: d.network,
@@ -81,8 +100,27 @@ export function installRewards(app: FastifyInstance, deps: {
   receiptRpc?: ReceiptRpc;
   /** Read-only visibility adapter; reward code receives no simulation object or mutation capability. */
   subject: (id: string) => { alive: boolean; carcass: boolean } | null;
+  /** The running world's durable identity, or null before it is known. Rewards fail closed without it. */
+  world?: () => string | null;
 }): void {
   const { pool, config, subject } = deps;
+  const minWatchSeconds = config?.minWatchSeconds ?? 0;
+  // A drop belongs to the world it was allocated in. Drops from before world identities
+  // existed are bound, once, to the world this ledger is running with.
+  let boundWorld: string | null = null;
+  async function currentWorld(): Promise<string | null> {
+    const id = deps.world?.() ?? null;
+    if (id === null) return null;
+    if (boundWorld !== id) {
+      await pool.query('update reward_drops set world_id=$1 where world_id is null', [id]);
+      boundWorld = id;
+    }
+    return id;
+  }
+  /** A receipt lets a claimant check their own claim later. Derived, so a retried claim gets the same one. */
+  const receiptKey = hash(`claim-receipt:${config?.adminToken ?? ''}`);
+  const receiptFor = (claimId: string): string => createHmac('sha256', receiptKey).update(claimId).digest('hex');
+  const clientHash = (req: FastifyRequest): string => hash(`claim-client:${config?.adminToken ?? ''}:${req.ip}`);
   const receiptRpc = deps.receiptRpc ?? (config?.receiptRpcUrl ? baseReceiptRpc(config.receiptRpcUrl) : undefined);
   const limits = new Map<string, { count: number; until: number }>();
   app.addHook('onRequest', async (req, reply) => {
@@ -117,9 +155,11 @@ export function installRewards(app: FastifyInstance, deps: {
     return !!animal && (d.reveal_when === 'carcass' ? animal.carcass : animal.alive || animal.carcass);
   };
 
-  app.get('/rewards/summary', async () => {
+  app.get('/rewards/summary', async (_req, reply) => {
+    const world = await currentWorld();
+    if (world === null) return reply.code(503).send({ error: 'world_unavailable' });
     const { rows } = await pool.query<{ status: string; amount: string }>(
-      'select status, sum(amount_micro)::text as amount from reward_drops where network=$1 group by status', [config!.network]);
+      'select status, sum(amount_micro)::text as amount from reward_drops where network=$1 and world_id=$2 group by status', [config!.network, world]);
     const amount = (status: string) => displayAmount(rows.find((r) => r.status === status)?.amount ?? '0');
     return { network: config!.network, policy: config!.claimPolicy, available: amount('open'), reserved: amount('reserved'),
       paidReported: amount('paid_reported'), verifiedPaid: amount('verified_paid'), fundingVerified: false,
@@ -137,11 +177,19 @@ export function installRewards(app: FastifyInstance, deps: {
     const actorId = bodyOf(req).actorId;
     if (actorId !== null && (typeof actorId !== 'string' || actorId.length > 128 || !subject(actorId)))
       return reply.code(400).send({ error: 'unknown_subject' });
-    await pool.query('update reward_observers set actor_id=$1 where token_hash=$2', [actorId, viewer.token_hash]);
+    const world = await currentWorld();
+    if (world === null) return reply.code(503).send({ error: 'world_unavailable' });
+    // Watching time restarts only when the subject changes; re-sending the same one keeps it.
+    const watched = (await pool.query<{ seconds: number }>(`update reward_observers
+      set watch_started_at = case when actor_id is not distinct from $1 and watch_started_at is not null
+        then watch_started_at else now() end, actor_id=$1
+      where token_hash=$2 returning extract(epoch from now() - watch_started_at)::float8 as seconds`,
+    [actorId, viewer.token_hash])).rows[0]?.seconds ?? 0;
     if (actorId === null) return { drops: [] };
     const { rows } = await pool.query<Drop>(
-      "select * from reward_drops where actor_id=$1 and network=$2 and status='open' order by created_at limit 20", [actorId, config!.network]);
-    return { drops: rows.filter(visible).map(publicDrop) };
+      "select * from reward_drops where actor_id=$1 and network=$2 and world_id=$3 and status='open' order by created_at limit 20",
+      [actorId, config!.network, world]);
+    return { drops: rows.filter(visible).map(publicDrop), claimableInSeconds: Math.max(0, Math.ceil(minWatchSeconds - watched)) };
   });
   app.post('/rewards/claims', { bodyLimit: 2048 }, async (req, reply) => {
     const viewer = await observer(req); if (!viewer) return reply.code(401).send({ error: 'observer_session_required' });
@@ -150,8 +198,11 @@ export function installRewards(app: FastifyInstance, deps: {
     const db = await pool.connect();
     try {
       await db.query('begin');
-      const currentViewer = (await db.query<{ actor_id: string | null }>(
-        'select actor_id from reward_observers where token_hash=$1 and expires_at > now() for share', [viewer.token_hash])).rows[0];
+      const world = await currentWorld();
+      if (world === null) { await db.query('rollback'); return reply.code(503).send({ error: 'world_unavailable' }); }
+      const currentViewer = (await db.query<{ actor_id: string | null; watched: number | null }>(
+        `select actor_id, extract(epoch from now() - watch_started_at)::float8 as watched from reward_observers
+         where token_hash=$1 and expires_at > now() for share`, [viewer.token_hash])).rows[0];
       if (!currentViewer) { await db.query('rollback'); return reply.code(401).send({ error: 'observer_session_required' }); }
       const drop = (await db.query<Drop>('select * from reward_drops where id=$1 for update', [body.dropId])).rows[0];
       // Repeated submit returns the same receipt, including after reservation. Never edits the wallet.
@@ -160,22 +211,61 @@ export function installRewards(app: FastifyInstance, deps: {
       if (previous && drop) {
         await db.query('rollback');
         if (previous.wallet !== wallet) return reply.code(409).send({ error: 'claim_wallet_immutable' });
-        return { claimId: previous.id, status: previous.status, amount: displayAmount(drop.amount_micro), network: drop.network };
+        return { claimId: previous.id, status: previous.status, amount: displayAmount(drop.amount_micro), network: drop.network,
+          receipt: receiptFor(previous.id) };
       }
-      if (!drop || drop.network !== config!.network || currentViewer.actor_id !== drop.actor_id || !visible(drop)) {
+      if (!drop || drop.network !== config!.network || drop.world_id !== world
+        || currentViewer.actor_id !== drop.actor_id || !visible(drop)) {
         await db.query('rollback'); return reply.code(404).send({ error: 'watch_subject_to_claim' });
       }
       if (drop.status !== 'open') { await db.query('rollback'); return reply.code(409).send({ error: 'reward_unavailable' }); }
+      // Anti-abuse. Anonymous watching cannot prove a person, but it can cost real time, and
+      // wins per wallet and per network address are capped. Locks make the counts race-free.
+      const remaining = Math.ceil(minWatchSeconds - (currentViewer.watched ?? 0));
+      if (remaining > 0) { await db.query('rollback'); return reply.code(425).send({ error: 'keep_watching', retryAfterSeconds: remaining }); }
+      const client = clientHash(req);
+      await db.query("select pg_advisory_xact_lock(hashtext('reward-wallet:' || $1))", [wallet]);
+      await db.query("select pg_advisory_xact_lock(hashtext('reward-client:' || $1))", [client]);
+      const recent = (column: 'wallet' | 'client_hash', value: string) => db.query<{ n: number }>(
+        `select count(*)::int as n from reward_claims where ${column}=$1
+         and status in ('reserved','paid_reported','verified_paid') and created_at > now() - interval '24 hours'`, [value]);
+      if (config!.walletDailyLimit !== undefined && (await recent('wallet', wallet)).rows[0]!.n >= config!.walletDailyLimit) {
+        await db.query('rollback'); return reply.code(429).send({ error: 'wallet_daily_limit' });
+      }
+      if (config!.clientDailyLimit !== undefined && (await recent('client_hash', client)).rows[0]!.n >= config!.clientDailyLimit) {
+        await db.query('rollback'); return reply.code(429).send({ error: 'client_daily_limit' });
+      }
       const id = randomUUID();
-      const result = await db.query(`insert into reward_claims(id,drop_id,observer_hash,wallet) values ($1,$2,$3,$4)
-        on conflict do nothing returning id`, [id, drop.id, viewer.token_hash, wallet]);
+      const result = await db.query(`insert into reward_claims(id,drop_id,observer_hash,wallet,client_hash) values ($1,$2,$3,$4,$5)
+        on conflict do nothing returning id`, [id, drop.id, viewer.token_hash, wallet, client]);
       if (!result.rowCount) { await db.query('rollback'); return reply.code(409).send({ error: 'wallet_already_submitted' }); }
       await db.query("update reward_drops set status='reserved' where id=$1", [drop.id]);
       await db.query("insert into reward_audit(drop_id,claim_id,action,network) values ($1,$2,'claim_submitted',$3)", [drop.id, id, drop.network]);
       await db.query('commit');
-      return { claimId: id, status: 'reserved', amount: displayAmount(drop.amount_micro), network: drop.network };
+      return { claimId: id, status: 'reserved', amount: displayAmount(drop.amount_micro), network: drop.network, receipt: receiptFor(id) };
     } catch { await db.query('rollback'); return reply.code(503).send({ error: 'claim_unavailable_retry_same_details' }); }
     finally { db.release(); }
+  });
+
+  // A claimant's own status, by claim ID and the receipt the claim returned. The same 404 for an
+  // unknown claim and a wrong receipt, so neither claim IDs nor receipts can be probed.
+  app.get<{ Params: { id: string } }>('/rewards/claims/:id', async (req, reply) => {
+    const given = bearer(req);
+    if (!uuid(req.params.id) || !/^[0-9a-f]{64}$/.test(given)
+      || !timingSafeEqual(Buffer.from(given), Buffer.from(receiptFor(req.params.id.toLowerCase()))))
+      return reply.code(404).send({ error: 'claim_not_found' });
+    const row = (await pool.query<{ id: string; status: string; wallet: string; created_at: Date; actor_id: string;
+      amount_micro: string; network: string; tx_hash: string | null; reported_tx: string | null }>(
+      `select c.id,c.status,c.wallet,c.created_at,d.actor_id,d.amount_micro::text,d.network,p.tx_hash,
+        (select a.transaction_ref from reward_audit a where a.claim_id=c.id and a.action='report_paid' order by a.id desc limit 1) as reported_tx
+       from reward_claims c join reward_drops d on d.id=c.drop_id left join reward_verified_payouts p on p.claim_id=c.id
+       where c.id=$1`, [req.params.id.toLowerCase()])).rows[0];
+    if (!row) return reply.code(404).send({ error: 'claim_not_found' });
+    return { claimId: row.id, status: row.status, amount: displayAmount(row.amount_micro), network: row.network,
+      animalId: row.actor_id, wallet: `${row.wallet.slice(0, 6)}…${row.wallet.slice(-4)}`,
+      claimedAt: row.created_at.toISOString(),
+      payment: row.tx_hash ? { transactionRef: row.tx_hash, verified: true }
+        : row.reported_tx ? { transactionRef: row.reported_tx, verified: false } : null };
   });
 
   async function page(kind: PageKind, before: { t?: string; id: string } | null) {
@@ -196,14 +286,16 @@ export function installRewards(app: FastifyInstance, deps: {
       order by id desc limit $3`, [config!.network, before?.id ?? null, limit])).rows;
     const items = rows.slice(0, PAGE_SIZE);
     const next = rows.length > PAGE_SIZE ? encodeCursor(kind, items.at(-1)!) : null;
-    return { items: kind === 'drops' ? (items as unknown as Drop[]).map(publicDrop)
+    return { items: kind === 'drops' ? (items as unknown as Drop[]).map((d) => ({ ...publicDrop(d), worldId: d.world_id ?? null }))
       : items.map(({ cursor_time: _cursorTime, ...row }) => row), next };
   }
   app.get('/admin/rewards', async () => {
+    const world = await currentWorld();
     const [drops, claims, audit] = await Promise.all([page('drops', null), page('claims', null), page('audit', null)]);
     return { drops: drops.items, claims: claims.items, audit: audit.items,
       next: { drops: drops.next, claims: claims.next, audit: audit.next },
-      network: config!.network, policy: config!.claimPolicy,
+      network: config!.network, policy: config!.claimPolicy, currentWorldId: world,
+      limits: { minWatchSeconds, walletDailyLimit: config!.walletDailyLimit ?? null, clientDailyLimit: config!.clientDailyLimit ?? null },
       receiptVerificationAvailable: !!receiptRpc && !!walletAddress(config!.payoutWallet, 'base') };
   });
   app.get<{ Querystring: { kind?: string; cursor?: string } }>('/admin/rewards/page', async (req, reply) => {
@@ -297,13 +389,15 @@ export function installRewards(app: FastifyInstance, deps: {
     const b = bodyOf(req), amount = microAmount(b.amount);
     if (!uuid(b.id) || typeof b.actorId !== 'string' || b.actorId.length > 128 || !subject(b.actorId) || !amount
       || !['watch', 'carcass'].includes(String(b.revealWhen))) return reply.code(400).send({ error: 'invalid_drop' });
+    const world = await currentWorld();
+    if (world === null) return reply.code(503).send({ error: 'world_unavailable' });
     const db = await pool.connect();
     try {
       await db.query('begin');
-      const inserted = await db.query(`insert into reward_drops(id, actor_id, amount_micro, network, reveal_when)
-        values ($1,$2,$3,$4,$5) on conflict do nothing returning id`, [b.id, b.actorId, amount, config!.network, b.revealWhen]);
+      const inserted = await db.query(`insert into reward_drops(id, actor_id, amount_micro, network, reveal_when, world_id)
+        values ($1,$2,$3,$4,$5,$6) on conflict do nothing returning id`, [b.id, b.actorId, amount, config!.network, b.revealWhen, world]);
       const drop = (await db.query<Drop>('select * from reward_drops where id=$1', [b.id])).rows[0]!;
-      if (drop.actor_id !== b.actorId || drop.amount_micro !== amount || drop.network !== config!.network || drop.reveal_when !== b.revealWhen) {
+      if (drop.world_id !== world || drop.actor_id !== b.actorId || drop.amount_micro !== amount || drop.network !== config!.network || drop.reveal_when !== b.revealWhen) {
         await db.query('rollback'); return reply.code(409).send({ error: 'idempotency_conflict' });
       }
       if (inserted.rowCount) await db.query("insert into reward_audit(drop_id,action,network) values ($1,'allocated',$2)", [b.id, config!.network]);

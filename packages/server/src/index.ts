@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { createPool } from './db/pool.js';
 import { SimHost } from './simHost.js';
-import { buildApi } from './api.js';
+import { buildApi, trustedProxyHops } from './api.js';
 import { Narrator } from './narration/narrator.js';
 import { claudeRephraser } from './narration/claude.js';
 import { Gateway } from './gateway.js';
@@ -15,6 +15,7 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
   const rewards = rewardConfig(process.env);
   const social = socialConfig(process.env);
   const holder = holderConfig(process.env);
+  trustedProxyHops(process.env); // Fail at startup, not at the first request.
   if (!databaseUrl) throw new Error('DATABASE_URL is required');
 
   const port = Number(process.env.PORT ?? 8080);
@@ -93,7 +94,7 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
     });
     console.log(rephrase === null ? 'narration: templates only (no API key)' : 'narration: model rephrasing on');
 
-    api = buildApi({ host, pool, narrator, rewards, social, holder });
+    api = buildApi({ host, pool, narrator, rewards, social, holder, trustedProxyHops: trustedProxyHops(process.env) });
     await api.ready();
 
     server = createServer((req, res) => { api!.server.emit('request', req, res); });

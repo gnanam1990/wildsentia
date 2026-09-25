@@ -25,19 +25,33 @@ export interface ApiDeps {
   social?: SocialConfig | undefined;
   holder?: HolderConfig | undefined;
   holderChain?: HolderChain;
+  /**
+   * Reverse proxies in front of the server whose X-Forwarded-For entries are trusted, so
+   * per-visitor limits see the visitor rather than the proxy. 0 (default) trusts none.
+   */
+  trustedProxyHops?: number;
+}
+
+/** VANA_TRUSTED_PROXY_HOPS: how many proxies (e.g. 1 for Caddy in deploy/) to trust. */
+export function trustedProxyHops(env: NodeJS.ProcessEnv): number {
+  const value = env.VANA_TRUSTED_PROXY_HOPS;
+  if (value === undefined || value === '') return 0;
+  if (!/^[0-9]$/.test(value)) throw new Error('Invalid VANA_TRUSTED_PROXY_HOPS');
+  return Number(value);
 }
 
 /**
  * World routes are read-only. The optional reward ledger has independent write routes and
  * receives only a read-only subject visibility adapter, never a simulation mutation capability.
  */
-export function buildApi({ host, pool, narrator, rewards, receiptRpc, social, holder, holderChain }: ApiDeps): FastifyInstance {
-  const app = Fastify({ logger: false });
+export function buildApi({ host, pool, narrator, rewards, receiptRpc, social, holder, holderChain, trustedProxyHops: hops = 0 }: ApiDeps): FastifyInstance {
+  // Without this, behind Caddy every visitor has the proxy's address and shares one rate limit.
+  const app = Fastify({ logger: false, trustProxy: hops > 0 ? (_address: string, hop: number) => hop < hops : false });
   const events = new EventStore(pool);
   const life = new LifeStore(pool);
   const humanMotion = new HumanMotionStore(pool);
   const historyCursors = new HistoryCursors();
-  installRewards(app, { pool, config: rewards, ...(receiptRpc ? { receiptRpc } : {}), subject: (id) => host.rewardSubject(id) });
+  installRewards(app, { pool, config: rewards, ...(receiptRpc ? { receiptRpc } : {}), subject: (id) => host.rewardSubject(id), world: () => host.worldId });
   installSocialOutbox(app, { pool, config: social, boundary: () => {
     const view = host.observation();
     return view ? { worldTime: view.worldTime, nextSequence: view.nextSequence } : null;

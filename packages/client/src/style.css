@@ -47,6 +47,12 @@
 #reward-badge[hidden] { display: none; }
 #reward-total { position: fixed; bottom: 10px; right: 16px; z-index: 12; font-size: 12px; padding: 8px 12px;
   max-width: min(480px, calc(100vw - 32px)); background: var(--dialog-surface); border: 1px solid var(--line); border-radius: 8px; }
+#reward-mine { position: fixed; bottom: 58px; right: 16px; z-index: 12; min-height: 36px; padding: 6px 12px;
+  background: var(--dialog-surface); color: var(--ink); border: 1px solid var(--clay); border-radius: 8px; font: inherit; font-size: 12px; }
+#reward-mine[hidden] { display: none; }
+.reward-claims { list-style: none; padding: 0; margin: 0 0 12px; max-height: 60dvh; overflow: auto; }
+.reward-claims li { padding: 10px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.reward-claims a { color: var(--mist); }
 .reward-admin { overflow: auto; height: auto; min-height: 100%; }
 .reward-admin main { max-width: 960px; margin: auto; padding: 24px; font-size: 16px; line-height: 1.5; }
 .reward-admin a { color: var(--mist); }
@@ -56,6 +62,7 @@
   .forest-dialog { padding: 16px; }
   .forest-map { margin: 16px; }
   #reward-total { bottom: 4px; right: 8px; font-size: 11px; }
+  #reward-mine { bottom: 52px; right: 8px; font-size: 11px; }
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1410; color: var(--ink);
