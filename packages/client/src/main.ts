@@ -8,6 +8,7 @@ import { NEAR_RADIUS_M, TREE_DETAIL_RADIUS_M, NearVegetation } from './vegetatio
 import { COVER_RADIUS_M, GroundCover } from './groundCover.js';
 import { AnimalLayer } from './animals.js';
 import { FollowCamera, followDistanceFor } from './camera.js';
+import { nearestOnScreen } from './picking.js';
 import { Hud } from './hud.js';
 import { ThoughtBubble } from './bubble.js';
 import { LastSeen, worthRecapping } from './recap.js';
@@ -82,6 +83,12 @@ scene.add(communityLayer.root);
 const follow = new FollowCamera(camera, canvas);
 // The observer camera stays above sea level; animals still use the actual ground sampler.
 follow.groundHeightAt = (x, z) => Math.max(0, animals.groundHeightAt(x, z));
+// Dragging the ground explores the island: it lets go of the followed animal or person.
+// A replay keeps its own subject; the viewer stops it explicitly.
+follow.onExplore = () => {
+  if (!banner.hidden) return;
+  if (followedId !== null || followedPersonId !== null) watch(null);
+};
 const observerVisibility = new ObserverVisibility();
 const revealAnimal = document.querySelector<HTMLInputElement>('#observer-cutaway')!;
 const hud = new Hud({
@@ -333,7 +340,7 @@ function watch(id: string | null): void {
   rewards.watch(id);
   const subject = id === null ? undefined : store.animals.get(id) ?? liveEncounters.poses(performance.now()).get(id)?.animal;
   speciesPicker.value = subject?.speciesId ?? '';
-  if (subject) follow.distance = followDistanceFor(subject.speciesId, visualFor(subject.speciesId).heightM);
+  if (subject) follow.flyToDistance(followDistanceFor(subject.speciesId, visualFor(subject.speciesId).heightM));
   hud.cancelRecap();
   recapPending = id;
   lastFollowed.set(id);
@@ -465,11 +472,11 @@ const sceneUpdates = new SceneUpdates<{
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 let pointerStart: { x: number; y: number } | null = null;
-canvas.addEventListener('pointerdown', (event) => { pointerStart = { x: event.clientX, y: event.clientY }; });
+canvas.addEventListener('pointerdown', (event) => { if (event.isPrimary) pointerStart = { x: event.clientX, y: event.clientY }; });
 canvas.addEventListener('pointercancel', () => { pointerStart = null; });
 canvas.addEventListener('pointerup', (event) => {
   const start = pointerStart; pointerStart = null;
-  if (!start || event.button !== 0 || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 6) return;
+  if (!start || event.button !== 0 || follow.wasGesture || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 6) return;
   const id = pickedAnimal(event);
   if (id !== null) watch(id);
 });
@@ -482,16 +489,23 @@ function pickedAnimal(event: MouseEvent | PointerEvent): string | null {
   pointer.y = -(event.clientY / innerHeight) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
   raycaster.params.Points = { threshold: 6 };
-  const hit = raycaster.intersectObjects(animals.root.children, true)[0];
-  if (!hit) return null;
-  // A distant animal is a dot: clicking it follows that animal.
-  if (animals.isDots(hit.object) && hit.index !== undefined) {
-    const id = animals.dotIdAt(hit.index);
-    return id ?? null;
+  // A model under the cursor wins: an elephant's body is larger than any tap radius.
+  for (const hit of raycaster.intersectObjects(animals.root.children, true)) {
+    if (animals.isDots(hit.object)) continue;
+    let node: THREE.Object3D | null = hit.object;
+    while (node !== null && !store.animals.has(node.name) && !carcasses.has(node.name)) node = node.parent;
+    if (node) return node.name;
   }
-  let node: THREE.Object3D | null = hit.object;
-  while (node !== null && !store.animals.has(node.name) && !carcasses.has(node.name)) node = node.parent;
-  return node?.name ?? null;
+  // Otherwise the animal drawn nearest the tap, model or dot, within a finger's width.
+  const rect = canvas.getBoundingClientRect();
+  const positions = new Map<string, { x: number; y: number; z: number }>();
+  const now = performance.now();
+  for (const id of store.animals.keys()) {
+    const p = animals.positionOf(id, now);
+    if (p !== null) positions.set(id, { x: p.x, y: renderBaseY(p, animals.groundHeightAt) + visualFor(store.animals.get(id)!.speciesId).heightM * 0.5, z: p.z });
+  }
+  return nearestOnScreen(positions, camera, event.clientX - rect.left, event.clientY - rect.top, rect.width, rect.height,
+    event instanceof PointerEvent && event.pointerType === 'touch' ? 36 : 22);
 }
 
 document.querySelector('#freecam')!.addEventListener('click', () => { watch(null); });
@@ -629,7 +643,7 @@ function frame(): void {
   humanLabel.hidden = true;
   follow.reducedMotion = reducedMotion.matches;
   refreshEncounterPicker(now);
-  if (store.world !== null) atmosphere.update(store.world.worldTime, store.world.season, now / 1000, follow.target, reducedMotion.matches);
+  if (store.world !== null) atmosphere.update(store.world.worldTime, store.world.season, now / 1000, follow.target, reducedMotion.matches, follow.distance);
 
   groundCover?.animate(now / 1000, reducedMotion.matches);
 

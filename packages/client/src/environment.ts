@@ -27,14 +27,17 @@ export class Atmosphere {
     scene.add(this.rain);
   }
 
-  update(worldTime: number, season: string, seconds: number, focus: THREE.Vector3, reducedMotion: boolean): void {
+  update(worldTime: number, season: string, seconds: number, focus: THREE.Vector3, reducedMotion: boolean, viewDistance = 0): void {
     const state = atmosphereAt(worldTime, season);
     this.#sky.copy(this.#night).lerp(this.#day, Math.sqrt(state.daylight));
     this.#sky.lerp(this.#wet, state.rain * state.daylight * 0.4);
     (this.scene.background as THREE.Color).copy(this.#sky);
     if (this.scene.fog instanceof THREE.Fog) {
       this.scene.fog.color.copy(this.#sky);
-      this.scene.fog.far = 2600 - state.rain * 1000;
+      // Weather thins the view near the ground; from high above the whole island stays visible.
+      const far = 2600 - state.rain * 1000;
+      this.scene.fog.far = Math.max(far, viewDistance * 2.4);
+      this.scene.fog.near = Math.max(200, viewDistance * 0.9);
     }
     this.sun.intensity = state.sunIntensity;
     this.sun.color.setHex(state.daylight === 0 ? 0xadc8ed : state.daylight < 0.25 ? 0xe7ae7c : 0xffeccf);

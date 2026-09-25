@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
-  <canvas id="view" tabindex="0" aria-label="Live forest observer. Select a species to follow. Arrow keys orbit; plus and minus zoom."></canvas>
+  <canvas id="view" tabindex="0" aria-label="Live forest observer. Drag or W A S D to explore the island, arrow keys or Q and E to rotate, plus and minus to zoom. Tap an animal to track it."></canvas>
 
   <header class="bar">
     <div class="brand">Vana<small>the living wild</small></div>
@@ -16,7 +16,7 @@
     <span class="chip" id="population">—</span>
     <span class="spacer"></span>
     <label class="species-picker">Follow species <select id="species-picker"><option value="">Choose an animal</option></select></label>
-    <button id="freecam">free camera</button>
+    <button id="freecam" title="Stop tracking and explore the whole island">explore island</button>
     <button id="open-event-map">Event map</button>
     <button id="open-community" aria-haspopup="dialog">Community</button>
     <a href="/characters.html">Character review</a>
@@ -85,7 +85,7 @@
   </section>
   <p id="notice"></p>
   <output id="render-stats" hidden aria-label="Rendering diagnostics" aria-live="off"></output>
-  <p class="hint footer">drag / arrows to orbit · scroll / + − to zoom · select an animal to follow</p>
+  <p class="hint footer">drag to explore · right-drag or shift-drag to rotate · scroll or pinch to zoom · tap an animal to track it</p>
 
   <script type="module" src="/src/main.ts"></script>
 </body>
