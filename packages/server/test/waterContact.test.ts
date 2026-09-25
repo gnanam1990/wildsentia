@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { fileURLToPath } from 'node:url';
 import { atWaterAccess, isMovementTrace, waterContactPosition } from '@vana/shared';
 import { LiveEncounterPlayer } from '../../client/src/liveEncounters.js';
+import { displaySecondAt, paceMovement } from '../../client/src/pacing.js';
 import { createPool } from '../src/db/pool.js';
 import { migrate } from '../src/db/migrate.js';
 import { EventStore } from '../src/db/eventStore.js';
@@ -42,9 +43,12 @@ maybe('durable water contact evidence', () => {
       const route = frame.movements.find((m: { actor: { id: string } }) => m.actor.id === drink.actors[0]);
       expect(route.activity).toMatchObject({ eventId: drink.id, position: drink.position, litres: drink.effects.litres });
       expect(route.activity.startSeconds).toBeCloseTo(Number(drink.conditions.arrivalWorldTime));
-      const beforeMs = (route.activity.startSeconds - 0.001) / frame.rate * 1000;
+      // Playback is paced for the viewer (pacing.ts): find when the recorded arrival is shown.
+      const pacing = paceMovement(route.trace, route.actor.speciesId, frame.rate);
+      const shownMs = (recorded: number) => displaySecondAt(pacing, recorded) / frame.rate * 1000;
+      const beforeMs = shownMs(route.activity.startSeconds - 0.001);
       expect(player.poses(beforeMs).get(drink.actors[0]!)!.animal.state).toBe('travelling');
-      const insideMs = (route.activity.startSeconds + 0.001) / frame.rate * 1000;
+      const insideMs = shownMs(route.activity.startSeconds + 0.001);
       expect(player.poses(insideMs).get(drink.actors[0]!)).toMatchObject({ eventId: drink.id,
         animal: { state: 'drinking' }, position: { ...drink.position, moving: false } });
     }

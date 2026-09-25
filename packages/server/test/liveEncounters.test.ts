@@ -5,6 +5,7 @@ import { collectLiveEncounters, collectLiveMovements, encounterAppearance, index
 import { createWorld } from '../../sim/src/world.js';
 import { makeAgent } from '../../sim/test/helpers.js';
 import { isLiveEncounterFrame, LiveEncounterPlayer } from '../../client/src/liveEncounters.js';
+import { displaySecondAt, paceMovement } from '../../client/src/pacing.js';
 
 const p = (x: number) => ({ x, z: 0, heading: 0 });
 const actors = new Map<string, EncounterAppearance>([
@@ -164,11 +165,17 @@ describe('bounded live encounter collection', () => {
     const end = makeAgent('sambar', { id: 's', position: { x: 100, z: 100, heading: 0 } });
     const movements = collectLiveMovements([moved], actors, 0, [end]);
     expect(movements).toHaveLength(1);
+    // Playback is paced for the viewer (pacing.ts): join where recorded second 20 is shown.
+    const pacing = paceMovement(movements[0]!.trace, 'sambar', 12);
     const wire = JSON.parse(JSON.stringify({ id: 'stream:3600', startWorldTime: 0, endWorldTime: 3600,
-      elapsedWorldSeconds: 20, rate: 12, encounters: [], movements }));
+      elapsedWorldSeconds: displaySecondAt(pacing, 20), rate: 12, encounters: [], movements }));
     expect(isLiveEncounterFrame(wire)).toBe(true);
     const player = new LiveEncounterPlayer(); player.apply(wire, 100);
-    expect(player.poses(100).get('s')!.position).toMatchObject({ x: 100, z: 50 });
+    const corner = player.poses(100).get('s')!.position;
+    expect(corner.x).toBeCloseTo(100); expect(corner.z).toBeCloseTo(50);
+    // Half-way through the first leg it is on the recorded leg, not a diagonal shortcut.
+    const early = new LiveEncounterPlayer(); early.apply({ ...wire, elapsedWorldSeconds: displaySecondAt(pacing, 5) }, 100);
+    expect(early.poses(100).get('s')!.position.z).toBeCloseTo(0);
     moved.movement!.samples[0]!.position.x = 77;
     expect(movements[0]!.trace.samples[0]!.position.x).toBe(0);
     expect(collectLiveMovements([moved, event], actors, 0, [end])).toEqual([]);

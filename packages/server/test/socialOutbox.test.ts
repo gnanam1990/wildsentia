@@ -37,7 +37,7 @@ maybe('private committed-event social outbox', () => {
     headers: { authorization: `Bearer ${token}` } });
   beforeAll(async () => {
     await migrate(pool!);
-    await pool!.query('truncate events, snapshots, human_motion, tracks, animal_archive cascade');
+    await pool!.query('truncate events, snapshots, human_motion, tracks, animal_archive, social_audit, social_drafts, social_export_audit cascade');
     host = new SimHost({ pool: pool!, seed: 98, speciesDir: fileURLToPath(new URL('../../../config/species', import.meta.url)),
       initialAgents: { sambar: 2 }, minPopulation: {}, landscape: null });
     await host.boot();
