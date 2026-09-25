@@ -644,7 +644,7 @@ function frame(): void {
   follow.reducedMotion = reducedMotion.matches;
   refreshEncounterPicker(now);
   if (store.world !== null) {
-    atmosphere.update(store.world.worldTime, store.world.season, now / 1000, follow.target, reducedMotion.matches, follow.distance);
+    atmosphere.update(store.world.worldTime, store.world.season, now / 1000, follow.target, reducedMotion.matches, follow.distance, camera.position);
     renderer.toneMappingExposure = observerExposure(atmosphereAt(store.world.worldTime, store.world.season).daylight);
   }
 

@@ -36,7 +36,8 @@ export class Atmosphere {
     scene.add(this.rain);
   }
 
-  update(worldTime: number, season: string, seconds: number, focus: THREE.Vector3, reducedMotion: boolean, viewDistance = 0): void {
+  update(worldTime: number, season: string, seconds: number, focus: THREE.Vector3, reducedMotion: boolean, viewDistance = 0,
+    eye: THREE.Vector3 = focus): void {
     const state = atmosphereAt(worldTime, season);
     this.#sky.copy(this.#night).lerp(this.#day, Math.sqrt(state.daylight));
     this.#sky.lerp(this.#wet, state.rain * state.daylight * 0.4);
@@ -58,10 +59,12 @@ export class Atmosphere {
     if (hemi) hemi.intensity = 0.85 + state.daylight * 0.45;
     const count = reducedMotion ? 0 : Math.round(600 * state.rain);
     this.rain.geometry.setDrawRange(0, count * 2);
+    // Rain falls around the viewer, wherever the camera is, not in a column over the
+    // followed animal: from the island overview it was a small shower in one place.
     for (let i = 0; i < count; i++) {
-      const x = focus.x + ((i * 43.71) % 90) - 45;
-      const z = focus.z + ((i * 17.37) % 90) - 45;
-      const y = focus.y + 5 + ((i * 13.7 - seconds * 22) % 55 + 55) % 55;
+      const x = eye.x + ((i * 43.71) % 90) - 45;
+      const z = eye.z + ((i * 17.37) % 90) - 45;
+      const y = eye.y - 25 + ((i * 13.7 - seconds * 22) % 55 + 55) % 55;
       this.#positions.set([x, y, z, x - 0.2, y - 1.3, z], i * 6);
     }
     this.rain.geometry.attributes.position!.needsUpdate = true;

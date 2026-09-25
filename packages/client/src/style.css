@@ -191,9 +191,10 @@ button:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid
 }
 
 /* Thought bubble over the watched animal. Its words are a template over planner state; the
-   facts behind them are in its tooltip. */
+   facts behind them are in the passport. It sits at the centre of the view, over the animal,
+   so it must never catch the drags, scrolls and taps that steer the camera. */
 .thought {
-  position: fixed; left: 0; top: 0; z-index: 30; pointer-events: auto;
+  position: fixed; left: 0; top: 0; z-index: 30; pointer-events: none;
   max-width: 260px; padding: 7px 12px; border-radius: 14px;
   background: rgba(250, 247, 238, 0.94); color: #1f2a1c;
   font: 500 13px/1.35 system-ui, sans-serif; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
