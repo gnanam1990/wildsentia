@@ -9,6 +9,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { describe, expect, it, vi } from 'vitest';
 import { AnimalLayer } from '../src/animals.js';
 import { visualFor } from '../src/species.js';
+import { expectRegeneratedGlb } from './glbRegeneration.js';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const source = join(root, 'docs/art-review/elephant-2026-09-24/recovered/AsianElephantLoopReview.glb');
@@ -58,9 +59,9 @@ describe('review-only Asian elephant root normalization', () => {
       const output = join(scratch, 'centered.glb');
       const run = spawnSync(process.execPath, [tool, source, output], { encoding: 'utf8' });
       expect(run.status, run.stderr).toBe(0);
-      expect(readFileSync(output).equals(after)).toBe(true);
+      expectRegeneratedGlb(readFileSync(output), after);
       expect(spawnSync(process.execPath, [tool, source, output]).status).not.toBe(0);
-      expect(readFileSync(output).equals(after)).toBe(true);
+      expectRegeneratedGlb(readFileSync(output), after);
     } finally { rmSync(scratch, { recursive: true, force: true }); }
   });
 

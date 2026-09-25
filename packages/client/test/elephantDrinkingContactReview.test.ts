@@ -8,6 +8,7 @@ import { AnimationMixer, LoopOnce, Vector3 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { describe, expect, it } from 'vitest';
 import { visualFor } from '../src/species.js';
+import { expectRegeneratedGlb } from './glbRegeneration.js';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const source = join(root, 'docs/art-review/elephant-2026-09-24/recovered/AsianElephantCenteredReview.glb');
@@ -60,9 +61,9 @@ describe('review-only Asian elephant drinking contact derivative', () => {
       const output = join(scratch, 'review.glb');
       const run = spawnSync(process.execPath, [tool, source, output], { encoding: 'utf8' });
       expect(run.status, run.stderr).toBe(0);
-      expect(readFileSync(output).equals(after)).toBe(true);
+      expectRegeneratedGlb(readFileSync(output), after);
       expect(spawnSync(process.execPath, [tool, source, output]).status).not.toBe(0);
-      expect(readFileSync(output).equals(after)).toBe(true);
+      expectRegeneratedGlb(readFileSync(output), after);
     } finally { rmSync(scratch, { recursive: true, force: true }); }
   });
 
@@ -122,7 +123,7 @@ describe('review-only Asian elephant drinking contact derivative', () => {
       const output = join(scratch, 'review.glb');
       const run = spawnSync(process.execPath, [tool, source, output, 'water-lift'], { encoding: 'utf8' });
       expect(run.status, run.stderr).toBe(0);
-      expect(readFileSync(output).equals(after)).toBe(true);
+      expectRegeneratedGlb(readFileSync(output), after);
     } finally { rmSync(scratch, { recursive: true, force: true }); }
     const model = await loadGeometry(after);
     const clip = model.gltf.animations.find(clip => clip.name === 'DrinkingContactRegularizedReview')!;
@@ -157,7 +158,7 @@ describe('review-only Asian elephant drinking contact derivative', () => {
       const output = join(scratch, 'review.glb');
       const run = spawnSync(process.execPath, [tool, source, output, 'surface-lift'], { encoding: 'utf8' });
       expect(run.status, run.stderr).toBe(0);
-      expect(readFileSync(output).equals(after)).toBe(true);
+      expectRegeneratedGlb(readFileSync(output), after);
     } finally { rmSync(scratch, { recursive: true, force: true }); }
 
     const model = await loadGeometry(after);
