@@ -22,6 +22,14 @@ describe('subPatchOffset', () => {
     expect(subPatchOffset('sambar_0001')).not.toEqual(subPatchOffset('sambar_0002'));
   });
 
+  it('spreads sequential herd IDs across both axes instead of drawing a line', () => {
+    const offsets = Array.from({ length: 8 }, (_, i) => subPatchOffset(`elephant_${(0xf82 + i).toString(16)}`));
+    for (const axis of ['x', 'z'] as const) {
+      const values = offsets.map((p) => p[axis]);
+      expect(Math.max(...values) - Math.min(...values)).toBeGreaterThan(100);
+    }
+  });
+
   it('stays inside the patch', () => {
     for (const id of ['a', 'b', 'c', 'd', 'e', 'f']) {
       const o = subPatchOffset(id);
@@ -32,6 +40,42 @@ describe('subPatchOffset', () => {
 });
 
 describe('PositionTracker', () => {
+  it('uses server positions without adding an offset and tracks within-patch movement', () => {
+    const t = new PositionTracker();
+    t.update('a', 0, 0, { x: 3, z: 4, heading: 1 });
+    expect(t.positionAt('a', 0)).toEqual({ x: 3, z: 4, heading: 1, moving: false });
+    t.update('a', 0, 1000, { x: 13, z: 14, heading: 2 });
+    const middle = 1000 + HOP_DURATION_MS / 2;
+    expect(t.positionAt('a', middle).x).toBe(8);
+    t.update('a', 0, middle, { x: 13, z: 14, heading: 2 });
+    expect(t.positionAt('a', middle).x).toBe(8);
+    expect(t.positionAt('a', 1000 + HOP_DURATION_MS)).toEqual({ x: 13, z: 14, heading: 2, moving: false });
+  });
+  it('interpolates an altitude-only checkpoint as movement without turning the animal or restarting descent', () => {
+    const t = new PositionTracker();
+    const trunk = { x: 10, z: 20, heading: 1.2 };
+    t.update('langur', 0, 0, trunk, 0);
+    t.update('langur', 0, 1000, trunk, 6);
+    const middle = 1000 + HOP_DURATION_MS / 2;
+    expect(t.positionAt('langur', middle)).toMatchObject({ x: 10, z: 20,
+      heading: 1.2, altitudeM: 3, moving: true });
+    expect(t.verticalPhaseAt('langur', middle)).toBe('ascending');
+    expect(t.verticalPhaseAt('langur', 1000 + HOP_DURATION_MS)).toBeNull();
+    t.update('langur', 0, middle, trunk, 6); // duplicate must not restart the same climb
+    expect(t.positionAt('langur', middle).altitudeM).toBe(3);
+    t.update('langur', 0, 1000 + HOP_DURATION_MS, trunk); // server clears altitude at ground destination
+    const down = 1000 + HOP_DURATION_MS * 1.5;
+    expect(t.positionAt('langur', down)).toMatchObject({ altitudeM: 3, moving: true });
+    expect(t.verticalPhaseAt('langur', down)).toBe('descending');
+    t.update('langur', 0, down, trunk); // absent and zero mean the same ground target
+    expect(t.positionAt('langur', down).altitudeM).toBe(3);
+    expect(t.positionAt('langur', 1000 + HOP_DURATION_MS * 2)).toMatchObject({ altitudeM: 0, moving: false });
+  });
+  it('falls back only for missing/invalid server coordinates', () => {
+    const t = new PositionTracker();
+    t.update('a', 0, 0, { x: NaN, z: 0, heading: 0 });
+    expect(t.positionAt('a', 0).x).toBe(subPatchOffset('a').x);
+  });
   it('places a newly seen agent immediately, without a slide from the origin', () => {
     const t = new PositionTracker();
     t.update('a', 42, 0);
@@ -68,6 +112,17 @@ describe('PositionTracker', () => {
     expect(far.x).toBeCloseTo(target.x + offset.x, 5);
   });
 
+  it('does not teleport when a new patch arrives before the previous interpolation ends', () => {
+    const t = new PositionTracker();
+    t.update('a', 0, 0); t.update('a', 1, 1000);
+    const now = 1000 + HOP_DURATION_MS / 2;
+    const before = t.positionAt('a', now);
+    t.update('a', 2, now);
+    const after = t.positionAt('a', now);
+    expect(after.x).toBeCloseTo(before.x, 6);
+    expect(after.z).toBeCloseTo(before.z, 6);
+  });
+
   it('faces the direction of travel', () => {
     const t = new PositionTracker();
     t.update('a', 0, 0);
@@ -96,4 +151,3 @@ describe('PositionTracker', () => {
     expect(t.positionAt('a', 400_000 + 150_000).moving).toBe(false);
   });
 });
-

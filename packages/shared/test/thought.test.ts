@@ -7,6 +7,12 @@ const base: ThoughtInput = {
 };
 
 describe('thoughtFor', () => {
+  it('distinguishes collecting, carrying and waiting without claiming a successful transfer', () => {
+    expect(thoughtFor({ ...base, currentGoal: 'collect_pack_food' }).text).toBe('Trying to collect food for its pack');
+    expect(thoughtFor({ ...base, currentGoal: 'deliver_pack_food', state: 'travelling' }).text).toBe('Carrying food back to its pack');
+    expect(thoughtFor({ ...base, currentGoal: 'deliver_pack_food' }).text).toBe('Attempting to share carried food');
+    expect(thoughtFor({ ...base, currentGoal: 'wait_for_pack_food' }).text).toBe('Waiting for a pack member bringing food');
+  });
   it('says a thirsty animal is heading for water, and shows the drive behind it', () => {
     const t = thoughtFor({ ...base, currentGoal: 'find_water', state: 'travelling', drives: { ...base.drives, thirst: 0.81 } });
     expect(t.text).toBe('Thirsty — heading for water');
@@ -33,8 +39,13 @@ describe('thoughtFor', () => {
       .toBe('Exhausted — resting');
   });
 
-  it('keeps a young animal with its mother', () => {
-    expect(thoughtFor({ ...base, dependent: true }).text).toBe('Staying close to its mother');
+  it('does not invent physical proximity from family identity or hide an escape', () => {
+    expect(thoughtFor({ ...base, dependent: true }).text).toBe('Resting');
+    expect(thoughtFor({ ...base, dependent: true, currentGoal: 'flee', state: 'fleeing' }).text)
+      .toBe('Running — a predator is close');
+    expect(thoughtFor({ ...base, currentGoal: 'care_for_young' }).text).toBe('Attempting to care for its young');
+    expect(thoughtFor({ ...base, dependent: true, currentGoal: 'follow_parent', state: 'travelling' }).text)
+      .toBe('Trying to follow its mother');
   });
 
   it('says so when the planner has no clear answer, instead of inventing one', () => {

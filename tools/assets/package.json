@@ -1,0 +1,11 @@
+{
+  "name": "vana-asset-tools",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@gltf-transform/core": "4.2.1",
+    "@gltf-transform/functions": "4.2.1",
+    "meshoptimizer": "1.2.0",
+    "sharp": "0.35.4"
+  }
+}

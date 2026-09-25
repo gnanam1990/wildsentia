@@ -14,6 +14,7 @@ const DECAY_PER_HOUR: Readonly<CarcassBiomass> = {
   organ: 0.030,
   hide: 0.006,
   bone: 0.0032,
+  ingesta: 0.030,
 };
 
 /** Warm and wet speeds decomposition; a dry-season carcass can persist for weeks. */
@@ -79,10 +80,10 @@ export function decayCarcass(
   const rate = SEASON_DECAY_FACTOR[season] * (0.35 + patch.soilMoisture * 0.65);
   let removed = 0;
 
-  for (const tissue of ['muscle', 'organ', 'hide', 'bone'] as const) {
-    const present = carcass.biomass[tissue];
+  for (const tissue of ['muscle', 'organ', 'hide', 'bone', 'ingesta'] as const) {
+    const present = carcass.biomass[tissue] ?? 0;
     if (present <= 0) continue;
-    const loss = Math.min(present, present * DECAY_PER_HOUR[tissue] * rate * hours);
+    const loss = Math.min(present, present * DECAY_PER_HOUR[tissue]! * rate * hours);
     carcass.biomass[tissue] = present - loss;
     removed += loss;
   }

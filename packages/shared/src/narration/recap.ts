@@ -2,8 +2,10 @@ import type { EventType, WorldEvent } from '../types/event.js';
 
 /** The events a recap can say anything about. Everything else is routine. */
 export const RECAP_EVENT_TYPES = [
-  'born', 'died', 'hunt', 'courtship', 'skill_taught', 'life_stage', 'dispersed', 'fled',
-  'emigration', 'immigration',
+  'born', 'died', 'hunt', 'courtship', 'skill_taught', 'life_stage', 'dispersed', 'fled', 'tree_climbed',
+  'emigration', 'immigration', 'parent_lost', 'disease_contracted',
+  'disease_symptomatic', 'disease_recovered', 'disease_fatal',
+  'wounded', 'wound_infected', 'wound_healed', 'wound_infection_fatal',
 ] as const satisfies readonly EventType[];
 
 export interface RecapLine {
@@ -41,7 +43,35 @@ export function recapLine(event: WorldEvent, subjectId: string): RecapLine | nul
     case 'died':
       // The killer's side is its hunt.
       return subjectId === first ? line(`Died — ${String(event.conditions.cause ?? 'unknown cause')}`) : null;
+    case 'disease_contracted':
+      return subjectId === first ? line('Contracted a modelled illness after eating carrion') : null;
+    case 'disease_symptomatic':
+      return subjectId === first ? line('Showed signs of illness') : null;
+    case 'disease_recovered':
+      return subjectId === first ? line('Recovered from an illness') : null;
+    case 'disease_fatal':
+      return subjectId === first ? line('Illness became fatal') : null;
+    case 'wounded':
+      return subjectId === first ? line('Sustained a modelled wound after contact in a failed hunt') : null;
+    case 'wound_infected':
+      return subjectId === first ? line('A modelled wound became infected') : null;
+    case 'wound_healed':
+      return subjectId === first ? line('A modelled wound healed') : null;
+    case 'wound_infection_fatal':
+      return subjectId === first ? line('A modelled wound infection became fatal') : null;
     case 'hunt':
+      // A closing approach is not an escape; a finite tick ending is not an observed kill.
+      if (event.outcome !== 'success' && ['approaching', 'time_exhausted', 'out_of_range'].includes(String(event.conditions.stage))) {
+        return subjectId === first ? line('Hunting attempt unresolved — no capture recorded') : null;
+      }
+      if (event.outcome !== 'success' && event.conditions.stage === 'chase_abandoned') {
+        if (event.encounter && !event.encounter.samples.some((s) => s.phase === 'chase')) {
+          return subjectId === first ? line('Abandoned a hunting attempt before a chase') : null;
+        }
+        if (subjectId === first) return line('Abandoned a chase without a capture');
+        if (subjectId === second) return line(`Survived a chase by ${article(speciesOf(first))}`);
+        return null;
+      }
       if (subjectId === first) {
         return event.outcome === 'success'
           ? line(`Killed ${article(speciesOf(second))}`)
@@ -67,8 +97,21 @@ export function recapLine(event: WorldEvent, subjectId: string): RecapLine | nul
       if (subjectId === first) return line('Left its mother to live on its own');
       if (subjectId === second) return line(`${first} left to live on its own`);
       return null;
+    case 'parent_lost':
+      // Absence can mean death or emigration; do not invent a cause or successful adoption.
+      return subjectId === first ? line(`Lost parental care from ${second}`) : null;
     case 'fled':
       return subjectId === first ? line('Ran from danger') : null;
+    case 'tree_climbed': {
+      if (subjectId !== first) return null;
+      const ascent = event.conditions.direction === 'ascend';
+      const distance = event.effects.verticalDistanceM;
+      if (typeof distance !== 'number' || !Number.isFinite(distance) || distance <= 0)
+        return line(ascent ? 'Approached a tree; no ascent recorded' : 'Attempted to descend; no vertical movement recorded');
+      return line(ascent
+        ? event.outcome === 'success' ? 'Climbed into a tree' : 'Partly climbed a tree'
+        : event.outcome === 'success' ? 'Descended from a tree' : 'Partly descended from a tree');
+    }
     case 'emigration':
       return subjectId === first ? line('Walked out of the forest') : null;
     case 'immigration':

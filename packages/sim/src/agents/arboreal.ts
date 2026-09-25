@@ -1,0 +1,99 @@
+import { isMovementTrace, positionInPatch, treeAnchorForPatch, treeAnchorGeometry, treeAnchorRemnantForPatch,
+  type Agent, type GoalId, type MovementTrace, type TreeAnchorPatch } from '@vana/shared';
+
+/** Explicit, uncalibrated simulation policy; not a species-specific observed climb speed. */
+export const TREE_VERTICAL_SPEED_MPS = 0.25;
+const CONTACT_EPSILON_M = 1e-6;
+const HEIGHT_EPSILON_M = 1e-9;
+
+/** Check persisted vertical fields without creating a climb or changing a living world.
+ * Ground-only v0.23 snapshots need no new fields; existing vulture flight remains valid.
+ * A depleted canopy may retain an occupied remnant for timed descent. */
+export function validateVerticalCheckpoint(agent: Agent, patch: TreeAnchorPatch | undefined): void {
+  const altitude = agent.altitudeM, mode = agent.locomotionMode, anchorId = agent.treeAnchorId;
+  if (altitude === undefined && mode === undefined && anchorId === undefined) return;
+  if (altitude !== undefined && (!Number.isFinite(altitude) || altitude < 0 || altitude > 2_000))
+    throw new Error('invalid vertical checkpoint');
+  if (mode === 'flight') {
+    if (agent.speciesId !== 'vulture' || altitude === undefined || anchorId !== undefined)
+      throw new Error('invalid vertical checkpoint');
+    return;
+  }
+  if (mode === 'climb') {
+    const geometry = treeAnchorGeometry(agent.patchId);
+    if (!geometry || (agent.speciesId !== 'langur' && agent.speciesId !== 'squirrel')
+      || altitude === undefined || altitude <= 0 || altitude > geometry.climbHeightM
+      || anchorId !== geometry.id || !patch || patch.id !== agent.patchId
+      || (!treeAnchorForPatch(patch) && !treeAnchorRemnantForPatch(patch))
+      || !positionInPatch(agent.position, agent.patchId)
+      || Math.hypot(agent.position.x - geometry.x, agent.position.z - geometry.z) > CONTACT_EPSILON_M)
+      throw new Error('invalid vertical checkpoint');
+    return;
+  }
+  if ((mode !== undefined && mode !== 'ground') || anchorId !== undefined
+    || altitude !== undefined && altitude !== 0)
+    throw new Error('invalid vertical checkpoint');
+}
+
+export interface VerticalTravel {
+  trace: MovementTrace;
+  seconds: number;
+  distanceM: number;
+  unreachable: boolean;
+}
+
+/**
+ * Only vertical movement at an already reached, exact shared trunk. The caller must first
+ * route the animal across the ground and must decide when/why to call this function.
+ * Ground contact, predation, food and event publication are deliberately outside this helper.
+ */
+export function advanceTreeVertical(agent: Agent, patch: TreeAnchorPatch,
+  direction: 'ascend' | 'descend', goal: GoalId, startWorldTime: number,
+  secondsAvailable: number): VerticalTravel {
+  if (!Number.isSafeInteger(startWorldTime) || startWorldTime < 0
+    || !Number.isFinite(secondsAvailable) || secondsAvailable < 0 || secondsAvailable > 3600)
+    throw new Error('invalid tree travel time budget');
+  if (!agent.position || !positionInPatch(agent.position, agent.patchId))
+    throw new Error('missing or invalid tree travel position');
+  const geometry = treeAnchorGeometry(patch.id);
+  const current = agent.altitudeM ?? 0;
+  if (!Number.isFinite(current) || current < 0 || current > (geometry?.climbHeightM ?? 6)
+    || (current > 0 && (agent.treeAnchorId !== geometry?.id || agent.locomotionMode !== 'climb'))
+    || (current === 0 && (agent.treeAnchorId !== undefined
+      || agent.locomotionMode !== undefined && agent.locomotionMode !== 'ground')))
+    throw new Error('invalid arboreal vertical state');
+  const position = agent.position;
+  const trace: MovementTrace = { version: 1, actorId: agent.id, startWorldTime,
+    destinationPatchId: patch.id, goal,
+    samples: [{ seconds: 0, position: { ...position }, altitudeM: current }],
+    completed: false };
+  const validContact = geometry && position && positionInPatch(position, patch.id)
+    && agent.patchId === patch.id
+    && Math.hypot(position.x - geometry.x, position.z - geometry.z) <= CONTACT_EPSILON_M;
+  const supported = agent.alive && (agent.speciesId === 'langur' || agent.speciesId === 'squirrel');
+  const eligible = direction === 'descend' ? current > 0 : treeAnchorForPatch(patch) !== null;
+  if (!validContact || !supported || !eligible) return { trace, seconds: 0, distanceM: 0, unreachable: true };
+
+  const target = direction === 'ascend' ? geometry.climbHeightM : 0;
+  const remaining = Math.abs(target - current);
+  if (remaining <= HEIGHT_EPSILON_M) {
+    trace.completed = true;
+    return { trace, seconds: 0, distanceM: 0, unreachable: false };
+  }
+  if (secondsAvailable === 0) return { trace, seconds: 0, distanceM: 0, unreachable: false };
+  const seconds = Math.min(secondsAvailable, remaining / TREE_VERTICAL_SPEED_MPS);
+  const distanceM = Math.min(remaining, seconds * TREE_VERTICAL_SPEED_MPS);
+  const next = direction === 'ascend' ? current + distanceM : current - distanceM;
+  trace.samples.push({ seconds, position: { ...position }, altitudeM: next });
+  trace.completed = Math.abs(target - next) <= HEIGHT_EPSILON_M;
+  if (!isMovementTrace(trace)) throw new Error('invalid tree travel trace');
+  if (trace.completed && direction === 'descend') {
+    delete agent.altitudeM; delete agent.locomotionMode; delete agent.treeAnchorId;
+  } else {
+    agent.altitudeM = trace.completed ? target : next;
+    agent.locomotionMode = 'climb';
+    agent.treeAnchorId = geometry.id;
+  }
+  agent.state = 'travelling';
+  return { trace, seconds, distanceM, unreachable: false };
+}

@@ -8,7 +8,7 @@ export interface ThoughtInput {
   /** Utility of the chosen goal. Low means the planner had no strong reason for anything. */
   goalScore: number;
   drives: Drives;
-  /** Still following its mother. */
+  /** Has a family dependency; this alone does not prove physical proximity. */
   dependent: boolean;
 }
 
@@ -47,6 +47,18 @@ function doing(input: ThoughtInput): string {
       return d.fatigue > 0.7 ? 'Exhausted — resting' : 'Resting';
     case 'breed':
       return 'Looking for a mate';
+    case 'care_for_young':
+      return state === 'travelling' ? 'Returning to its young' : 'Attempting to care for its young';
+    case 'follow_parent':
+      return state === 'travelling' ? 'Trying to follow its mother' : 'Waiting at its mother’s last observed location';
+    case 'seek_nursing':
+      return state === 'travelling' ? 'Returning to its nursing site' : 'Waiting at its nursing site';
+    case 'collect_pack_food':
+      return 'Trying to collect food for its pack';
+    case 'deliver_pack_food':
+      return state === 'travelling' ? 'Carrying food back to its pack' : 'Attempting to share carried food';
+    case 'wait_for_pack_food':
+      return 'Waiting for a pack member bringing food';
     case 'wander':
     default:
       return 'Wandering — no strong need right now';
@@ -77,9 +89,7 @@ export function thoughtFor(input: ThoughtInput): Thought {
   ];
   if (input.alternativeGoal !== null) basis.push(`runner-up ${input.alternativeGoal}`);
 
-  if (input.dependent) {
-    return { text: 'Staying close to its mother', basis: ['dependent on its mother', ...basis], confident: true };
-  }
+  if (input.dependent) basis.unshift('family dependency; proximity not implied');
   if (input.currentGoal === 'wander' && input.goalScore < UNCLEAR_SCORE) {
     return { text: 'Unclear — moving without an obvious goal', basis: [`score ${input.goalScore.toFixed(2)}`, ...basis], confident: false };
   }

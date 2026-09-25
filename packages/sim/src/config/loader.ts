@@ -66,6 +66,10 @@ export const SpeciesConfigSchema = z
       structure: z.enum(['solitary', 'pair', 'herd', 'troop', 'pack', 'family']),
       groupSize: z.tuple([z.number().int().positive(), z.number().int().positive()]),
       alarmSharing: z.boolean(),
+      cooperativeCare: z.object({ donorFromDays: z.number().finite().nonnegative(), recipientFromDays: z.number().finite().nonnegative(),
+        capacityBodyFraction: z.number().positive().max(0.2), collectionBodyFractionPerHour: z.number().positive().max(0.2),
+        deliveryBodyFractionPerHour: z.number().positive().max(0.2), retentionHours: z.number().positive().max(24),
+        moistureLPerKg: z.number().min(0).max(1) }).optional(),
       territory: z.object({
         femaleKm2: z.number().positive(),
         maleKm2: z.number().positive(),
@@ -97,10 +101,38 @@ export const SpeciesConfigSchema = z
       interBirthIntervalDays: z.number().positive(),
       oestrusCycleDays: z.number().positive(),
       weanDays: z.number().positive(),
+      followFromDays: z.number().nonnegative().optional(),
+      forageFromDays: z.number().nonnegative().optional(),
+      drinkFromDays: z.number().finite().nonnegative().optional(),
+      meatFromDays: z.number().finite().nonnegative().optional(),
+      nursing: z.object({ startHour: z.number().min(0).lt(24), windowHours: z.number().positive().max(24),
+        dailyContactSeconds: z.number().positive().max(3600), locomotionFromDays: z.number().nonnegative() })
+        .refine(n => n.startHour + n.windowHours <= 24, 'nursing window must fit inside one world day').optional(),
       dispersalDays: z.number().positive(),
     }),
   })
   .superRefine((cfg, ctx) => {
+    if (cfg.social.cooperativeCare && (cfg.social.structure !== 'pack' || !cfg.diet.canScavenge
+      || !cfg.diet.eats.some(e => e.target === 'meat') || cfg.social.cooperativeCare.donorFromDays < cfg.lifecycle.weanDays
+      || cfg.social.cooperativeCare.recipientFromDays >= cfg.lifecycle.weanDays)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['social', 'cooperativeCare'],
+        message: 'cooperative food care requires a meat-eating scavenging pack, weaned donors and a pre-weaning recipient age' });
+    }
+    if (cfg.lifecycle.forageFromDays !== undefined && (cfg.lifecycle.forageFromDays > cfg.lifecycle.weanDays
+      || cfg.lifecycle.forageFromDays < cfg.lifecycle.weanDays
+      && !cfg.diet.eats.some(e => e.target === 'grass' || e.target === 'browse'))) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['lifecycle', 'forageFromDays'],
+        message: 'early foraging requires a plant food target and must start by weaning' });
+    }
+    if (cfg.lifecycle.drinkFromDays !== undefined && cfg.lifecycle.drinkFromDays > cfg.lifecycle.weanDays) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['lifecycle', 'drinkFromDays'],
+        message: 'independent drinking must start by weaning' });
+    }
+    if (cfg.lifecycle.meatFromDays !== undefined && (cfg.lifecycle.meatFromDays > cfg.lifecycle.weanDays
+      || !cfg.diet.eats.some(e => e.target === 'meat') || !cfg.diet.canScavenge)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['lifecycle', 'meatFromDays'],
+        message: 'early meat access requires a scavenging meat eater and must start by weaning' });
+    }
     if (cfg.lifecycle.interBirthIntervalDays <= cfg.lifecycle.gestationDays) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

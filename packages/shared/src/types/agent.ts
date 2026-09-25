@@ -1,11 +1,14 @@
 import type { PatchId } from './patch.js';
 import type { WorldTime } from '../time.js';
+import type { WorldPosition } from '../spatial.js';
 
 export type AgentState =
   | 'resting' | 'grazing' | 'drinking' | 'travelling'
   | 'stalking' | 'chasing' | 'feeding' | 'fleeing' | 'dead'
   /** Walked out of this stretch of forest into the country around it. Alive, but gone. */
   | 'emigrated';
+
+export type LocomotionMode = 'ground' | 'flight' | 'climb';
 
 /** Skills an animal learns, is taught, and loses with disuse (spec §8). */
 export const SKILL_IDS = [
@@ -25,6 +28,9 @@ export interface SkillState {
 
 export const GOAL_IDS = [
   'find_food', 'find_water', 'rest', 'wander', 'hunt', 'scavenge', 'flee', 'breed',
+  'care_for_young', 'follow_parent',
+  'seek_nursing',
+  'collect_pack_food', 'deliver_pack_food', 'wait_for_pack_food',
 ] as const;
 
 export type Sex = 'male' | 'female';
@@ -52,11 +58,53 @@ export interface Drives {
   fear: number;
 }
 
+/** Generic simulated carrion-associated infection, not a real pathogen diagnosis. */
+export interface Illness {
+  kind: 'carrion_infection';
+  phase: 'incubating' | 'active';
+  sourceCarcassId: string;
+  sourceMealEventId: string;
+  contractedEventId: string;
+  onsetEventId?: string;
+  acquiredAt: WorldTime;
+  incubationUntil: WorldTime;
+  lastUpdatedAt: WorldTime;
+  /** Episode burden, 0-1; sampled once, never by a renderer or narrator. */
+  severity: number;
+  /** Remaining recovery work, modified by reserves, rest and inherited resistance. */
+  recoveryRemainingHours: number;
+  /** Sampled exponential hazard budget; persisted so restart cannot reroll survival. */
+  mortalityBudget: number;
+}
+
+export const illnessBurden = (agent: Pick<Agent, 'illness'>): number =>
+  agent.illness?.phase === 'active' ? agent.illness.severity : 0;
+
+/** A modelled contact injury, not a veterinary diagnosis or a tissue-mass ledger. */
+export interface Wound {
+  kind: 'contact_injury';
+  phase: 'open' | 'infected';
+  sourceHuntEventId: string;
+  woundEventId: string;
+  infectionEventId?: string;
+  acquiredAt: WorldTime;
+  lastUpdatedAt: WorldTime;
+  severity: number;
+  recoveryRemainingHours: number;
+  /** Sampled once; never rerolled across checkpoints. */
+  infectionBudget: number;
+  mortalityBudget: number;
+}
+
 export interface Agent {
   id: string;
   speciesId: string;
+  illness?: Illness;
+  wound?: Wound;
   /** Who this predator is currently working on. Null for everything else. */
   targetId?: string | null;
+  /** Bounded short-term memory of abandoned/failed targets, persisted with the animal. */
+  failedHunts?: Array<{ preyId: string; retryAfter: WorldTime }>;
   /** 0-1. Spent by chases, recovered by rest. Separate from fatigue, which is whole-body. */
   stamina?: number;
   sex: Sex;
@@ -70,12 +118,25 @@ export interface Agent {
   generation: number;
   /** Set while this animal still depends on its mother. */
   dependentOn: string | null;
+  /** Last completed boar maternal water transfer. Optional on old saves; birth time is the fresh-born baseline. */
+  lastMaternalWaterAt?: WorldTime;
+  /** Persistent rendezvous, never a position override. Established sites are not historical birth locations. */
+  nursingSite?: { patchId: number; position: WorldPosition; establishedAt: WorldTime; origin: 'birth' | 'established' };
+  /** Fractions of this young animal's daily needs transferred in the named world-day nursing cycle. */
+  nursingIntake?: { cycle: number; foodDays: number; waterDays: number; contactSeconds: number; lastEnd: WorldTime; completed: boolean };
+  /** Real, unassimilated carcass biomass; not also credited to the carrier's reserves or soil. */
+  packFood?: { kg: number; moistureLPerKg: number; sourceCarcassId: string; sourceActorId: string;
+    sourceEventId: string; collectedAt: WorldTime; expiresAt: WorldTime; recipientId: string; packId: string };
   /** Where it came from last tick, so wandering becomes patrolling rather than a random walk. */
   previousPatchId?: number | null;
+  /** Remaining cardinal waypoints. Persisted so a partial journey survives a restart. */
+  journey?: { goal: GoalId; destinationPatchId: number; route: number[] };
   /** The herd, troop, pack or family this animal belongs to. Null for solitary species. */
   groupId?: string | null;
   /** World time conception happened, or null. */
   pregnantSince: number | null;
+  /** Gestation identity is independent of the transient hunting target. */
+  pregnancyFatherId?: string | null;
   /** A female whose courtship failed is not receptive again until her next cycle. */
   nextOestrusAt?: number | null;
   /** World time this animal last gave birth, for the inter-birth interval. */
@@ -86,6 +147,15 @@ export interface Agent {
   bornAt: WorldTime;
   massKg: number;
   patchId: PatchId;
+  /** Optional only for legacy snapshots; initialized deterministically by the simulation. */
+  position?: WorldPosition;
+  /** Authoritative non-ground travel state. Absent on old/ground-only checkpoints. */
+  altitudeM?: number;
+  locomotionMode?: LocomotionMode;
+  /** Stable shared trunk identity while an arboreal animal is above ground. */
+  treeAnchorId?: string;
+  /** Prevent contradictory second actions for a prey animal in the same coarse decision tick. */
+  lastEncounterAt?: WorldTime;
   state: AgentState;
   currentGoal: GoalId;
   alternativeGoal: GoalId | null;

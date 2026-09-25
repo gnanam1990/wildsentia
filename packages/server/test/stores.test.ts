@@ -27,7 +27,7 @@ afterAll(async () => { await pool?.end(); });
 maybe('EventStore', () => {
   beforeEach(async () => {
     await migrate(pool!);
-    await pool!.query('truncate events, snapshots, follows, viewers cascade');
+    await pool!.query('truncate events, snapshots, human_motion, follows, viewers cascade');
   });
 
   it('round-trips a batch of events', async () => {
@@ -41,11 +41,58 @@ maybe('EventStore', () => {
     expect(recent[0]!.worldTime).toBe(200);
   });
 
+  it('round-trips precise lifecycle locations without backfilling legacy or invalid stored locations', async () => {
+    const store = new EventStore(pool!);
+    const position = { x: 908.125, z: -14.75, heading: 1.5 };
+    const birth: WorldEvent = { ...event('birth_location', 100), type: 'born', position };
+    const death: WorldEvent = { ...event('death_location', 200), type: 'died', position };
+    await store.appendBatch([birth, death, { ...event('legacy_death', 150), type: 'died' }]);
+    expect(await store.deathOf('a1')).not.toBeNull();
+    const mapped = await store.mapEvents(200);
+    expect(mapped.find((e) => e.id === birth.id)).toEqual(birth);
+    expect(mapped.find((e) => e.id === death.id)).toEqual(death);
+    expect(mapped.find((e) => e.id === 'legacy_death')!.position).toBeUndefined();
+    await pool!.query('update events set position=$1::jsonb where id=$2', [JSON.stringify({ ...position, x: 1 }), birth.id]);
+    expect((await store.mapEvents(200)).find((e) => e.id === birth.id)!.position).toBeUndefined();
+  });
+
+  it('rejects an invalid position anywhere in a multi-chunk batch before inserting anything', async () => {
+    const store = new EventStore(pool!);
+    const batch = Array.from({ length: 501 }, (_, i) => event(`valid_${i}`, i));
+    batch[500]!.position = { x: NaN, z: 0, heading: 0 };
+    await expect(store.appendBatch(batch)).rejects.toThrow('recorded patch');
+    expect(await store.total()).toBe(0);
+  });
+
+  it('preserves joint encounter samples exactly while leaving old events without invented paths', async () => {
+    const store = new EventStore(pool!);
+    const hunt: WorldEvent = { ...event('hunt_trace', 105), type: 'hunt', actors: ['tiger', 'deer'],
+      encounter: { version: 1, predatorId: 'tiger', preyId: 'deer', patchId: 0, startWorldTime: 100,
+        contactRadiusM: 1, samples: [{ seconds: 5.125, phase: 'contact',
+          predator: { x: 5.75, z: 3.1, heading: 1 }, prey: { x: 6.75, z: 3.1, heading: 1 } }] } };
+    await store.appendBatch([event('old', 1), hunt]);
+    expect((await store.byActor('deer', 10))[0]).toEqual(hunt);
+    expect((await store.byActor('a1', 10))[0]!.encounter).toBeUndefined();
+  });
+
   it('ignores a duplicate id instead of failing the batch', async () => {
     const store = new EventStore(pool!);
     await store.appendBatch([event('fed_1', 100)]);
     await store.appendBatch([event('fed_1', 100), event('fed_2', 200)]);
     expect(await store.total()).toBe(2);
+  });
+
+  it('preserves ordinary movement samples without inventing routes for legacy events', async () => {
+    const store = new EventStore(pool!);
+    const movement: WorldEvent = { ...event('move_route', 105), type: 'moved', movement: {
+      version: 1, actorId: 'a1', startWorldTime: 100, destinationPatchId: 4, goal: 'find_water', completed: false,
+      samples: [{ seconds: 0, position: { x: 10, z: 30, heading: 0 } },
+        { seconds: 5.25, position: { x: 15.25, z: 30, heading: 1.57 } }],
+    } };
+    await store.appendBatch([event('legacy', 1), movement]);
+    const events = await store.byActor('a1', 10);
+    expect(events.find((e) => e.id === movement.id)).toEqual(movement);
+    expect(events.find((e) => e.id === 'legacy')!.movement).toBeUndefined();
   });
 
   it('finds events by actor, newest first', async () => {
@@ -83,12 +130,37 @@ maybe('EventStore', () => {
     expect(await store.deleteAfter(150)).toBe(2);
     expect(await store.total()).toBe(1);
   });
+
+  it('uses the exclusive sequence boundary for equal-timestamp current IDs without deleting legacy history', async () => {
+    const store = new EventStore(pool!);
+    const id = (n: number) => `born_00000001${n.toString(16).padStart(16, '0')}`;
+    const entries = [2, 3, 4].map((n) => ({ ...event(id(n), 100), type: 'born' as const }));
+    await store.appendBatch([...entries, { ...event('born_12345678', 100), type: 'born' }, { ...event('old', 99), type: 'born' }]);
+    expect((await store.mapEvents(100, 3)).map((e) => e.id).sort()).toEqual([id(2), 'old'].sort());
+    expect(await store.countAfter(100, 3)).toBe(2);
+    expect(await store.deleteAfter(100, 3)).toBe(2);
+    expect((await store.recent(10)).map((e) => e.id).sort()).toEqual([id(2), 'born_12345678', 'old'].sort());
+  });
+
+  it('applies the same checkpoint to feeds, timelines, death lookups and sequence-aware recaps before limiting', async () => {
+    const store = new EventStore(pool!);
+    const id = (n: number) => `died_00000001${n.toString(16).padStart(16, '0')}`;
+    const entries = [2, 3, 4].map((n) => ({ ...event(id(n), 100), type: 'died' as const }));
+    await store.appendBatch(entries);
+    const boundary = { worldTime: 100, nextSequence: 4 };
+    expect((await store.recent(1, boundary))[0]!.id).not.toBe(id(4));
+    expect((await store.byActor('a1', 100, boundary)).map((e) => e.id).sort()).toEqual([id(2), id(3)]);
+    expect((await store.deathOf('a1', { worldTime: 100, nextSequence: 2 }))).toBeNull();
+    expect((await store.byActorSince('a1', 100, 100, ['died'], boundary, 3)).map((e) => e.id)).toEqual([id(3)]);
+    expect((await store.byActorSince('a1', 100, 100, ['died'], boundary, null)).map((e) => e.id).sort()).toEqual([id(2), id(3)]);
+    expect(await store.byActorSince('a1', 100, 100, ['died'], boundary)).toEqual([]);
+  });
 });
 
 maybe('SnapshotStore', () => {
   beforeEach(async () => {
     await migrate(pool!);
-    await pool!.query('truncate events, snapshots, follows, viewers cascade');
+    await pool!.query('truncate events, snapshots, human_motion, follows, viewers cascade');
   });
 
   it('returns null when empty', async () => {

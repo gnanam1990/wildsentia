@@ -1,0 +1,80 @@
+name: Verify forest
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      ecology:
+        description: Also run the slow 360-day multi-seed ecology gate
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: vana_ci
+          POSTGRES_PASSWORD: isolated-ci-only
+          POSTGRES_DB: vana_ci_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vana_ci -d vana_ci_test"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      TEST_DATABASE_URL: postgres://vana_ci:isolated-ci-only@127.0.0.1:5432/vana_ci_test
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run verify:ci
+      - name: Retain test evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: regression-evidence
+          path: .ci-artifacts/**/tests.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  ecology:
+    if: github.event_name == 'workflow_dispatch' && inputs.ecology
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: mkdir -p .ci-artifacts
+      - name: Run multi-seed ecology gate (not the 50-year release gate)
+        run: npm exec -- vitest run packages/runner/test/soak.test.ts --reporter=default --reporter=json --outputFile.json=.ci-artifacts/ecology.json
+      - name: Retain ecology test evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ecology-evidence
+          path: .ci-artifacts/ecology.json
+          if-no-files-found: warn
+          retention-days: 14

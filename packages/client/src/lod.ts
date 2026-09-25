@@ -5,7 +5,7 @@ export interface LodLimits {
   radiusM: number;
 }
 
-/** A budget a mid-range laptop holds at sixty frames with shadows on. */
+/** Legacy high-detail budget. Device FPS must be measured, not inferred from model count. */
 export const DEFAULT_LOD: LodLimits = { max: 120, radiusM: 800 };
 
 /**

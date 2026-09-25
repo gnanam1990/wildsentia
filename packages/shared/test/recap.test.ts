@@ -8,6 +8,29 @@ const ev = (partial: Partial<WorldEvent> & Pick<WorldEvent, 'id' | 'type' | 'act
 });
 
 describe('recapLine', () => {
+  it('records lost care without inventing the parent death or an adoption', () => {
+    const loss = ev({ id: 'loss1', type: 'parent_lost', actors: ['dhole_child', 'dhole_mother'], outcome: 'interrupted' });
+    expect(recapLine(loss, 'dhole_child')).toEqual({ eventId: 'loss1', worldTime: 1000,
+      text: 'Lost parental care from dhole_mother' });
+    expect(recapLine(loss, 'dhole_mother')).toBeNull();
+    expect(recapLine({ ...loss, type: 'provisioned' }, 'dhole_child')).toBeNull();
+  });
+  it('does not turn an unfinished approach into a claimed escape', () => {
+    const attempt = ev({ id: 'hunt_3', type: 'hunt', actors: ['tiger_01', 'sambar_01'],
+      outcome: 'failure', conditions: { stage: 'approaching' } });
+    expect(recapLine(attempt, 'tiger_01')?.text).toContain('unresolved');
+    expect(recapLine(attempt, 'sambar_01')).toBeNull();
+    expect(recapLine({ ...attempt, conditions: { stage: 'chase_abandoned' } }, 'tiger_01')?.text).toContain('Abandoned');
+  });
+  it('distinguishes a recorded tree approach from actual ascent and descent', () => {
+    const tree = ev({ id: 'tree_1', type: 'tree_climbed', actors: ['langur_1'],
+      conditions: { direction: 'ascend' }, outcome: 'interrupted', effects: { verticalDistanceM: 0 } });
+    expect(recapLine(tree, 'langur_1')?.text).toBe('Approached a tree; no ascent recorded');
+    expect(recapLine(tree, 'langur_2')).toBeNull();
+    expect(recapLine({ ...tree, effects: { verticalDistanceM: 3 } }, 'langur_1')?.text).toBe('Partly climbed a tree');
+    expect(recapLine({ ...tree, conditions: { direction: 'descend' }, outcome: 'success',
+      effects: { verticalDistanceM: 6 } }, 'langur_1')?.text).toBe('Descended from a tree');
+  });
   it('tells each side of a birth from its own point of view', () => {
     const born = ev({ id: 'born_1', type: 'born', actors: ['chital_0a', 'chital_01', 'chital_02'] });
     expect(recapLine(born, 'chital_0a')?.text).toBe('Was born');
@@ -19,6 +42,38 @@ describe('recapLine', () => {
     const died = ev({ id: 'died_1', type: 'died', actors: ['sambar_01', 'tiger_01'], conditions: { cause: 'predation' } });
     expect(recapLine(died, 'sambar_01')?.text).toBe('Died — predation');
     expect(recapLine(died, 'tiger_01')).toBeNull();
+  });
+
+  it('retains only authoritative illness milestones for the affected animal', () => {
+    const milestones = [
+      ['disease_contracted', 'Contracted a modelled illness after eating carrion'],
+      ['disease_symptomatic', 'Showed signs of illness'],
+      ['disease_recovered', 'Recovered from an illness'],
+      ['disease_fatal', 'Illness became fatal'],
+    ] as const;
+    for (const [type, text] of milestones) {
+      const event = ev({ id: `illness_${type}`, type, actors: ['vulture_01'],
+        conditions: { kind: 'carrion_infection', sourceMealEventId: 'meal_1' },
+        causalParents: ['meal_1'] });
+      expect(recapLine(event, 'vulture_01')).toEqual({ eventId: event.id, worldTime: 1000, text });
+      expect(recapLine(event, 'vulture_02')).toBeNull();
+    }
+    expect(recapLine(ev({ id: 'meal_1', type: 'scavenged', actors: ['vulture_01'] }), 'vulture_01')).toBeNull();
+  });
+  it('tells only the wounded animal about the authoritative wound lifecycle', () => {
+    const milestones = [
+      ['wounded', 'Sustained a modelled wound after contact in a failed hunt'],
+      ['wound_infected', 'A modelled wound became infected'],
+      ['wound_healed', 'A modelled wound healed'],
+      ['wound_infection_fatal', 'A modelled wound infection became fatal'],
+    ] as const;
+    for (const [type, text] of milestones) {
+      const event = ev({ id: `wound_${type}`, type, actors: ['chital_01'],
+        conditions: { kind: 'contact_injury', sourceHuntEventId: 'hunt_1' },
+        causalParents: ['hunt_1'] });
+      expect(recapLine(event, 'chital_01')).toEqual({ eventId: event.id, worldTime: 1000, text });
+      expect(recapLine(event, 'chital_02')).toBeNull();
+    }
   });
 
   it('tells a hunt from both ends', () => {

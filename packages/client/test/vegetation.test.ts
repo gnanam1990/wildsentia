@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
-import { NATURE_KINDS, planVegetation } from '../src/vegetation.js';
+import { describe, expect, it, vi } from 'vitest';
+import * as THREE from 'three';
+import { NATURE_KINDS, TREE_DETAIL_RADIUS_M, TREE_ROOT_SEATING, ROCK_SEATING, vegetationGroundHeight, natureScale, nearPlan, planVegetation, flattenedNatureGeometry } from '../src/vegetation.js';
 import type { PatchView } from '../src/terrain.js';
 
 const patch = (id: number, habitat: string, extra: Partial<PatchView> = {}): PatchView => ({
@@ -9,6 +10,66 @@ const patch = (id: number, habitat: string, extra: Partial<PatchView> = {}): Pat
 const flat = () => 10;
 
 describe('planVegetation', () => {
+  it('flattens a shared GLB mesh once across placement kinds but preserves different node transforms', () => {
+    const geometry = new THREE.BoxGeometry(1, 2, 3);
+    const clone = vi.spyOn(geometry, 'clone');
+    const material = new THREE.MeshBasicMaterial();
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(7, 4, -3); mesh.updateMatrixWorld(true);
+    const cache = new WeakMap<THREE.Mesh, THREE.BufferGeometry>();
+    // The two source files each back multiple kinds. All kinds still have their own
+    // InstancedMesh/material, while immutable vertex data is shared once per GLB node.
+    expect(NATURE_KINDS.CommonTree_1!.file).toBe(NATURE_KINDS.TwistedTree_1!.file);
+    const first = flattenedNatureGeometry(mesh, cache);
+    const reused = flattenedNatureGeometry(mesh, cache);
+    expect(reused).toBe(first);
+    expect(clone).toHaveBeenCalledOnce();
+    expect(first).not.toBe(geometry);
+    expect(first.boundingBox).toBeNull();
+    first.computeBoundingBox();
+    expect(first.boundingBox!.min.toArray()).toEqual([6.5, 3, -4.5]);
+    expect(first.boundingBox!.max.toArray()).toEqual([7.5, 5, -1.5]);
+    expect(geometry.boundingBox).toBeNull();
+    // A different node may share the GLB's buffer but carry another transform.
+    const other = new THREE.Mesh(geometry, material);
+    other.position.x = -2; other.updateMatrixWorld(true);
+    const separate = flattenedNatureGeometry(other, cache);
+    expect(separate).not.toBe(first);
+    expect(clone).toHaveBeenCalledTimes(2);
+    separate.computeBoundingBox();
+    expect(separate.boundingBox!.min.x).toBe(-2.5);
+    first.dispose(); separate.dispose(); geometry.dispose(); material.dispose();
+  });
+  it('has genuinely different stone and boulder sizes using existing local assets', () => {
+    expect(NATURE_KINDS.Stone_Small!.scale[1]).toBeLessThan(NATURE_KINDS.Rock_Medium_1!.scale[0]);
+    expect(NATURE_KINDS.Rock_Medium_1!.scale[1]).toBeLessThan(NATURE_KINDS.Boulder_Large!.scale[0]);
+  });
+  it('builds a denser woodland close in while bounding expensive tree geometry', () => {
+    const trees = [...nearPlan([patch(0, 'shola')], { x: 0, z: 0 }, flat)]
+      .filter(([kind]) => kind.includes('Tree')).flatMap(([, items]) => items);
+    expect(trees.length).toBeGreaterThan(350);
+    // Includes a 24 m scheduling margin; the GPU fades geometry out by 80 m.
+    expect(trees.length).toBeLessThan(500);
+    expect(trees.every((p) => Math.hypot(p.x, p.z) <= TREE_DETAIL_RADIUS_M)).toBe(true);
+    expect(Math.max(...trees.map((p) => p.scale)) / Math.min(...trees.map((p) => p.scale))).toBeGreaterThan(2.5);
+  });
+  it('varies stone silhouettes deterministically without distorting trees', () => {
+    const item = { x: 15, y: 0, z: 17, rotY: 0, scale: 2 };
+    expect(natureScale('CommonTree_1', item)).toEqual([2, 2, 2]);
+    for (const kind of ['Stone_Small', 'Rock_Medium_1', 'Boulder_Large']) {
+      const shape = natureScale(kind, item);
+      expect(shape).toEqual(natureScale(kind, item));
+      expect(new Set(shape).size).toBeGreaterThan(1);
+      expect(shape).not.toEqual(natureScale(kind, { ...item, x: 16 }));
+      expect(shape.every((value) => value > 0 && value < 3)).toBe(true);
+    }
+  });
+  it('does not leave decorative grass on zero-biomass or flooded patches', () => {
+    for (const extra of [{ grass: 0 }, { water: 30_000 }]) {
+      const plan = planVegetation([patch(0, 'grassland', extra)], { x: 0, z: 0 }, 220, flat);
+      expect([...plan].filter(([kind]) => kind.startsWith('Grass')).flatMap(([, items]) => items)).toEqual([]);
+    }
+  });
   const patches = Array.from({ length: 400 }, (_, id) =>
     patch(id, ['grassland', 'shola', 'riparian', 'marsh', 'rock', 'water'][id % 6]!));
 
@@ -50,9 +111,31 @@ describe('planVegetation', () => {
     expect(grassCount(bare)).toBeLessThan(grassCount(lush) / 3);
   });
 
-  it('stands everything on the ground it is given', () => {
+  it('seats scanned roots and rocks below ground while preserving other plant contact', () => {
     const plan = planVegetation(patches, { x: 3000, z: 3000 }, 450, (x) => x / 100);
-    for (const items of plan.values()) for (const item of items) expect(item.y).toBeCloseTo(item.x / 100);
+    for (const [kind, items] of plan) for (const item of items) {
+      const file = NATURE_KINDS[kind]!.file;
+      const seating = TREE_ROOT_SEATING[file] ?? ROCK_SEATING[file];
+      const dimensions = natureScale(kind, item);
+      const expected = item.x / 100 - (seating ? seating.embed * dimensions[1] + seating.radius * Math.max(dimensions[0], dimensions[2]) / 100 : 0);
+      expect(item.y).toBeCloseTo(expected);
+    }
+  });
+
+  it('buries the spreading scan soil skirt on flat ground and samples the downhill root edge', () => {
+    expect(vegetationGroundHeight('CommonTree_1', 0, 0, 2, () => 10)).toBeCloseTo(9.44);
+    expect(vegetationGroundHeight('CommonTree_2', 0, 0, 2, () => 10)).toBeCloseTo(9.9);
+    // Downhill radius is 2.2 m, with a further .56 m embed at this scale.
+    expect(vegetationGroundHeight('CommonTree_1', 0, 0, 2, (x) => 10 + x * 0.2)).toBeCloseTo(9);
+    expect(vegetationGroundHeight('Fern_1', 0, 0, 2, () => 10)).toBe(10);
+    expect(vegetationGroundHeight('DeadTree_2', 0, 0, 2, () => 10)).toBe(10);
+  });
+  it('partly embeds natural rocks and accounts for their non-uniform footprint', () => {
+    // At the origin, shape multipliers are [.85, .55, 1.25].
+    expect(vegetationGroundHeight('Boulder_Large', 0, 0, 2, () => 10)).toBeCloseTo(10 - 0.12 * 1.1);
+    expect(vegetationGroundHeight('Boulder_Large', 0, 0, 2, (x) => 10 + x * 0.2))
+      .toBeCloseTo(10 - 0.12 * 1.1 - 1.1 * 2.5 * 0.2);
+    expect(vegetationGroundHeight('Stone_Small', 0, 0, 0.1, () => 10)).toBeCloseTo(10 - 0.1 * 0.055);
   });
 
   it('only names kinds that exist', () => {
@@ -70,4 +153,3 @@ describe('planVegetation', () => {
     expect(count(dense, (k) => !k.startsWith('Grass'))).toBe(0);
   });
 });
-

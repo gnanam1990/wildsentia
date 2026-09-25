@@ -18,18 +18,32 @@ export class LastSeen {
   constructor(private readonly storage: KeyValueStore | null) {}
 
   get(id: string): number | null {
+    return this.cursor(id)?.worldTime ?? null;
+  }
+
+  cursor(id: string): { worldTime: number; nextSequence: number | null } | null {
     try {
       const raw = this.storage?.getItem(`vana.lastSeen.${id}`) ?? null;
-      const value = raw === null ? NaN : Number(raw);
-      return Number.isFinite(value) ? value : null;
+      if (raw === null) return null;
+      const value: unknown = JSON.parse(raw);
+      if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0)
+        return { worldTime: value, nextSequence: null }; // existing time-only browser memory
+      if (typeof value !== 'object' || value === null) return null;
+      const v = value as Record<string, unknown>;
+      return v.version === 1 && typeof v.worldTime === 'number' && Number.isSafeInteger(v.worldTime) && v.worldTime >= 0
+        && typeof v.nextSequence === 'number' && Number.isSafeInteger(v.nextSequence) && v.nextSequence >= 0
+        ? { worldTime: v.worldTime, nextSequence: v.nextSequence } : null;
     } catch {
       return null;
     }
   }
 
-  mark(id: string, worldTime: number): void {
+  mark(id: string, worldTime: number, nextSequence?: number): void {
+    if (!Number.isSafeInteger(worldTime) || worldTime < 0 || nextSequence !== undefined
+      && (!Number.isSafeInteger(nextSequence) || nextSequence < 0)) return;
     try {
-      this.storage?.setItem(`vana.lastSeen.${id}`, String(worldTime));
+      this.storage?.setItem(`vana.lastSeen.${id}`, nextSequence === undefined ? String(worldTime)
+        : JSON.stringify({ version: 1, worldTime, nextSequence }));
     } catch {
       // Private window or blocked storage: nothing to remember with, and nothing breaks.
     }

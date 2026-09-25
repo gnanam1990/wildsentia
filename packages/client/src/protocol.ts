@@ -1,3 +1,5 @@
+import { positionInPatch, type WorldPosition } from '@vana/shared';
+
 export interface Drives {
   hunger: number; thirst: number; fatigue: number; fear: number;
 }
@@ -6,9 +8,23 @@ export interface AnimalState {
   id: string;
   speciesId: string;
   patchId: number;
+  position?: WorldPosition | undefined;
+  altitudeM?: number | undefined;
+  locomotionMode?: 'ground' | 'flight' | 'climb' | undefined;
   state: string;
   currentGoal: string;
+  /** Only an active authoritative episode is observer-visible; incubation is not displayed. */
+  illnessStatus?: 'symptomatic' | undefined;
+  /** Server-reported modelled contact injury; no client-derived diagnosis or severity. */
+  woundStatus?: 'open' | 'infected' | undefined;
   drives: Drives;
+  lifeStage?: string | undefined;
+  sex?: string | undefined;
+  sizeRatio?: number | undefined;
+  coatVariant?: number | undefined;
+  decayStage?: number | undefined;
+  dependentOn?: string | null | undefined;
+  groupId?: string | null | undefined;
   /** Read by the thought bubble. Undefined when the server did not send it. */
   alternativeGoal?: string | null | undefined;
   goalScore?: number | undefined;
@@ -46,6 +62,14 @@ export class WorldStore {
     return () => { this.#listeners.delete(fn); };
   }
 
+  /** Publish a fully prepared checkpoint once; subscribers never see a half-updated pair. */
+  replaceCheckpoint(world: WorldState, animals: readonly AnimalState[]): void {
+    this.world = world;
+    this.animals.clear();
+    for (const animal of animals) this.animals.set(animal.id, animal);
+    for (const fn of this.#listeners) fn();
+  }
+
   apply(message: unknown): void {
     if (!isRecord(message)) return;
 
@@ -73,11 +97,27 @@ export class WorldStore {
             id: raw.id,
             speciesId: String(raw.speciesId ?? 'unknown'),
             patchId: Number(raw.patchId ?? 0),
+            position: positionInPatch(raw.position, Number(raw.patchId)) ? { ...raw.position } : undefined,
+            altitudeM: typeof raw.altitudeM === 'number' && Number.isFinite(raw.altitudeM)
+              && raw.altitudeM >= 0 && raw.altitudeM <= 2_000 ? raw.altitudeM : undefined,
+            locomotionMode: raw.locomotionMode === 'flight' || raw.locomotionMode === 'climb'
+              || raw.locomotionMode === 'ground' ? raw.locomotionMode : undefined,
             state: String(raw.state ?? 'resting'),
             currentGoal: String(raw.currentGoal ?? 'wander'),
+            illnessStatus: raw.illnessStatus === 'symptomatic' ? 'symptomatic' : undefined,
+            woundStatus: raw.woundStatus === 'open' || raw.woundStatus === 'infected'
+              ? raw.woundStatus : undefined,
             drives: isRecord(raw.drives)
               ? (raw.drives as unknown as Drives)
               : { hunger: 0, thirst: 0, fatigue: 0, fear: 0 },
+            lifeStage: typeof raw.lifeStage === 'string' ? raw.lifeStage : undefined,
+            sex: typeof raw.sex === 'string' ? raw.sex : undefined,
+            sizeRatio: typeof raw.sizeRatio === 'number' && Number.isFinite(raw.sizeRatio) ? raw.sizeRatio : undefined,
+            coatVariant: typeof raw.coatVariant === 'number' && Number.isFinite(raw.coatVariant) ? raw.coatVariant : undefined,
+            decayStage: typeof raw.decayStage === 'number' && Number.isInteger(raw.decayStage)
+              && raw.decayStage >= 1 && raw.decayStage <= 5 ? raw.decayStage : undefined,
+            dependentOn: typeof raw.dependentOn === 'string' ? raw.dependentOn : null,
+            groupId: typeof raw.groupId === 'string' ? raw.groupId : null,
             alternativeGoal: typeof raw.alternativeGoal === 'string' || raw.alternativeGoal === null
               ? raw.alternativeGoal : undefined,
             goalScore: typeof raw.goalScore === 'number' ? raw.goalScore : undefined,

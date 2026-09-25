@@ -1,0 +1,75 @@
+.social-admin { min-height: 100dvh; height: auto; overflow: auto; color: var(--ink); font-size: 16px; line-height: 1.55; }
+.social-admin * { min-width: 0; }
+.social-admin a { color: var(--mist); }
+.social-skip { position: absolute; top: -100px; left: 12px; z-index: 100; padding: 8px 12px; background: var(--dialog-surface); }
+.social-skip:focus { top: 12px; }
+.social-topbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px;
+  min-height: 64px; padding: 12px max(16px, env(safe-area-inset-right)); border-bottom: 1px solid var(--line);
+  background: #101d15; }
+.social-topbar a { font-weight: 700; text-decoration-thickness: 1px; text-underline-offset: 4px; }
+.social-topbar span { color: var(--ink-2); font-size: 14px; }
+.social-admin main { width: min(1280px, 100%); margin: 0 auto; padding: 24px max(16px, env(safe-area-inset-right)) 72px; }
+.social-intro { max-width: 760px; margin-bottom: 24px; }
+.social-intro h1 { margin: 4px 0 8px; font-size: clamp(30px, 5vw, 48px); line-height: 1.1; }
+.social-intro p:last-child { margin: 0; color: var(--ink-2); }
+.social-eyebrow, .social-step { margin: 0; color: var(--moss); font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.social-boundary { max-width: 860px; padding: 16px 20px; border: 1px solid var(--clay); border-left-width: 4px;
+  border-radius: 12px; background: #282419; color: var(--ink); }
+.social-boundary strong { color: #f4cb8c; }
+.social-login { width: min(500px, 100%); margin: 28px 0; padding: 24px; background: var(--dialog-surface);
+  border: 1px solid var(--line); border-radius: 16px; }
+.social-login h2 { margin-top: 0; }
+.social-login label, .social-review label { display: block; font-weight: 600; margin: 12px 0 6px; }
+.social-login p, .social-section > p { color: var(--ink-2); }
+.social-admin input:not([type=checkbox]), .social-review textarea { display: block; width: 100%; min-height: 44px;
+  padding: 10px 12px; color: var(--ink); font: inherit; background: #0b1410; border: 1px solid #91a897;
+  border-radius: 8px; }
+.social-review textarea { resize: vertical; }
+.social-admin button, .social-review button { min-height: 44px; padding: 8px 16px; font-size: 14px; }
+.social-admin button:disabled, .social-review button:disabled { opacity: .55; cursor: not-allowed; }
+.social-admin :focus-visible, .social-review :focus-visible { outline: 3px solid var(--moss); outline-offset: 3px; }
+.social-status:not(:empty) { width: min(860px, 100%); margin: 16px 0; padding: 12px 16px; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--dialog-surface); }
+.social-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px;
+  margin: 28px 0 16px; padding: 16px 20px; background: var(--dialog-surface); border: 1px solid var(--line); border-radius: 12px; }
+.social-toolbar strong, .social-toolbar span { display: block; }
+.social-toolbar span { color: var(--ink-2); font-size: 14px; }
+.social-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.social-nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 24px; }
+.social-nav a { min-height: 44px; display: inline-flex; align-items: center; padding: 8px 14px; border: 1px solid var(--line);
+  border-radius: 999px; background: var(--dialog-surface); text-decoration: none; }
+.social-nav a:hover, .social-nav a:focus-visible { border-color: var(--moss); }
+.social-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start; }
+.social-section { padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--dialog-surface); scroll-margin-top: 16px; }
+.social-section-head { display: flex; justify-content: space-between; align-items: start; gap: 12px; }
+.social-section h2 { margin: 4px 0 8px; font-size: clamp(20px, 2.2vw, 26px); }
+.social-section > p { margin: 0 0 16px; }
+.social-section-status { min-height: 24px; font-size: 14px; }
+.social-list { display: grid; gap: 10px; }
+.social-card { padding: 14px 16px; background: #0e1a13; border: 1px solid #456451; border-radius: 10px; overflow-wrap: anywhere; }
+.social-card h3 { margin: 0 0 8px; font-size: 16px; }
+.social-card p { margin: 6px 0; }
+.social-card details { margin-top: 10px; }
+.social-card summary { display: list-item; min-height: 44px; padding: 10px 4px; cursor: pointer; }
+.social-audit-ids { margin: 4px 0 0; padding-left: 24px; font: 13px/1.5 var(--mono); overflow-wrap: anywhere; }
+.social-meta { color: var(--ink-2); font: 13px/1.5 var(--mono); overflow-wrap: anywhere; }
+.social-status-tag { display: inline-block; margin-bottom: 8px; padding: 3px 8px; border-radius: 6px;
+  background: #263c2e; color: #ccedcf; font-size: 13px; font-weight: 700; }
+.social-card-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.social-card-actions button { margin: 0; }
+.social-card textarea { width: 100%; min-height: 98px; padding: 10px; margin-top: 8px; resize: vertical;
+  background: #0b1410; border: 1px solid #91a897; border-radius: 8px; color: var(--ink); font: inherit; font-size: 15px; line-height: 1.5; }
+.social-pages { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px; }
+.social-pages span { color: var(--ink-2); font-size: 14px; }
+.social-review { width: min(580px, calc(100vw - 24px)); max-height: calc(100dvh - 32px); overflow: auto;
+  padding: 24px; background: var(--dialog-surface); color: var(--ink); border: 1px solid var(--line); border-radius: 16px; }
+.social-review::backdrop { background: rgba(0,0,0,.8); }
+.social-review h2 { margin-top: 8px; }
+.social-review-copy { padding: 12px; background: #0b1410; border-left: 3px solid var(--moss); overflow-wrap: anywhere; }
+.social-check { display: flex !important; gap: 10px; align-items: start; font-weight: 400 !important; }
+.social-check input { flex: none; width: 20px; height: 20px; margin-top: 3px; }
+.social-error { min-height: 24px; color: #f1a49a; }
+.social-dialog-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+@media (max-width: 850px) { .social-grid { grid-template-columns: 1fr; } }
+@media (max-width: 600px) { .social-admin main { padding-top: 20px; } .social-login, .social-section { padding: 16px; }
+  .social-topbar span { font-size: 12px; } .social-actions { width: 100%; } }

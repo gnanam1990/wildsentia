@@ -30,13 +30,13 @@ maybe('Narrator', () => {
   });
 
   it('shows templates straight away and rephrases major events in the background', async () => {
-    const model = fake((t) => t.replace('Gave birth to', 'Brought into the world'));
+    const model = fake((t) => `Observed: ${t}`);
     const narrator = new Narrator({ pool: pool!, rephrase: model.rephrase, dailyTokenBudget: 10_000 });
     const first = await narrator.recap([birth, fled], 'chital_0001');
     expect(first.map((l) => l.text)).toEqual(['Gave birth to chital_0a3f', 'Ran from danger']);
     await narrator.idle();
     const second = await narrator.recap([birth, fled], 'chital_0001');
-    expect(second[0]).toMatchObject({ eventId: 'born_1', text: 'Brought into the world chital_0a3f', narrated: true });
+    expect(second[0]).toMatchObject({ eventId: 'born_1', text: 'Observed: Gave birth to chital_0a3f', narrated: true });
     // Routine lines are never sent to a model.
     expect(model.calls).toEqual(['Gave birth to chital_0a3f']);
   });

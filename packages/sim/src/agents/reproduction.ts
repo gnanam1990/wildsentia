@@ -115,7 +115,7 @@ export function endOestrus(female: Agent, config: SpeciesConfig, worldTime: Worl
 
 export function conceive(mother: Agent, father: Agent, worldTime: WorldTime): void {
   mother.pregnantSince = worldTime;
-  mother.targetId = father.id;
+  mother.pregnancyFatherId = father.id;
 }
 
 export function isReadyToGiveBirth(
@@ -203,6 +203,7 @@ export function birth(
   patch.soilNutrients -= massDrawnKg * NUTRIENT_PER_KG_BIOMASS;
 
   mother.pregnantSince = null;
+  mother.pregnancyFatherId = null;
   mother.lastBirthAt = worldTime;
   mother.targetId = null;
 

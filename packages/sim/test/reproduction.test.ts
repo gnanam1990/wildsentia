@@ -6,9 +6,35 @@ import {
   assessMate, attemptCourtship, birth, conceive, endOestrus, isReadyToGiveBirth, isReceptive,
   packAllowsBreeding,
 } from '../src/agents/reproduction.js';
-import { makeAgent, speciesOf } from './helpers.js';
+import { makeAgent, makeView, makeServices, speciesOf } from './helpers.js';
+import { executeGoal } from '../src/agents/behaviours.js';
+import { perceive } from '../src/agents/perception.js';
+import { EventLog } from '../src/events/log.js';
+import type { Carcass } from '@vana/shared';
 
 const chital = speciesOf('chital');
+
+describe('gestation identity', () => {
+  it('keeps the conceived father through hunting and a later birth', () => {
+    const mother = makeAgent('tiger', { id: 'tiger_mother' });
+    const father = makeAgent('tiger', { id: 'tiger_father', sex: 'male' });
+    const prey = makeAgent('sambar', { id: 'sambar_prey' });
+    const patches = buildGrid(1), cfg = speciesOf('tiger'), carcasses: Carcass[] = [];
+    const view = makeView(patches, [mother, father, prey], carcasses);
+    conceive(mother, father, 0);
+    executeGoal({ agent: mother, species: cfg, patches, view,
+      percept: perceive(mother, cfg, view), choice: { goal: 'hunt', score: 1, alternative: null },
+      hours: 1, worldTime: 3600, log: new EventLog(1, 'test'), rng: createRng(1, 'test'),
+      services: makeServices(carcasses) });
+    expect(mother.targetId).toBeNull();
+    expect(mother.pregnancyFatherId).toBe(father.id);
+    const litter = birth(mother, father, cfg, patches[0]!, new Pedigree(), createRng(2, 'birth'),
+      cfg.lifecycle.gestationDays * WORLD_SECONDS_PER_DAY, (() => { let n = 0; return () => `cub_${n++}`; })());
+    expect(litter.newborns.length).toBeGreaterThan(0);
+    for (const cub of litter.newborns) expect(cub.fatherId).toBe(father.id);
+    expect(mother.pregnancyFatherId).toBeNull();
+  });
+});
 
 describe('isReceptive', () => {
   it('accepts a healthy adult female', () => {

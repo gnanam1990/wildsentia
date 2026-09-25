@@ -1,48 +1,29 @@
-export const GRID_SIZE = 20;
-export const PATCH_METRES = 300;
+import { initialPosition, positionInPatch, subPatchOffset, type WorldPosition } from '@vana/shared';
+export { GRID_SIZE, PATCH_METRES, patchCentre, subPatchOffset } from '@vana/shared';
 
-/**
- * The simulation's spatial resolution is the patch: it knows an animal is in a 300 m cell, not
- * where inside it. The client gives each animal a stable offset within its patch and eases
- * between patch centres over the real time a hop takes, so movement reads as walking rather
- * than teleporting. This renders the server's resolution smoothly; it does not invent a
- * position the server never reported.
- */
+/** Recorded server endpoints when available; interpolation is presentation, not physics. */
 /** One world hour at the default live speed of 12x: five real minutes. */
 export const HOP_DURATION_MS = 300_000;
 
-export function patchCentre(patchId: number): { x: number; z: number } {
-  return {
-    x: (patchId % GRID_SIZE) * PATCH_METRES,
-    z: Math.floor(patchId / GRID_SIZE) * PATCH_METRES,
-  };
-}
-
-function hash(text: string): number {
-  let h = 2166136261 >>> 0;
-  for (let i = 0; i < text.length; i++) {
-    h ^= text.charCodeAt(i);
-    h = Math.imul(h, 16777619) >>> 0;
-  }
-  return h >>> 0;
-}
-
-export function subPatchOffset(agentId: string): { x: number; z: number } {
-  const h = hash(agentId);
-  const fx = ((h & 0xffff) / 0xffff) - 0.5;
-  const fz = (((h >>> 16) & 0xffff) / 0xffff) - 0.5;
-  return { x: fx * PATCH_METRES * 0.8, z: fz * PATCH_METRES * 0.8 };
-}
-
 interface Track {
-  fromPatch: number;
-  toPatch: number;
+  fromX: number;
+  fromZ: number;
+  toX: number;
+  toZ: number;
   startedAt: number;
   heading: number;
+  arrivalHeading: number;
+  fromAltitude?: number;
+  toAltitude?: number;
 }
 
 export interface RenderPosition {
-  x: number; z: number; heading: number; moving: boolean;
+  x: number; z: number; heading: number; moving: boolean; altitudeM?: number;
+}
+
+/** One elevation contract for rigs, camera, cutaways, dots and screen-space attachments. */
+export function renderBaseY(position: { x: number; z: number; altitudeM?: number }, groundAt: (x: number, z: number) => number): number {
+  return groundAt(position.x, position.z) + (position.altitudeM ?? 0);
 }
 
 export class PositionTracker {
@@ -52,33 +33,49 @@ export class PositionTracker {
 
   /** Follows the speed the server reports: a world hour takes 3,600,000 / speed real ms. */
   setWorldSpeed(worldHoursPerRealHour: number): void {
-    if (worldHoursPerRealHour > 0) this.#hopMs = 3_600_000 / worldHoursPerRealHour;
+    if (Number.isFinite(worldHoursPerRealHour) && worldHoursPerRealHour > 0) this.#hopMs = 3_600_000 / worldHoursPerRealHour;
   }
 
   has(id: string): boolean {
     return this.#tracks.has(id);
   }
 
-  update(id: string, patchId: number, nowMs: number): void {
+  /** A recorded joint pose must become the next interpolation origin, never the old endpoint. */
+  placeRecorded(id: string, position: RenderPosition, nowMs: number): void {
+    this.#tracks.set(id, { fromX: position.x, fromZ: position.z, toX: position.x, toZ: position.z,
+      startedAt: nowMs - this.#hopMs, heading: position.heading, arrivalHeading: position.heading,
+      ...(position.altitudeM === undefined ? {} : { fromAltitude: position.altitudeM, toAltitude: position.altitudeM }) });
+  }
+
+  update(id: string, patchId: number, nowMs: number, position?: WorldPosition, altitudeM?: number): void {
     const existing = this.#tracks.get(id);
+    // Never add a client offset to a precise position. Old data retains the legacy fallback.
+    const to = positionInPatch(position, patchId) ? position : initialPosition(id, patchId);
 
     if (existing === undefined) {
       // A newly seen animal appears where it is, rather than sliding in from the last patch.
       this.#tracks.set(id, {
-        fromPatch: patchId, toPatch: patchId,
-        startedAt: nowMs - this.#hopMs, heading: 0,
+        fromX: to.x, fromZ: to.z, toX: to.x, toZ: to.z,
+        startedAt: nowMs - this.#hopMs, heading: to.heading, arrivalHeading: to.heading,
+        ...(altitudeM === undefined ? {} : { fromAltitude: altitudeM, toAltitude: altitudeM }),
       });
       return;
     }
-    if (existing.toPatch === patchId) return;
+    // Duplicate broadcasts do not restart an in-progress interpolation.
+    if (existing.toX === to.x && existing.toZ === to.z
+      && (existing.toAltitude === altitudeM || existing.toAltitude === 0 && altitudeM === undefined)) {
+      existing.arrivalHeading = to.heading; return;
+    }
 
-    const from = patchCentre(existing.toPatch);
-    const to = patchCentre(patchId);
+    const current = this.positionAt(id, nowMs);
     this.#tracks.set(id, {
-      fromPatch: existing.toPatch,
-      toPatch: patchId,
+      fromX: current.x, fromZ: current.z,
+      toX: to.x, toZ: to.z,
       startedAt: nowMs,
-      heading: Math.atan2(to.x - from.x, to.z - from.z),
+      heading: to.x === current.x && to.z === current.z ? current.heading
+        : Math.atan2(to.x - current.x, to.z - current.z), arrivalHeading: to.heading,
+      ...(current.altitudeM === undefined && altitudeM === undefined ? {}
+        : { fromAltitude: current.altitudeM ?? 0, toAltitude: altitudeM ?? 0 }),
     });
   }
 
@@ -90,21 +87,36 @@ export class PositionTracker {
 
   positionAt(id: string, nowMs: number): RenderPosition {
     const track = this.#tracks.get(id);
-    const offset = subPatchOffset(id);
-    if (track === undefined) return { x: offset.x, z: offset.z, heading: 0, moving: false };
+    if (track === undefined) {
+      const offset = subPatchOffset(id);
+      return { x: offset.x, z: offset.z, heading: 0, moving: false };
+    }
 
     const raw = (nowMs - track.startedAt) / this.#hopMs;
     const t = raw <= 0 ? 0 : raw >= 1 ? 1 : raw;
     const eased = t * t * (3 - 2 * t);
 
-    const from = patchCentre(track.fromPatch);
-    const to = patchCentre(track.toPatch);
-
-    return {
-      x: from.x + (to.x - from.x) * eased + offset.x,
-      z: from.z + (to.z - from.z) * eased + offset.z,
-      heading: track.heading,
-      moving: t > 0 && t < 1,
+    const output: RenderPosition = {
+      x: track.fromX + (track.toX - track.fromX) * eased,
+      z: track.fromZ + (track.toZ - track.fromZ) * eased,
+      heading: t >= 1 ? track.arrivalHeading : track.heading,
+      moving: (track.fromX !== track.toX || track.fromZ !== track.toZ
+        || (track.fromAltitude ?? 0) !== (track.toAltitude ?? 0)) && t > 0 && t < 1,
     };
+    if (track.fromAltitude !== undefined || track.toAltitude !== undefined) {
+      output.altitudeM = (track.fromAltitude ?? 0) + ((track.toAltitude ?? track.fromAltitude ?? 0)
+        - (track.fromAltitude ?? 0)) * eased;
+    }
+    return output;
+  }
+
+  /** Visual slope only for a server-reported, same-x/z vertical checkpoint change. */
+  verticalPhaseAt(id: string, nowMs: number): 'ascending' | 'descending' | null {
+    const track = this.#tracks.get(id);
+    if (!track || track.fromX !== track.toX || track.fromZ !== track.toZ) return null;
+    const progress = (nowMs - track.startedAt) / this.#hopMs;
+    if (progress <= 0 || progress >= 1) return null;
+    const from = track.fromAltitude ?? 0, to = track.toAltitude ?? 0;
+    return to > from ? 'ascending' : to < from ? 'descending' : null;
   }
 }

@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { createPool } from '../src/db/pool.js';
 import { migrate } from '../src/db/migrate.js';
 import { EventStore } from '../src/db/eventStore.js';
-import { SimHost } from '../src/simHost.js';
+import { SimHost } from './trackedHost.js';
 import { Gateway, type GatewaySocket } from '../src/gateway.js';
 import { testDatabaseUrl } from './testDatabase.js';
 
@@ -31,7 +31,7 @@ afterAll(async () => { await pool?.end(); });
 maybe('M2 gate', () => {
   beforeEach(async () => {
     await migrate(pool!);
-    await pool!.query('truncate events, snapshots, follows, viewers cascade');
+    await pool!.query('truncate events, snapshots, human_motion, follows, viewers cascade');
   });
 
   it('two clients see identical state and history survives a restart', async () => {

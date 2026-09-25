@@ -1,5 +1,5 @@
-import type { Agent, Drives } from '@vana/shared';
-import type { Pool } from './pool.js';
+import { positionInPatch, type Agent, type Drives, type WorldPosition } from '@vana/shared';
+import type { Database } from './pool.js';
 
 /**
  * The hour-by-hour events: kept for the live feed and a recent timeline, then pruned. At the
@@ -8,7 +8,8 @@ import type { Pool } from './pool.js';
  */
 export const ROUTINE_EVENT_TYPES = [
   'moved', 'fed', 'drank', 'rested', 'goal_selected', 'carcass_stage', 'nutrients_returned',
-  'scavenged',
+  'scavenged', 'provisioned',
+  'human_task_started', 'human_task_finished', 'human_task_interrupted',
 ] as const;
 
 export interface TrackPoint {
@@ -18,29 +19,36 @@ export interface TrackPoint {
   state: string;
   goal: string;
   drives: Drives;
+  position?: WorldPosition | undefined;
 }
 
 interface TrackRow {
   world_time: string; patch_id: number; state: string; goal: string;
   hunger: number; thirst: number; fatigue: number; fear: number;
+  position_x: number | null; position_z: number | null; heading: number | null;
 }
 
 /** Where animals were, and the records of those long gone. */
 export class LifeStore {
-  constructor(private readonly pool: Pool) {}
+  constructor(private readonly pool: Database) {}
 
   async appendTracks(points: readonly TrackPoint[]): Promise<void> {
     if (points.length === 0) return;
+    for (const point of points) {
+      if (point.position !== undefined && !positionInPatch(point.position, point.patchId)) throw new Error('invalid track position');
+    }
     await this.pool.query(
-      `insert into tracks (actor_id, world_time, patch_id, state, goal, hunger, thirst, fatigue, fear)
+      `insert into tracks (actor_id, world_time, patch_id, state, goal, hunger, thirst, fatigue, fear, position_x, position_z, heading)
        select * from unnest($1::text[], $2::bigint[], $3::int[], $4::text[], $5::text[],
-                            $6::real[], $7::real[], $8::real[], $9::real[])
+                            $6::real[], $7::real[], $8::real[], $9::real[], $10::double precision[], $11::double precision[], $12::double precision[])
        on conflict do nothing`,
       [
         points.map((p) => p.id), points.map((p) => p.worldTime), points.map((p) => p.patchId),
         points.map((p) => p.state), points.map((p) => p.goal),
         points.map((p) => p.drives.hunger), points.map((p) => p.drives.thirst),
         points.map((p) => p.drives.fatigue), points.map((p) => p.drives.fear),
+        points.map((p) => p.position?.x ?? null), points.map((p) => p.position?.z ?? null),
+        points.map((p) => p.position?.heading ?? null),
       ],
     );
   }
@@ -49,19 +57,21 @@ export class LifeStore {
    * An animal's track, thinned evenly to at most `maxPoints` (plus its last) so a long life does
    * not come back as tens of megabytes. The first and last samples are always kept.
    */
-  async trackOf(actorId: string, maxPoints = 2000): Promise<TrackPoint[]> {
+  async trackOf(actorId: string, maxPoints = 2000, until?: number): Promise<TrackPoint[]> {
     const { rows } = await this.pool.query<TrackRow>(
-      `select world_time, patch_id, state, goal, hunger, thirst, fatigue, fear from (
+      `select world_time, patch_id, state, goal, hunger, thirst, fatigue, fear, position_x, position_z, heading from (
          select *, row_number() over (order by world_time) as rn, count(*) over () as total
-         from tracks where actor_id = $1
+         from tracks where actor_id = $1 and ($3::bigint is null or world_time <= $3)
        ) sampled
        where total <= $2 or (rn - 1) % ceil(total::numeric / $2)::int = 0 or rn = total
        order by world_time asc`,
-      [actorId, maxPoints],
+      [actorId, maxPoints, until ?? null],
     );
     return rows.map((r) => ({
       id: actorId, worldTime: Number(r.world_time), patchId: r.patch_id, state: r.state, goal: r.goal,
       drives: { hunger: r.hunger, thirst: r.thirst, fatigue: r.fatigue, fear: r.fear },
+      ...(r.position_x === null || r.position_z === null || r.heading === null ? {} :
+        { position: { x: r.position_x, z: r.position_z, heading: r.heading } }),
     }));
   }
 
@@ -108,9 +118,9 @@ export class LifeStore {
     );
   }
 
-  async archived(id: string): Promise<Agent | null> {
+  async archived(id: string, until?: number): Promise<Agent | null> {
     const { rows } = await this.pool.query<{ record: Agent }>(
-      'select record from animal_archive where id = $1', [id],
+      'select record from animal_archive where id = $1 and ($2::bigint is null or departed_at <= $2)', [id, until ?? null],
     );
     return rows[0]?.record ?? null;
   }

@@ -66,6 +66,7 @@
     "learnRateFromParent": 0.01
   },
   "lifecycle": {
+    "followFromDays": 0,
     "maxAgeDays": 21000,
     "baselineMortalityPerDay": 8e-05,
     "stages": [

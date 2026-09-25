@@ -13,6 +13,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --build --force",
+    "verify:ci": "tsx tools/ci/verify.ts",
     "soak": "tsx packages/runner/src/soak.ts",
     "dev:server": "tsx packages/server/src/index.ts",
     "dev:client": "npm --workspace @vana/client run dev"
