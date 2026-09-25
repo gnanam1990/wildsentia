@@ -6,6 +6,7 @@ import type { AnimalState } from './protocol.js';
 import type { RenderPosition } from './space.js';
 import type { ClimbVisualPhase, FlightVisualPhase } from './animation.js';
 import type { MovementTrace } from '@vana/shared';
+import { paceEncounter, paceMovement, recordedSecondAt, type Pacing } from './pacing.js';
 
 /** A wing pose may follow only two explicit adjacent altitude samples from the saved route. */
 export function recordedFlightPhase(trace: MovementTrace, seconds: number): FlightVisualPhase | null {
@@ -127,6 +128,8 @@ export class LiveEncounterPlayer {
   #frame: LiveEncounterFrame | null = null;
   #receivedAt = 0;
   #elapsed = 0;
+  /** Presentation pacing per recorded trace; see pacing.ts. Rebuilt with each new frame. */
+  #pacing = new WeakMap<object, Pacing>();
 
   clear(): void { this.#frame = null; }
 
@@ -142,6 +145,7 @@ export class LiveEncounterPlayer {
     this.#elapsed = this.#frame?.id === value.id
       ? Math.max(this.elapsed(nowMs), value.elapsedWorldSeconds) : value.elapsedWorldSeconds;
     this.#receivedAt = nowMs;
+    if (this.#frame !== value) this.#pacing = new WeakMap();
     this.#frame = value;
     return true;
   }
@@ -154,9 +158,15 @@ export class LiveEncounterPlayer {
     const result = new Map<string, LivePose>();
     const frame = this.#frame;
     if (!frame || !finite(nowMs) || reducedMotion) return result;
-    const seconds = this.elapsed(nowMs);
-    if (seconds >= 3600) return result; // No unlimited extrapolation after disconnection/stall.
+    const shown = this.elapsed(nowMs);
+    if (shown >= 3600) return result; // No unlimited extrapolation after disconnection/stall.
+    const paced = (trace: object, build: () => Pacing): number => {
+      let pacing = this.#pacing.get(trace);
+      if (pacing === undefined) { pacing = build(); this.#pacing.set(trace, pacing); }
+      return recordedSecondAt(pacing, shown);
+    };
     for (const e of frame.encounters) {
+      const seconds = paced(e.trace, () => paceEncounter(e.trace, frame.rate));
       const at = encounterAt(e.trace, seconds);
       const add = (body: EncounterAppearance, position: RenderPosition, state: string, partnerId: string): void => {
         result.set(body.id, { animal: { ...body, patchId: patchAtPosition(position), position,
@@ -168,6 +178,7 @@ export class LiveEncounterPlayer {
       add(e.prey, at.prey, at.finished && e.outcome === 'success' ? 'dead' : at.prey.moving ? 'fleeing' : 'resting', e.predator.id);
     }
     for (const m of frame.movements ?? []) {
+      const seconds = paced(m.trace, () => paceMovement(m.trace, m.actor.speciesId, frame.rate));
       let position = movementAt(m.trace, seconds);
       const activity = m.activity;
       const drinking = activity !== undefined && seconds >= activity.startSeconds && seconds < activity.endSeconds;

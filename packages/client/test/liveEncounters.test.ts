@@ -51,9 +51,11 @@ describe('checkpointed live encounter playback', () => {
     expect(recordedClimbPhase(trace, 12)).toBe('ascending');
     expect(recordedClimbPhase(trace, 24)).toBeNull();
     const player = new LiveEncounterPlayer(); expect(player.apply(f, 0)).toBe(true);
-    expect(player.poses(1000).get('l')).toMatchObject({ climbVisualPhase: 'ascending',
-      position: { x: anchor.x, z: anchor.z, altitudeM: 3, moving: true }, animal: { state: 'fleeing' } });
-    expect(player.poses(2000).get('l')?.climbVisualPhase).toBeUndefined();
+    // A 6 m climb is shown at 0.8 m/s: 7.5 real seconds, half-way up at 3.75 s.
+    expect(player.poses(3750).get('l')).toMatchObject({ climbVisualPhase: 'ascending',
+      position: { x: anchor.x, z: anchor.z, moving: true }, animal: { state: 'fleeing' } });
+    expect(player.poses(3750).get('l')!.position.altitudeM).toBeCloseTo(3);
+    expect(player.poses(8000).get('l')?.climbVisualPhase).toBeUndefined();
     const descending = structuredClone(trace);
     descending.samples = [{ seconds: 0, position, altitudeM: 6 }, { seconds: 24, position, altitudeM: 0 }];
     expect(recordedClimbPhase(descending, 12)).toBe('descending');
@@ -152,14 +154,19 @@ describe('checkpointed live encounter playback', () => {
         samples: [{ seconds: 0, position: p(0) }, { seconds: 60, position: p(60) },
           { seconds: 120, position: { x: 60, z: 60, heading: 0 } }] } }];
     const a = new LiveEncounterPlayer(); expect(a.apply(f, 0)).toBe(true);
-    expect(a.poses(7500).get('s')).toMatchObject({ kind: 'movement', position: { x: 60, z: 30, moving: true },
+    // Each 60 m leg is shown at a sambar's walking pace, 1.4 m/s, not 12x its recorded speed.
+    const leg = 60 / 1.4 * 1000;
+    const mid = a.poses(leg * 1.5).get('s')!;
+    expect(mid).toMatchObject({ kind: 'movement', position: { x: 60, moving: true },
       animal: { state: 'travelling', sizeRatio: 0.25 } });
-    expect(a.poses(7500, true).size).toBe(0);
-    a.apply(f, 7500); // No rewind on duplicate.
-    expect(a.poses(7500).get('s')!.position.z).toBe(30);
-    const b = new LiveEncounterPlayer(); b.apply({ ...f, elapsedWorldSeconds: 90 }, 20_000);
-    expect(b.poses(20_000)).toEqual(a.poses(7500));
-    expect(a.poses(10_000).get('s')).toMatchObject({ position: { x: 60, z: 60, moving: false }, animal: { state: 'resting' } });
+    expect(mid.position.z).toBeCloseTo(30);
+    expect(a.poses(leg * 1.5 + 1000).get('s')!.position.z - mid.position.z).toBeCloseTo(1.4);
+    expect(a.poses(leg * 1.5, true).size).toBe(0);
+    a.apply(f, leg * 1.5); // No rewind on duplicate.
+    expect(a.poses(leg * 1.5).get('s')!.position.z).toBeCloseTo(30);
+    const b = new LiveEncounterPlayer(); b.apply({ ...f, elapsedWorldSeconds: leg * 1.5 / 1000 * 12 }, 20_000);
+    expect(b.poses(20_000).get('s')!.position.z).toBeCloseTo(30);
+    expect(a.poses(leg * 2 + 1000).get('s')).toMatchObject({ position: { x: 60, z: 60, moving: false }, animal: { state: 'resting' } });
     expect(a.poses(300_000).size).toBe(0);
     const conflict = frame(); conflict.movements = f.movements;
     expect(isLiveEncounterFrame(conflict)).toBe(false);
