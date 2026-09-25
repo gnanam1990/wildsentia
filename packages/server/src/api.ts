@@ -1,95 +1,204 @@
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import { RECAP_EVENT_TYPES, SKILL_IDS, formatWorldTime, seasonAt, thoughtFor, type Agent } from '@vana/shared';
 import { confidenceOf } from '@vana/sim';
 import type { Pool } from './db/pool.js';
 import { EventStore } from './db/eventStore.js';
 import { LifeStore } from './db/lifeStore.js';
-import type { SimHost } from './simHost.js';
+import { HumanMotionStore } from './db/humanMotionStore.js';
+import type { CheckpointObservation, SimHost } from './simHost.js';
 import { Narrator } from './narration/narrator.js';
+import { eventMarker } from './eventMap.js';
+import { installRewards, type RewardConfig } from './rewards.js';
+import type { ReceiptRpc } from './baseReceipt.js';
+import { installSocialOutbox, type SocialConfig } from './socialOutbox.js';
+import { HistoryCursors, historyLimit } from './historyCursor.js';
+import { floweringGuildSummary } from './floweringObservation.js';
+import { installHolder, type HolderChain, type HolderConfig } from './holder.js';
 
 export interface ApiDeps {
   host: SimHost;
   pool: Pool;
   /** Rewords recap lines through the grounding check. Without one, recaps are templates. */
   narrator?: Narrator;
+  rewards?: RewardConfig | undefined;
+  receiptRpc?: ReceiptRpc;
+  social?: SocialConfig | undefined;
+  holder?: HolderConfig | undefined;
+  holderChain?: HolderChain;
 }
 
 /**
- * Read-only by construction. There is no mutating route, so a client cannot change the world
- * even if it wanted to — the shared-world promise is enforced by the absence of a write path,
- * not by a permission check that could be misconfigured.
+ * World routes are read-only. The optional reward ledger has independent write routes and
+ * receives only a read-only subject visibility adapter, never a simulation mutation capability.
  */
-export function buildApi({ host, pool, narrator }: ApiDeps): FastifyInstance {
+export function buildApi({ host, pool, narrator, rewards, receiptRpc, social, holder, holderChain }: ApiDeps): FastifyInstance {
   const app = Fastify({ logger: false });
   const events = new EventStore(pool);
   const life = new LifeStore(pool);
+  const humanMotion = new HumanMotionStore(pool);
+  const historyCursors = new HistoryCursors();
+  installRewards(app, { pool, config: rewards, ...(receiptRpc ? { receiptRpc } : {}), subject: (id) => host.rewardSubject(id) });
+  installSocialOutbox(app, { pool, config: social, boundary: () => {
+    const view = host.observation();
+    return view ? { worldTime: view.worldTime, nextSequence: view.nextSequence } : null;
+  } });
+  installHolder(app, { pool, config: holder, ...(holderChain ? { chain: holderChain } : {}), boundary: () => {
+    const view = host.observation();
+    return view ? { worldTime: view.worldTime, nextSequence: view.nextSequence } : null;
+  } });
 
-  /** An animal in the running world, or one archived after it was long gone. */
-  const findAnimal = async (id: string): Promise<Agent | undefined> =>
-    host.world.agents.find((a) => a.id === id)
-    ?? host.world.deceased.find((a) => a.id === id)
-    ?? (await life.archived(id)) ?? undefined;
+  const observationRoutes = new Set(['/world', '/animals', '/animals/:id', '/patches', '/hydrology', '/carcasses', '/event-map', '/animals/:id/passport', '/animals/:id/life', '/animals/:id/encounters/:eventId', '/animals/:id/movements/:eventId', '/animals/:id/recap', '/animals/:id/events', '/events']);
+  const observations = new WeakMap<FastifyRequest, CheckpointObservation>();
+  observationRoutes.add('/community');
+  observationRoutes.add('/people/:id');
+  observationRoutes.add('/people/:id/events');
+  observationRoutes.add('/people/:id/motion');
+  app.addHook('preHandler', async (request, reply) => {
+    if (!observationRoutes.has(request.routeOptions.url ?? '')) return;
+    reply.header('Cache-Control', 'no-store');
+    const view = host.observation();
+    if (view === null) return reply.code(503).send({ error: 'checkpoint_history_unavailable' });
+    observations.set(request, view);
+  });
+  const observed = (request: FastifyRequest): CheckpointObservation => observations.get(request)!;
+  /** One request pins one committed animal view and boundary across every awaited query. */
+  const findAnimal = async (id: string, view: CheckpointObservation): Promise<Agent | undefined> => {
+    const saved = view.animal(id);
+    if (saved) return saved;
+    const archived = await life.archived(id, view.worldTime);
+    if (!archived) return undefined;
+    // With aggressive archival, an unsaved death can reach the archive at the checkpoint's
+    // exact time too. Require its committed departure record rather than trusting time alone.
+    if (archived.departedAt === view.worldTime) {
+      const departures = await events.byActorSince(id, view.worldTime - 1, 10, ['died', 'emigration'], view);
+      if (!departures.some((e) => e.actors[0] === id && e.worldTime === archived.departedAt)) return undefined;
+    }
+    return archived;
+  };
   const narration = narrator ?? new Narrator({ pool, rephrase: null, dailyTokenBudget: 0 });
 
-  app.get('/health', async () => ({ ok: true, worldTime: host.world.now() }));
+  app.get('/health', async (_request, reply) => {
+    const ok = host.isWriterActive && host.lastError === null && host.hasFreshCheckpoint;
+    if (!ok) reply.code(503);
+    // The uptime monitor must measure saved progress, not an in-flight hour that can
+    // disappear if the writer dies before its checkpoint commits.
+    return { ok, worldTime: host.checkpointTime };
+  });
 
-  app.get('/world', async () => {
-    const now = host.world.now();
-    const population: Record<string, number> = {};
-    for (const speciesId of host.world.species.keys()) {
-      population[speciesId] = host.world.livingCount(speciesId);
-    }
+  app.get('/event-map', async (request) => {
+    const view = observed(request);
+    return { worldTime: view.worldTime, markers: (await events.mapEvents(view.worldTime, view.nextSequence))
+      .map(eventMarker).filter((marker) => marker !== null),
+    notice: 'Recent recorded events, not live alerts. Events without valid recorded positions use approximate patch centres.' };
+  });
+
+  app.get('/world', async (request) => {
+    const view = observed(request), now = view.worldTime;
     return {
+      source: 'checkpoint', nextEventSequence: view.nextSequence,
       worldTime: now,
       formatted: formatWorldTime(now),
       season: seasonAt(now),
-      population,
+      ...view.summary(),
       worldHoursPerRealHour: host.worldHoursPerRealHour,
-      patches: host.world.patches.length,
-      totalNutrients: host.world.totalNutrients(),
     };
   });
 
-  app.get('/animals', async () => ({
-    animals: host.world.agents
-      .filter((a) => a.alive)
+  app.get('/community', async (request) => {
+    const view = observed(request), community = view.community();
+    return { source: 'checkpoint', asOfWorldTime: view.worldTime, nextEventSequence: view.nextSequence,
+      community, events: community ? await events.communityActivity(community.id, view) : [],
+      notice: 'Checkpointed fictional autonomous household. Later rules add human hunting, a bounded family lifecycle, and local storm/flood damage with material-paid rebuilding. Distant stock is not known remotely. The settlement is not yet a complete multi-house village or culturally grounded depiction.' };
+  });
+
+  app.get<{ Params: { id: string } }>('/people/:id', async (request, reply) => {
+    const view = observed(request), community = view.community(), person = community?.people.find(p => p.id === request.params.id);
+    if (!person) return reply.code(404).send({ error: 'person_not_found' });
+    return { source: 'checkpoint', asOfWorldTime: view.worldTime, nextEventSequence: view.nextSequence,
+      person, relationships: community?.relationships?.filter(r => r.members.includes(person.id)) ?? [],
+      events: await events.byActor(person.id, 50, view) };
+  });
+
+  app.get<{ Params: { id: string }; Querystring: { limit?: string; cursor?: string } }>('/people/:id/events', async (request, reply) => {
+    const view = observed(request), id = request.params.id;
+    if (!view.community()?.people.some(p => p.id === id)) return reply.code(404).send({ error: 'person_not_found' });
+    const limit = historyLimit(request.query.limit, 25);
+    if (limit === null) return reply.code(400).send({ error: 'invalid_limit' });
+    const result = await historyPage(id, request.query.cursor, limit, view, true, 'person-history:');
+    return result ? { ...result, personId: id,
+      retention: 'Recorded events involving this person, newest first. Older routine tasks may be pruned; significant resource collection, hunting, learning, cooperation, construction, repair, family care, birth and death records remain. Founders have no invented birth or pre-founding biography. This is event history, not animation replay.' }
+      : reply.code(400).send({ error: 'invalid_history_cursor', restart: true });
+  });
+
+  /** Only executed and checkpointed human movement. Missing hours, including legacy data,
+   * are absent records and must never be extrapolated by the observer. */
+  app.get<{ Params: { id: string }; Querystring: { limit?: string; cursor?: string } }>('/people/:id/motion', async (request, reply) => {
+    const view = observed(request), id = request.params.id;
+    if (!view.community()?.people.some(p => p.id === id)) return reply.code(404).send({ error: 'person_not_found' });
+    const limit = historyLimit(request.query.limit, 24);
+    if (limit === null || limit > 48) return reply.code(400).send({ error: 'invalid_limit' });
+    const scope = `human-motion:${id}`;
+    const cursor = request.query.cursor === undefined ? null : historyCursors.decode(request.query.cursor, scope, view);
+    if (request.query.cursor !== undefined && (!cursor || cursor.after?.id !== undefined && cursor.after.id !== id))
+      return reply.code(400).send({ error: 'invalid_motion_cursor', restart: true });
+    const boundary = cursor?.boundary ?? { worldTime: view.worldTime, nextSequence: view.nextSequence };
+    const beforeStart = cursor?.after?.worldTime;
+    const page = await humanMotion.page(id, boundary.worldTime, limit, beforeStart);
+    const pageCursor = historyCursors.encode({ version: 1, scope, boundary,
+      after: beforeStart === undefined ? null : { worldTime: beforeStart, id }, since: 0, sinceSequence: null });
+    const nextCursor = page.nextBefore === null ? null : historyCursors.encode({ version: 1, scope, boundary,
+      after: { worldTime: page.nextBefore, id }, since: 0, sinceSequence: null });
+    return { source: 'checkpoint', personId: id, asOfWorldTime: boundary.worldTime, nextEventSequence: boundary.nextSequence,
+      windows: page.windows, pageCursor, nextCursor,
+      retention: 'Executed hourly person-specific samples saved at durable checkpoints. No motion is reconstructed across missing hours or from legacy snapshots. Rows are retained until an explicit migration or retention policy changes that contract.' };
+  });
+
+  app.get('/animals', async (request) => ({
+    worldTime: observed(request).worldTime, source: 'checkpoint',
+    animals: observed(request).livingAnimals()
       .map((a) => ({
         id: a.id, speciesId: a.speciesId, patchId: a.patchId, state: a.state,
+        position: a.position,
+        ...(a.altitudeM === undefined ? {} : { altitudeM: a.altitudeM, locomotionMode: a.locomotionMode ?? 'flight' }),
         currentGoal: a.currentGoal, alternativeGoal: a.alternativeGoal, goalScore: a.goalScore,
+        ...(a.illness?.phase === 'active' ? { illnessStatus: 'symptomatic' } : {}),
+        ...(a.wound ? { woundStatus: a.wound.phase } : {}),
         dependent: a.dependentOn !== null,
         drives: a.drives, bornAt: a.bornAt, massKg: a.massKg,
       })),
   }));
 
   app.get<{ Params: { id: string } }>('/animals/:id', async (request, reply) => {
-    const agent = host.world.agents.find((a) => a.id === request.params.id);
+    const agent = observed(request).animal(request.params.id);
     if (!agent) return reply.code(404).send({ error: 'not_found' });
     return agent;
   });
 
   /**
-   * Everything the passport shows (spec §10.2), read from live state and the event log. No
+   * Everything the passport shows (spec §10.2), read from checkpoint state and its event log. No
    * field is authored; the thought is a template over the planner's own state, with the facts
    * it was built from alongside. Works for the dead too: their record outlives them.
    */
   app.get<{ Params: { id: string } }>('/animals/:id/passport', async (request, reply) => {
     const world = host.world;
-    const agent = await findAnimal(request.params.id);
+    const view = observed(request);
+    const agent = await findAnimal(request.params.id, view);
     if (!agent) return reply.code(404).send({ error: 'not_found' });
     const config = world.species.get(agent.speciesId)!;
     const kinOf = async (id: string | null) => {
-      const other = id === null ? undefined : await findAnimal(id);
+      const other = id === null ? undefined : await findAnimal(id, view);
       return other === undefined ? null : { id: other.id, alive: other.alive };
     };
     const [mother, father, ...young] = await Promise.all(
       [agent.motherId, agent.fatherId, ...agent.offspringIds].map((id) => kinOf(id)),
     );
 
-    const timeline = await events.byActor(agent.id, 50);
+    const timeline = await events.byActor(agent.id, 50, view);
     // Asked for separately: scavenging a large carcass can push the death past the timeline's end.
-    const died = agent.alive ? null : await events.deathOf(agent.id);
+    const died = agent.alive ? null : await events.deathOf(agent.id, view);
 
     return {
+      asOfWorldTime: view.worldTime, nextEventSequence: view.nextSequence, source: 'checkpoint',
       id: agent.id,
       speciesId: agent.speciesId,
       displayName: config.displayName,
@@ -104,6 +213,8 @@ export function buildApi({ host, pool, narrator }: ApiDeps): FastifyInstance {
       patchId: agent.patchId,
       drives: agent.drives,
       currentGoal: agent.currentGoal,
+      ...(agent.alive && agent.illness?.phase === 'active' ? { illnessStatus: 'symptomatic' } : {}),
+      ...(agent.alive && agent.wound ? { woundStatus: agent.wound.phase } : {}),
       alternativeGoal: agent.alternativeGoal,
       thought: agent.alive
         ? thoughtFor({
@@ -135,33 +246,78 @@ export function buildApi({ host, pool, narrator }: ApiDeps): FastifyInstance {
     };
   });
 
+  /** A selected recording does not need a full biography scan or other recordings' geometry. */
+  app.get<{ Params: { id: string; eventId: string } }>('/animals/:id/encounters/:eventId', async (request, reply) => {
+    const view = observed(request), { id, eventId } = request.params;
+    const event = await events.encounterById(id, eventId, view);
+    if (!event) return reply.code(404).send({ error: 'recording_not_found' });
+    const agent = await findAnimal(id, view);
+    if (!agent) return reply.code(404).send({ error: 'not_found' });
+    return { source: 'checkpoint', scope: 'encounter', asOfWorldTime: view.worldTime, nextEventSequence: view.nextSequence,
+      id, speciesId: agent.speciesId, alive: agent.alive, bornAt: agent.bornAt, departedAt: agent.departedAt ?? null,
+      encounter: { eventId: event.id, outcome: event.outcome, trace: event.encounter,
+        predatorSpecies: event.conditions.predatorSpecies, preySpecies: event.conditions.preySpecies } };
+  });
+
+  /** An explicitly selected saved tree route, never a reconstruction from sparse life tracks. */
+  app.get<{ Params: { id: string; eventId: string } }>('/animals/:id/movements/:eventId', async (request, reply) => {
+    const view = observed(request), { id, eventId } = request.params;
+    const event = await events.climbById(id, eventId, view);
+    if (!event) return reply.code(404).send({ error: 'recording_not_found' });
+    const agent = await findAnimal(id, view);
+    if (!agent) return reply.code(404).send({ error: 'not_found' });
+    return { source: 'checkpoint', scope: 'movement', asOfWorldTime: view.worldTime, nextEventSequence: view.nextSequence,
+      id, speciesId: agent.speciesId, alive: agent.alive, bornAt: agent.bornAt, departedAt: agent.departedAt ?? null,
+      movement: { eventId: event.id, outcome: event.outcome, trace: event.movement,
+        direction: event.conditions.direction, reason: event.conditions.reason,
+        treeAnchorId: event.conditions.treeAnchorId, verticalDistanceM: event.effects.verticalDistanceM } };
+  });
+
   /**
    * A whole life to replay (spec §11): where the animal was, sampled every few world hours, and
    * every significant thing that happened to it, each tied to its event. Positions between
    * samples are the client's to interpolate; nothing here is invented.
    */
-  app.get<{ Params: { id: string } }>('/animals/:id/life', async (request, reply) => {
-    const agent = await findAnimal(request.params.id);
+  app.get<{ Params: { id: string }; Querystring: { cursor?: string } }>('/animals/:id/life', async (request, reply) => {
+    const view = observed(request);
+    const scope = `life:${request.params.id}`, raw = request.query.cursor;
+    const cursor = raw === undefined ? null : historyCursors.decode(raw, scope, view);
+    if (raw !== undefined && !cursor) return reply.code(400).send({ error: 'invalid_history_cursor', restart: true });
+    const boundary = cursor?.boundary ?? { worldTime: view.worldTime, nextSequence: view.nextSequence };
+    const page = await events.page({ actorId: request.params.id, boundary, limit: 32,
+      types: RECAP_EVENT_TYPES, after: cursor?.after ?? undefined, omitMovement: true });
+    const pageData = {
+      asOfWorldTime: boundary.worldTime, nextEventSequence: boundary.nextSequence, source: 'checkpoint', id: request.params.id,
+      nextCursor: page.after ? historyCursors.encode({ version: 1, scope, boundary, since: -1, sinceSequence: null, after: page.after }) : null,
+      moments: await narration.recap(page.events, request.params.id),
+      encounters: page.events.filter((e) => e.encounter !== undefined).map((e) => ({
+        eventId: e.id, outcome: e.outcome, trace: e.encounter,
+        predatorSpecies: e.conditions.predatorSpecies, preySpecies: e.conditions.preySpecies,
+      })),
+    };
+    // Continuations carry only immutable event pages. Never attach a newer animal/track view
+    // to the first page's pinned biography, including if the animal has since died/archived.
+    if (cursor) return pageData;
+    const agent = await findAnimal(request.params.id, view);
     if (!agent) return reply.code(404).send({ error: 'not_found' });
-    const track = await life.trackOf(agent.id);
+    const track = await life.trackOf(agent.id, 2000, view.worldTime);
     if (agent.alive) {
-      const now = host.world.now();
+      const now = view.worldTime;
       if (track.length === 0 || track[track.length - 1]!.worldTime < now) {
         track.push({
           id: agent.id, worldTime: now, patchId: agent.patchId, state: agent.state,
           goal: agent.currentGoal, drives: agent.drives,
+          position: agent.position,
         });
       }
     }
-    const major = await events.byActorSince(agent.id, -1, 5000, RECAP_EVENT_TYPES);
     return {
-      id: agent.id,
+      ...pageData,
       speciesId: agent.speciesId,
       alive: agent.alive,
       bornAt: agent.bornAt,
       departedAt: agent.departedAt ?? null,
       track: track.map(({ id: _id, ...point }) => point),
-      moments: await narration.recap(major, agent.id),
     };
   });
 
@@ -169,35 +325,91 @@ export function buildApi({ host, pool, narrator }: ApiDeps): FastifyInstance {
    * While you were away (spec §10.4): what happened to an animal since `since`, one template
    * line per significant event, each carrying its event id. Routine events are left out.
    */
-  app.get<{ Params: { id: string }; Querystring: { since?: string } }>(
+  app.get<{ Params: { id: string }; Querystring: { since?: string; sinceSequence?: string; cursor?: string } }>(
     '/animals/:id/recap',
     async (request, reply) => {
-      const since = Number(request.query.since);
-      if (request.query.since === undefined || !Number.isFinite(since)) {
+      const view = observed(request), scope = `recap:${request.params.id}`;
+      const cursor = request.query.cursor === undefined ? null : historyCursors.decode(request.query.cursor, scope, view);
+      if (request.query.cursor !== undefined && (!cursor || request.query.since !== undefined || request.query.sinceSequence !== undefined))
+        return reply.code(400).send({ error: 'invalid_history_cursor', restart: true });
+      const since = cursor?.since ?? Number(request.query.since);
+      if (!Number.isSafeInteger(since) || since < -1) {
         return reply.code(400).send({ error: 'since_required' });
       }
-      const missed = await events.byActorSince(request.params.id, since, 2000, RECAP_EVENT_TYPES);
-      return { since, until: host.world.now(), lines: await narration.recap(missed, request.params.id) };
+      const rawSequence = request.query.sinceSequence;
+      const sinceSequence = cursor?.sinceSequence ?? (rawSequence === undefined ? null : Number(rawSequence));
+      if (rawSequence !== undefined && (!/^\d+$/.test(rawSequence) || !Number.isSafeInteger(sinceSequence)))
+        return reply.code(400).send({ error: 'invalid_since_sequence' });
+      const boundary = cursor?.boundary ?? { worldTime: view.worldTime, nextSequence: view.nextSequence };
+      const page = await events.page({ actorId: request.params.id, boundary, since, sinceSequence,
+        limit: 200, types: RECAP_EVENT_TYPES, after: cursor?.after ?? undefined, omitMovement: true });
+      return { since, until: boundary.worldTime, nextEventSequence: boundary.nextSequence,
+        nextCursor: page.after ? historyCursors.encode({ version: 1, scope, boundary, since, sinceSequence, after: page.after }) : null,
+        source: 'checkpoint', lines: await narration.recap(page.events, request.params.id) };
     },
   );
 
-  app.get<{ Params: { id: string }; Querystring: { limit?: string } }>(
+  app.get<{ Params: { id: string }; Querystring: { limit?: string; cursor?: string; view?: string } }>(
     '/animals/:id/events',
-    async (request) => ({
-      events: await events.byActor(request.params.id, Number(request.query.limit ?? 100)),
-    }),
+    async (request, reply) => {
+      const limit = historyLimit(request.query.limit, 100);
+      if (limit === null) return reply.code(400).send({ error: 'invalid_limit' });
+      if (request.query.view !== undefined && request.query.view !== 'summary') return reply.code(400).send({ error: 'invalid_view' });
+      const result = await historyPage(request.params.id, request.query.cursor, limit, observed(request), request.query.view === 'summary');
+      return result ?? reply.code(400).send({ error: 'invalid_history_cursor', restart: true });
+    },
   );
 
-  app.get<{ Querystring: { limit?: string } }>('/events', async (request) => ({
-    events: await events.recent(Number(request.query.limit ?? 50)),
-  }));
+  async function historyPage(actorId: string | null, raw: string | undefined, limit: number, view: CheckpointObservation, summary = false, namespace = '') {
+    const scope = `${namespace}${summary ? 'summary:' : ''}${actorId === null ? 'feed' : `events:${actorId}`}`;
+    const cursor = raw === undefined ? null : historyCursors.decode(raw, scope, view);
+    if (raw !== undefined && !cursor) return null;
+    const boundary = cursor?.boundary ?? { worldTime: view.worldTime, nextSequence: view.nextSequence };
+    const page = await events.page({ actorId, boundary, limit, descending: true, after: cursor?.after ?? undefined, summary });
+    return { asOfWorldTime: boundary.worldTime, nextEventSequence: boundary.nextSequence, source: 'checkpoint', events: page.events,
+      pageCursor: raw ?? historyCursors.encode({ version: 1, scope, boundary, since: -1, sinceSequence: null, after: null }),
+      nextCursor: page.after ? historyCursors.encode({ version: 1, scope, boundary, since: -1, sinceSequence: null, after: page.after }) : null,
+      retention: 'Retained events only. Older routine feeding, drinking and movement events are pruned; significant life events remain.' };
+  }
+  app.get<{ Querystring: { limit?: string; cursor?: string } }>('/events', async (request, reply) => {
+    const limit = historyLimit(request.query.limit, 50);
+    if (limit === null) return reply.code(400).send({ error: 'invalid_limit' });
+    return await historyPage(null, request.query.cursor, limit, observed(request))
+      ?? reply.code(400).send({ error: 'invalid_history_cursor', restart: true });
+  });
 
-  app.get('/patches', async () => ({
-    patches: host.world.patches.map((p) => ({
+  app.get('/patches', async (request) => ({
+    worldTime: observed(request).worldTime, source: 'checkpoint',
+    patches: observed(request).patches().map((p) => ({
       id: p.id, x: p.x, y: p.y, habitat: p.habitat,
       elevation: p.elevation, canopyCover: p.canopyCover,
+      islandSeed: p.islandSeed, surface: p.surface,
       grass: p.plant.grass, browse: p.plant.browse,
-      water: p.waterVolume, soilNutrients: p.soilNutrients,
+      floweringGuild: floweringGuildSummary(p),
+      water: p.waterVolume, soilNutrients: p.soilNutrients, drainage: p.drainage,
+    })),
+  }));
+
+  app.get('/hydrology', async (request) => {
+    const view = observed(request), patches = view.patches(), budget = view.waterBudget();
+    const storedL = patches.reduce((sum, patch) => sum + patch.waterVolume, 0);
+    return { worldTime: view.worldTime, source: 'checkpoint', scope: 'surface_freshwater',
+      budget, storedL, residualL: budget ? budget.initialL + budget.rainfallL + budget.groundwaterL
+        - budget.evaporatedL - budget.boundaryOutflowL - budget.animalConsumptionL - (budget.communityWithdrawalL ?? 0) - storedL : null };
+  });
+
+  app.get('/micro-ecology', async (request) => {
+    const view = observed(request);
+    return { worldTime: view.worldTime, source: 'checkpoint', ecology: view.microEcology() };
+  });
+
+  app.get('/carcasses', async (request) => ({
+    worldTime: observed(request).worldTime, source: 'checkpoint',
+    carcasses: observed(request).carcasses().map((c) => ({
+      id: c.id, originId: c.originId, speciesId: c.speciesId, patchId: c.patchId,
+      position: c.position,
+      diedAt: c.diedAt, decayStage: c.decayStage,
+      sizeRatio: c.originalMassKg / (host.world.species.get(c.speciesId)?.body.adultMassKg ?? c.originalMassKg),
     })),
   }));
 

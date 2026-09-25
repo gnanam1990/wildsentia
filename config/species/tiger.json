@@ -80,6 +80,7 @@
     "learnRateFromParent": 0.05
   },
   "lifecycle": {
+    "followFromDays": 56,
     "maxAgeDays": 5400,
     "baselineMortalityPerDay": 0.00018,
     "stages": [
@@ -128,6 +129,8 @@
     "interBirthIntervalDays": 700,
     "oestrusCycleDays": 25,
     "weanDays": 180,
+    "drinkFromDays": 70,
+    "meatFromDays": 70,
     "dispersalDays": 640
   }
 }

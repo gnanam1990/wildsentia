@@ -49,13 +49,14 @@ export function makeView(patches: Patch[], agents: Agent[] = [], carcasses: Carc
 export function makeServices(carcasses: Carcass[]): WorldServices {
   let seq = 0;
   return {
-    kill(victim, cause) {
+    kill(victim, cause, _killerId, context) {
       victim.alive = false;
       victim.state = 'dead';
       const carcass = makeCarcass(
-        `carc_test_${seq++}`, victim.id, victim.speciesId, victim.patchId, 0,
+        `carc_test_${seq++}`, victim.id, victim.speciesId, victim.patchId, context?.at ?? 0,
         cause, 'authoritative', victim.massKg,
       );
+      if (victim.position) carcass.position = { ...victim.position };
       carcasses.push(carcass);
       return carcass;
     },

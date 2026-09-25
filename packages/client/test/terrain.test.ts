@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
+import { waterAccessPosition, waterContactPosition } from '@vana/shared';
 import { buildTerrain, countDrawCalls, hideFarFieldNear, makeHeightSampler, type PatchView } from '../src/terrain.js';
 
 const patches: PatchView[] = Array.from({ length: 400 }, (_, id) => ({
@@ -39,6 +40,39 @@ describe('buildTerrain', () => {
     });
     expect(waterInstances).toBe(0);
   });
+
+  it('shows a small island freshwater pool at every drinkable access point', () => {
+    const wet = { ...patches[210]!, habitat: 'shola', surface: 'land' as const,
+      islandSeed: 1, water: 200 };
+    const dry = { ...patches[211]!, surface: 'land' as const, islandSeed: 1, water: 0 };
+    const terrain = buildTerrain([wet, dry]);
+    const water = terrain.getObjectByName('water') as THREE.InstancedMesh;
+    expect(water.count).toBe(1);
+    const matrix = new THREE.Matrix4(); water.getMatrixAt(0, matrix);
+    const access = waterAccessPosition(wet.id), contact = waterContactPosition('elephant_1', wet.id);
+    expect(matrix.elements[12]).toBeCloseTo(access.x);
+    expect(matrix.elements[14]).toBeCloseTo(access.z);
+    expect(matrix.elements[0]).toBeGreaterThanOrEqual(Math.hypot(contact.x - access.x, contact.z - access.z));
+    expect(matrix.elements[0]).toBeCloseTo(2);
+  });
+
+  it('renders authoritative drainage as a river and steep drop as a waterfall', () => {
+    const hydrology = patches.map((p) => ({ ...p, elevation: p.id === 0 ? 0.9 : p.id === 1 ? 0.1 : 0.5,
+      drainage: p.id === 0 ? { downstreamPatchId: 1, boundaryOutlet: false, inflowL: 0, outflowL: 20_000, hours: 1 } : undefined }));
+    const terrain = buildTerrain(hydrology);
+    const river = terrain.getObjectByName('river') as THREE.Mesh;
+    const waterfall = terrain.getObjectByName('waterfall') as THREE.Mesh;
+    expect(river).toBeDefined();
+    expect(river.geometry.index!.count).toBe(6);
+    expect(waterfall).toBeDefined();
+    expect(waterfall.geometry.index!.count).toBe(6);
+  });
+
+  it('does not invent a river when a checkpoint has no completed drainage step', () => {
+    const terrain = buildTerrain(patches);
+    expect(terrain.getObjectByName('river')).toBeUndefined();
+    expect(terrain.getObjectByName('waterfall')).toBeUndefined();
+  });
 });
 
 describe('makeHeightSampler', () => {
@@ -63,6 +97,41 @@ describe('makeHeightSampler', () => {
 });
 
 describe('hideFarFieldNear', () => {
+  it('stops submitting placeholder trees once the matching atlas forest is ready', () => {
+    const terrain = buildTerrain([{ ...patches[0]!, habitat: 'shola', canopyCover: 0.8 }]);
+    hideFarFieldNear(terrain, { x: 0, z: 0 }, 220, Infinity, 132);
+    expect(terrain.getObjectByName('trunk')!.visible).toBe(false);
+    expect(terrain.getObjectByName('canopy')!.visible).toBe(false);
+    expect(terrain.getObjectByName('grass')!.visible).toBe(true);
+    hideFarFieldNear(terrain, { x: 1000, z: 1000 }, 220, 110, 132);
+    expect(terrain.getObjectByName('trunk')!.visible).toBe(true);
+    const matrix = new THREE.Matrix4();
+    (terrain.getObjectByName('trunk') as THREE.InstancedMesh).getMatrixAt(0, matrix);
+    expect(matrix.elements[0]).toBeGreaterThan(0);
+  });
+  it('keeps distant grass in the belt beyond the carpet, independently of props', () => {
+    const terrain = buildTerrain(patches);
+    const grass = terrain.getObjectByName('grass') as THREE.InstancedMesh;
+    const base = grass.userData.base as Float32Array;
+    const focus = { x: 3000, z: 3000 };
+    hideFarFieldNear(terrain, focus, 220, 110, 132);
+    let belt = 0;
+    for (let i = 0; i < grass.count; i++) {
+      const offset = i * 16;
+      const distance = Math.hypot(base[offset + 12]! - focus.x, base[offset + 14]! - focus.z);
+      if (distance > 144 && distance < 220) {
+        belt++;
+        expect(grass.instanceMatrix.array[offset]).toBe(base[offset]);
+      }
+    }
+    expect(belt).toBeGreaterThan(0);
+  });
+  it('never shows far grass in flooded or water habitats', () => {
+    for (const extra of [{ habitat: 'water' }, { water: 30_000 }, { grass: 0 }]) {
+      const terrain = buildTerrain([{ ...patches[0]!, ...extra }]);
+      expect((terrain.getObjectByName('grass') as THREE.InstancedMesh).count).toBe(0);
+    }
+  });
   it('hides the cheap stand-in vegetation where detailed plants are drawn, and brings it back', () => {
     const terrain = buildTerrain(patches);
     const grass = terrain.getObjectByName('grass') as THREE.InstancedMesh;

@@ -22,6 +22,39 @@ maybe('LifeStore', () => {
     await pool!.query('truncate events, tracks, animal_archive');
   });
 
+  it('round-trips care provenance, prunes routine provisioning and retains lost-parent history', async () => {
+    const events = new EventStore(pool!), life = new LifeStore(pool!);
+    const care = { ...ev('care1', 'provisioned', 100), actors: ['dhole_child', 'dhole_mother'],
+      conditions: { source: 'parent_reserves' }, effects: { foodEquivalentKg: 0.1, waterEquivalentL: 0.2 } };
+    const loss = { ...ev('loss1', 'parent_lost', 200), actors: care.actors, outcome: 'interrupted' as const };
+    await events.appendBatch([care, loss]);
+    expect((await events.byActorSince('dhole_child', 0, 10))[0]).toEqual(care);
+    await life.pruneRoutine(300);
+    expect(await events.byActorSince('dhole_child', 0, 10)).toEqual([loss]);
+  });
+
+  it('round-trips precise positions while retaining unknown precision for legacy tracks', async () => {
+    const store = new LifeStore(pool!);
+    const base = { id: 'sambar_precise', worldTime: 100, patchId: 0, state: 'resting', goal: 'rest',
+      drives: { hunger: 0.2, thirst: 0.1, fatigue: 0.3, fear: 0 } };
+    const position = { x: 12.123456789, z: -34.5678912, heading: 1.23 };
+    await store.appendTracks([base, { ...base, worldTime: 200, position }]);
+    const track = await store.trackOf(base.id);
+    expect(track[0]!.position).toBeUndefined();
+    expect(track[1]!.position).toEqual(position);
+    await store.appendTracks([{ ...base, worldTime: 200, position: { x: 20, z: 30, heading: 0 } }]);
+    expect((await store.trackOf(base.id))[1]!.position).toEqual(position);
+  });
+
+  it('rejects invalid or wrong-patch coordinates without partially appending the batch', async () => {
+    const store = new LifeStore(pool!);
+    const base = { id: 'bad_coordinate', worldTime: 100, patchId: 0, state: 'resting', goal: 'rest',
+      drives: { hunger: 0.2, thirst: 0.1, fatigue: 0.3, fear: 0 } };
+    await expect(store.appendTracks([base, { ...base, worldTime: 200, position: { x: 900, z: 0, heading: 0 } }]))
+      .rejects.toThrow('invalid track position');
+    expect(await store.trackOf(base.id)).toEqual([]);
+  });
+
   it('records where an animal was, and returns its track in time order', async () => {
     const store = new LifeStore(pool!);
     const at = (t: number, patchId: number) => ({
@@ -93,5 +126,16 @@ maybe('LifeStore', () => {
     await store.archive([record]);
     expect((await store.archived('chital_0009'))?.speciesId).toBe('chital');
     expect(await store.archived('nobody_0000')).toBeNull();
+    expect(await store.archived('chital_0009', 299)).toBeNull();
+    expect((await store.archived('chital_0009', 300))?.id).toBe('chital_0009');
+  });
+
+  it('filters future replay samples before thinning so future rows cannot displace committed first/last samples', async () => {
+    const store = new LifeStore(pool!);
+    await store.appendTracks(Array.from({ length: 100 }, (_, i) => ({ id: 'bounded-life', worldTime: i,
+      patchId: 0, state: 'resting', goal: 'rest', drives: { hunger: 0, thirst: 0, fatigue: 0, fear: 0 } })));
+    const points = await store.trackOf('bounded-life', 3, 10);
+    expect(points[0]!.worldTime).toBe(0); expect(points.at(-1)!.worldTime).toBe(10);
+    expect(points.every((p) => p.worldTime <= 10)).toBe(true); expect(points.length).toBeLessThanOrEqual(4);
   });
 });

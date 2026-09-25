@@ -1,0 +1,26 @@
+FROM node:22-alpine
+WORKDIR /app
+
+# The lockfile pins npm packages; never install an unversioned global runner at boot.
+COPY package.json package-lock.json ./
+COPY tsconfig.base.json ./
+COPY packages/shared/package.json packages/shared/package.json
+COPY packages/sim/package.json packages/sim/package.json
+COPY packages/server/package.json packages/server/package.json
+COPY packages/client/package.json packages/client/package.json
+COPY packages/runner/package.json packages/runner/package.json
+RUN npm ci --no-audit --no-fund
+
+COPY config/species config/species
+COPY packages/shared/src packages/shared/src
+COPY packages/sim/src packages/sim/src
+COPY packages/server/src packages/server/src
+COPY packages/server/tsconfig.json packages/server/tsconfig.json
+COPY packages/sim/tsconfig.json packages/sim/tsconfig.json
+COPY packages/shared/tsconfig.json packages/shared/tsconfig.json
+COPY packages/server/migrations packages/server/migrations
+
+ENV NODE_ENV=production
+USER node
+EXPOSE 8080
+CMD ["node", "--import", "tsx", "packages/server/src/index.ts"]

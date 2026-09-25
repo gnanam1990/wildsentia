@@ -10,6 +10,19 @@ const memoryStorage = () => {
 };
 
 describe('LastSeen', () => {
+  it('remembers an exact event cursor while reading older time-only browser state', () => {
+    const storage = memoryStorage(), seen = new LastSeen(storage);
+    storage.setItem('vana.lastSeen.tiger', '7200');
+    expect(seen.cursor('tiger')).toEqual({ worldTime: 7200, nextSequence: null });
+    seen.mark('tiger', 7200, 42);
+    expect(seen.get('tiger')).toBe(7200);
+    expect(seen.cursor('tiger')).toEqual({ worldTime: 7200, nextSequence: 42 });
+    const again = new LastSeen(storage); expect(again.cursor('tiger')).toEqual(seen.cursor('tiger'));
+    seen.mark('tiger', 7200, NaN); expect(seen.cursor('tiger')!.nextSequence).toBe(42);
+    for (const value of ['null', '{}', '"hello"', '{"version":1,"worldTime":10,"nextSequence":-1}', '1.5', 'NaN']) {
+      storage.setItem('vana.lastSeen.bad', value); expect(seen.cursor('bad')).toBeNull();
+    }
+  });
   it('remembers when each animal was last watched', () => {
     const seen = new LastSeen(memoryStorage());
     expect(seen.get('tiger_01')).toBeNull();

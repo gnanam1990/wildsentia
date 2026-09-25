@@ -1,8 +1,8 @@
 import type { Snapshot } from '@vana/sim';
-import type { Pool } from './pool.js';
+import type { Database } from './pool.js';
 
 export class SnapshotStore {
-  constructor(private readonly pool: Pool) {}
+  constructor(private readonly pool: Database) {}
 
   async save(snapshot: Snapshot): Promise<void> {
     await this.pool.query(

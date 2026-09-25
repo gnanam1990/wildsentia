@@ -1,0 +1,79 @@
+name: vana-30day
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: vana
+      POSTGRES_DB: vana
+      POSTGRES_PASSWORD: ${VANA_DB_PASSWORD:?set a random URL-safe database password}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vana -d vana"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+
+  server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.server
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://vana:${VANA_DB_PASSWORD:?set a random URL-safe database password}@db:5432/vana
+      PORT: "8080"
+      WORLD_SEED: ${VANA_WORLD_SEED:-1}
+      WORLD_HOURS_PER_REAL_HOUR: "12"
+      VANA_TERRAIN_PROFILE: island_v1
+      VANA_COMMUNITY_PROFILE: household_v1
+    restart: unless-stopped
+    stop_grace_period: 2m
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health',{signal:AbortSignal.timeout(5000)}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 90s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+    depends_on:
+      server:
+        condition: service_healthy
+    environment:
+      VANA_DOMAIN: ${VANA_DOMAIN:?set your public domain}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+
+volumes:
+  db_data:
+  caddy_data:
+  caddy_config:

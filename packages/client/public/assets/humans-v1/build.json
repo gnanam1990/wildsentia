@@ -1,0 +1,31 @@
+{
+  "sources": {
+    "humans-base": "fdbf1804c90dfc1ea03e992bff7da2dfd1a79318e13270a660180f9308455f40",
+    "humans-outfits": "c3468b18871cc8c8f05ab14df7712baf22cb9f389cbd870babf130e595187f70",
+    "humans-motion": "cc73fc4e495b82958207316596317a3f40b9fa38065bde1027937452da537724"
+  },
+  "method": "CC0 peasant clothing, cropped base heads, head-bound hair, rest-relative in-place retarget",
+  "clips": [
+    "Idle_Loop",
+    "Walk_Loop",
+    "Fixing_Kneeling",
+    "PickUp_Table",
+    "Interact",
+    "Crouch_Idle_Loop",
+    "Death01"
+  ],
+  "files": [
+    {
+      "filename": "human-female.glb",
+      "bytes": 2685764,
+      "sha256": "2eb3b51aa146206bc03c913844013f9d211c54e8d7416825359546c5dd289740",
+      "triangles": 22404
+    },
+    {
+      "filename": "human-male.glb",
+      "bytes": 2320400,
+      "sha256": "75f6245fba46669aa2ad1cb2bab5812af24423b42abbd597ddd4e39f1467f654",
+      "triangles": 18488
+    }
+  ]
+}

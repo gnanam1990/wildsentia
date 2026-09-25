@@ -3,3 +3,13 @@ dist
 .git
 *.tsbuildinfo
 docs
+.ci-artifacts
+.local-preview
+.env
+deploy/.env
+snapshots
+soak-output
+tools
+scripts
+**/test
+**/dist

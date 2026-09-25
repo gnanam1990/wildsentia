@@ -39,6 +39,11 @@ export const FOREST_FLOOR: Record<string, number> = {
   jackal: 6, vulture: 4,
 };
 
+/** Development island founding cohort, not a validated long-term carrying capacity. No rescue floors. */
+export const ISLAND_POPULATION: Record<string, number> = Object.fromEntries(
+  Object.entries(FOREST_POPULATION).map(([id, count]) => [id, Math.max(2, Math.round(count * 0.45))]),
+);
+
 /**
  * The forest is a thirty-six square kilometre window onto a larger one. Animals cross its edge
  * in proportion to how far it is from the density of the country around it (FOREST_POPULATION,

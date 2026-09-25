@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
 import { createPool } from '../src/db/pool.js';
@@ -6,6 +6,8 @@ import { migrate } from '../src/db/migrate.js';
 import { SimHost } from '../src/simHost.js';
 import { buildApi } from '../src/api.js';
 import { testDatabaseUrl } from './testDatabase.js';
+import { makeCarcass } from '@vana/sim';
+import { positionInPatch, type EncounterTrace } from '@vana/shared';
 
 const url = testDatabaseUrl();
 const maybe = url ? describe : describe.skip;
@@ -13,12 +15,13 @@ const pool = url ? createPool(url) : null;
 const speciesDir = fileURLToPath(new URL('../../../config/species', import.meta.url));
 
 let api: FastifyInstance;
+let host: SimHost;
 
 beforeAll(async () => {
   if (!url) return;
   await migrate(pool!);
-  await pool!.query('truncate events, snapshots, follows, viewers, tracks, animal_archive cascade');
-  const host = new SimHost({
+  await pool!.query('truncate events, snapshots, human_motion, follows, viewers, tracks, animal_archive cascade');
+  host = new SimHost({
     pool: pool!, seed: 3, speciesDir,
     initialAgents: { sambar: 12 }, minPopulation: { sambar: 12 }, landscape: null,
   });
@@ -28,13 +31,82 @@ beforeAll(async () => {
   await api.ready();
 });
 
-afterAll(async () => { await api?.close(); await pool?.end(); });
+afterAll(async () => { await api?.close(); await host?.abort(); await pool?.end(); });
 
 maybe('read API', () => {
   it('reports health', async () => {
     const res = await api.inject({ method: 'GET', url: '/health' });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toMatchObject({ ok: true });
+    expect(res.json()).toMatchObject({ ok: true, worldTime: host.checkpointTime });
+  });
+
+  it('reports only durable time while an hour is still in flight', async () => {
+    const saved = host.checkpointTime;
+    const current = vi.spyOn(host.world, 'now').mockReturnValue(saved! + 3600);
+    try {
+      const res = await api.inject('/health');
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ ok: true, worldTime: saved });
+    } finally { current.mockRestore(); }
+  });
+
+  it('marks a listening but stalled world unhealthy until a new durable checkpoint', async () => {
+    const later = Date.now() + 16 * 60_000;
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(later);
+    try {
+      expect((await api.inject('/health')).statusCode).toBe(503);
+      expect((await api.inject('/health')).json().ok).toBe(false);
+      const world = await api.inject('/world');
+      expect(world.statusCode).toBe(503);
+      expect(world.json()).toEqual({ error: 'checkpoint_history_unavailable' });
+      expect(host.observation()).toBeNull();
+      expect(host.rewardSubject(host.world.agents[0]!.id)).toBeNull();
+    } finally { clock.mockRestore(); }
+    await host.snapshotNow();
+    expect((await api.inject('/health')).statusCode).toBe(200);
+  });
+
+  it('maps recorded events, excluding routine activity and events beyond the durable checkpoint', async () => {
+    const until = host.checkpointTime!;
+    const fixture = { simVersion: 'test', patchId: 0, actors: [host.world.agents[0]!.id], conditions: {},
+      outcome: 'success' as const, effects: {}, causalParents: [], confidence: 'authoritative' as const };
+    const shown = host.world.log.append({ ...fixture, type: 'born', worldTime: until });
+    const future = host.world.log.append({ ...fixture, type: 'died', worldTime: until + 3600 });
+    await host.flush();
+    expect((await api.inject('/event-map')).json().markers.some((e: { id: string }) => e.id === shown.id)).toBe(false);
+    await host.snapshotNow();
+    const res = await api.inject('/event-map');
+    expect(res.statusCode).toBe(200); expect(res.headers['cache-control']).toBe('no-store');
+    expect(res.json().markers).toContainEqual(expect.objectContaining({ id: shown.id, type: 'born', precision: 'patch' }));
+    expect(res.json().markers.some((e: { id: string }) => e.id === future.id)).toBe(false);
+    expect(res.json().markers.length).toBeLessThanOrEqual(100);
+    expect(res.json().worldTime).toBe(until);
+  });
+
+  it('reports a failed scheduled tick without exposing its internal error', async () => {
+    host.lastError = 'private database connection details';
+    try {
+      const res = await api.inject({ method: 'GET', url: '/health' });
+      expect(res.statusCode).toBe(503);
+      expect(res.json().ok).toBe(false);
+      expect(res.body).not.toContain('private');
+    } finally { host.lastError = null; }
+  });
+
+  it('exposes authoritative terrain time and renderable carcasses without a write route', async () => {
+    const patches = (await api.inject({ method: 'GET', url: '/patches' })).json();
+    expect(patches.worldTime).toBe(host.world.now());
+    const corpse = makeCarcass('test-corpse', 'test-origin', 'sambar', 1, host.world.now(), 'natural', 'authoritative', 100);
+    corpse.position = { x: 310, z: 20, heading: 1 };
+    host.world.carcasses.push(corpse);
+    try {
+      expect((await api.inject('/carcasses')).json().carcasses.some((c: { id: string }) => c.id === corpse.id)).toBe(false);
+      await host.snapshotNow();
+      const body = (await api.inject({ method: 'GET', url: '/carcasses' })).json();
+      expect(body.carcasses).toContainEqual(expect.objectContaining({ originId: 'test-origin', speciesId: 'sambar', patchId: 1, decayStage: 1, sizeRatio: expect.any(Number) }));
+      expect(body.carcasses.find((c: { id: string }) => c.id === corpse.id).position).toEqual(corpse.position);
+      expect((await api.inject({ method: 'POST', url: '/carcasses' })).statusCode).toBe(404);
+    } finally { host.world.carcasses.splice(host.world.carcasses.indexOf(corpse), 1); await host.snapshotNow(); }
   });
 
   it('describes the world clock and season', async () => {
@@ -51,9 +123,31 @@ maybe('read API', () => {
     expect(body.animals).toHaveLength(12);
     expect(body.animals[0]).toHaveProperty('currentGoal');
     expect(body.animals[0]).toHaveProperty('drives');
+    for (const animal of body.animals) {
+      expect(positionInPatch(animal.position, animal.patchId)).toBe(true);
+      expect(animal.position).toEqual(host.world.agents.find((a) => a.id === animal.id)!.position);
+    }
+  });
+  it('reports only checkpointed modelled wound status in list and passport', async () => {
+    const agent = host.world.agents.find(a => a.alive)!;
+    const id = agent.id, now = host.world.now();
+    agent.wound = { kind: 'contact_injury', phase: 'open', sourceHuntEventId: 'hunt_fixture',
+      woundEventId: 'wounded_fixture', acquiredAt: now - 1, lastUpdatedAt: now,
+      severity: 0.4, recoveryRemainingHours: 80, infectionBudget: 1, mortalityBudget: 1 };
+    try {
+      expect((await api.inject('/animals')).json().animals.find((a: { id: string }) => a.id === id))
+        .not.toHaveProperty('woundStatus');
+      await host.snapshotNow();
+      expect((await api.inject('/animals')).json().animals.find((a: { id: string }) => a.id === id).woundStatus)
+        .toBe('open');
+      expect((await api.inject(`/animals/${id}/passport`)).json().woundStatus).toBe('open');
+      delete agent.wound;
+      await host.snapshotNow();
+      expect((await api.inject(`/animals/${id}/passport`)).json()).not.toHaveProperty('woundStatus');
+    } finally { delete agent.wound; await host.snapshotNow(); }
   });
 
-  it('gives a passport read entirely from live state and the event log', async () => {
+  it('gives a passport read entirely from checkpoint state and its event log', async () => {
     const list = (await api.inject({ method: 'GET', url: '/animals' })).json();
     const id = list.animals[0].id;
     const res = await api.inject({ method: 'GET', url: `/animals/${id}/passport` });
@@ -105,12 +199,34 @@ maybe('read API', () => {
       expect(life.track[i].worldTime).toBeGreaterThan(life.track[i - 1].worldTime);
     }
     expect(life.track[0]).toHaveProperty('patchId');
+    for (const point of life.track) expect(positionInPatch(point.position, point.patchId)).toBe(true);
+    expect(life.track.at(-1).position).toEqual(host.world.agents.find((a) => a.id === id)!.position);
     expect(Array.isArray(life.moments)).toBe(true);
   });
 
   it('refuses a life for an animal that never existed', async () => {
     const res = await api.inject({ method: 'GET', url: '/animals/nobody_0000/life' });
     expect(res.statusCode).toBe(404);
+  });
+
+  it('returns the same paired trajectory and recorded species through durable life history', async () => {
+    const prey = host.world.agents[0]!;
+    const trace: EncounterTrace = { version: 1, predatorId: 'fixture-predator', preyId: prey.id,
+      patchId: 0, startWorldTime: host.world.now() - 2, contactRadiusM: 1,
+      samples: [
+        { seconds: 0, phase: 'approach', predator: { x: 0, z: 0, heading: 0 }, prey: { x: 10, z: 0, heading: 0 } },
+        { seconds: 2, phase: 'escape', predator: { x: 1, z: 0, heading: 0 }, prey: { x: 20, z: 0, heading: 0 } },
+      ] };
+    const event = host.world.log.append({ type: 'hunt', worldTime: host.world.now(), simVersion: '',
+      patchId: 0, actors: ['fixture-predator', prey.id], conditions: { predatorSpecies: 'tiger', preySpecies: 'sambar', stage: 'escaped' },
+      outcome: 'failure', effects: {}, causalParents: [], confidence: 'authoritative', encounter: trace });
+    await host.flush();
+    expect((await api.inject(`/animals/${prey.id}/life`)).json().encounters.some((e: { eventId: string }) => e.eventId === event.id)).toBe(false);
+    await host.snapshotNow();
+    const response = await api.inject({ method: 'GET', url: `/animals/${prey.id}/life` });
+    expect(response.json().encounters).toContainEqual({ eventId: event.id, outcome: 'failure',
+      predatorSpecies: 'tiger', preySpecies: 'sambar', trace });
+    expect((await api.inject({ method: 'POST', url: `/animals/${prey.id}/life` })).statusCode).toBe(404);
   });
 
   it('refuses a passport for an animal that never existed', async () => {

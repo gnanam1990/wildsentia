@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="referrer" content="no-referrer" />
+  <title>Vana — Social outbox</title>
+  <link rel="stylesheet" href="/src/style.css" />
+  <link rel="stylesheet" href="/src/socialAdmin.css" />
+</head>
+<body class="social-admin">
+  <a class="social-skip" href="#social-main">Skip to outbox</a>
+  <header class="social-topbar">
+    <a href="/">Vana forest</a>
+    <span>Private editorial workspace</span>
+  </header>
+  <main id="social-main">
+    <div class="social-intro">
+      <p class="social-eyebrow">Vana / observer stories</p>
+      <h1>Social outbox</h1>
+      <p>Grounded updates from saved forest events. Review each draft before sharing anything outside Vana.</p>
+    </div>
+    <aside class="social-boundary" aria-label="Publication boundary">
+      <strong>Private by default.</strong> Approval is editorial status, not publication. Manual export stays available;
+      X posting is only possible when separately configured on the server and explicitly confirmed for one exact draft.
+      Non-empty export page retrievals are server-audited; clipboard use and local downloads are not publication.
+    </aside>
+    <form id="social-login" class="social-login">
+      <h2>Unlock this tab</h2>
+      <label for="social-token">Separate social administrator token</label>
+      <input id="social-token" type="password" required minlength="32" maxlength="256" autocomplete="off"
+        aria-describedby="social-token-help" />
+      <p id="social-token-help">Token stays in this tab’s memory. Paste is allowed; it is never saved by this page.</p>
+      <button type="submit">Unlock outbox</button>
+    </form>
+    <div id="social-status" class="social-status" role="status" aria-live="polite" aria-atomic="true"></div>
+    <div id="social-work" hidden>
+      <div class="social-toolbar">
+        <div>
+          <strong>Private outbox</strong>
+          <span>Event-backed text · external posting disabled unless separately configured</span>
+        </div>
+        <div class="social-actions">
+          <button id="social-refresh" type="button">Refresh all</button>
+          <button id="social-lock" type="button">Lock tab</button>
+        </div>
+      </div>
+      <nav class="social-nav" aria-label="Outbox sections">
+        <a href="#social-candidates">Event candidates</a>
+        <a href="#social-drafts">Editorial queue</a>
+        <a href="#social-export">Approved export</a>
+        <a href="#social-audit">Audit history</a>
+        <a href="#social-export-audit">Export access</a>
+      </nav>
+      <div class="social-grid">
+        <section id="social-candidates" class="social-section" aria-labelledby="social-candidates-title">
+          <div class="social-section-head"><div><p class="social-step">01 / Discover</p><h2 id="social-candidates-title">Saved event candidates</h2></div></div>
+          <p>Only authoritative events at a committed checkpoint. Choosing an event creates a private template, not a post.</p>
+          <p id="social-candidates-status" class="social-section-status" role="status"></p>
+          <div id="social-candidates-list" class="social-list"></div>
+          <div class="social-pages"><button id="social-candidates-newer" type="button" hidden>Newer events</button><span id="social-candidates-page"></span><button id="social-candidates-older" type="button" hidden>Older events</button></div>
+        </section>
+        <section id="social-drafts" class="social-section" aria-labelledby="social-drafts-title">
+          <div class="social-section-head"><div><p class="social-step">02 / Moderate</p><h2 id="social-drafts-title">Editorial queue</h2></div></div>
+          <p>Approve or reject new drafts with an audit note. Approved drafts can be revoked; stale source data fails closed.</p>
+          <p id="social-drafts-status" class="social-section-status" role="status"></p>
+          <div id="social-drafts-list" class="social-list"></div>
+          <div class="social-pages"><button id="social-drafts-newer" type="button" hidden>Newer drafts</button><span id="social-drafts-page"></span><button id="social-drafts-older" type="button" hidden>Older drafts</button></div>
+        </section>
+        <section id="social-export" class="social-section" aria-labelledby="social-export-title">
+          <div class="social-section-head"><div><p class="social-step">03 / Export</p><h2 id="social-export-title">Approved dry-run text</h2></div></div>
+          <p>Copy or download approved text. If an X account is configured, review the exact outgoing post and account before a one-shot publish attempt. An uncertain result must be reconciled, never resent.</p>
+          <button id="social-download" type="button" disabled>Download this page’s JSON</button>
+          <p id="social-export-status" class="social-section-status" role="status"></p>
+          <div id="social-export-list" class="social-list"></div>
+          <div class="social-pages"><button id="social-export-newer" type="button" hidden>Newer approved</button><span id="social-export-page"></span><button id="social-export-older" type="button" hidden>Older approved</button></div>
+        </section>
+        <section id="social-audit" class="social-section" aria-labelledby="social-audit-title">
+          <div class="social-section-head"><div><p class="social-step">04 / Reconcile</p><h2 id="social-audit-title">Editorial audit</h2></div></div>
+          <p>Server records generation, approval, rejection and revocation. This is not a publication or clipboard-access log.</p>
+          <p id="social-audit-status" class="social-section-status" role="status"></p>
+          <div id="social-audit-list" class="social-list"></div>
+          <div class="social-pages"><button id="social-audit-newer" type="button" hidden>Newer changes</button><span id="social-audit-page"></span><button id="social-audit-older" type="button" hidden>Older changes</button></div>
+        </section>
+        <section id="social-export-audit" class="social-section" aria-labelledby="social-export-audit-title">
+          <div class="social-section-head"><div><p class="social-step">05 / Reconcile access</p><h2 id="social-export-audit-title">Export retrieval audit</h2></div></div>
+          <p>Private record of non-empty approved export pages fetched. Identical retries share one record with a fetch count. No text, wallet or token is shown here; retrieval is not proof of copying, downloading or posting.</p>
+          <p id="social-export-audit-status" class="social-section-status" role="status"></p>
+          <div id="social-export-audit-list" class="social-list"></div>
+          <div class="social-pages"><button id="social-export-audit-newer" type="button" hidden>Newer access</button><span id="social-export-audit-page"></span><button id="social-export-audit-older" type="button" hidden>Older access</button></div>
+        </section>
+      </div>
+    </div>
+  </main>
+  <dialog id="social-review" class="social-review" aria-labelledby="social-review-title">
+    <form id="social-review-form" novalidate>
+      <p class="social-step">Editorial decision</p>
+      <h2 id="social-review-title"></h2>
+      <p id="social-review-copy" class="social-review-copy"></p>
+      <label for="social-review-note">Audit note (5–240 characters; no secrets)</label>
+      <textarea id="social-review-note" required minlength="5" maxlength="240" rows="3" aria-describedby="social-review-error"></textarea>
+      <p id="social-review-error" class="social-error" role="alert"></p>
+      <label class="social-check"><input id="social-review-check" type="checkbox" required /> I checked the saved-event wording and understand this does not publish it.</label>
+      <div class="social-dialog-actions">
+        <button id="social-review-cancel" type="button">Cancel</button>
+        <button id="social-review-submit" type="submit">Confirm decision</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="social-x-dialog" class="social-review" aria-labelledby="social-x-title">
+    <h2 id="social-x-title">X publication</h2>
+    <p id="social-x-account" class="social-meta"></p>
+    <label for="social-x-text">Exact outgoing post</label>
+    <textarea id="social-x-text" readonly rows="5"></textarea>
+    <p id="social-x-state" role="status" aria-live="polite"></p>
+    <div id="social-x-publish-controls">
+      <label class="social-check"><input id="social-x-check" type="checkbox" /> I authorize one attempt to publish this exact text from the account above. A timeout may still have posted it.</label>
+      <button id="social-x-publish" type="button" disabled>Publish once to X</button>
+    </div>
+    <div id="social-x-reconcile-controls" hidden>
+      <label for="social-x-post-id">X post ID for read-only verification</label>
+      <input id="social-x-post-id" inputmode="numeric" pattern="[0-9]{1,30}" autocomplete="off" aria-describedby="social-x-error" />
+      <button id="social-x-reconcile" type="button">Verify and reconcile</button>
+    </div>
+    <p id="social-x-error" class="social-error" role="alert"></p>
+    <div class="social-dialog-actions"><button id="social-x-close" type="button">Close</button></div>
+  </dialog>
+  <script type="module" src="/src/socialAdmin.ts"></script>
+</body>
+</html>

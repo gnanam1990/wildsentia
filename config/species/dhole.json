@@ -67,6 +67,9 @@
       9
     ],
     "alarmSharing": true,
+    "cooperativeCare": { "donorFromDays": 330, "recipientFromDays": 21, "capacityBodyFraction": 0.08,
+      "collectionBodyFractionPerHour": 0.05, "deliveryBodyFractionPerHour": 0.05,
+      "retentionHours": 6, "moistureLPerKg": 0.65 },
     "territory": {
       "femaleKm2": 40,
       "maleKm2": 40,

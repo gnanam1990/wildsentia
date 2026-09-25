@@ -14,6 +14,48 @@ const animalsMsg = {
 };
 
 describe('WorldStore', () => {
+  it('copies valid reported positions and rejects invalid or wrong-patch precision', () => {
+    const store = new WorldStore(); const position = { x: 1500, z: 4, heading: 1 };
+    store.apply({ ...animalsMsg, animals: [{ ...animalsMsg.animals[0], position }] });
+    expect(store.animals.get('sambar_0000')!.position).toEqual(position);
+    position.x = 1550;
+    expect(store.animals.get('sambar_0000')!.position!.x).toBe(1500);
+    for (const invalid of [undefined, { x: NaN, z: 0, heading: 0 }, { x: 0, z: 0, heading: 0 }]) {
+      store.apply({ ...animalsMsg, animals: [{ ...animalsMsg.animals[0], position: invalid }] });
+      expect(store.animals.get('sambar_0000')!.position).toBeUndefined();
+    }
+  });
+  it('preserves authoritative growth and coat values without inventing missing values', () => {
+    const store = new WorldStore();
+    store.apply({ type: 'animals', animals: [{ ...animalsMsg.animals[0], sizeRatio: 0.125, coatVariant: 0.7, lifeStage: 'newborn' }] });
+    expect(store.animals.get('sambar_0000')).toMatchObject({ sizeRatio: 0.125, coatVariant: 0.7, lifeStage: 'newborn' });
+    store.apply(animalsMsg);
+    expect(store.animals.get('sambar_0000')!.sizeRatio).toBeUndefined();
+  });
+  it('exposes only reported active illness, never an inferred incubation or diagnosis', () => {
+    const store = new WorldStore();
+    store.apply({ type: 'animals', animals: [
+      { ...animalsMsg.animals[0], illnessStatus: 'symptomatic' },
+      { ...animalsMsg.animals[0], id: 'sambar_0001', illnessStatus: 'incubating' },
+    ] });
+    expect(store.animals.get('sambar_0000')!.illnessStatus).toBe('symptomatic');
+    expect(store.animals.get('sambar_0001')!.illnessStatus).toBeUndefined();
+    store.apply(animalsMsg);
+    expect(store.animals.get('sambar_0000')!.illnessStatus).toBeUndefined();
+  });
+  it('exposes only server-reported modelled wound phase and clears it on the next checkpoint', () => {
+    const store = new WorldStore();
+    store.apply({ type: 'animals', animals: [
+      { ...animalsMsg.animals[0], woundStatus: 'open' },
+      { ...animalsMsg.animals[0], id: 'sambar_0001', woundStatus: 'infected' },
+      { ...animalsMsg.animals[0], id: 'sambar_0002', woundStatus: 'healed' },
+    ] });
+    expect(store.animals.get('sambar_0000')!.woundStatus).toBe('open');
+    expect(store.animals.get('sambar_0001')!.woundStatus).toBe('infected');
+    expect(store.animals.get('sambar_0002')!.woundStatus).toBeUndefined();
+    store.apply(animalsMsg);
+    expect(store.animals.get('sambar_0000')!.woundStatus).toBeUndefined();
+  });
   it('starts empty', () => {
     const store = new WorldStore();
     expect(store.world).toBeNull();

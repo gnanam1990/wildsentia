@@ -6,7 +6,7 @@ import { isGrounded } from './grounding.js';
 export type Rephraser = (template: string) => Promise<{ text: string; tokens: number; model: string }>;
 
 /** Bump when the templates or the model prompt change, so old rewrites are not reused. */
-export const NARRATION_VERSION = 'n1';
+export const NARRATION_VERSION = 'n2-immutable-facts';
 
 /**
  * Events worth a model's attention. Everything else — and everything, when there is no model or
@@ -62,7 +62,7 @@ export class Narrator {
     const byId = new Map(events.map((e) => [e.id, e]));
     return lines.map((line) => {
       const hit = cached.get(line.eventId);
-      if (hit?.grounded) return { ...line, text: hit.text, narrated: true };
+      if (hit?.grounded && isGrounded(line.text, hit.text)) return { ...line, text: hit.text, narrated: true };
       const event = byId.get(line.eventId);
       // A folded line ("×3") is a summary of several events; leave it to its template.
       if (hit === undefined && event !== undefined && MAJOR.has(event.type) && !line.text.includes('×')) {

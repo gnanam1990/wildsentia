@@ -1,13 +1,18 @@
 /**
  * How each species is drawn. Heights are the shoulder heights in config/species; a model is
- * scaled so the animal stands that tall. A species with no suitable rigged model is drawn as a
- * plain stand-in in its own colour and size, and the passport says so — never as another
- * animal's model, which is how every elephant used to appear as a deer.
+ * scaled so the animal stands that tall. A species with no suitable model is drawn as a plain
+ * stand-in in its own colour and size, and the passport says so — never as another animal's
+ * model, which is how every elephant used to appear as a deer.
  */
+import type { AnimalState } from './protocol.js';
+
 export interface SpeciesVisual {
   heightM: number;
-  /** A rigged, animated model, or null when this species is drawn as a stand-in. */
-  model: { file: string; tint?: number } | null;
+  /**
+   * The species' model, or null when it is drawn as a stand-in. A model without animation clips
+   * is drawn static. `yaw` turns a model that was not authored facing +z to face it.
+   */
+  model: { file: string; tint?: number; yaw?: number; referenceHeightM?: number } | null;
   /** The stand-in's colour, and the colour on the map. */
   colour: number;
 }
@@ -21,17 +26,57 @@ export const SPECIES_VISUALS: Record<string, SpeciesVisual> = {
   jackal:   { heightM: 0.45, model: { file: '/assets/animals/Fox.glb', tint: 0xc9a67a }, colour: 0xa98a5f },
   // Gobkit Free Animal Pack B (CC0).
   boar:     { heightM: 0.85, model: { file: '/assets/animals/Boar.glb', tint: 0x5f5650 }, colour: 0x4b3f37 },
-  // No suitable rigged model yet. Drawn as stand-ins until one is added.
-  tiger:    { heightM: 1.0,  model: null, colour: 0xd9822b },
-  elephant: { heightM: 2.7,  model: null, colour: 0x7d7a76 },
-  langur:   { heightM: 0.6,  model: null, colour: 0xb9b3a8 },
-  squirrel: { heightM: 0.25, model: null, colour: 0x7a4a2a },
-  hare:     { heightM: 0.22, model: null, colour: 0x9c8466 },
-  vulture:  { heightM: 0.8,  model: null, colour: 0x3a3430 },
+  // Existing project-owned geometry, rigged locally. Not the blocked Sketchfab download.
+  tiger:    { heightM: 1.0,  model: { file: '/assets/animals/TigerRigged.glb' }, colour: 0xd9822b },
+  // OpenGameArt CC0 rigs. See credits: generic elephant; rabbit is a hare approximation.
+  elephant: { heightM: 2.7,  model: { file: '/assets/animals/ElephantWalking.glb' }, colour: 0x7d7a76 },
+  langur:   { heightM: 0.6,  model: { file: '/assets/animals/Langur.glb', referenceHeightM: 0.77 }, colour: 0xb9b3a8 },
+  squirrel: { heightM: 0.25, model: { file: '/assets/animals/Squirrel.glb', referenceHeightM: 0.42 }, colour: 0x7a4a2a },
+  hare:     { heightM: 0.22, model: { file: '/assets/animals/Rabbit.glb' }, colour: 0x9c8466 },
+  vulture:  { heightM: 0.8,  model: { file: '/assets/animals/Vulture.glb' }, colour: 0x3a3430 },
 };
 
 const UNKNOWN: SpeciesVisual = { heightM: 1, model: null, colour: 0x888888 };
 
 export function visualFor(speciesId: string): SpeciesVisual {
   return SPECIES_VISUALS[speciesId] ?? UNKNOWN;
+}
+
+/** Local interim Asian-elephant age/sex variants. Body-mass scale still comes
+ * from the saved animal; these only choose its visual geometry. */
+export function visualForAnimal(animal: Pick<AnimalState, 'speciesId' | 'sex' | 'lifeStage'>): SpeciesVisual {
+  if (animal.speciesId === 'elephant') {
+    if (animal.lifeStage === 'newborn' || animal.lifeStage === 'juvenile')
+      return { ...SPECIES_VISUALS.elephant!, model: { file: '/assets/animals/AsianElephantCalf.glb', yaw: Math.PI } };
+    if (animal.lifeStage === 'subadult')
+      return { ...SPECIES_VISUALS.elephant!, model: { file: '/assets/animals/AsianElephantAdultFemale.glb', yaw: Math.PI } };
+    if (animal.lifeStage === 'adult' || animal.lifeStage === 'elder') {
+      if (animal.sex === 'male') return { ...SPECIES_VISUALS.elephant!, model: { file: '/assets/animals/AsianElephantAdultMale.glb', yaw: Math.PI } };
+      if (animal.sex === 'female') return { ...SPECIES_VISUALS.elephant!, model: { file: '/assets/animals/AsianElephantAdultFemale.glb', yaw: Math.PI } };
+    }
+  }
+  return visualFor(animal.speciesId);
+}
+
+export function modelStatusForAnimal(animal: Pick<AnimalState, 'speciesId' | 'sex' | 'lifeStage'>): string {
+  if (visualForAnimal(animal).model?.file === '/assets/animals/AsianElephantCalf.glb')
+    return 'Detailed calf-proportion proxy · age-specific gait, true drinking and anatomical validation pending';
+  if (animal.speciesId === 'elephant' && animal.lifeStage === 'subadult')
+    return 'Tuskless subadult approximation · sex-specific proportions and gait pending';
+  if (visualForAnimal(animal).model?.file === '/assets/animals/AsianElephantAdultMale.glb')
+    return 'Detailed Asian-elephant adult-male rig · trunk reach illustrative; drinking and gait polish pending';
+  if (visualForAnimal(animal).model?.file === '/assets/animals/AsianElephantAdultFemale.glb')
+    return 'Tuskless adult-female approximation · trunk reach illustrative; female proportions and drinking pending';
+  return modelStatus(animal.speciesId);
+}
+
+/** Visible delivery status, separate from whether the species exists in the simulation. */
+export function modelStatus(speciesId: string): string {
+  if (visualFor(speciesId).model === null) return 'Placeholder · species rig pending';
+  if (speciesId === 'tiger') return 'Local tiger rig · authored motion; deformation polish pending';
+  if (speciesId === 'elephant') return 'Generic elephant rig · local walk added; gait polish pending';
+  if (speciesId === 'hare') return 'Animated rabbit approximation · exact hare art pending';
+  if (speciesId === 'boar') return 'Animated boar · detailed behaviour clips pending';
+  if (['langur', 'squirrel', 'vulture'].includes(speciesId)) return 'Local stylized rig · species-inspired; anatomical polish pending';
+  return 'Animated approximation · exact-species art pending';
 }

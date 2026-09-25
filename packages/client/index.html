@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
-  <canvas id="view"></canvas>
+  <canvas id="view" tabindex="0" aria-label="Live forest observer. Drag or W A S D to explore the island, arrow keys or Q and E to rotate, plus and minus to zoom. Tap an animal to track it."></canvas>
 
   <header class="bar">
     <div class="brand">Vana<small>the living wild</small></div>
@@ -15,11 +15,46 @@
     <span class="chip">season <b id="season">—</b></span>
     <span class="chip" id="population">—</span>
     <span class="spacer"></span>
-    <button id="freecam">free camera</button>
+    <label class="species-picker">Follow species <select id="species-picker"><option value="">Choose an animal</option></select></label>
+    <button id="freecam" title="Stop tracking and explore the whole island">explore island</button>
+    <button id="open-event-map">Event map</button>
+    <button id="open-community" aria-haspopup="dialog">Community</button>
+    <a href="/characters.html">Character review</a>
   </header>
+  <p id="observer-ui-status" role="status" aria-atomic="true"></p>
+  <section id="event-visit" aria-labelledby="event-visit-title" hidden>
+    <h2 id="event-visit-title"></h2>
+    <p id="event-visit-detail" role="status" aria-live="polite" aria-atomic="true"></p>
+    <div><button id="event-visit-map" type="button">Back to event map</button><button id="event-visit-clear" type="button">Clear marker</button></div>
+  </section>
 
   <aside class="panel" id="passport-panel">
+    <details class="observer-options">
+      <summary>View options</summary>
+      <label for="render-quality">Graphics quality</label>
+      <select id="render-quality" aria-describedby="render-quality-help">
+        <option value="auto">Auto (recommended)</option><option value="smooth">Smooth / low power</option>
+        <option value="balanced">Balanced</option><option value="high">High detail</option>
+      </select>
+      <p id="render-quality-help">Auto lowers detail if frame delivery stays slow. Grass, shadows and near-tree detail range change; animal and ecosystem state do not.</p>
+      <output id="render-quality-status" aria-live="polite"></output>
+      <button id="ambient-toggle" type="button" aria-pressed="false" aria-describedby="ambient-help">Ambient audio: off</button>
+      <p id="ambient-help">Off by default. Click to hear quiet, synthetic rain and nearby visible water from the current saved forest. No animal sounds or autoplay.</p>
+      <output id="ambient-status" role="status" aria-live="polite"></output>
+      <label><input id="observer-cutaway" type="checkbox" checked aria-describedby="observer-cutaway-help" /> Reveal followed subjects</label>
+      <p id="observer-cutaway-help">Fade decorative plants and rocks directly in front of the followed animal or person. Viewer-only: nature and shadows stay unchanged.</p>
+    </details>
+    <details class="live-encounters">
+      <summary>Recorded encounters</summary>
+      <p>Checkpointed hunts play on a shared timeline, behind the current world. Animation is illustrative.</p>
+      <label>Follow an encounter <select id="live-encounter-picker" disabled><option>No current recordings</option></select></label>
+      <label><input id="live-encounter-frame" type="checkbox" /> Frame both animals</label>
+    </details>
+    <p id="scene-status" role="status" aria-atomic="true">Connecting to the saved forest scene…</p>
+    <p id="live-encounter-status" role="status" aria-atomic="true" hidden></p>
+    <p id="community-motion-status" role="status" aria-atomic="true" hidden></p>
     <div id="passport"></div>
+    <div id="reward-subject"></div>
   </aside>
 
   <aside class="panel" id="feed-panel">
@@ -28,14 +63,29 @@
   </aside>
 
   <div id="thought" class="thought" hidden></div>
+  <button id="reward-badge" hidden aria-haspopup="dialog"></button>
+  <output id="reward-total">Reward totals loading…</output>
+  <div id="live-subject-label" class="encounter-label" hidden></div>
+  <div id="live-partner-label" class="encounter-label" hidden></div>
+  <div id="human-subject-label" class="encounter-label" hidden></div>
   <section id="replay" class="replay" hidden>
+    <strong>Recorded replay — the live forest keeps running</strong>
+    <p class="replay-status" role="status"></p>
+    <label>Recording <select id="replay-recording" disabled></select></label>
     <div class="when"></div>
     <div class="moment"></div>
-    <div class="progress"><i></i></div>
+    <details><summary>Recording limits</summary><p class="precision"></p></details>
+    <label>Playback position <input id="replay-seek" type="range" min="0" max="1000" value="0" step="1" disabled /></label>
+    <div class="replay-controls">
+      <button id="replay-play" disabled>Play</button>
+      <label>Speed <select id="replay-speed"><option value="1">1×</option><option value="4">4×</option><option value="16">16×</option></select></label>
     <button data-stop-replay>Back to live</button>
+    </div>
+    <label><input id="replay-autoframe" type="checkbox" checked /> Keep both animals framed</label>
   </section>
   <p id="notice"></p>
-  <p class="hint footer">drag to orbit · scroll to zoom · click an animal to follow it</p>
+  <output id="render-stats" hidden aria-label="Rendering diagnostics" aria-live="off"></output>
+  <p class="hint footer">drag to explore · right-drag or shift-drag to rotate · scroll or pinch to zoom · tap an animal to track it</p>
 
   <script type="module" src="/src/main.ts"></script>
 </body>

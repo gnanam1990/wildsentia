@@ -2,6 +2,7 @@ import { type Agent, type GoalId, type Rng, type SpeciesConfig } from '@vana/sha
 import { edibleMass } from '../fields/decomposition.js';
 import { goalsFor } from './archetypes.js';
 import type { Percept } from './perception.js';
+import { allowsDependentGoal, canDrinkIndependently, canEatMaternalMeat, canForageIndependently, canHuntIndependently, needsOf, needsProvisioning } from './needs.js';
 
 export interface GoalChoice {
   goal: GoalId;
@@ -10,6 +11,10 @@ export interface GoalChoice {
 }
 
 const NOISE = 0.05;
+// A mobile, pre-foraging dependent stays at a care rendezvous while already hydrated.
+// Otherwise noise can make water its only active goal at thirst ~0, repeatedly pulling it
+// away from nursing contact. This is a decision threshold, not a drinking-age claim.
+const DEPENDENT_WATER_SEARCH_THIRST = 0.2;
 
 /**
  * utility = drive x opportunity, plus bounded noise so identical animals diverge.
@@ -29,8 +34,9 @@ export function selectGoal(
   // Opportunity is measured against what this animal actually needs, not against a fixed
   // number of kilograms. A carcass that is a week's food for a vulture is a snack for a tiger,
   // and scoring both against the same threshold left the vulture wandering past its dinner.
-  const dailyNeed = Math.max(species.diet.dailyIntakeKg, 0.05);
-  const waterNeed = Math.max(species.diet.waterNeedLPerDay, 0.05);
+  const needs = needsOf(agent, species);
+  const dailyNeed = Math.max(needs.foodKg, 0.05);
+  const waterNeed = Math.max(needs.waterL, 0.05);
 
   const foodOpportunity = percept.bestFood
     ? Math.min(1, percept.bestFood.kg / (dailyNeed * 8)) : 0.05;
@@ -67,14 +73,28 @@ export function selectGoal(
     // Breeding is handled by the world before goals are scored, because it needs a partner
     // and the pedigree. This entry exists so the record is complete.
     breed: 0,
+    // Family coordination uses start-of-decision targets in the world, not noisy archetype scoring.
+    care_for_young: 0,
+    follow_parent: 0,
+    seek_nursing: 0,
+    collect_pack_food: 0, deliver_pack_food: 0, wait_for_pack_food: 0,
   };
 
-  // A dependant does not choose for itself. It stays with its mother and rests.
-  if (agent.dependentOn != null) {
-    return { goal: 'rest', score: 1, alternative: null };
+  // Orphanhood never unlocks abilities. Precocial plant foraging has a separate age gate.
+  if (needsProvisioning(agent, species) && !canForageIndependently(agent, species)
+    && !canDrinkIndependently(agent, species) && !canEatMaternalMeat(agent, species)) {
+    return { goal: d.fear > 0.5 && percept.threat !== null ? 'flee' : 'rest', score: 1, alternative: null };
   }
 
-  const allowed = goalsFor(species.archetype);
+  const allowed = goalsFor(species.archetype)
+    .filter((goal) => allowsDependentGoal(agent, species, goal))
+    .filter((goal) => goal !== 'find_water' || !needsProvisioning(agent, species)
+      || canForageIndependently(agent, species) || d.thirst >= DEPENDENT_WATER_SEARCH_THIRST)
+    .filter((goal) => goal !== 'flee' || !needsProvisioning(agent, species)
+      || canForageIndependently(agent, species) || percept.threat !== null || d.fear >= 0.5)
+    .filter((goal) => goal !== 'hunt' || canHuntIndependently(agent, species))
+    .filter((goal) => goal !== 'scavenge' || !needsProvisioning(agent, species)
+      || percept.carrion !== null);
   const ranked = allowed
     .map((goal) => ({ goal, score: all[goal] + rng.next() * NOISE }))
     .sort((a, b) => b.score - a.score);

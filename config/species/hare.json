@@ -62,6 +62,8 @@
     "learnRateFromParent": 0.01
   },
   "lifecycle": {
+    "forageFromDays": 8,
+    "nursing": { "startHour": 19, "windowHours": 4, "dailyContactSeconds": 300, "locomotionFromDays": 0.041666666666666664 },
     "maxAgeDays": 1500,
     "baselineMortalityPerDay": 0.0016,
     "stages": [

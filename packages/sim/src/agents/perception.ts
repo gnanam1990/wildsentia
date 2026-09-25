@@ -1,5 +1,6 @@
-import { GRID_SIZE, PATCH_METRES, type Agent, type Carcass, type Patch, type SpeciesConfig } from '@vana/shared';
+import { GRID_SIZE, PATCH_METRES, edibleMass, landWalkable, type Agent, type Carcass, type Patch, type SpeciesConfig } from '@vana/shared';
 import { confidenceOf } from './learning.js';
+import { canEatMaternalCarcass, needsOf, needsProvisioning } from './needs.js';
 
 /** What the behaviour layer is allowed to ask the world. Agents never read global state. */
 export interface WorldView {
@@ -7,6 +8,8 @@ export interface WorldView {
   agentsInPatch(patchId: number): readonly Agent[];
   carcassesInPatch(patchId: number): readonly Carcass[];
   speciesOf(speciesId: string): SpeciesConfig;
+  /** Production O(1) identity lookup; array-backed test views may omit it. */
+  agentById?(id: string): Agent | undefined;
   /** Where a group currently is, so a separated member can rejoin it. Null if the group is gone. */
   groupPatch(groupId: string): number | null;
 }
@@ -28,7 +31,8 @@ const edibleKg = (patch: Patch, species: SpeciesConfig): number => {
   let kg = 0;
   for (const item of species.diet.eats) {
     if (item.target === 'grass') kg += patch.plant.grass * item.preference;
-    if (item.target === 'browse') kg += patch.plant.browse * item.preference;
+    if (item.target === 'browse') kg += (patch.plant.browse
+      + (patch.floweringGuild?.vegetativeKg ?? 0)) * item.preference;
   }
   return kg;
 };
@@ -61,7 +65,7 @@ export function perceptionRadius(config: SpeciesConfig): number {
 }
 
 function patchesWithin(patch: Patch, radius: number, patches: Patch[]): Patch[] {
-  if (radius <= 1) return [patch, ...patch.neighbours.map((id) => patches[id]!)];
+  if (radius <= 1) return [patch, ...patch.neighbours.map((id) => patches[id]!)].filter(landWalkable);
 
   const found: Patch[] = [];
   for (let dy = -radius; dy <= radius; dy++) {
@@ -73,7 +77,7 @@ function patchesWithin(patch: Patch, radius: number, patches: Patch[]): Patch[] 
       found.push(patches[y * GRID_SIZE + x]!);
     }
   }
-  return found;
+  return found.filter(landWalkable);
 }
 
 /**
@@ -82,7 +86,7 @@ function patchesWithin(patch: Patch, radius: number, patches: Patch[]): Patch[] 
  */
 export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView): Percept {
   const patch = view.patches[agent.patchId]!;
-  const neighbours = patch.neighbours.map((id) => view.patches[id]!);
+  const neighbours = patch.neighbours.map((id) => view.patches[id]!).filter(landWalkable);
   const visible = patchesWithin(patch, perceptionRadius(species), view.patches);
 
   let bestFood: Percept['bestFood'] = null;
@@ -112,7 +116,10 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
         bySpecies.set(other.speciesId, (bySpecies.get(other.speciesId) ?? 0) + 1);
       }
       for (const other of occupants) {
-        if (!other.alive || other.id === agent.id || !preferred.has(other.speciesId)) continue;
+        // The current hunt solver is planar: it cannot make physical contact with an
+        // animal on an exact tree anchor above ground. No general invulnerability is implied.
+        if (!other.alive || other.id === agent.id || !preferred.has(other.speciesId)
+          || (other.altitudeM ?? 0) > 0) continue;
         prey.push({ agent: other, patchId: p.id, herdSize: bySpecies.get(other.speciesId) ?? 1 });
       }
     }
@@ -133,8 +140,9 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
   // surroundings bare and starved walking in circles with pasture two kilometres off, and
   // elephants died of thirst beside a lake they could not see. Animals know their range better
   // than their senses reach, so when nothing in view will do they head for what they remember.
-  const dailyNeed = Math.max(species.diet.dailyIntakeKg, 0.05);
-  const waterNeed = Math.max(species.diet.waterNeedLPerDay, 0.05);
+  const needs = needsOf(agent, species);
+  const dailyNeed = Math.max(needs.foodKg, 0.05);
+  const waterNeed = Math.max(needs.waterL, 0.05);
   const grazes = species.diet.eats.some((e) => e.target === 'grass' || e.target === 'browse');
   const needFood = grazes && (bestFood === null || bestFood.kg < dailyNeed);
   const needWater = bestWater === null || bestWater.litres < waterNeed;
@@ -173,7 +181,7 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
   if (species.diet.canScavenge) {
     const sightPatches = Math.round(species.senses.sightRangeM / PATCH_METRES);
     const reach = Math.min(MAX_PERCEPTION_RADIUS, Math.max(CARRION_SEARCH_RADIUS, sightPatches));
-    const enough = Math.max(species.diet.dailyIntakeKg, 0.05) * 2;
+    const enough = dailyNeed * 2;
     let bestWorth = 0;
     for (const p of patchesWithin(patch, reach, view.patches)) {
       const steps = Math.abs(p.x - patch.x) + Math.abs(p.y - patch.y);
@@ -185,10 +193,12 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
         && (view.speciesOf(other.speciesId).hunting?.preferredPrey ?? []).includes(agent.speciesId));
       if (guarded) continue;
       for (const candidate of view.carcassesInPatch(p.id)) {
+        if (needsProvisioning(agent, species)
+          && !canEatMaternalCarcass(agent, species, candidate, view)) continue;
         const smelt = distanceM <= candidate.scentRadiusM + species.senses.smellRangeM;
         const seen = distanceM <= species.senses.sightRangeM;
         if (!smelt && !seen) continue;
-        const edible = candidate.biomass.muscle + candidate.biomass.organ;
+        const edible = edibleMass(candidate.biomass);
         const worth = Math.min(edible, enough) / (1 + steps);
         if (worth <= bestWorth) continue;
         bestWorth = worth;

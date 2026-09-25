@@ -28,6 +28,26 @@ describe('expectedExchange', () => {
 });
 
 describe('World landscape exchange', () => {
+  it('does not orphan dependent young through regional emigration', () => {
+    const world = createWorld({ seed: 4, speciesDir, initialAgents: { sambar: 3 }, minPopulation: {},
+      landscape: { regional: { sambar: 0 }, exchangePerDay: 48 } });
+    const [mother, child, independent] = world.agents;
+    for (const a of world.agents) {
+      a.patchId = 0; a.sex = 'male'; a.ageDays = 1000; a.lifeStage = 'adult';
+      a.drives = { hunger: 0.1, thirst: 0.1, fatigue: 0.9, fear: 0 };
+    }
+    mother!.offspringIds = [child!.id];
+    child!.motherId = mother!.id; child!.dependentOn = mother!.id;
+    child!.ageDays = 5; child!.lifeStage = 'newborn';
+    const baseline = world.totalNutrients();
+    world.step(1);
+    expect(independent!.state).toBe('emigrated'); // prove exchange actually happened
+    expect(mother!.alive).toBe(true); expect(child!.alive).toBe(true);
+    expect(child!.dependentOn).toBe(mother!.id);
+    expect(world.log.all().filter((e) => e.type === 'emigration').map((e) => e.actors[0]))
+      .toEqual([independent!.id]);
+    assertNutrientsConserved(baseline, world.totalNutrients(), 1e-2);
+  });
   // Thirty-six square kilometres is a window onto a larger forest, not a sealed box. Animals
   // walk in where this stretch is thinner than the country around it and out where it is
   // thicker, which is what keeps a small reserve from emptying or overflowing.

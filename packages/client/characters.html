@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Vana — Character review</title>
+  <link rel="stylesheet" href="/src/characters.css" />
+</head>
+<body>
+  <main>
+    <section class="review">
+      <a href="/">← Live forest</a>
+      <p class="eyebrow">VANA / ART WORKBENCH</p>
+      <h1>Meet the inhabitants.</h1>
+      <p class="intro">Actual shipped characters and their animation coverage. This isolated art preview does not control or change the shared forest.</p>
+      <label for="species">Species</label><select id="species"></select>
+      <p id="status" role="status"></p>
+      <label for="clip">Animation clip</label><select id="clip"></select>
+      <div class="buttons"><button id="pause">Pause animation</button><button id="reset">Reset camera</button></div>
+      <h2>Asset inspection</h2><p id="details">Loading…</p>
+      <div class="buttons"><button id="rotate">Rotate view</button><button id="zoom">Zoom in / out</button></div>
+      <p class="muted">Drag to orbit · scroll to zoom. Imported and locally authored clips are visual approximations, not proof of simulated behaviour. See the status above for remaining art work.</p>
+      <a href="/assets/ASSET-CREDITS.md">Sources & licences</a>
+    </section>
+    <section class="stage"><canvas id="character" aria-label="Three-dimensional animal preview"></canvas><p class="stage-label">ART PREVIEW · NOT LIVE SIMULATION</p></section>
+  </main>
+  <script type="module" src="/src/characters.ts"></script>
+</body>
+</html>

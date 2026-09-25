@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { clipForState } from '../src/animation.js';
+import * as THREE from 'three';
+import { clipForClimbPhase, clipForObservedMotion, clipForState, elephantTrunkReach, renderStateFor } from '../src/animation.js';
 
 const DEER_CLIPS = [
   'Attack_Headbutt', 'Attack_Kick', 'Death', 'Eating', 'Gallop', 'Gallop_Jump',
@@ -7,8 +8,55 @@ const DEER_CLIPS = [
 ];
 
 describe('clipForState', () => {
+  it('uses recorded vulture ascent/descent for Flap and level flight for Glide only', () => {
+    const clips = ['Idle', 'Walk', 'Flap', 'Glide'];
+    expect(clipForObservedMotion('travelling', clips, 'ascending')).toBe('Flap');
+    expect(clipForObservedMotion('travelling', clips, 'gliding')).toBe('Glide');
+    expect(clipForObservedMotion('travelling', clips, 'descending')).toBe('Flap');
+    expect(clipForObservedMotion('travelling', clips)).toBe('Walk');
+    expect(clipForObservedMotion('travelling', clips, null, true)).toBeNull();
+    expect(clipForObservedMotion('travelling', ['Idle', 'Walk'], 'ascending')).toBeNull();
+  });
+  it('uses a real climb clip if present or neutral idle, never a walking gait in the trunk', () => {
+    expect(clipForClimbPhase('ascending', ['Walk', 'Idle', 'ClimbUp'])).toBe('ClimbUp');
+    expect(clipForClimbPhase('descending', ['Walk', 'Idle', 'ClimbDown'])).toBe('ClimbDown');
+    expect(clipForObservedMotion('travelling', ['Idle', 'Walk'], null, false, 'ascending')).toBe('Idle');
+    expect(clipForObservedMotion('fleeing', ['Walk', 'Run'], null, false, 'descending')).toBeNull();
+    expect(clipForObservedMotion('travelling', ['Idle', 'Walk'], null, true)).toBeNull();
+    expect(clipForObservedMotion('travelling', ['Idle', 'Walk'])).toBe('Walk');
+  });
+  it('prefers locally authored state-specific clips', () => {
+    const clips = ['Idle', 'Walk', 'Gallop', 'Run', 'Sneak', 'Drinking', 'Eating', 'Injured'];
+    expect(clipForState('stalking', clips)).toBe('Sneak');
+    expect(clipForState('chasing', clips)).toBe('Run');
+    expect(clipForState('fleeing', clips)).toBe('Run');
+    expect(clipForState('drinking', clips)).toBe('Drinking');
+    expect(clipForState('injured', clips)).toBe('Injured');
+  });
+  it('preserves authoritative hunt and death states during patch interpolation', () => {
+    for (const state of ['stalking', 'chasing', 'fleeing', 'dead']) {
+      expect(renderStateFor(state, true)).toBe(state);
+      expect(renderStateFor(state, false)).toBe(state);
+    }
+    expect(renderStateFor('grazing', true)).toBe('travelling');
+    expect(renderStateFor('grazing', false)).toBe('grazing');
+  });
   it('grazes with the eating clip, not a walk cycle', () => {
     expect(clipForState('grazing', DEER_CLIPS)).toBe('Eating');
+  });
+
+  it('uses a closed, illustrative trunk-ground reach when detailed elephant has no eating clip', () => {
+    const source = new THREE.AnimationClip('SprayWater', 1, [
+      new THREE.NumberKeyframeTrack('trunk.position[y]', [0, .28, 1], [1, 0, 1]),
+    ]);
+    const reach = elephantTrunkReach(source);
+    expect(reach.name).toBe('TrunkReach');
+    expect(clipForState('grazing', ['Idle', reach.name])).toBe('TrunkReach');
+    expect(clipForState('drinking', ['Idle', reach.name])).toBe('TrunkReach');
+    const track = reach.tracks[0]!;
+    expect(track.values[0]).toBeCloseTo(track.values.at(-1)!, 6);
+    expect(Math.min(...track.values)).toBeCloseTo(0, 2);
+    expect(Array.from(track.values).every(Number.isFinite)).toBe(true);
   });
 
   it('travels with walk', () => {
@@ -25,6 +73,7 @@ describe('clipForState', () => {
 
   it('uses the death clip when dead', () => {
     expect(clipForState('dead', DEER_CLIPS)).toBe('Death');
+    expect(clipForState('dead', ['Idle', 'Walk'])).toBeNull();
   });
 
   it('falls back through the preference list when the preferred clip is absent', () => {
@@ -59,4 +108,3 @@ describe('clipForState', () => {
     expect(clipForState('dead', ['idle', 'walk', 'dead'])).toBe('dead');
   });
 });
-

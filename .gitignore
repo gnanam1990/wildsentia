@@ -4,3 +4,8 @@ dist/
 .env
 snapshots/
 soak-output/
+.ci-artifacts/
+.local-preview/
+/tools/assets/sources/humans-*/standard.zip
+/tools/assets/sources/humans-incomplete-v1/
+/tools/assets/sources/humans-review-v*/

@@ -7,14 +7,10 @@ const MODEL = 'claude-opus-5';
  * Stable across every call, so it caches: the whole of what the model is allowed to do.
  * It rewords; it never adds. The grounding check enforces what this asks for.
  */
-const SYSTEM = `You reword single lines from the life record of an animal in a simulated forest, for a
-nature-documentary voice. The line is a fact from the simulation's event log.
-
-Rules:
-- Keep every fact in the line. Add none: no new animals, numbers, times, places, causes, feelings
-  or motives that the line does not state.
-- Keep animal identifiers such as chital_0a3f exactly as written.
-- Reply with the reworded line only: one sentence, under 30 words, no quotation marks.`;
+const SYSTEM = `The supplied line is an immutable fact from a simulated animal's life record.
+Return the exact line unchanged, optionally preceded by exactly one neutral prefix:
+"Life record: ", "Observed: ", or "From the record: ".
+Do not rewrite, omit or add facts, words, identifiers or numbers. Output the line only.`;
 
 /**
  * The model behind the narrator. It sees one template line and returns a rewording; it has no

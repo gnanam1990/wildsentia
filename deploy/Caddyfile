@@ -1,0 +1,22 @@
+{$VANA_DOMAIN} {
+  encode zstd gzip
+
+  header {
+    X-Content-Type-Options nosniff
+    Referrer-Policy no-referrer
+    X-Frame-Options DENY
+  }
+
+  handle_path /api/* {
+    reverse_proxy server:8080
+  }
+
+  handle /live {
+    reverse_proxy server:8080
+  }
+
+  handle {
+    root * /srv
+    file_server
+  }
+}

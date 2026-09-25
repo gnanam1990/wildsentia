@@ -11,6 +11,33 @@ const ARCHETYPES = new Set([
 ]);
 
 describe('species config', () => {
+  it('bounds optional early plant foraging and does not unlock it for meat-only eaters', () => {
+    const hare = species.get('hare')!, dhole = species.get('dhole')!, boar = species.get('boar')!;
+    expect(hare.lifecycle.forageFromDays).toBe(8);
+    expect(boar.lifecycle.forageFromDays).toBe(21);
+    expect(parseSpecies(boar).lifecycle.forageFromDays).toBe(21);
+    for (const age of [-1, Infinity, hare.lifecycle.weanDays + 1]) {
+      expect(() => parseSpecies({ ...hare, lifecycle: { ...hare.lifecycle, forageFromDays: age } })).toThrow();
+    }
+    expect(() => parseSpecies({ ...dhole, lifecycle: { ...dhole.lifecycle, forageFromDays: 8 } })).toThrow();
+    expect(dhole.lifecycle.forageFromDays).toBeUndefined();
+  });
+  it('keeps early drinking distinct from solids and bounds it by weaning', () => {
+    const boar = species.get('boar')!, dhole = species.get('dhole')!;
+    expect(boar.lifecycle).toMatchObject({ drinkFromDays: 10, followFromDays: 10, forageFromDays: 21, weanDays: 90 });
+    for (const age of [-1, Infinity, boar.lifecycle.weanDays + 1]) {
+      expect(() => parseSpecies({ ...boar, lifecycle: { ...boar.lifecycle, drinkFromDays: age } })).toThrow();
+    }
+    expect(dhole.lifecycle.drinkFromDays).toBeUndefined();
+  });
+  it('bounds early meat access to scavenging meat eaters and the weaning window', () => {
+    const tiger = species.get('tiger')!, hare = species.get('hare')!;
+    expect(tiger.lifecycle).toMatchObject({ meatFromDays: 70, drinkFromDays: 70, weanDays: 180 });
+    for (const age of [-1, Infinity, tiger.lifecycle.weanDays + 1]) {
+      expect(() => parseSpecies({ ...tiger, lifecycle: { ...tiger.lifecycle, meatFromDays: age } })).toThrow();
+    }
+    expect(() => parseSpecies({ ...hare, lifecycle: { ...hare.lifecycle, meatFromDays: 70 } })).toThrow();
+  });
   it('loads the full twelve-species roster', () => {
     expect(species.size).toBe(12);
     for (const id of ['tiger', 'dhole', 'sambar', 'chital', 'gaur', 'elephant',

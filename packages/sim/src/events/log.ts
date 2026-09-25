@@ -1,4 +1,4 @@
-import { createRng, type Rng, type WorldEvent } from '@vana/shared';
+import { positionInPatch, type WorldEvent } from '@vana/shared';
 
 export interface EventLogOptions {
   /**
@@ -15,21 +15,28 @@ export interface EventLogOptions {
 export class EventLog {
   readonly #events: WorldEvent[] = [];
   readonly #byActor = new Map<string, WorldEvent[]>();
-  readonly #rng: Rng;
+  readonly #namespace: string;
+  #sequence = 0;
   readonly #simVersion: string;
   readonly #retain: number | 'all';
   #total = 0;
 
   constructor(seed: number, simVersion: string, options: EventLogOptions = {}) {
-    this.#rng = createRng(seed, 'events');
+    this.#namespace = (seed >>> 0).toString(16).padStart(8, '0');
     this.#simVersion = simVersion;
     this.#retain = options.retain ?? 'all';
   }
 
   append(event: Omit<WorldEvent, 'id'>): WorldEvent {
-    const suffix = Math.floor(this.#rng.next() * 0xffffffff).toString(16).padStart(8, '0');
+    if (event.position !== undefined && !positionInPatch(event.position, event.patchId)) {
+      throw new Error('event position must be finite and inside its recorded patch');
+    }
+    if (!Number.isSafeInteger(this.#sequence + 1)) throw new Error('event sequence exhausted');
+    // Longer than legacy eight-hex RNG IDs, so old snapshots can migrate without collisions.
+    const suffix = this.#namespace + (this.#sequence++).toString(16).padStart(16, '0');
     const full: WorldEvent = Object.freeze({
       ...event,
+      ...(event.position === undefined ? {} : { position: Object.freeze({ ...event.position }) }),
       simVersion: this.#simVersion,
       id: `${event.type}_${suffix}`,
     });
@@ -60,7 +67,15 @@ export class EventLog {
    * storage without the buffer growing without limit.
    */
   take(): WorldEvent[] {
+    this.#byActor.clear();
     return this.#events.splice(0, this.#events.length);
+  }
+
+  exportSequence(): number { return this.#sequence; }
+
+  restoreSequence(sequence: number): void {
+    if (!Number.isSafeInteger(sequence) || sequence < 0) throw new Error('invalid event sequence');
+    this.#sequence = sequence;
   }
 
   /** Only meaningful on an unbounded log; a bounded one cannot answer for history. */

@@ -44,6 +44,10 @@ export interface SpeciesConfig {
     structure: 'solitary' | 'pair' | 'herd' | 'troop' | 'pack' | 'family';
     groupSize: [min: number, max: number];
     alarmSharing: boolean;
+    /** Source-informed food-carrying policy; capacities/rates are model parameters, not field calibration. */
+    cooperativeCare?: { donorFromDays: number; recipientFromDays: number; capacityBodyFraction: number;
+      collectionBodyFractionPerHour: number; deliveryBodyFractionPerHour: number; retentionHours: number;
+      moistureLPerKg: number };
     /**
      * Ranges held against others of the same sex. An adult inside an older rival's range is a
      * floater: it does not breed, and it dies or is driven out far more often.
@@ -81,6 +85,16 @@ export interface SpeciesConfig {
     /** Days between one oestrus and the next. A failed courtship waits this long to try again. */
     oestrusCycleDays: number;
     weanDays: number;
+    /** Earliest ground-following age. Omitted: conservative weaning-age fallback, not a biological claim. */
+    followFromDays?: number;
+    /** Earliest independent plant foraging before weaning; omitted keeps the old weaning gate. */
+    forageFromDays?: number;
+    /** Earliest independent route to surface water; omitted retains the previous forage/wean gate. */
+    drinkFromDays?: number;
+    /** Earliest parent-opened finite carcass meal while dependent; omitted retains the weaning gate. */
+    meatFromDays?: number;
+    /** Source-informed scheduled nursing policy; not milk chemistry or exact field calibration. */
+    nursing?: { startHour: number; windowHours: number; dailyContactSeconds: number; locomotionFromDays: number };
     dispersalDays: number;
   };
 }
