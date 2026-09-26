@@ -18,6 +18,7 @@ import { loadLifeHistory, loadSelectedClimb, loadSelectedEncounter } from './lif
 import { encounterAt, isRecordedEncounter, ReplayClock, type RecordedEncounter } from './encounterReplay.js';
 import { SPECIES_VISUALS, visualFor } from './species.js';
 import { Atmosphere, atmosphereAt, observerExposure } from './environment.js';
+import { groundTint } from './groundTint.js';
 import { characterScale, markerSize } from './appearance.js';
 import { LiveEncounterPlayer, withRecordedVisualIdentity } from './liveEncounters.js';
 import { ObserverVisibility, type ObserverSubject } from './observerVisibility.js';
@@ -126,6 +127,7 @@ const observerUiStatus = document.querySelector<HTMLElement>('#observer-ui-statu
 const eventVisit = new EventVisit(scene, () => { void mapDialog.open(); });
 let eventMap: EventMap | null = null;
 let mapPatches: Parameters<EventMap['setPatches']>[0] = [];
+let tintSeason = '';
 const mapDialog = new LazyDialog<[]>('event map', observerUiStatus, async () => {
   const { EventMap } = await import('./eventMap.js');
   const map = new EventMap((event) => {
@@ -451,6 +453,7 @@ const sceneUpdates = new SceneUpdates<{
       communityLayer.sync(update.environment.community, prepared.terrain.height);
       communityLayer.setReplay(replay !== null);
       mapPatches = update.environment.patches;
+      if (store.world) groundTint.update(update.environment.patches, store.world.season);
       eventMap?.setPatches(mapPatches);
       carcasses.clear();
       for (const c of update.environment.carcasses) carcasses.set(c.id, c);
@@ -608,6 +611,8 @@ function observerSubject(speciesId: string, position: { x: number; z: number; al
 }
 function renderFrame(dt: number, now: number): void {
   if (store.world) ambientAudio.sample(store.world.season, mapPatches, camera, animals.groundHeightAt, now);
+  // A season can turn without a patch change; the update is a cheap no-op otherwise.
+  if (store.world && store.world.season !== tintSeason) { tintSeason = store.world.season; groundTint.update(mapPatches, tintSeason); }
   // Use the settled camera, not the followed animal or the previous frame's target.
   // Otherwise zooming/panning leaves the viewer outside the detail island.
   if (nature !== null && terrainRoot !== null) {
@@ -727,7 +732,12 @@ function frame(): void {
     : followedEncounter.kind === 'movement'
       ? `Recorded activity · ${followedEncounter.phase}. One-hour delayed server route${followedEncounter.climbVisualPhase ? ' with saved altitude' : ''}; drinking uses an aggregate action window, not exact sip timing. Poses are illustrative; the passport shows the newer checkpoint.`
       : `Recorded encounter · ${followedEncounter.phase}. Both animals share one server timeline. Passport and event log show the newer checkpoint.`;
-  if (encounterNotice.textContent !== encounterText) encounterNotice.textContent = encounterText;
+  // A short line on the card; the full account of what is recorded stays in the tooltip.
+  const encounterShort = followedEncounter === undefined ? ''
+    : followedEncounter.kind === 'movement'
+      ? `Replaying its recorded ${followedEncounter.climbVisualPhase ? 'climb' : 'route'} · about an hour behind live`
+      : `Replaying a recorded hunt · ${followedEncounter.phase}`;
+  if (encounterNotice.textContent !== encounterShort) { encounterNotice.textContent = encounterShort; encounterNotice.title = encounterText; }
   animals.sync(visibleAnimals, now, followedId, { x: follow.target.x, z: follow.target.z }, poses);
   animals.update(dt);
 

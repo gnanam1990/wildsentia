@@ -61,6 +61,58 @@ const EVENT_LABEL: Record<string, string> = {
 const FLOWERING_EVENT_TYPES = new Set(['flowering_started', 'flower_visitation_settled',
   'seeds_matured', 'plants_recruited', 'seed_bank_lost']);
 
+/** The world clock as a visitor reads it: "Year 1 · Day 5 · 3 pm". */
+export function friendlyWorldTime(worldTime: number): string {
+  if (!Number.isFinite(worldTime) || worldTime < 0) return '—';
+  const day = Math.floor(worldTime / 86_400), hour = Math.floor(worldTime / 3600) % 24;
+  const clock = hour === 0 ? '12 am' : hour < 12 ? `${hour} am` : hour === 12 ? '12 pm' : `${hour - 12} pm`;
+  return `Year ${Math.floor(day / 360) + 1} · Day ${(day % 360) + 1} · ${clock}`;
+}
+
+const SPECIES_NAME: Record<string, string> = {
+  chital: 'chital', sambar: 'sambar', gaur: 'gaur', dhole: 'dhole', jackal: 'jackal', boar: 'wild boar',
+  tiger: 'tiger', elephant: 'elephant', langur: 'langur', squirrel: 'giant squirrel', hare: 'hare', vulture: 'vulture',
+  human: 'villager',
+};
+const speciesOf = (id: string | undefined): string | null => {
+  if (!id) return null;
+  const prefix = id.split('_')[0] ?? '';
+  return SPECIES_NAME[prefix] ?? null;
+};
+const an = (noun: string) => (/^[aeiou]/i.test(noun) ? `An ${noun}` : `A ${noun}`);
+
+/**
+ * One plain sentence for the "Happening now" list, from the event's type, outcome and the
+ * species in its actor IDs. Falls back to the factual label when a type has no sentence.
+ */
+export function feedSentence(event: Record<string, unknown>): string {
+  const type = typeof event.type === 'string' ? event.type : '';
+  const outcome = typeof event.outcome === 'string' ? event.outcome : '';
+  const actors = Array.isArray(event.actors) ? event.actors.filter((id): id is string => typeof id === 'string') : [];
+  const [first, second] = [speciesOf(actors[0]), speciesOf(actors[1])];
+  const failed = outcome === 'failed' || outcome === 'interrupted';
+  if (first !== null) {
+    switch (type) {
+      case 'hunt': return second ? (outcome === 'success' ? `${an(first)} caught ${an(second).toLowerCase()}` : `${an(first)}'s hunt for ${an(second).toLowerCase()} failed`) : `${an(first)} hunted`;
+      case 'human_hunt': return outcome === 'success' ? 'Villagers brought back a catch' : 'A village hunt came back empty';
+      case 'scavenged': return second ? `${an(first)} fed on ${an(second).toLowerCase()} carcass` : `${an(first)} scavenged`;
+      case 'fed': return first === 'tiger' || first === 'dhole' || first === 'jackal' ? `${an(first)} ate` : `${an(first)} grazed`;
+      case 'drank': return `${an(first)} drank water`;
+      case 'rested': return actors.length > 1 && first === second ? `Two ${first === 'wild boar' ? 'wild boars' : `${first}s`} rested together` : `${an(first)} rested`;
+      case 'moved': return failed ? `${an(first)} changed course` : `${an(first)} moved on`;
+      case 'birth': return `${an(first)} was born`;
+      case 'death': return `${an(first)} died`;
+      case 'tree_climbed': return `${an(first)} climbed a tree`;
+      case 'illness_started': return `${an(first)} fell ill`;
+      case 'illness_ended': return `${an(first)} recovered`;
+      case 'human_task_finished': return 'A villager finished a task';
+      case 'human_task_started': return 'A villager started a task';
+      default: break;
+    }
+  }
+  return feedEventSummary(event).title;
+}
+
 /** Short, factual labels for the live feed. Event IDs remain available on disclosure. */
 export function feedEventSummary(event: Record<string, unknown>): { title: string; meta: string; id: string } {
   const type = typeof event.type === 'string' ? event.type : 'event';
@@ -99,6 +151,7 @@ export class Hud {
   #recapAbort: AbortController | null = null;
   #recapRequest = 0;
   #passportRequest = 0;
+  #populationHtml = '';
 
   cancelRecap(): void { this.#recapRequest++; this.#recapAbort?.abort(); this.recap = null; this.recapStatus = null; }
 
@@ -156,19 +209,27 @@ export class Hud {
 
   render(followedId: string | null): void {
     const world = this.store.world;
-    this.elements.clock.innerHTML = world?.formatted ?? UNKNOWN;
-    this.elements.season.innerHTML = world?.season ?? UNKNOWN;
-    this.elements.population.innerHTML = world
-      ? Object.entries(world.population)
-          .map(([species, n]) => `<span>${species} <b>${n}</b></span>`)
-          .join('')
-      : UNKNOWN;
+    this.elements.clock.innerHTML = world ? escape(friendlyWorldTime(world.worldTime)) : UNKNOWN;
+    this.elements.clock.title = world?.formatted ?? '';
+    this.elements.season.innerHTML = world ? escape(world.season.replace(/^./, (c) => c.toUpperCase())) : UNKNOWN;
+    if (world) {
+      const counts = Object.entries(world.population).sort((a, b) => b[1] - a[1]);
+      const total = counts.reduce((sum, [, n]) => sum + n, 0);
+      // Rebuilding the list would close it under the viewer's pointer; update only on change.
+      const html = `<summary>${total.toLocaleString('en-IN')} animals</summary><div class="pop-list">${counts
+        .map(([species, n]) => `<span>${escape(SPECIES_NAME[species] ?? species)} <b>${n}</b></span>`).join('')}</div>`;
+      if (this.#populationHtml !== html) {
+        const open = (this.elements.population.querySelector?.('details') as HTMLDetailsElement | null)?.open ?? false;
+        this.elements.population.innerHTML = `<details${open ? ' open' : ''}>${html}</details>`;
+        this.#populationHtml = html;
+      }
+    } else this.elements.population.innerHTML = UNKNOWN;
 
     this.elements.notice.textContent = this.store.lastError ?? '';
 
     if (followedId === null) {
       this.elements.passport.innerHTML =
-        '<p class="hint">Click an animal to follow it.</p>';
+        '<p class="hint">Tap any animal to follow it, or pick a species above.</p>';
       return;
     }
 
@@ -192,11 +253,11 @@ export class Hud {
     const viewers = this.store.viewerCounts.get(followedId);
     const identity = p === null
       ? `${animal.speciesId} &middot; patch ${animal.patchId}`
-      : `${escape(p.displayName)} &middot; ${escape(p.sex)} &middot; ${escape(p.lifeStage)} &middot; ${age(p.ageDays)} &middot; generation ${p.generation}`;
+      : `${escape(p.sex)} &middot; ${escape(p.lifeStage)} &middot; ${age(p.ageDays)} &middot; generation ${p.generation}`;
+    const name = p ? p.displayName : (SPECIES_NAME[animal.speciesId] ?? animal.speciesId).replace(/^./, (c) => c.toUpperCase());
     this.elements.passport.innerHTML = `${this.#recapCard(followedId)}
-      <h2>${escape(animal.id)}</h2>
-      <div class="sub">${identity}</div>
-      <p class="hint">Visual: ${escape(modelStatusForAnimal(animal))}</p>
+      <h2>${escape(name)}</h2>
+      <div class="sub">${identity} &middot; ${escape(animal.id)}</div>
       ${bar('Hunger', animal.drives.hunger, 'var(--clay)')}
       ${bar('Thirst', animal.drives.thirst, 'var(--mist)')}
       ${bar('Fatigue', animal.drives.fatigue, 'var(--ink-3)')}
@@ -208,15 +269,20 @@ export class Hud {
         ? `<div class="row"><span>Injury</span><b>Modelled ${animal.woundStatus === 'infected' ? 'wound infection' : 'open wound'}</b></div>` : ''}
       <div class="row"><span>Goal</span><b>${escape(animal.currentGoal)}</b></div>
       <div class="row"><span>Watching now</span><b>${viewers ?? UNKNOWN}</b></div>
-      ${p === null ? '' : this.#skills(p) + this.#lineage(p) + this.#timeline(p)}
-      <button data-replay="${escape(animal.id)}">Replay this life</button>
-      <button data-history="${escape(animal.id)}" aria-haspopup="dialog">Browse retained history</button>
-      ${this.shareButton(animal.id)}
-      <p class="prov">${animal.position ? 'Positions are recorded by the server; paths between updates are interpolated, not collision-aware.' : 'Legacy patch-only data: within-patch placement is approximate.'} Visual coverage is asset metadata. Narration never changes outcomes.</p>`;
+      ${p === null ? '' : `<details class="story"><summary>Life story, family and skills</summary>${this.#skills(p) + this.#lineage(p) + this.#timeline(p)}</details>`}
+      <div class="card-actions">
+        <button data-replay="${escape(animal.id)}">Replay this life</button>
+        <button data-history="${escape(animal.id)}" aria-haspopup="dialog">History</button>
+        ${this.shareButton(animal.id)}
+      </div>
+      <details class="about"><summary>About this view</summary>
+        <p class="prov">Model: ${escape(modelStatusForAnimal(animal))}.
+        ${animal.position ? 'Positions are recorded by the server; paths between updates are interpolated, not collision-aware.' : 'Legacy patch-only data: within-patch placement is approximate.'} Visual coverage is asset metadata. Narration never changes outcomes.</p>
+      </details>`;
   }
 
   private shareButton(id: string): string {
-    return `<button data-share="${escape(id)}" aria-haspopup="dialog">Share animal story</button>`;
+    return `<button data-share="${escape(id)}" aria-haspopup="dialog">Share</button>`;
   }
 
   #recapCard(id: string): string {
@@ -264,13 +330,16 @@ export class Hud {
       if (!response.ok) throw new Error('Event feed unavailable');
       const body = (await response.json()) as { events: Array<Record<string, unknown>> };
       if (!Array.isArray(body.events)) throw new Error('Invalid event feed');
-      this.elements.feed.innerHTML = body.events
+      // Newest few, in plain words; the factual label and record ID stay one tap away.
+      this.elements.feed.innerHTML = body.events.slice(0, 6)
         .map((event) => {
           const item = feedEventSummary(event);
+          const when = typeof event.worldTime === 'number' ? friendlyWorldTime(event.worldTime).replace(/^Year \d+ · /, '') : '';
           return `<div class="event feed-entry"><div>
-            <div class="etype">${escape(item.title)}</div>
-            <div class="feed-meta">${escape(item.meta)}</div>
-            <details class="feed-provenance"><summary>Record ID</summary><code>${escape(item.id)}</code></details>
+            <div class="etype">${escape(feedSentence(event))}</div>
+            <div class="feed-meta">${escape(when)}
+              <details class="feed-provenance"><summary>Record ID</summary>${escape(item.title)} · ${escape(item.meta)} · <code>${escape(item.id)}</code></details>
+            </div>
           </div></div>`;
         })
         .join('');

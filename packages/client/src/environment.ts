@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { SkyDome } from './sky.js';
 
 /** Presentation of the world's existing seasonal moisture model, not client-controlled weather. */
 export function atmosphereAt(worldTime: number, season: string) {
@@ -21,10 +22,8 @@ export function observerExposure(daylight: number): number {
 export class Atmosphere {
   readonly rain: THREE.LineSegments;
   readonly #positions = new Float32Array(600 * 6);
-  readonly #night = new THREE.Color(0x152334);
-  readonly #day = new THREE.Color(0x9fb8c4);
-  readonly #wet = new THREE.Color(0x778b91);
   readonly #sky = new THREE.Color();
+  readonly dome = new SkyDome();
 
   constructor(private readonly scene: THREE.Scene, private readonly sun: THREE.DirectionalLight) {
     const geometry = new THREE.BufferGeometry();
@@ -33,14 +32,16 @@ export class Atmosphere {
       color: 0xc3d8e0, transparent: true, opacity: 0.24, depthWrite: false,
     }));
     this.rain.frustumCulled = false;
-    scene.add(this.rain);
+    scene.add(this.rain, this.dome.mesh);
   }
 
   update(worldTime: number, season: string, seconds: number, focus: THREE.Vector3, reducedMotion: boolean, viewDistance = 0,
     eye: THREE.Vector3 = focus): void {
     const state = atmosphereAt(worldTime, season);
-    this.#sky.copy(this.#night).lerp(this.#day, Math.sqrt(state.daylight));
-    this.#sky.lerp(this.#wet, state.rain * state.daylight * 0.4);
+    this.sun.color.setHex(state.daylight === 0 ? 0xadc8ed : state.daylight < 0.25 ? 0xe7ae7c : 0xffeccf);
+    const sunDirection = new THREE.Vector3(Math.cos(state.angle) * 130, 30 + state.daylight * 180, 80);
+    // The land fades into the sky's own horizon colour, so there is no seam at the fog line.
+    this.#sky.copy(this.dome.update(state.daylight, state.rain, sunDirection, this.sun.color, seconds, eye));
     (this.scene.background as THREE.Color).copy(this.#sky);
     if (this.scene.fog instanceof THREE.Fog) {
       this.scene.fog.color.copy(this.#sky);
@@ -50,7 +51,6 @@ export class Atmosphere {
       this.scene.fog.near = Math.max(200, viewDistance * 0.9);
     }
     this.sun.intensity = state.sunIntensity;
-    this.sun.color.setHex(state.daylight === 0 ? 0xadc8ed : state.daylight < 0.25 ? 0xe7ae7c : 0xffeccf);
     this.sun.target.position.copy(focus);
     this.sun.position.set(focus.x + Math.cos(state.angle) * 130, focus.y + 30 + state.daylight * 180, focus.z + 80);
     this.sun.target.updateMatrixWorld();

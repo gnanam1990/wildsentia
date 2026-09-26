@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { feedEventSummary, Hud, type HudElements } from '../src/hud.js';
+import { feedEventSummary, feedSentence, friendlyWorldTime, Hud, type HudElements } from '../src/hud.js';
 import { WorldStore } from '../src/protocol.js';
 
 const elements = (): HudElements => ({
@@ -38,6 +38,7 @@ describe('factual live event feed', () => {
     expect(nodes.feed.innerHTML).toContain('Village hunt');
     expect(nodes.feed.innerHTML).toContain('day 1, 01:00 · failed');
     expect(nodes.feed.innerHTML).toContain('<summary>Record ID</summary>');
+    expect(nodes.feed.innerHTML).toContain('A village hunt came back empty');
     expect(nodes.feed.innerHTML).not.toContain('<script>');
     expect(nodes.feed.innerHTML).not.toContain('<img>');
   });
@@ -47,5 +48,22 @@ describe('factual live event feed', () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false })));
     await new Hud(nodes, new WorldStore()).refreshFeed();
     expect(nodes.feed.innerHTML).toContain('event feed unavailable');
+  });
+  it('tells visitors what happened in plain words', () => {
+    expect(feedSentence({ type: 'scavenged', actors: ['vulture_0721', 'sambar_0339'], outcome: 'success' })).toBe('A vulture fed on a sambar carcass');
+    expect(feedSentence({ type: 'hunt', actors: ['dhole_01', 'hare_02'], outcome: 'success' })).toBe('A dhole caught a hare');
+    expect(feedSentence({ type: 'hunt', actors: ['tiger_01', 'elephant_02'], outcome: 'failed' })).toBe("A tiger's hunt for an elephant failed");
+    expect(feedSentence({ type: 'rested', actors: ['squirrel_1', 'squirrel_2'] })).toBe('Two giant squirrels rested together');
+    expect(feedSentence({ type: 'drank', actors: ['elephant_06fc'] })).toBe('An elephant drank water');
+    expect(feedSentence({ type: 'birth', actors: ['boar_1'] })).toBe('A wild boar was born');
+    // Unknown actors or types keep the factual label.
+    expect(feedSentence({ type: 'flowering_started', actors: [] })).toBe('Modelled flowering began');
+    expect(feedSentence({ type: 'mystery', actors: ['chital_1'] })).toBe('Mystery');
+  });
+  it('shows the world clock the way people read time', () => {
+    expect(friendlyWorldTime(4 * 86400 + 15 * 3600)).toBe('Year 1 · Day 5 · 3 pm');
+    expect(friendlyWorldTime(0)).toBe('Year 1 · Day 1 · 12 am');
+    expect(friendlyWorldTime(360 * 86400 + 12 * 3600)).toBe('Year 2 · Day 1 · 12 pm');
+    expect(friendlyWorldTime(Number.NaN)).toBe('—');
   });
 });

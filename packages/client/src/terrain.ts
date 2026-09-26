@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { ISLAND_SEGMENTS, treeAnchorForPatch, treeAnchorRemnantForPatch, waterAccessPosition } from '@vana/shared';
 import { islandHeightField } from './islandHeightField.js';
+import { groundTint } from './groundTint.js';
 import { PATCH_METRES, patchCentre } from './space.js';
 
 export interface PatchView {
@@ -110,14 +111,6 @@ export function makeHeightSampler(patches: readonly PatchView[]): HeightSampler 
   };
 }
 
-const HABITAT_COLOUR: Record<string, number> = {
-  grassland: 0xb1bd8a,
-  shola:     0xb6b7a3,
-  riparian:  0xa6b296,
-  marsh:     0x919c80,
-  rock:      0xc4c0b5,
-  water:     0x2c6b7d,
-};
 
 /** Metres. A sambar stands 1.35 m at the shoulder, so grass must be ankle height, not tree height. */
 const GRASS_HEIGHT_M = 0.85;
@@ -269,60 +262,28 @@ export function scannedGroundMaps(): Pick<THREE.MeshStandardMaterialParameters, 
 
 function buildGroundMesh(patches: readonly PatchView[]): THREE.Mesh {
   if (patches[0]?.islandSeed !== undefined) return buildIslandGround(patches, patches[0].islandSeed);
-  const byId = new Map<number, PatchView>();
-  for (const patch of patches) byId.set(patch.id, patch);
-
   const span = GRID * PATCH_METRES;
   const geometry = new THREE.PlaneGeometry(span, span, GRID, GRID).rotateX(-Math.PI / 2);
   geometry.translate(span / 2 - PATCH_METRES / 2, 0, span / 2 - PATCH_METRES / 2);
 
   const position = geometry.attributes.position!;
   const colours = new Float32Array(position.count * 3);
-  const colour = new THREE.Color();
-  const blend = new THREE.Color();
   const { heights, present } = cornerHeights(patches);
-
-  for (let i = 0; i < position.count; i++) {
-    // Vertex (col, row) sits at the corner shared by up to four patches.
-    const col = i % (GRID + 1);
-    const row = Math.floor(i / (GRID + 1));
-
-    let r = 0; let g = 0; let b = 0;
-    let n = 0;
-
-    for (const [dc, dr] of [[-1, -1], [0, -1], [-1, 0], [0, 0]] as const) {
-      const c = col + dc;
-      const rw = row + dr;
-      if (c < 0 || rw < 0 || c >= GRID || rw >= GRID) continue;
-      const patch = byId.get(rw * GRID + c);
-      if (patch === undefined) continue;
-      blend.setHex(HABITAT_COLOUR[patch.habitat] ?? 0x556b3f);
-      r += blend.r; g += blend.g; b += blend.b;
-      n++;
-    }
-
-    if (present[i] === 1) {
-      position.setY(i, heights[i]!);
-      colour.setRGB(r / n, g / n, b / n);
-    } else {
-      colour.setHex(0x556b3f);
-    }
-    colours[i * 3] = colour.r;
-    colours[i * 3 + 1] = colour.g;
-    colours[i * 3 + 2] = colour.b;
-  }
+  for (let i = 0; i < position.count; i++) if (present[i] === 1) position.setY(i, heights[i]!);
 
   geometry.setAttribute('color', new THREE.BufferAttribute(colours, 3));
   geometry.computeVertexNormals();
 
-  const mesh = new THREE.Mesh(
-    geometry,
-    new THREE.MeshStandardMaterial({
-      vertexColors: true, roughness: 1, metalness: 0,
-      // Scanned soil, stones and surface normals, with a restrained biome tint.
-      ...scannedGroundMaps(),
-    }),
-  );
+  // Habitat colour now comes from the checkpointed ground tint (groundTint.ts); the vertex
+  // colours are only a sand mask, and the mainland has no beaches.
+  colours.fill(1);
+  const material = new THREE.MeshStandardMaterial({
+    vertexColors: true, roughness: 1, metalness: 0,
+    // Scanned soil, stones and surface normals, tinted by grass, canopy and season.
+    ...scannedGroundMaps(),
+  });
+  groundTint.apply(material);
+  const mesh = new THREE.Mesh(geometry, material);
   mesh.name = 'ground';
   mesh.receiveShadow = true;
   return mesh;
@@ -334,21 +295,18 @@ function buildIslandGround(patches: readonly PatchView[], seed: number): THREE.M
   const geometry = new THREE.PlaneGeometry(span, span, ISLAND_SEGMENTS, ISLAND_SEGMENTS).rotateX(-Math.PI / 2);
   geometry.translate(span / 2 - PATCH_METRES / 2, 0, span / 2 - PATCH_METRES / 2);
   const positions = geometry.attributes.position!, colours = new Float32Array(positions.count * 3);
-  const colour = new THREE.Color(), beach = new THREE.Color(0xc4b48d);
-  const byId = new Map(patches.map(p => [p.id, p]));
+  void patches;
   for (let i = 0; i < positions.count; i++) {
     const col = i % (ISLAND_SEGMENTS + 1), row = Math.floor(i / (ISLAND_SEGMENTS + 1));
     const height = field.vertex(col, row); positions.setY(i, height);
-    const patchId = Math.min(GRID - 1, Math.floor(row / 12)) * GRID + Math.min(GRID - 1, Math.floor(col / 12));
-    const patch = byId.get(patchId);
-    colour.setHex(HABITAT_COLOUR[patch?.habitat ?? 'shola'] ?? 0xb6b7a3);
-    if (height < 6) colour.copy(beach);
-    else if (height < 12) colour.lerp(beach, (12 - height) / 6);
-    colours.set([colour.r, colour.g, colour.b], i * 3);
+    // Vertex colour is a sand mask for the tint shader: blue channel 0 on the beach, 1 inland.
+    const sand = height < 6 ? 1 : height < 12 ? (12 - height) / 6 : 0;
+    colours.set([1, 1, 1 - sand], i * 3);
   }
   geometry.setAttribute('color', new THREE.BufferAttribute(colours, 3)); geometry.computeVertexNormals();
-  const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ vertexColors: true,
-    roughness: 1, metalness: 0, ...scannedGroundMaps() }));
+  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, ...scannedGroundMaps() });
+  groundTint.apply(material);
+  const mesh = new THREE.Mesh(geometry, material);
   mesh.name = 'ground'; mesh.receiveShadow = true; return mesh;
 }
 
