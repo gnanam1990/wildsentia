@@ -732,7 +732,12 @@ function frame(): void {
     : followedEncounter.kind === 'movement'
       ? `Recorded activity · ${followedEncounter.phase}. One-hour delayed server route${followedEncounter.climbVisualPhase ? ' with saved altitude' : ''}; drinking uses an aggregate action window, not exact sip timing. Poses are illustrative; the passport shows the newer checkpoint.`
       : `Recorded encounter · ${followedEncounter.phase}. Both animals share one server timeline. Passport and event log show the newer checkpoint.`;
-  if (encounterNotice.textContent !== encounterText) encounterNotice.textContent = encounterText;
+  // A short line on the card; the full account of what is recorded stays in the tooltip.
+  const encounterShort = followedEncounter === undefined ? ''
+    : followedEncounter.kind === 'movement'
+      ? `Replaying its recorded ${followedEncounter.climbVisualPhase ? 'climb' : 'route'} · about an hour behind live`
+      : `Replaying a recorded hunt · ${followedEncounter.phase}`;
+  if (encounterNotice.textContent !== encounterShort) { encounterNotice.textContent = encounterShort; encounterNotice.title = encounterText; }
   animals.sync(visibleAnimals, now, followedId, { x: follow.target.x, z: follow.target.z }, poses);
   animals.update(dt);
 
