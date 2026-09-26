@@ -59,6 +59,10 @@ export class CommunityLayer {
       historic ? historicPoses : this.#playback.poses(now, reducedMotion), preferredId,
       historic?.personId ?? null, historic !== null);
   }
+  /** People standing in the scene, for animals to be drawn clear of. */
+  get placedPeople(): ReadonlyArray<{ x: number; z: number; radius: number }> {
+    return this.root.visible ? this.#humans.placed : [];
+  }
   playbackNotice(now: number, reducedMotion: boolean): string {
     if (!this.root.visible) return '';
     const historic = this.#historic;

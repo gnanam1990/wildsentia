@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { createWorld } from '@vana/sim';
 import { fileURLToPath } from 'node:url';
-import { HumanLayer, humanAgeScale, humanAppearance, humanPose, tintHumanScene, type HumanTemplate } from '../src/humans.js';
+import { HumanLayer, humanAgeScale, humanAppearance, humanPose, tintHumanScene, type HumanTemplate, spreadCrowded } from '../src/humans.js';
 import type { Person } from '@vana/shared';
 import type { HumanPlaybackPose } from '../src/communityPlayback.js';
 
@@ -188,5 +188,22 @@ describe('checkpoint human character layer', () => {
       expect(humanPose({ alive: true, task: { kind, phase: 'travel' } as Person['task'] }).clip).toBe('Walk_Loop');
       expect(humanPose({ alive: true, task: { kind, phase: 'work' } as Person['task'] }).clip).toBeTruthy();
     }
+  });
+});
+
+describe('people sharing one spot', () => {
+  const at = (id: string, x: number, z: number) => ({ id, position: { x, z, heading: 1 } });
+  it('draws a household resting at home in a ring instead of inside one another', () => {
+    const home = [at('person_0003', 930, 2730), at('person_0001', 930, 2730), at('person_0002', 930, 2730), at('person_0004', 930, 2730)];
+    const drawn = spreadCrowded(home);
+    expect(drawn.map(p => p.id)).toEqual(home.map(p => p.id)); // Order kept.
+    for (let i = 0; i < drawn.length; i++) for (let j = i + 1; j < drawn.length; j++)
+      expect(Math.hypot(drawn[i]!.position.x - drawn[j]!.position.x, drawn[i]!.position.z - drawn[j]!.position.z)).toBeGreaterThan(1);
+    for (const p of drawn) expect(Math.hypot(p.position.x - 930, p.position.z - 2730)).toBeCloseTo(0.8);
+    expect(spreadCrowded([...home].reverse())).toEqual([...drawn].reverse()); // Same ring whatever the order.
+  });
+  it('leaves people standing apart exactly where they were recorded', () => {
+    const apart = [at('a', 0, 0), at('b', 5, 0)];
+    expect(spreadCrowded(apart)).toEqual(apart);
   });
 });

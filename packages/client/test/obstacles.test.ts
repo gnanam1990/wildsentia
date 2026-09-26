@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ObstacleField, obstaclesFrom } from '../src/obstacles.js';
+import { ObstacleField, obstaclesFrom, separateBodies } from '../src/obstacles.js';
 
 describe('walking round trunks and boulders', () => {
   it('takes trunks and boulders from the plan, and ignores grass, bushes and pebbles', () => {
@@ -46,5 +46,45 @@ describe('walking round trunks and boulders', () => {
     const at = field.deflect(8.1, 0.1, 0.3, 0);
     expect(Math.hypot(at.x - 7.9, at.z)).toBeGreaterThanOrEqual(1.3 - 1e-9);
     expect(field.size).toBe(2);
+  });
+});
+
+describe('keeping animals and people apart', () => {
+  const body = (id: string, x: number, z: number, radius = 0.5, extra = {}) => ({ id, x, z, radius, heading: 0, ...extra });
+
+  it('draws two overlapping animals apart, the smaller giving way more', () => {
+    const out = separateBodies([body('elephant', 0, 0, 1.5), body('hare', 1, 0, 0.3)]);
+    const e = out.get('elephant')!, h = out.get('hare')!;
+    expect(Math.hypot(h.x - e.x, h.z - e.z)).toBeGreaterThanOrEqual(1.8 - 1e-6);
+    expect(Math.abs(e.x)).toBeLessThan(Math.abs(h.x - 1));
+  });
+
+  it('separates animals given the very same spot, the same way every frame', () => {
+    const a = separateBodies([body('a', 5, 5), body('b', 5, 5)]), b = separateBodies([body('a', 5, 5), body('b', 5, 5)]);
+    expect(Math.hypot(a.get('a')!.x - a.get('b')!.x, a.get('a')!.z - a.get('b')!.z)).toBeCloseTo(1);
+    expect(a).toEqual(b);
+  });
+
+  it('leaves a recorded predator and prey free to meet, and never moves people', () => {
+    const out = separateBodies([body('tiger', 0, 0, 0.6, { partnerId: 'sambar' }), body('sambar', 0.5, 0, 0.6, { partnerId: 'tiger' })]);
+    expect(out.get('tiger')).toEqual({ x: 0, z: 0 });
+    const person = { x: 10, z: 0, radius: 0.35 };
+    const boar = separateBodies([body('boar', 10.2, 0, 0.5)], [person]).get('boar')!;
+    expect(Math.hypot(boar.x - 10, boar.z)).toBeCloseTo(0.85);
+    expect(person).toEqual({ x: 10, z: 0, radius: 0.35 });
+  });
+
+  it('leaves animals that are already apart exactly where they were', () => {
+    const out = separateBodies([body('a', 0, 0), body('b', 3, 0)], [{ x: -5, z: 0, radius: 0.35 }]);
+    expect(out.get('a')).toEqual({ x: 0, z: 0 }); expect(out.get('b')).toEqual({ x: 3, z: 0 });
+  });
+
+  it('spreads a crowd at a drinking point so no two bodies overlap', () => {
+    const crowd = Array.from({ length: 8 }, (_, i) => body(`c${i}`, Math.cos(i) * 0.4, Math.sin(i) * 0.4, 0.45));
+    const out = [...separateBodies(crowd).values()];
+    let worst = Infinity;
+    for (let i = 0; i < out.length; i++) for (let j = i + 1; j < out.length; j++)
+      worst = Math.min(worst, Math.hypot(out[i]!.x - out[j]!.x, out[i]!.z - out[j]!.z));
+    expect(worst).toBeGreaterThan(0.75); // Three passes: close to the 0.9 m of full clearance.
   });
 });

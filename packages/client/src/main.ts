@@ -747,6 +747,7 @@ function frame(): void {
       : `Replaying a recorded hunt · ${followedEncounter.phase}`;
   if (encounterNotice.textContent !== encounterShort) { encounterNotice.textContent = encounterShort; encounterNotice.title = encounterText; }
   animals.avoid = nature?.obstacles ?? null;
+  animals.people = communityLayer.placedPeople;
   animals.sync(visibleAnimals, now, followedId, { x: follow.target.x, z: follow.target.z }, poses);
   animals.update(dt);
 

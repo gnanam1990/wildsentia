@@ -87,3 +87,57 @@ export class ObstacleField {
     return { x, z };
   }
 }
+
+/** An animal drawn near the camera, as a circle on the ground. */
+export interface Body {
+  id: string; x: number; z: number; radius: number; heading: number;
+  /** The other animal of a recorded encounter: they are meant to meet, so they may touch. */
+  partnerId?: string;
+}
+
+const pairAngle = (a: string, b: string): number => {
+  let h = 2166136261;
+  for (const c of a < b ? a + '|' + b : b + '|' + a) h = Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0;
+  return h / 0xffffffff * Math.PI * 2;
+};
+
+/**
+ * Draws nearby animals apart where their bodies would overlap each other or a person, then
+ * round trunks and boulders. Each animal's route is recorded on its own, so two chital can be
+ * given the same spot, or a boar the spot where a villager stands; only where they are drawn
+ * changes, by as little as keeps them apart. A small body gives way more than a large one,
+ * people are never moved, and a recorded predator and its prey may still meet.
+ */
+export function separateBodies(bodies: readonly Body[], people: readonly Obstacle[] = [],
+  field: ObstacleField | null = null): Map<string, { x: number; z: number }> {
+  const at = bodies.map((b) => ({ ...b }));
+  for (let pass = 0; pass < 3; pass++) {
+    for (let i = 0; i < at.length; i++) {
+      const a = at[i]!;
+      for (let j = i + 1; j < at.length; j++) {
+        const b = at[j]!;
+        if (a.partnerId === b.id || b.partnerId === a.id) continue;
+        const clear = a.radius + b.radius, dx = b.x - a.x, dz = b.z - a.z;
+        if (Math.abs(dx) >= clear || Math.abs(dz) >= clear) continue;
+        const d = Math.hypot(dx, dz);
+        if (d >= clear) continue;
+        const angle = pairAngle(a.id, b.id);
+        const ux = d > 1e-6 ? dx / d : Math.sin(angle), uz = d > 1e-6 ? dz / d : Math.cos(angle);
+        // Each gives way in proportion to the other's size: a hare steps aside for an elephant.
+        const wa = a.radius ** 2, wb = b.radius ** 2, overlap = clear - d;
+        const moveA = overlap * wb / (wa + wb), moveB = overlap * wa / (wa + wb);
+        a.x -= ux * moveA; a.z -= uz * moveA; b.x += ux * moveB; b.z += uz * moveB;
+      }
+      for (const p of people) {
+        const clear = a.radius + p.radius, dx = a.x - p.x, dz = a.z - p.z, d = Math.hypot(dx, dz);
+        if (d >= clear) continue;
+        const angle = pairAngle(a.id, 'person');
+        const ux = d > 1e-6 ? dx / d : Math.sin(angle), uz = d > 1e-6 ? dz / d : Math.cos(angle);
+        a.x = p.x + ux * clear; a.z = p.z + uz * clear;
+      }
+    }
+  }
+  const result = new Map<string, { x: number; z: number }>();
+  for (const a of at) result.set(a.id, field ? field.deflect(a.x, a.z, a.radius * 0.7, a.heading) : { x: a.x, z: a.z });
+  return result;
+}
