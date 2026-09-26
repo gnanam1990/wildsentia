@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
-import { NATURE_KINDS, TREE_DETAIL_RADIUS_M, TREE_ROOT_SEATING, ROCK_SEATING, vegetationGroundHeight, natureScale, nearPlan, planVegetation, flattenedNatureGeometry } from '../src/vegetation.js';
+import { canopyField, NATURE_KINDS, TREE_DETAIL_RADIUS_M, TREE_ROOT_SEATING, ROCK_SEATING, vegetationGroundHeight, natureScale, nearPlan, planVegetation, flattenedNatureGeometry } from '../src/vegetation.js';
 import type { PatchView } from '../src/terrain.js';
 
 const patch = (id: number, habitat: string, extra: Partial<PatchView> = {}): PatchView => ({
@@ -45,13 +45,30 @@ describe('planVegetation', () => {
     expect(NATURE_KINDS.Rock_Medium_1!.scale[1]).toBeLessThan(NATURE_KINDS.Boulder_Large!.scale[0]);
   });
   it('builds a denser woodland close in while bounding expensive tree geometry', () => {
-    const trees = [...nearPlan([patch(0, 'shola')], { x: 0, z: 0 }, flat)]
+    // Inside a forest, not a lone patch whose edges thin toward open ground (canopyField).
+    const block = [0, 1, 2, 20, 21, 22, 40, 41, 42].map((id) => patch(id, 'shola'));
+    const trees = [...nearPlan(block, { x: 300, z: 300 }, flat)]
       .filter(([kind]) => kind.includes('Tree')).flatMap(([, items]) => items);
     expect(trees.length).toBeGreaterThan(350);
     // Includes a 24 m scheduling margin; the GPU fades geometry out by 80 m.
     expect(trees.length).toBeLessThan(500);
-    expect(trees.every((p) => Math.hypot(p.x, p.z) <= TREE_DETAIL_RADIUS_M)).toBe(true);
+    expect(trees.every((p) => Math.hypot(p.x - 300, p.z - 300) <= TREE_DETAIL_RADIUS_M)).toBe(true);
     expect(Math.max(...trees.map((p) => p.scale)) / Math.min(...trees.map((p) => p.scale))).toBeGreaterThan(2.5);
+  });
+  it('thins a forest toward open ground so it has soft edges, not a square outline', () => {
+    // A 3x3 shola block surrounded by grassland.
+    const forest = new Set([189, 190, 191, 209, 210, 211, 229, 230, 231]);
+    const island = Array.from({ length: 400 }, (_, id) => forest.has(id) ? patch(id, 'shola') : patch(id, 'grassland'));
+    const field = canopyField(island);
+    expect(field(3000, 3000)).toBeCloseTo(1.14, 2);
+    expect(field(3000 + 450, 3000)).toBeLessThan(field(3000 + 300, 3000));
+    const trees = [...planVegetation(island, { x: 3000, z: 3000 }, 900, flat, { only: (k) => k.startsWith('CommonTree_1'), canopyAt: field })]
+      .flatMap(([, items]) => items);
+    const within = (lo: number, hi: number) => trees.filter((t) => { const d = Math.max(Math.abs(t.x - 3000), Math.abs(t.z - 3000)); return d >= lo && d < hi; }).length;
+    // Density per square metre: the outer ring of the block is sparser than its heart.
+    const heart = within(0, 150) / (300 * 300), rim = within(300, 450) / (900 * 900 - 600 * 600);
+    expect(rim).toBeLessThan(heart * 0.7);
+    expect(rim).toBeGreaterThan(0);
   });
   it('varies stone silhouettes deterministically without distorting trees', () => {
     const item = { x: 15, y: 0, z: 17, rotY: 0, scale: 2 };
