@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { treeAnchorGeometry } from '@vana/shared';
 import { describe, expect, it } from 'vitest';
-import { NEAR_RADIUS_M, TREE_DETAIL_RADIUS_M, nearPlan, planVegetation,
+import { canopyField, NEAR_RADIUS_M, TREE_DETAIL_RADIUS_M, nearPlan, planVegetation,
   type PlacedPlant } from '../src/vegetation.js';
 import type { PatchView } from '../src/terrain.js';
 
@@ -10,7 +10,7 @@ const patch = (id: number, habitat: string, canopyCover = .8): PatchView => ({
   water: 0, canopyCover, surface: 'land',
 });
 const legacyNear = (patches: PatchView[], focus: { x: number; z: number }, groundAt: () => number) => {
-  const plan = planVegetation(patches, focus, NEAR_RADIUS_M, groundAt);
+  const plan = planVegetation(patches, focus, NEAR_RADIUS_M, groundAt, { canopyAt: canopyField(patches) });
   for (const [kind, items] of plan) {
     const radius = kind.includes('Tree') ? TREE_DETAIL_RADIUS_M : kind.startsWith('Grass') ? 90 : NEAR_RADIUS_M;
     plan.set(kind, items.filter(item => Math.hypot(item.x - focus.x, item.z - focus.z) <= radius));

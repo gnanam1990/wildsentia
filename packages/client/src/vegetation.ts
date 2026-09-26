@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { treeAnchorForPatch, treeAnchorRemnantForPatch } from '@vana/shared';
+import { GRID_SIZE, treeAnchorForPatch, treeAnchorRemnantForPatch } from '@vana/shared';
 import { PATCH_METRES, patchCentre } from './space.js';
 import { terrainHeightKey, type HeightSampler, type PatchView } from './terrain.js';
 import { addTreeDetailFade, bakeTreeAtlas, treeFadeRangeFor, TREE_FADE_END_M, TREE_PLAN_MARGIN_M, type TreeAtlas } from './treeLod.js';
@@ -88,6 +88,38 @@ export function vegetationGroundHeight(kind: string, x: number, z: number, scale
 
 type Driver = 'grass' | 'canopy' | 'fixed';
 
+/**
+ * How many canopy trees a patch carries, relative to a typical closed forest. Rounded to a
+ * hundredth so an imperceptible canopy change neither moves a tree nor invalidates a cache.
+ */
+const canopyFactor = (patch: PatchView | undefined): number =>
+  !patch || patch.surface === 'ocean' || patch.surface === 'coast' ? 0
+    : Math.round(Math.min(1.3, (patch.canopyCover ?? 0) / 0.7) * 100) / 100;
+
+/**
+ * Canopy density anywhere on the island, blended between patch centres. Trees are planned per
+ * 300 m patch, so a forest used to end in a straight line at the patch edge and read as a
+ * square from above. Thinning each tree by the blended density where it stands gives forests
+ * soft, natural edges without moving any tree that stays.
+ */
+export function canopyField(patches: readonly PatchView[]): (x: number, z: number) => number {
+  const byId = new Map(patches.map((p) => [p.id, p]));
+  const at = (col: number, row: number): number =>
+    col < 0 || row < 0 || col >= GRID_SIZE || row >= GRID_SIZE ? 0 : canopyFactor(byId.get(row * GRID_SIZE + col));
+  return (x, z) => {
+    const gx = x / PATCH_METRES, gz = z / PATCH_METRES;
+    const col = Math.floor(gx), row = Math.floor(gz), fx = gx - col, fz = gz - row;
+    return (at(col, row) * (1 - fx) + at(col + 1, row) * fx) * (1 - fz)
+      + (at(col, row + 1) * (1 - fx) + at(col + 1, row + 1) * fx) * fz;
+  };
+}
+
+/** A fixed 0-1 value for a spot, so thinning never reshuffles which trees stand. */
+const spotHash = (x: number, z: number): number => {
+  const v = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
+  return v - Math.floor(v);
+};
+
 function placementCount(patch: PatchView, perPatch: number, driver: Driver, boost = 1): number {
   const grass = patch.water > 20_000 ? 0 : Math.min(1, Math.max(0, patch.grass / 6000));
   const canopy = Math.min(1.3, (patch.canopyCover ?? 0) / 0.7);
@@ -160,6 +192,8 @@ export interface PlanOptions {
   salt?: number;
   /** Optional tighter per-kind visibility budget, applied before costly terrain seating. */
   radiusForKind?: (kind: string) => number;
+  /** Blended canopy density (canopyField); thins canopy trees toward forest edges. */
+  canopyAt?: (x: number, z: number) => number;
 }
 
 /**
@@ -213,6 +247,12 @@ export function planVegetation(
         const z = placedAnchor ? anchor.z : plannedZ;
         const scale = placedAnchor ? anchor.visualScale : plannedScale;
         if (Math.hypot(x - focus.x, z - focus.z) > kindRadius) continue;
+        // Toward an edge the blended canopy falls below this patch's own; keep that share.
+        // A climbing anchor always stands.
+        if (driver === 'canopy' && !placedAnchor && options.canopyAt) {
+          const own = canopyFactor(patch);
+          if (own > 0 && spotHash(x, z) >= Math.min(1, options.canopyAt(x, z) / own) ** 1.5) continue;
+        }
         list.push({ x, y: vegetationGroundHeight(kind, x, z, scale, groundAt), z, rotY, scale });
       }
       plan.set(kind, list);
@@ -259,15 +299,20 @@ export class TreePlacementCache {
       this.clear(); this.#heightKey = height; this.#ground = groundAt;
     }
     const order: CachedTrees[] = [], ids = new Set<number>();
+    const canopyAt = canopyField(patches);
+    const byId = new Map(patches.map((p) => [p.id, p]));
     for (const patch of patches) {
       ids.add(patch.id);
       const counts = (HABITAT_MIX[patch.habitat] ?? []).filter(([kind]) => isTree(kind))
         .map(([kind, perPatch, driver]) => [kind, placementCount(patch, perPatch, driver)]);
+      const col = patch.id % GRID_SIZE, row = Math.floor(patch.id / GRID_SIZE);
+      const neighbours = [-1, 0, 1].flatMap((dr) => [-1, 0, 1].map((dc) =>
+        col + dc < 0 || col + dc >= GRID_SIZE ? 0 : canopyFactor(byId.get((row + dr) * GRID_SIZE + col + dc))));
       const key = JSON.stringify([patch.id, patch.habitat, patch.surface ?? 'land', counts,
-        treeAnchorRemnantForPatch(patch) !== null]);
+        treeAnchorRemnantForPatch(patch) !== null, neighbours]);
       let entry = this.#patches.get(patch.id);
       if (!entry || entry.key !== key) {
-        entry = { key, plan: planVegetation([patch], { x: 2850, z: 2850 }, 4500, groundAt, { only: isTree }) };
+        entry = { key, plan: planVegetation([patch], { x: 2850, z: 2850 }, 4500, groundAt, { only: isTree, canopyAt }) };
         this.#patches.set(patch.id, entry);
       }
       order.push(entry);
@@ -290,6 +335,8 @@ export function nearPlan(patches: readonly PatchView[], focus: { x: number; z: n
   treeDetailRadiusM = TREE_DETAIL_RADIUS_M): Map<string, PlacedPlant[]> {
   return planVegetation(patches, focus, PROP_DETAIL_RADIUS_M, groundAt, {
     radiusForKind: kind => isTree(kind) ? treeDetailRadiusM : kind.startsWith('Grass') ? 90 : PROP_DETAIL_RADIUS_M,
+    // The same thinning as the distant forest, so a tree never appears or vanishes at the fade.
+    canopyAt: canopyField(patches),
   });
 }
 

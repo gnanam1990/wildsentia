@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { TreePlacementCache, NearVegetation, planVegetation } from '../src/vegetation.js';
+import { canopyField, TreePlacementCache, NearVegetation, planVegetation } from '../src/vegetation.js';
 import { makeHeightSampler, type PatchView } from '../src/terrain.js';
 
 // No browser automation/GPU claim. Keep real instancing and update logic; replace only atlas rendering.
@@ -14,7 +14,7 @@ const patches: PatchView[] = Array.from({ length: 3 }, (_, i) => ({ id: 209 + i,
   habitat: 'shola', grass: 1000, browse: 3000, water: 200, canopyCover: .8, elevation: .5,
   islandSeed: 1, surface: 'land' }));
 const whole = (ps: PatchView[], ground: (x: number, z: number) => number) =>
-  planVegetation(ps, { x: 2850, z: 2850 }, 4500, ground, { only: (kind) => kind.includes('Tree') });
+  planVegetation(ps, { x: 2850, z: 2850 }, 4500, ground, { only: (kind) => kind.includes('Tree'), canopyAt: canopyField(ps) });
 
 describe('world tree placement cache', () => {
   it('retains exact tree identities without terrain queries when only grass/browse/water values change', () => {
@@ -26,7 +26,7 @@ describe('world tree placement cache', () => {
     cache.clear(); expect(first.size).toBeGreaterThan(0); // never mutate a published map on clear
   });
 
-  it('rebuilds changed canopy patches only and preserves all untouched tree objects', () => {
+  it('rebuilds a changed canopy patch and its neighbours only, preserving all other tree objects', () => {
     const cache = new TreePlacementCache(), ground = vi.fn(() => 0);
     const first = cache.get(patches, ground), identities = new Set([...first.values()].flat());
     ground.mockClear();
@@ -34,9 +34,12 @@ describe('world tree placement cache', () => {
     const next = cache.get(changed, ground), sampled = ground.mock.calls.length;
     expect(sampled).toBeGreaterThan(0);
     ground.mockClear(); const reference = whole(changed, ground);
-    expect(next).toEqual(reference); expect(sampled).toBeLessThan(ground.mock.calls.length / 3);
+    // Patch 209 changed; 210 borders it, so its edge thinning is re-planned; 211 does not.
+    expect(next).toEqual(reference); expect(sampled).toBeLessThan(ground.mock.calls.length * 0.75);
     const reused = [...next.values()].flat().filter((p) => identities.has(p));
-    expect(reused.length).toBe([...whole(patches.slice(1), ground).values()].flat().length);
+    const inPatch211 = (p: { x: number }) => p.x >= 11 * 300 - 150;
+    expect(reused.length).toBe([...first.values()].flat().filter(inPatch211).length);
+    expect(reused.every(inPatch211)).toBe(true);
     const tinyChange = changed.map((p) => ({ ...p, canopyCover: p.canopyCover! + 1e-8 }));
     // The existing renderer rounds tree counts; no extra rounding is introduced by the cache.
     expect(cache.get(tinyChange, ground)).toBe(next);
