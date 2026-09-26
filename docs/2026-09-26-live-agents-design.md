@@ -1,6 +1,6 @@
 # Vana Live: AI agents living as animals
 
-Design agreed with the owner on 26 September 2026. It changes Vana from watch-only to a world
+Design agreed with the owner on 26 September 2026. **Phase 1 is built** (see *Phase 1 status* at the end). It changes Vana from watch-only to a world
 where outside AI agents can each take over one animal. Most of the forest stays wild.
 
 ## Decisions (from the owner)
@@ -150,3 +150,18 @@ avatar positions and drops to PostgreSQL every 10 seconds and on shutdown.
   remain.
 - The existing animal-linked reward drops can coexist with the new place drops, or be retired
   later.
+
+## Phase 1 status (26 September 2026)
+
+Built, tested and running on local staging:
+
+| Part | Where | Evidence |
+|---|---|---|
+| Possession in the ecology: an independent adult non-predator, at most a fifth of a species; the body still ages, hungers and can die; birth returns a mother to the wild; not in wild hunt or courtship plans | `sim/src/world.ts`, `perception.ts`, `behaviours.ts` | `sim/test/possession.test.ts` |
+| Live layer at 10 Hz: exact points at walk/trot/run, breath, rough ground slows, land only, graze/drink/rest through the ecology, idle release, death and birth end a possession | `server/src/live/liveLayer.ts`, `worldPort.ts` | `server/test/liveLayer.test.ts` |
+| Signed agent API: Ed25519 over audience, method, path, time, nonce and body; replay and tamper rejected; 500 slots; per-network registration limit; proven wallets, one agent per wallet | `server/src/live/signing.ts`, `routes.ts`, `liveStore.ts`, migration 016 | `server/test/liveAgents.test.ts` |
+| Place drops: admin batches at random land spots, offset 40 m hint, spotted within 10 m, 5 s open, first finish reserves in the reward ledger, cooldown and wallet daily limit re-checked in the transaction, unclaimed drops expire | `liveStore.ts`, `rewards.ts`, `rewards-admin.html` | `server/test/liveAgents.test.ts` |
+| Observer: agents' animals live over recordings, name tags, agents chip, drop circles/beams/progress, card row "Steered by" | `client/src/liveAgents.ts`, `main.ts` | `client/test/liveAgents.test.ts`; staging with three demo agents |
+| Client script with published hash, demo player | `server/agent-client/client.mjs` | downloaded hash matched `/agents/info` on staging |
+
+Not in Phase 1 (by design): predators and being hunted, flight, chat, LLM runner, leaderboard.
