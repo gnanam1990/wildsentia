@@ -27,9 +27,23 @@ export function atmosphereAt(worldTime: number, season: string) {
  * say it is night. Presentation only; the world's time and light are unchanged.
  */
 export function observerExposure(daylight: number, viewDistance = 0): number {
-  // Close up the eye adapts; from high above the night should still look like night.
-  const close = 1 - Math.min(1, Math.max(0, (viewDistance - 300) / 1700));
-  return 1.1 + (1 - Math.min(1, Math.max(0, daylight))) * (0.25 + 0.5 * close);
+  return 1.1 + (1 - Math.min(1, Math.max(0, daylight))) * (0.25 + 0.5 * closeness(viewDistance));
+}
+
+/** 1 near the ground, falling to 0 by 2 km up: close up the eye adapts, from above it does not. */
+const closeness = (viewDistance: number) => 1 - Math.min(1, Math.max(0, (viewDistance - 300) / 1700));
+
+const DAY_SKY_LIGHT = new THREE.Color(0xcfe3ef), MOON_SKY_LIGHT = new THREE.Color(0x8fa5cc);
+
+/**
+ * Sun (or moon) and sky-light intensities for the observer. At night from high above both
+ * fall to a little over half, so the overview reads as a moonlit island, not a dim day;
+ * close up they stay as they were so animals remain legible. Presentation only.
+ */
+export function observerLights(daylight: number, sunIntensity: number, viewDistance = 0): { sun: number; sky: number } {
+  const d = Math.min(1, Math.max(0, daylight));
+  const dim = 1 - (1 - d) * 0.45 * (1 - closeness(viewDistance));
+  return { sun: sunIntensity * dim, sky: (0.85 + d * 0.45) * dim };
 }
 
 export class Atmosphere {
@@ -63,13 +77,18 @@ export class Atmosphere {
       this.scene.fog.far = Math.max(far, viewDistance * 2.4);
       this.scene.fog.near = Math.max(200, viewDistance * 0.9);
     }
-    this.sun.intensity = state.sunIntensity;
+    const lights = observerLights(state.daylight, state.sunIntensity, viewDistance);
+    this.sun.intensity = lights.sun;
     this.sun.target.position.copy(focus);
     this.sun.position.set(focus.x + Math.cos(state.angle) * 130, focus.y + 30 + state.daylight * 180, focus.z + 80);
     this.sun.target.updateMatrixWorld();
     const hemi = this.scene.children.find((o) => (o as THREE.HemisphereLight).isHemisphereLight) as THREE.HemisphereLight | undefined;
     // Moonlit observer exposure keeps silhouettes legible without changing world time.
-    if (hemi) hemi.intensity = 0.85 + state.daylight * 0.45;
+    if (hemi) {
+      hemi.intensity = lights.sky;
+      // Sky light cools toward moonlight as the sun goes down.
+      hemi.color.copy(DAY_SKY_LIGHT).lerp(MOON_SKY_LIGHT, 1 - state.daylight);
+    }
     const count = reducedMotion ? 0 : Math.round(600 * state.rain);
     this.rain.geometry.setDrawRange(0, count * 2);
     // Rain falls around the viewer, wherever the camera is, not in a column over the

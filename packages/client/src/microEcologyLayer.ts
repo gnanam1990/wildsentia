@@ -1,14 +1,29 @@
 import * as THREE from 'three';
-import { microCounts, type MicroEcologyState } from '@vana/shared';
-import { patchCentre } from './space.js';
+import { microCounts, spatialHash, waterAccessPosition, type MicroEcologyState } from '@vana/shared';
+import { PATCH_METRES, patchCentre } from './space.js';
 import type { HeightSampler, PatchView } from './terrain.js';
 
 const ROLES = [
-  ['ants', 0xd6a45d, 0.05, 0.02],
-  ['pollinators', 0xf2d15d, -0.03, 0.03],
-  ['detritivores', 0x9a6e52, 0.03, -0.03],
-  ['fish', 0x66b9d0, 0, 0],
+  ['ants', 0xd6a45d],
+  ['pollinators', 0xf2d15d],
+  ['detritivores', 0x9a6e52],
+  ['fish', 0x66b9d0],
 ] as const;
+
+/**
+ * Where a population's marker sits. Land populations live across the whole patch, so each
+ * takes a fixed spot anywhere within its inner 220 m instead of the patch centre: with every
+ * marker on a centre the island's overview showed a 300 m lattice of dots. Fish stay in the
+ * patch's pool (at its access point on the island, at the centre on the mainland plane).
+ */
+export function microMarkerPosition(role: string, patchId: number, island: boolean): { x: number; z: number } {
+  if (role === 'fish') {
+    const pool = island ? waterAccessPosition(patchId) : patchCentre(patchId);
+    return { x: pool.x + 0.6, z: pool.z };
+  }
+  const centre = patchCentre(patchId), h = spatialHash(`micro:${role}:${patchId}`), reach = PATCH_METRES * 0.37;
+  return { x: centre.x + ((h & 0xffff) / 0xffff * 2 - 1) * reach, z: centre.z + ((h >>> 16) / 0xffff * 2 - 1) * reach };
+}
 
 /** A tiny anti-aliased dot, not a camera-facing square scaled in world metres. */
 function markerTexture(): THREE.DataTexture {
@@ -52,15 +67,15 @@ export class MicroEcologyLayer {
     if (!state) { this.root.visible = false; this.#mesh.geometry.setDrawRange(0, 0); return; }
     const byId = new Map(patches.map((p) => [p.id, p]));
     const rows: Array<{ x: number; y: number; z: number; colour: number }> = [];
+    const island = patches[0]?.islandSeed !== undefined;
     for (const population of state.patches) {
       const patch = byId.get(population.patchId);
       if (!patch || patch.surface === 'ocean') continue;
-      const centre = patchCentre(patch.id);
       const counts = microCounts(population);
-      for (const [role, colour, ox, oz] of ROLES) {
+      for (const [role, colour] of ROLES) {
         if (counts[role] <= 0) continue;
-        rows.push({ x: centre.x + ox, y: groundAt(centre.x + ox, centre.z + oz) + (role === 'fish' ? 0.12 : 0.35),
-          z: centre.z + oz, colour });
+        const { x, z } = microMarkerPosition(role, patch.id, island);
+        rows.push({ x, y: groundAt(x, z) + (role === 'fish' ? 0.12 : 0.35), z, colour });
       }
     }
     const positions = new Float32Array(rows.length * 3), colours = new Float32Array(rows.length * 3);

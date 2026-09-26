@@ -130,6 +130,7 @@ button:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid
 #passport-panel { right: 16px; top: 76px; max-height: calc(100dvh - 150px); overflow-y: auto; scrollbar-width: thin; }
 #live-encounter-status { margin: 0 0 10px; padding: 6px 10px; border: 1px solid rgba(132, 200, 220, .35);
   border-radius: 999px; color: var(--mist); background: rgba(20, 44, 37, .6); font-size: 11.5px; line-height: 1.4; width: fit-content; }
+#scene-status, #community-motion-status { margin: 0 0 10px; color: var(--ink-2); font-size: 11.5px; line-height: 1.45; }
 #passport-panel .observer-options { margin: 14px 0 0; border-top: 1px solid var(--line); border-bottom: 0; padding: 4px 0 0; }
 #passport-panel .live-encounters { margin: 0; }
 .live-encounters { font-size: 12px; line-height: 1.5; margin-bottom: 12px; }

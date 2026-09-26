@@ -82,6 +82,7 @@ const communityLayer = new CommunityLayer();
 scene.add(communityLayer.root);
 
 const follow = new FollowCamera(camera, canvas);
+const EXPLORE_DISTANCE_M = 900;
 // The observer camera stays above sea level; animals still use the actual ground sampler.
 follow.groundHeightAt = (x, z) => Math.max(0, animals.groundHeightAt(x, z));
 // Dragging the ground explores the island: it lets go of the followed animal or person.
@@ -511,7 +512,12 @@ function pickedAnimal(event: MouseEvent | PointerEvent): string | null {
     event instanceof PointerEvent && event.pointerType === 'touch' ? 36 : 22);
 }
 
-document.querySelector('#freecam')!.addEventListener('click', () => { watch(null); });
+// Explore lets go and rises to a wide view, so the button always shows the island around you.
+document.querySelector('#freecam')!.addEventListener('click', () => {
+  watch(null);
+  if (follow.distance < EXPLORE_DISTANCE_M) follow.flyToDistance(EXPLORE_DISTANCE_M);
+  canvas.focus();
+});
 const speciesPicker = document.querySelector<HTMLSelectElement>('#species-picker')!;
 for (const id of Object.keys(SPECIES_VISUALS)) {
   const option = document.createElement('option');

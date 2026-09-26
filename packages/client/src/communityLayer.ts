@@ -71,8 +71,8 @@ export class CommunityLayer {
     }
     if (!this.#humans.nearby) return '';
     return this.#playback.active(now, reducedMotion)
-      ? 'People: recorded journeys and task windows, one hour behind the checkpoint. Poses are illustrative; terrain and the Community panel show the newer checkpoint.'
-      : 'People: saved checkpoint positions. No active movement playback; planned routes are not extrapolated.';
+      ? 'Villagers nearby walk their recorded paths, an hour behind the latest checkpoint; poses are illustrative.'
+      : 'Villagers nearby stand where the last checkpoint saw them.';
   }
   sync(state: CommunityState | null | undefined, ground: (x: number, z: number) => number): void {
     this.#hasCommunity = !!state; this.root.visible = !!state && !this.#replaying;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { Atmosphere, atmosphereAt, observerExposure } from '../src/environment.js';
+import { Atmosphere, atmosphereAt, observerExposure, observerLights } from '../src/environment.js';
 
 describe('authoritative clock and seasonal atmosphere', () => {
   it('is dark at midnight and brightest at noon', () => {
@@ -54,5 +54,19 @@ describe('monsoon rain', () => {
     expect((scene.fog as THREE.Fog).far).toBeGreaterThanOrEqual(3000 * 2.4);
     atmosphere.update(12 * 3600, 'dry', 3, focus, false, 20, eye);
     expect(atmosphere.rain.geometry.drawRange.count).toBe(0);
+  });
+
+  it('dims the moon and sky light over the night overview but not close up or by day', () => {
+    const night = atmosphereAt(0, 'dry'), noon = atmosphereAt(12 * 3600, 'dry');
+    const nearNight = observerLights(night.daylight, night.sunIntensity, 20);
+    const farNight = observerLights(night.daylight, night.sunIntensity, 3000);
+    expect(nearNight.sun).toBeCloseTo(night.sunIntensity);
+    expect(nearNight.sky).toBeCloseTo(0.85);
+    expect(farNight.sun).toBeLessThan(nearNight.sun * 0.6);
+    expect(farNight.sky).toBeLessThan(nearNight.sky * 0.6);
+    // Overall brightness from above at night, light times exposure, stays under a third of day.
+    const total = (l: { sun: number; sky: number }, d: number) => (l.sun + l.sky) * observerExposure(d, 3000);
+    expect(total(farNight, night.daylight)).toBeLessThan(total(observerLights(noon.daylight, noon.sunIntensity, 3000), noon.daylight) / 3);
+    expect(observerLights(noon.daylight, noon.sunIntensity, 3000).sun).toBeCloseTo(noon.sunIntensity);
   });
 });

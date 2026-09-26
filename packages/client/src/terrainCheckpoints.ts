@@ -10,7 +10,9 @@ export function terrainKeys(patches: readonly PatchView[]): Record<TerrainLayer 
   const height = terrainHeightKey(patches);
   const land = (p: PatchView) => p.surface === undefined || p.surface === 'land';
   const grass = patches.filter((p) => land(p) && p.grass > 100 && p.habitat !== 'water' && p.water <= 20_000);
-  const water = patches.filter((p) => land(p) && (p.habitat === 'water' || p.water > 20_000));
+  // The same patches terrain.ts draws water for: every positive stock on the island is a pool.
+  const water = patches.filter((p) => land(p) && (seed !== undefined
+    ? Number.isFinite(p.water) && p.water > 0 : p.habitat === 'water' || p.water > 20_000));
   const trees = JSON.stringify([height, patches.filter((p) => land(p) && ((p.canopyCover ?? 0) >= .3
     || treeAnchorRemnantForPatch(p) !== null)).map((p) => [p.id, treeAnchorRemnantForPatch(p) ? 'remnant' : 'live'])]);
   return {
