@@ -81,6 +81,11 @@ export class Gateway {
     return this.#watchers.get(actorId)?.size ?? 0;
   }
 
+  /** Sends one already-serialised message to every connected viewer (the live layer's state). */
+  broadcastRaw(payload: string): void {
+    for (const { socket } of this.#sessions.values()) socket.send(payload);
+  }
+
   broadcast(): void {
     const view = this.host.observation();
     if (!view) {

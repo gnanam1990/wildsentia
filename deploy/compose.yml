@@ -33,7 +33,8 @@ services:
       DATABASE_URL: postgres://vana:${VANA_DB_PASSWORD:?set a random URL-safe database password}@db:5432/vana
       PORT: "8080"
       WORLD_SEED: ${VANA_WORLD_SEED:-1}
-      WORLD_HOURS_PER_REAL_HOUR: "12"
+      # 1 = real time (the live-agents world); 12 = the original watch-only pace.
+      WORLD_HOURS_PER_REAL_HOUR: ${WORLD_HOURS_PER_REAL_HOUR:-12}
       # Caddy is the only way in; trust its X-Forwarded-For so limits are per visitor.
       VANA_TRUSTED_PROXY_HOPS: "1"
       # Observer rewards: off unless all three are set in deploy/.env.
@@ -43,6 +44,11 @@ services:
       VANA_REWARD_MIN_WATCH_SECONDS: ${VANA_REWARD_MIN_WATCH_SECONDS:-}
       VANA_REWARD_WALLET_DAILY_LIMIT: ${VANA_REWARD_WALLET_DAILY_LIMIT:-}
       VANA_REWARD_CLIENT_DAILY_LIMIT: ${VANA_REWARD_CLIENT_DAILY_LIMIT:-}
+      # AI agents steering animals (docs/2026-09-26-live-agents-design.md). Off unless 1.
+      VANA_LIVE_AGENTS: ${VANA_LIVE_AGENTS:-}
+      VANA_AGENT_SLOTS: ${VANA_AGENT_SLOTS:-}
+      VANA_AGENT_REGISTRATIONS_PER_NETWORK: ${VANA_AGENT_REGISTRATIONS_PER_NETWORK:-}
+      VANA_LIVE_SECRET: ${VANA_LIVE_SECRET:-}
       # Optional observer insights from TypeSafe AI (Jev). Off without a key.
       TYPESAFE_AI_API_KEY: ${TYPESAFE_AI_API_KEY:-}
       TYPESAFE_MODEL: ${TYPESAFE_MODEL:-}

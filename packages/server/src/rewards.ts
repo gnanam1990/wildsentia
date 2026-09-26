@@ -1,5 +1,6 @@
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { keccak_256 } from '@noble/hashes/sha3.js';
+import type { PlaceDropLedger } from './live/liveStore.js';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Pool } from './db/pool.js';
 import { baseReceiptRpc, matchBaseUsdcReceipt, type ReceiptRpc } from './baseReceipt.js';
@@ -74,11 +75,14 @@ const bodyOf = (request: FastifyRequest): Record<string, unknown> =>
   typeof request.body === 'object' && request.body !== null && !Array.isArray(request.body)
     ? request.body as Record<string, unknown> : {};
 const bearer = (r: FastifyRequest): string => r.headers.authorization?.match(/^Bearer ([^\s]{1,256})$/)?.[1] ?? '';
-interface Drop { id: string; actor_id: string; amount_micro: string; network: RewardNetwork; reveal_when: string; status: string; world_id?: string | null }
+interface Drop { id: string; actor_id: string; amount_micro: string; network: RewardNetwork; reveal_when: string; status: string; world_id?: string | null;
+  kind?: 'animal' | 'place'; place_x?: number | null; place_z?: number | null; appears_at?: Date | null; expires_at?: Date | null; spotted_by?: string | null }
 interface ReservedPayout { amount_micro: string; wallet: string; drop_status: string; claim_status: string }
 interface StoredPayout { claim_id: string; tx_hash: string; log_index: number; block_number: string; block_hash: string }
 const publicDrop = (d: Drop) => ({ id: d.id, actorId: d.actor_id, amount: displayAmount(d.amount_micro), network: d.network,
-  status: d.status, revealWhen: d.reveal_when });
+  status: d.status, revealWhen: d.reveal_when, kind: d.kind ?? 'animal',
+  ...(d.kind === 'place' ? { place: { x: d.place_x, z: d.place_z }, appearsAt: d.appears_at ?? null, expiresAt: d.expires_at ?? null,
+    spottedBy: d.spotted_by ?? null } : {}) });
 type PageKind = 'drops' | 'claims' | 'audit';
 type PageRow = { id: string; cursor_time?: string } & Record<string, unknown>;
 const PAGE_SIZE = 100;
@@ -106,6 +110,8 @@ export function installRewards(app: FastifyInstance, deps: {
   subject: (id: string) => { alive: boolean; carcass: boolean } | null;
   /** The running world's durable identity, or null before it is known. Rewards fail closed without it. */
   world?: () => string | null;
+  /** Place drops opened by live agents (docs/2026-09-26-live-agents-design.md), when enabled. */
+  placeDrops?: { ledger: PlaceDropLedger; spot: () => { x: number; z: number } | null };
 }): void {
   const { pool, config, subject } = deps;
   const minWatchSeconds = config?.minWatchSeconds ?? 0;
@@ -218,7 +224,7 @@ export function installRewards(app: FastifyInstance, deps: {
         return { claimId: previous.id, status: previous.status, amount: displayAmount(drop.amount_micro), network: drop.network,
           receipt: receiptFor(previous.id) };
       }
-      if (!drop || drop.network !== config!.network || drop.world_id !== world
+      if (!drop || drop.kind === 'place' || drop.network !== config!.network || drop.world_id !== world
         || currentViewer.actor_id !== drop.actor_id || !visible(drop)) {
         await db.query('rollback'); return reply.code(404).send({ error: 'watch_subject_to_claim' });
       }
@@ -408,6 +414,22 @@ export function installRewards(app: FastifyInstance, deps: {
       await db.query('commit'); return publicDrop(drop);
     } catch { await db.query('rollback'); return reply.code(503).send({ error: 'allocation_unavailable_retry_same_id' }); }
     finally { db.release(); }
+  });
+  // A batch of place drops at random land spots, for live agents to find and open.
+  app.post('/admin/rewards/place-drops', { bodyLimit: 2048 }, async (req, reply) => {
+    if (!deps.placeDrops) return reply.code(503).send({ error: 'live_agents_not_enabled' });
+    const b = bodyOf(req), amount = microAmount(b.amount);
+    const count = Number(b.count ?? 1), spacing = Number(b.spacingMinutes ?? 10), lifetime = Number(b.lifetimeMinutes ?? 60);
+    if (!uuid(b.batchId) || !amount || !Number.isInteger(count) || count < 1 || count > 50
+      || !Number.isInteger(spacing) || spacing < 0 || spacing > 1440 || !Number.isInteger(lifetime) || lifetime < 5 || lifetime > 1440)
+      return reply.code(400).send({ error: 'invalid_place_drops' });
+    if (await currentWorld() === null) return reply.code(503).send({ error: 'world_unavailable' });
+    try {
+      const result = await deps.placeDrops.ledger.createBatch({ batchId: b.batchId, amountMicro: amount, count,
+        spacingMinutes: spacing, lifetimeMinutes: lifetime }, deps.placeDrops.spot);
+      await deps.placeDrops.ledger.refresh();
+      return { ...result, amount: displayAmount(amount) };
+    } catch { return reply.code(503).send({ error: 'place_drops_unavailable_retry_same_batch' }); }
   });
   app.post('/admin/rewards/review', { bodyLimit: 2048 }, async (req, reply) => {
     const b = bodyOf(req);

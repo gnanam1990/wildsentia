@@ -6,6 +6,7 @@ import { buildApi, trustedProxyHops } from './api.js';
 import { Narrator } from './narration/narrator.js';
 import { claudeRephraser } from './narration/claude.js';
 import { Insights } from './insights/insights.js';
+import { liveRuntime, type LiveRuntime } from './live/runtime.js';
 import { typesafeConfig, typesafeDailyCalls, typesafeSystemOne } from './insights/typesafe.js';
 import { Gateway } from './gateway.js';
 import { rewardConfig } from './rewards.js';
@@ -66,6 +67,7 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
   let gateway: Gateway | undefined;
   let broadcastTimer: NodeJS.Timeout | undefined;
   let watchdogTimer: NodeJS.Timeout | undefined;
+  let live: LiveRuntime | null = null;
   let closing: Promise<void> | undefined;
   const onSignal = (): void => { void close().then(() => process.exit(0), () => process.exit(1)); };
   const cleanup = async (checkpoint: boolean): Promise<void> => {
@@ -73,6 +75,7 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
     if (watchdogTimer) clearInterval(watchdogTimer);
     for (const signal of ['SIGINT', 'SIGTERM'] as const) process.removeListener(signal, onSignal);
     gateway?.close();
+    await live?.stop();
     try {
       if (checkpoint) await host.stop(); else await host.abort();
     } finally {
@@ -102,7 +105,11 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
     const insights = new Insights(typesafe ? typesafeSystemOne(typesafe) : null, typesafeDailyCalls(process.env));
     console.log(typesafe === null ? 'insights: off (no TypeSafe key)' : `insights: TypeSafe ${typesafe.model} on`);
 
-    api = buildApi({ host, pool, narrator, insights, rewards, social, holder, trustedProxyHops: trustedProxyHops(process.env) });
+    // Outside agents steering animals: off unless VANA_LIVE_AGENTS=1.
+    live = liveRuntime(host, pool, rewards, process.env);
+
+    api = buildApi({ host, pool, narrator, insights, rewards, social, holder, trustedProxyHops: trustedProxyHops(process.env),
+      ...(live ? { live: { ...live.routes, spot: live.spot } } : {}) });
     await api.ready();
 
     server = createServer((req, res) => { api!.server.emit('request', req, res); });
@@ -117,6 +124,7 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
     gateway.attach(server);
     host.start();
     broadcastTimer = setInterval(() => gateway!.broadcast(), 1000);
+    await live?.start((payload) => gateway!.broadcastRaw(payload));
     // Docker restart policies react to process exit, not an unhealthy healthcheck. A lost
     // writer or three consecutive failed scheduled ticks must exit so one writer can recover
     // from the last durable checkpoint. A single transient failure gets the next tick to retry.

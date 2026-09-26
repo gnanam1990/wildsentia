@@ -595,6 +595,9 @@ export class World {
 
   // ---- Agent-steered animals (docs/2026-09-26-live-agents-design.md) ----------------------
 
+  /** A living or recently departed animal by id: the record itself, for read-only adapters. */
+  animal(id: string): Agent | undefined { return this.#agentsById.get(id); }
+
   /** Why this animal cannot be taken over now, or null if it can. */
   possessionBlock(id: string): string | null {
     const agent = this.#agentsById.get(id);
@@ -602,6 +605,8 @@ export class World {
     if (agent.controller) return 'already_controlled';
     const cfg = this.species.get(agent.speciesId)!;
     if (cfg.archetype === 'apex_predator' || cfg.archetype === 'pack_predator') return 'predators_later';
+    // The live layer moves animals on the ground; flight comes later.
+    if (agent.speciesId === 'vulture') return 'flight_later';
     if (agent.lifeStage !== 'adult' && agent.lifeStage !== 'elder') return 'not_adult';
     if (agent.dependentOn !== null) return 'dependent';
     if (this.agents.some((a) => a.alive && a.dependentOn === agent.id)) return 'raising_young';

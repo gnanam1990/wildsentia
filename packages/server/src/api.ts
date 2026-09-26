@@ -15,12 +15,16 @@ import { HistoryCursors, historyLimit } from './historyCursor.js';
 import { floweringGuildSummary } from './floweringObservation.js';
 import { installHolder, type HolderChain, type HolderConfig } from './holder.js';
 import { Insights } from './insights/insights.js';
+import { installLiveAgents, type LiveRouteDeps } from './live/routes.js';
+import type { PlaceDropLedger } from './live/liveStore.js';
 
 export interface ApiDeps {
   host: SimHost;
   pool: Pool;
   /** Rewords recap lines through the grounding check. Without one, recaps are templates. */
   narrator?: Narrator;
+  /** Outside agents steering animals (docs/2026-09-26-live-agents-design.md); absent unless enabled. */
+  live?: (LiveRouteDeps & { spot: () => { x: number; z: number } | null }) | undefined;
   /** Observer insights (TypeSafe AI); absent insights are reported as not configured. */
   insights?: Insights;
   rewards?: RewardConfig | undefined;
@@ -47,14 +51,16 @@ export function trustedProxyHops(env: NodeJS.ProcessEnv): number {
  * World routes are read-only. The optional reward ledger has independent write routes and
  * receives only a read-only subject visibility adapter, never a simulation mutation capability.
  */
-export function buildApi({ host, pool, narrator, insights: insightDeps, rewards, receiptRpc, social, holder, holderChain, trustedProxyHops: hops = 0 }: ApiDeps): FastifyInstance {
+export function buildApi({ host, pool, narrator, insights: insightDeps, live, rewards, receiptRpc, social, holder, holderChain, trustedProxyHops: hops = 0 }: ApiDeps): FastifyInstance {
   // Without this, behind Caddy every visitor has the proxy's address and shares one rate limit.
   const app = Fastify({ logger: false, trustProxy: hops > 0 ? (_address: string, hop: number) => hop < hops : false });
   const events = new EventStore(pool);
   const life = new LifeStore(pool);
   const humanMotion = new HumanMotionStore(pool);
   const historyCursors = new HistoryCursors();
-  installRewards(app, { pool, config: rewards, ...(receiptRpc ? { receiptRpc } : {}), subject: (id) => host.rewardSubject(id), world: () => host.worldId });
+  installRewards(app, { pool, config: rewards, ...(receiptRpc ? { receiptRpc } : {}), subject: (id) => host.rewardSubject(id), world: () => host.worldId,
+    ...(live?.ledger ? { placeDrops: { ledger: live.ledger as PlaceDropLedger, spot: live.spot } } : {}) });
+  if (live) installLiveAgents(app, live);
   installSocialOutbox(app, { pool, config: social, boundary: () => {
     const view = host.observation();
     return view ? { worldTime: view.worldTime, nextSequence: view.nextSequence } : null;
