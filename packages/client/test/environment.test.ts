@@ -8,10 +8,18 @@ describe('authoritative clock and seasonal atmosphere', () => {
     expect(atmosphereAt(12 * 3600, 'dry').daylight).toBe(1);
     expect(atmosphereAt(86400, 'dry')).toEqual(atmosphereAt(0, 'dry'));
   });
-  it('uses the reported season rather than random local weather', () => {
-    expect(atmosphereAt(0, 'monsoon').rain).toBeGreaterThan(atmosphereAt(0, 'wet').rain);
-    expect(atmosphereAt(0, 'dry').rain).toBe(0);
+  it('rains in showers that follow the reported season, the same for every viewer', () => {
+    // Showers come and go, but a monsoon day is wetter than a wet-season day, and a dry day barely rains.
+    const mean = (season: string) => Array.from({ length: 30 * 48 }, (_, i) => atmosphereAt(i * 1800, season).rain)
+      .reduce((a, b) => a + b, 0) / (30 * 48);
+    expect(mean('monsoon')).toBeGreaterThan(mean('wet'));
+    expect(mean('wet')).toBeGreaterThan(mean('dry'));
+    expect(mean('dry')).toBeLessThan(0.02);
     expect(atmosphereAt(0, 'unknown').rain).toBe(0);
+    // The same moment looks the same for every viewer, and it stays cloudy between monsoon showers.
+    expect(atmosphereAt(123_456, 'monsoon')).toEqual(atmosphereAt(123_456, 'monsoon'));
+    const dryMoment = Array.from({ length: 200 }, (_, i) => i * 1800).find((t) => atmosphereAt(t, 'monsoon').rain === 0)!;
+    expect(atmosphereAt(dryMoment, 'monsoon').cloud).toBeGreaterThan(0.5);
   });
 });
 
@@ -21,6 +29,10 @@ describe('observer exposure', () => {
     expect(observerExposure(0)).toBeGreaterThan(1.7);
     expect(observerExposure(0.5)).toBeGreaterThan(observerExposure(1));
     expect(observerExposure(-3)).toBe(observerExposure(0));
+    // From the island overview the night is darker than close up.
+    expect(observerExposure(0, 3000)).toBeLessThan(observerExposure(0, 20));
+    expect(observerExposure(0, 3000)).toBeGreaterThan(observerExposure(1, 3000));
+    expect(observerExposure(1, 3000)).toBeCloseTo(1.1);
   });
 });
 

@@ -94,7 +94,7 @@ export class SkyDome {
     this.mesh.renderOrder = -1000;
   }
 
-  /** Returns the horizon colour, so fog can fade the land into exactly this sky. */
+  /** Returns the horizon colour, so fog can fade the land into exactly this sky. `rain` is cloud cover, 0-1. */
   update(daylight: number, rain: number, sunDirection: THREE.Vector3, sunColour: THREE.Color, seconds: number, eye: THREE.Vector3): THREE.Color {
     const { zenith, horizon } = skyColours(daylight, rain);
     this.#uniforms.zenith.value.copy(zenith);
