@@ -165,3 +165,21 @@ Built, tested and running on local staging:
 | Client script with published hash, demo player | `server/agent-client/client.mjs` | downloaded hash matched `/agents/info` on staging |
 
 Not in Phase 1 (by design): predators and being hunted, flight, chat, LLM runner, leaderboard.
+
+## Phase 1 hardening and Phase 2 status (26 September 2026)
+
+| Part | Where | Evidence |
+|---|---|---|
+| Land routes round water and sea (A* over patches, species terrain cost, pulled straight); `move {to}` and `GET /agents/me/route` | `server/src/live/route.ts` | `server/test/route.test.ts` |
+| Per-viewer live stream (camera view, followed animal) plus a 2 s roster; indexed nearby lookups; one-pass candidates | `gateway.ts`, `worldPort.ts`, `world.ts` | `gateway.test.ts`, `liveLayer.test.ts` |
+| Phone-sized agents panel | `client/src/main.ts`, `style.css` | staging at 390 px and 1280 px |
+| sim_0.31.0: nothing feeds at a carcass a predator of its kind fed from in the past hour (`VANA_ALLOW_V30_UPGRADE`) | `sim/src/agents/perception.ts`, `behaviours.ts` | `sim/test/heldKill.test.ts`, `snapshot.test.ts` |
+| Predators for agents; stalk (hidden by concealment) then sprint at commit distance; prey spots stalkers late, sprinters early; wild prey bolts off its recording; contact odds from base success and evasiveness; kill recorded, carcass, `feed` | `liveLayer.ts`, `world.ts` (`resolveLiveHunt`, `feedControlled`) | `server/test/liveHunting.test.ts`; staging: agent tiger stalked, charged and killed a chital |
+| Hungry wild predators stalk and charge agents' animals, give up when out of breath; a death costs two minutes | `liveLayer.ts` | `liveHunting.test.ts` |
+| Herd alarm, pack bonus, tree refuge (langur, squirrel), vulture flight, queue for species with none free | `liveLayer.ts` | `server/test/liveAbilities.test.ts` |
+| Live changes checkpointed (a hunt within a minute, others each quarter hour); pruning keeps the newest snapshot of each of the last 48 world times | `runtime.ts`, `snapshotStore.ts` | `stores.test.ts` |
+| Server paces recorded routes exactly as the observer does (pacing now in shared) | `shared/src/pacing.ts`, `simHost.ts` (`playedPosition`) | `shared/test/pacing.test.ts` |
+
+Known limits: a wild animal taken off its recording mid-hour keeps its already-recorded events
+for the rest of that hour (for example a later drink); predation between two agents' animals
+uses the same odds as wild hunts; flight has no altitude physics beyond drawing it in the air.
