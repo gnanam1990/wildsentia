@@ -127,7 +127,7 @@ const ACTIVITY_LABEL: Record<string, string> = {
 hud.clockTime = () => liveWorldTime();
 hud.liveActivity = (id) => {
   const avatar = liveAgents.avatarForAnimal(id);
-  if (avatar) return { state: `${activityOf(avatar)} · steered by ${avatar.name}`, goal: avatar.action === 'idle' ? '' : avatar.action };
+  if (avatar) return { state: activityOf(avatar), goal: avatar.action === 'idle' ? '' : avatar.action, agent: avatar.name };
   const pose = liveEncounters.poses(performance.now(), reducedMotion.matches).get(id);
   return pose ? { state: ACTIVITY_LABEL[pose.animal.state] ?? pose.animal.state, goal: pose.animal.currentGoal } : null;
 };
@@ -373,7 +373,8 @@ function watch(id: string | null): void {
   recapPending = id;
   lastFollowed.set(id);
   void hud.refreshPassport(id).then(() => hud.render(followedId));
-  void insightPanel.outlook(id);
+  // An agent's animal does what its agent decides; an estimate of its next hour would mislead.
+  void insightPanel.outlook(id !== null && liveAgents.avatarForAnimal(id) ? null : id);
   if (socket?.readyState !== WebSocket.OPEN) return;
   socket.send(JSON.stringify(id === null ? { type: 'unwatch' } : { type: 'watch', actorId: id }));
 }
@@ -628,7 +629,10 @@ setInterval(() => { void hud.refreshFeed(); }, 10_000);
 // TypeSafe AI estimates (server-side, optional): highlights above the feed and the followed
 // animal's likely next hour. Answers are cached per checkpoint, so polling costs no calls.
 void insightPanel.highlights();
-setInterval(() => { void insightPanel.highlights(); void insightPanel.outlook(followedId); }, 30_000);
+setInterval(() => {
+  void insightPanel.highlights();
+  void insightPanel.outlook(followedId !== null && liveAgents.avatarForAnimal(followedId) ? null : followedId);
+}, 30_000);
 
 // Dev-only handle so the running world can be inspected from the console.
 if (import.meta.env.DEV) {
@@ -901,7 +905,7 @@ function renderAgentsChip(): void {
     Object.assign(button.dataset, data);
     r.append(span, button); list.append(r);
   };
-  for (const a of avatars) row(a.name, `${SPECIES_LABEL[a.speciesId] ?? a.speciesId} · ${activityOf(a)}`, 'Follow', { followAnimal: a.animalId });
+  for (const a of avatars) row(a.name, `${SPECIES_LABEL[a.speciesId] ?? a.speciesId.replace(/^./, (c) => c.toUpperCase())} · ${activityOf(a)}`, 'Follow', { followAnimal: a.animalId });
   for (const d of drops) row(`${usdc(d.amountMicro)} USDC drop`, d.spotted ? 'spotted: race to open it' : 'somewhere in the gold circle', 'Look', { lookDrop: d.id }, 'drop-row');
   details.append(summary, list);
   agentsChip.replaceChildren(details);

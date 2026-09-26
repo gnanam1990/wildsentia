@@ -217,7 +217,7 @@ export class Hud {
   /** The island's time as played on screen; falls back to the newest saved hour. */
   clockTime: () => number | null = () => this.store.world?.worldTime ?? null;
   /** What the followed animal is doing in the hour being played, when that is known. */
-  liveActivity: (id: string) => { state: string; goal: string } | null = () => null;
+  liveActivity: (id: string) => { state: string; goal: string; agent?: string } | null = () => null;
   #clockText = '';
 
   constructor(private readonly elements: HudElements, private readonly store: WorldStore) {}
@@ -305,6 +305,7 @@ export class Hud {
       ${animal.woundStatus
         ? `<div class="row"><span>Injury</span><b>Modelled ${animal.woundStatus === 'infected' ? 'wound infection' : 'open wound'}</b></div>` : ''}
       <div class="row"><span>Goal</span><b>${escape(live?.goal || animal.currentGoal)}</b></div>
+      ${live?.agent ? `<div class="row"><span>Steered by</span><b class="agent-name">${escape(live.agent)} (AI agent)</b></div>` : ''}
       <div class="row"><span>Watching now</span><b>${viewers ?? UNKNOWN}</b></div>
       ${p === null ? '' : `<details class="story"><summary>Life story, family and skills</summary>${this.#skills(p) + this.#lineage(p) + this.#timeline(p)}</details>`}
       <div class="card-actions">

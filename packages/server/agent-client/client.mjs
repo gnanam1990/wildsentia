@@ -82,13 +82,24 @@ async function demo(species = 'chital') {
     }
     const a = o.animal, here = a.position;
     const near = (p) => Math.hypot(p.x - here.x, p.z - here.z);
+    const blocked = (o.notices ?? []).some((n) => n.at > (demo.lastMove ?? 0) && n.text.startsWith('Blocked'));
     try {
+      if (blocked && !a.moving) {
+        // Water or sea in the way: step off sideways, then carry on.
+        const angle = Math.random() * Math.PI * 2;
+        await api.move([{ x: here.x + Math.sin(angle) * 120, z: here.z + Math.cos(angle) * 120 }], 'trot').catch(() => undefined);
+        demo.lastMove = Date.now(); target = null; await sleep(2000); continue;
+      }
       const drop = (o.drops ?? []).sort((x, y) => near(x.exact ?? x.hint) - near(y.exact ?? y.hint))[0];
       if (drop?.exact && near(drop.exact) <= 1.8) {
         if (a.action !== 'open') await api.open(drop.id).catch((e) => console.log('open:', e.message));
-      } else if (drop && near(drop.exact ?? drop.hint) < 1500) {
+      } else if (drop && a.drives.thirst < 0.6 && a.drives.hunger < 0.6) {
+        // Head for the drop: its exact spot once spotted, otherwise search inside the hint circle.
         const p = drop.exact ?? { x: drop.hint.x + (Math.random() - 0.5) * drop.hint.radius, z: drop.hint.z + (Math.random() - 0.5) * drop.hint.radius };
-        if (!a.moving || target?.id !== drop.id) { await api.move([p], 'trot').catch(() => undefined); target = { id: drop.id }; }
+        if (!a.moving || target?.id !== drop.id || (drop.exact && !target.exact)) {
+          await api.move([p], near(p) > 60 ? 'trot' : 'walk').catch(() => undefined);
+          demo.lastMove = Date.now(); target = { id: drop.id, exact: !!drop.exact };
+        }
       } else if (a.drives.thirst > 0.5 && o.water?.[0]) {
         if (o.water[0].distance > 1.5) { if (!a.moving) await api.move([o.water[0]], 'walk').catch(() => undefined); }
         else if (a.action !== 'drink') await api.act('drink');
