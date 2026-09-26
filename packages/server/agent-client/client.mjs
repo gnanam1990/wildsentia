@@ -60,6 +60,9 @@ export const api = {
   possess: (speciesOrAnimal) => call('POST', '/agents/me/possess', /_/.test(speciesOrAnimal) ? { animalId: speciesOrAnimal } : { speciesId: speciesOrAnimal }),
   release: () => call('POST', '/agents/me/release'),
   move: (points, gait = 'walk') => call('POST', '/agents/me/move', { points, gait }),
+  /** Let the server find the land route round water and sea. */
+  goTo: (to, gait = 'walk') => call('POST', '/agents/me/move', { to, gait }),
+  route: (x, z) => call('GET', `/agents/me/route?x=${encodeURIComponent(x)}&z=${encodeURIComponent(z)}`),
   stop: () => call('POST', '/agents/me/stop'),
   act: (action) => call('POST', '/agents/me/act', { action }),
   open: (dropId) => call('POST', '/agents/me/open', { dropId }),
@@ -97,11 +100,11 @@ async function demo(species = 'chital') {
         // Head for the drop: its exact spot once spotted, otherwise search inside the hint circle.
         const p = drop.exact ?? { x: drop.hint.x + (Math.random() - 0.5) * drop.hint.radius, z: drop.hint.z + (Math.random() - 0.5) * drop.hint.radius };
         if (!a.moving || target?.id !== drop.id || (drop.exact && !target.exact)) {
-          await api.move([p], near(p) > 60 ? 'trot' : 'walk').catch(() => undefined);
+          await api.goTo(p, near(p) > 60 ? 'trot' : 'walk').catch(() => undefined);
           demo.lastMove = Date.now(); target = { id: drop.id, exact: !!drop.exact };
         }
       } else if (a.drives.thirst > 0.5 && o.water?.[0]) {
-        if (o.water[0].distance > 1.5) { if (!a.moving) await api.move([o.water[0]], 'walk').catch(() => undefined); }
+        if (o.water[0].distance > 1.5) { if (!a.moving) await api.goTo(o.water[0], 'walk').catch(() => undefined); }
         else if (a.action !== 'drink') await api.act('drink');
       } else if (a.drives.hunger > 0.4 && (a.here?.grassKg ?? 0) > 5) {
         if (a.action !== 'graze') await api.act('graze');
@@ -125,6 +128,8 @@ async function main() {
     case 'possess': return out(await api.possess(args[0]));
     case 'release': return out(await api.release());
     case 'move': return out(await api.move([{ x: Number(args[0]), z: Number(args[1]) }], args[2] ?? 'walk'));
+    case 'goto': return out(await api.goTo({ x: Number(args[0]), z: Number(args[1]) }, args[2] ?? 'walk'));
+    case 'route': return out(await api.route(args[0], args[1]));
     case 'stop': return out(await api.stop());
     case 'act': return out(await api.act(args[0]));
     case 'open': return out(await api.open(args[0]));
@@ -135,7 +140,7 @@ async function main() {
     case 'wallet': return out(await api.wallet(args[0], args[1]));
     case 'demo': return demo(args[0]);
     default:
-      console.log('commands: info | register <name> [bio] | observe | possess <species|animalId> | move <x> <z> [walk|trot|run]');
+      console.log('commands: info | register <name> [bio] | observe | possess <species|animalId> | move <x> <z> [gait] | goto <x> <z> [gait] | route <x> <z>');
       console.log('          stop | act <graze|drink|rest> | open <dropId> | release | wallet-message <0x..> | wallet <0x..> <signature> | demo [species]');
   }
 }

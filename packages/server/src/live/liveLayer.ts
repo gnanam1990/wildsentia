@@ -35,6 +35,8 @@ export interface WorldPort {
   patchAt(x: number, z: number): PatchView | null;
   nearby(x: number, z: number, radius: number, limit: number): AnimalView[];
   waterPoints(x: number, z: number, radius: number): Array<{ patchId: number; x: number; z: number; litres: number }>;
+  /** The cheapest land route for this species from one point to another, or null if none. */
+  route(speciesId: string, from: { x: number; z: number }, to: { x: number; z: number }): { points: Array<{ x: number; z: number }>; metres: number } | null;
   /** Animals an agent could take now, for the possess menu. */
   candidates(speciesId: string | null, limit: number): AnimalView[];
 }
@@ -56,7 +58,7 @@ export const OPEN_RADIUS_M = 2;
 export const OPEN_SECONDS = 5;
 export const IDLE_RELEASE_MS = 15 * 60_000;
 export const ACTION_FLUSH_SECONDS = 30;
-const MAX_WAYPOINTS = 20;
+const MAX_WAYPOINTS = 64;
 
 export interface Avatar {
   agentId: string; agentName: string; animalId: string; speciesId: string;
@@ -140,6 +142,16 @@ export class LiveLayer {
     avatar.gait = gait; avatar.moving = true; avatar.action = 'idle'; avatar.opening = null;
     avatar.lastCommand = this.clock();
     return null;
+  }
+
+  /** Goes to a point by the cheapest land route, round water and sea. */
+  goTo(agentId: string, to: { x: number; z: number }, gait: Gait): string | null {
+    const avatar = this.avatars.get(agentId);
+    if (!avatar) return 'not_possessing';
+    if (!Number.isFinite(to.x) || !Number.isFinite(to.z)) return 'not_on_land';
+    const route = this.world.route(avatar.speciesId, avatar, to);
+    if (!route) return 'no_land_route';
+    return this.moveTo(agentId, route.points, gait);
   }
 
   stop(agentId: string): string | null {

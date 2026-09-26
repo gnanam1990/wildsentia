@@ -1,6 +1,7 @@
 import { landWalkable, patchAtPosition, patchCentre, waterAccessPosition, GRID_SIZE, PATCH_METRES, type Agent } from '@vana/shared';
 import { locomotionFactor, type World } from '@vana/sim';
 import type { AnimalView, PatchView, SpeciesMotion, WorldPort } from './liveLayer.js';
+import { landRoute } from './route.js';
 
 const view = (a: Agent): AnimalView => ({ id: a.id, speciesId: a.speciesId, alive: a.alive, controller: a.controller,
   position: { ...(a.position ?? { ...patchCentre(a.patchId), heading: 0 }) }, patchId: a.patchId, state: a.state,
@@ -54,6 +55,11 @@ export function worldPort(world: () => World, worldId: () => string | null): Wor
       .map((p) => ({ patchId: p.id, ...waterAccessPosition(p.id), litres: p.waterVolume }))
       .filter((w) => Math.hypot(w.x - x, w.z - z) <= radius)
       .map(({ patchId, x: wx, z: wz, litres }) => ({ patchId, x: wx, z: wz, litres })),
+    route: (speciesId, from, to) => {
+      const cfg = world().species.get(speciesId);
+      const costs = cfg?.locomotion.terrainCost as Record<string, number> | undefined;
+      return landRoute(world().patches, from, to, (habitat) => costs?.[habitat] ?? 1);
+    },
     candidates: (speciesId, limit) => {
       const w = world();
       return w.agents.filter((a) => (speciesId === null || a.speciesId === speciesId) && w.possessionBlock(a.id) === null)

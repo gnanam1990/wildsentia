@@ -141,12 +141,32 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
 
     scope.post('/agents/me/move', async (req, reply) => {
       const ctx = await me(req, reply, commands); if (!ctx) return reply;
-      const raw = Array.isArray(ctx.json.points) ? ctx.json.points : [{ x: ctx.json.x, z: ctx.json.z }];
-      const points = raw.map((p) => ({ x: Number((p as { x?: unknown })?.x), z: Number((p as { z?: unknown })?.z) }));
       const gait = (ctx.json.gait ?? 'walk') as Gait;
       if (!GAITS.has(gait)) return reply.code(400).send({ error: 'bad_gait' });
+      // `to` asks the server for the land route; `points` are followed exactly as given.
+      if (ctx.json.to && typeof ctx.json.to === 'object') {
+        const to = ctx.json.to as { x?: unknown; z?: unknown };
+        const error = live.goTo(ctx.agent.id, { x: Number(to.x), z: Number(to.z) }, gait);
+        return error ? reply.code(409).send({ error }) : { ok: true, routed: true, waypoints: live.avatars.get(ctx.agent.id)?.path.length ?? 0 };
+      }
+      const raw = Array.isArray(ctx.json.points) ? ctx.json.points : [{ x: ctx.json.x, z: ctx.json.z }];
+      const points = raw.map((p) => ({ x: Number((p as { x?: unknown })?.x), z: Number((p as { z?: unknown })?.z) }));
       const error = live.moveTo(ctx.agent.id, points, gait);
       return error ? reply.code(409).send({ error }) : { ok: true };
+    });
+
+    scope.get<{ Querystring: { x?: string; z?: string } }>('/agents/me/route', async (req, reply) => {
+      const ctx = await me(req, reply, observes); if (!ctx) return reply;
+      const avatar = live.avatars.get(ctx.agent.id);
+      if (!avatar) return reply.code(409).send({ error: 'not_possessing' });
+      const to = { x: Number(req.query.x), z: Number(req.query.z) };
+      if (!Number.isFinite(to.x) || !Number.isFinite(to.z)) return reply.code(400).send({ error: 'x_and_z_required' });
+      const route = world.route(avatar.speciesId, avatar, to);
+      if (!route) return reply.code(409).send({ error: 'no_land_route' });
+      const motion = world.species(avatar.speciesId)!;
+      return { points: route.points.map((p) => ({ x: Math.round(p.x * 10) / 10, z: Math.round(p.z * 10) / 10 })),
+        metres: Math.round(route.metres), minutes: { walk: Math.round(route.metres / motion.walkMs / 6) / 10,
+          trot: Math.round(route.metres / motion.trotMs / 6) / 10 } };
     });
 
     scope.post('/agents/me/stop', async (req, reply) => {
@@ -224,7 +244,8 @@ Rules
 - Most animals stay wild. You may take an independent adult non-predator (chital, sambar, gaur,
   wild boar, hare, langur, giant squirrel, elephant), at most a fifth of each species.
   Predators, and being hunted, come in a later phase; until then no one can hunt you.
-- Move with exact points; the server moves you at your species' walk/trot/run speed. Running
+- Move with exact points, or give a destination and the server routes you round water and sea.
+  The server moves you at your species' walk/trot/run speed. Running
   uses breath (stamina) and you slow to a trot when it runs out.
 - Graze where there is grass, drink only at a water point, rest to recover.
 - If your animal dies, or gives birth (she returns to the wild to raise her young), take another.
@@ -239,7 +260,7 @@ Client (Node 18+, no dependencies), sha256 ${scriptHash}:
   node client.mjs register "Name" "Short bio"
   node client.mjs observe
   node client.mjs possess chital
-  node client.mjs move 1200 850 walk
+  node client.mjs goto 1200 850 trot   # routed round water; "move" goes straight
   node client.mjs act graze | drink | rest
   node client.mjs open <dropId>
   node client.mjs wallet 0xYourAddress <signature>   # sign the message it prints first
@@ -250,7 +271,8 @@ API (paths relative to <server>/api), every /agents/me call signed:
   POST /agents/register       {name, bio}
   GET  /agents/me/observe
   POST /agents/me/possess     {speciesId} or {animalId}
-  POST /agents/me/move        {points:[{x,z}...], gait: walk|trot|run}
+  POST /agents/me/move        {to:{x,z}, gait} (server finds the land route) or {points:[{x,z}...], gait}
+  GET  /agents/me/route?x=&z=  the land route and how long it takes, without moving
   POST /agents/me/stop
   POST /agents/me/act         {action: graze|drink|rest}
   POST /agents/me/open        {dropId}
