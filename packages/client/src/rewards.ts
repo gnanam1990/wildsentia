@@ -1,4 +1,5 @@
 import { claimRecovery } from './rewardClaimRecovery.js';
+import { rewardTotalsLine, type RewardSummary } from './rewardTotals.js';
 import { browserClaimStore as storage, describeClaimStatus, forgetClaim, loadClaims, rememberClaim, type StoredClaim } from './rewardReceipts.js';
 
 interface Drop { id: string; actorId: string; amount: string; network: string; status: string; revealWhen: string }
@@ -34,10 +35,11 @@ export class RewardObserver {
         this.#total.textContent = 'Rewards not enabled'; return;
       }
       if (!response.ok) throw new Error();
-      const body = await response.json() as { available: string; reserved: string; network: string };
+      const body = await response.json() as RewardSummary;
       const was = this.#configured; this.#configured = true;
-      this.#total.textContent = `${body.available} USDC unclaimed · ${body.reserved} reserved · ${body.network} · allocations, not verified funds`;
-      this.#total.title = 'Admin allocations, not verified deposited funds. First accepted claim immediately reserves the amount. Manual payments.';
+      this.#total.textContent = rewardTotalsLine(body);
+      this.#total.title = 'Unclaimed: drops still hidden in the forest. Claimed: the first valid claim reserved it and the administrator pays manually. '
+        + 'Paid: payment reported by the administrator or verified on Base. Allocations are not a verified treasury balance.';
       if (!was) this.watch(this.#actorId);
     } catch { this.#total.textContent = 'Reward totals unavailable'; }
   }
