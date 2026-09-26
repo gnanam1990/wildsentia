@@ -6,6 +6,7 @@ import { hideFarFieldNear } from './terrain.js';
 import { TerrainCheckpoints, type PreparedTerrain } from './terrainCheckpoints.js';
 import { NEAR_RADIUS_M, TREE_DETAIL_RADIUS_M, NearVegetation } from './vegetation.js';
 import { InsightPanel } from './insights.js';
+import { LiveAgents, activityOf, isLiveMessage, usdc } from './liveAgents.js';
 import { COVER_RADIUS_M, GroundCover } from './groundCover.js';
 import { AnimalLayer } from './animals.js';
 import { FollowCamera, followDistanceFor } from './camera.js';
@@ -84,6 +85,9 @@ const microEcology = new MicroEcologyLayer();
 scene.add(microEcology.root);
 const communityLayer = new CommunityLayer();
 scene.add(communityLayer.root);
+// Animals steered by outside AI agents, and the USDC drops they race for.
+const liveAgents = new LiveAgents((x, z) => animals.groundHeightAt(x, z));
+scene.add(liveAgents.root);
 
 const follow = new FollowCamera(camera, canvas);
 const EXPLORE_DISTANCE_M = 900;
@@ -122,6 +126,8 @@ const ACTIVITY_LABEL: Record<string, string> = {
 };
 hud.clockTime = () => liveWorldTime();
 hud.liveActivity = (id) => {
+  const avatar = liveAgents.avatarForAnimal(id);
+  if (avatar) return { state: `${activityOf(avatar)} · steered by ${avatar.name}`, goal: avatar.action === 'idle' ? '' : avatar.action };
   const pose = liveEncounters.poses(performance.now(), reducedMotion.matches).get(id);
   return pose ? { state: ACTIVITY_LABEL[pose.animal.state] ?? pose.animal.state, goal: pose.animal.currentGoal } : null;
 };
@@ -213,6 +219,7 @@ function connect(): void {
         if (message.type === 'scene') {
           if (!sceneUpdates.receive(message, performance.now())) connection.close();
         } else if (message.type === 'viewers' || message.type === 'error') store.apply(message);
+        else if (message.type === 'live') { if (isLiveMessage(message)) liveAgents.apply(message, performance.now()); }
         else if (message.type === 'heartbeat') return;
         else connection.close(); // Incompatible split-state protocol: never mix generations.
       }
@@ -222,7 +229,7 @@ function connect(): void {
   });
   connection.addEventListener('close', () => {
     if (socket !== connection) return;
-    sceneUpdates.reset(); liveEncounters.clear(); setTimeout(connect, 2000);
+    sceneUpdates.reset(); liveEncounters.clear(); liveAgents.clear(); setTimeout(connect, 2000);
   });
 }
 
@@ -751,6 +758,9 @@ function frame(): void {
 
   const visibleAnimals = new Map([...carcasses, ...store.animals]);
   const poses = liveEncounters.poses(now, reducedMotion.matches);
+  // An agent's animal moves where its agent steers it, live; that wins over any recording.
+  for (const [id, pose] of liveAgents.poses(now, new Map([...carcasses, ...store.animals]))) poses.set(id, pose);
+  liveAgents.animate(now / 1000);
   for (const [id, pose] of poses) {
     const current = visibleAnimals.get(id);
     // Older retained hours predate recorded sex/life-stage fields. Use a same-species
@@ -830,16 +840,86 @@ function frame(): void {
       renderBaseY(pose.position, animals.groundHeightAt) + bubbleHeight(pose.animal), pose.position.z).project(camera);
     label.hidden = p.z < -1 || p.z > 1 || Math.abs(p.x) > 1 || Math.abs(p.y) > 1;
     const species = SPECIES_LABEL[pose.animal.speciesId] ?? pose.animal.speciesId.replace(/^./, (c) => c.toUpperCase());
-    const text = `${species} · ${ACTIVITY_LABEL[pose.animal.state] ?? pose.animal.state}`;
+    const avatar = liveAgents.avatarForAnimal(pose.animal.id);
+    const text = avatar ? `${avatar.name} · ${species} · ${activityOf(avatar)}` : `${species} · ${ACTIVITY_LABEL[pose.animal.state] ?? pose.animal.state}`;
     if (label.textContent !== text) label.textContent = text;
     label.style.left = `${Math.max(82, Math.min(innerWidth - 82, (p.x + 1) / 2 * innerWidth))}px`;
     label.style.top = `${Math.max(30, (1 - p.y) / 2 * innerHeight)}px`;
   });
 
+  drawAgentTags(now);
   hud.tickClock();
   renderFrame(dt, now);
 }
 
+
+// ---- AI agents: name tags over their animals, and the agents chip in the top bar ----------
+
+const agentTags: HTMLElement[] = [];
+const tagPoint = new THREE.Vector3();
+/** Names over the nearest agents' animals (the followed one already has its own label). */
+function drawAgentTags(now: number): void {
+  const eye = camera.position;
+  const near = [...liveAgents.positions(now).values()].filter((p) => p.avatar.animalId !== followedId)
+    .map((p) => ({ p, d: Math.hypot(p.x - eye.x, p.z - eye.z) })).filter((e) => e.d < 450)
+    .sort((a, b) => a.d - b.d).slice(0, 12);
+  while (agentTags.length < near.length) {
+    const tag = document.createElement('div'); tag.className = 'agent-tag'; tag.hidden = true;
+    document.body.append(tag); agentTags.push(tag);
+  }
+  agentTags.forEach((tag, i) => {
+    const entry = near[i];
+    if (!entry) { tag.hidden = true; return; }
+    const { p } = entry;
+    tagPoint.set(p.x, animals.groundHeightAt(p.x, p.z) + visualFor(p.avatar.speciesId).heightM + 0.9, p.z).project(camera);
+    tag.hidden = tagPoint.z < -1 || tagPoint.z > 1 || Math.abs(tagPoint.x) > 1 || Math.abs(tagPoint.y) > 1;
+    if (tag.textContent !== p.avatar.name) tag.textContent = p.avatar.name;
+    tag.style.left = `${(tagPoint.x + 1) / 2 * innerWidth}px`;
+    tag.style.top = `${(1 - tagPoint.y) / 2 * innerHeight}px`;
+  });
+}
+
+const agentsChip = document.querySelector<HTMLElement>('#live-agents')!;
+let agentsChipKey = '';
+/** Who is playing and which drops are out, with a way to go and look. Built from text nodes. */
+function renderAgentsChip(): void {
+  const avatars = liveAgents.avatars, drops = liveAgents.drops;
+  agentsChip.hidden = avatars.length === 0 && drops.length === 0;
+  const key = JSON.stringify([avatars.map((a) => [a.agentId, a.name, a.speciesId, activityOf(a)]), drops.map((d) => [d.id, d.amountMicro, !!d.spotted])]);
+  if (agentsChip.hidden || key === agentsChipKey) return;
+  agentsChipKey = key;
+  const open = agentsChip.querySelector('details')?.open ?? false;
+  const details = document.createElement('details'); details.open = open;
+  const summary = document.createElement('summary');
+  summary.textContent = `${avatars.length} agent${avatars.length === 1 ? '' : 's'} · ${drops.length} drop${drops.length === 1 ? '' : 's'}`;
+  const list = document.createElement('div'); list.className = 'pop-list';
+  const row = (title: string, note: string, label: string, data: Record<string, string>, cls = '') => {
+    const r = document.createElement('div'); r.className = `agent-row ${cls}`;
+    const span = document.createElement('span'); span.textContent = title;
+    const small = document.createElement('small'); small.textContent = note; span.append(small);
+    const button = document.createElement('button'); button.type = 'button'; button.textContent = label;
+    Object.assign(button.dataset, data);
+    r.append(span, button); list.append(r);
+  };
+  for (const a of avatars) row(a.name, `${SPECIES_LABEL[a.speciesId] ?? a.speciesId} · ${activityOf(a)}`, 'Follow', { followAnimal: a.animalId });
+  for (const d of drops) row(`${usdc(d.amountMicro)} USDC drop`, d.spotted ? 'spotted: race to open it' : 'somewhere in the gold circle', 'Look', { lookDrop: d.id }, 'drop-row');
+  details.append(summary, list);
+  agentsChip.replaceChildren(details);
+}
+setInterval(renderAgentsChip, 1000);
+agentsChip.addEventListener('click', (event) => {
+  const target = event.target as HTMLElement;
+  const animal = target.closest<HTMLElement>('[data-follow-animal]')?.dataset.followAnimal;
+  if (animal) { watch(animal); return; }
+  const dropId = target.closest<HTMLElement>('[data-look-drop]')?.dataset.lookDrop;
+  const drop = dropId ? liveAgents.drops.find((d) => d.id === dropId) : undefined;
+  if (drop) {
+    watch(null);
+    const at = drop.spotted ?? drop.hint;
+    follow.target.set(at.x, animals.groundHeightAt(at.x, at.z), at.z);
+    follow.flyToDistance(drop.spotted ? 40 : drop.hint.radius * 3);
+  }
+});
 
 // Start looking at the middle of the world until the first animal is followed.
 follow.target.set(3000, 0, 3000);

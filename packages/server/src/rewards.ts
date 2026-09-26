@@ -284,7 +284,8 @@ export function installRewards(app: FastifyInstance, deps: {
     if (kind === 'drops') rows = (await pool.query<PageRow>(`select *, ${utcCursorTime} as cursor_time from reward_drops
       where network=$1 and ($2::timestamptz is null or (created_at,id) < ($2::timestamptz,$3::uuid))
       order by created_at desc,id desc limit $4`, [config!.network, before?.t ?? null, before?.id ?? null, limit])).rows;
-    else if (kind === 'claims') rows = (await pool.query<PageRow>(`select c.id,c.drop_id,c.wallet,c.status,c.created_at,d.actor_id,
+    else if (kind === 'claims') rows = (await pool.query<PageRow>(`select c.id,c.drop_id,c.wallet,c.status,c.created_at,d.actor_id,d.kind,
+      c.agent_id,(select name from live_agents a where a.id=c.agent_id) as agent_name,
       d.amount_micro::text,d.network,p.tx_hash as verified_tx_hash,p.log_index as verified_log_index,
       p.block_number as verified_block_number,p.block_hash as verified_block_hash,p.verified_at,
       ${utcCursorTime.replace('created_at', 'c.created_at')} as cursor_time
