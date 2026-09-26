@@ -14,12 +14,15 @@ import { installSocialOutbox, type SocialConfig } from './socialOutbox.js';
 import { HistoryCursors, historyLimit } from './historyCursor.js';
 import { floweringGuildSummary } from './floweringObservation.js';
 import { installHolder, type HolderChain, type HolderConfig } from './holder.js';
+import { Insights } from './insights/insights.js';
 
 export interface ApiDeps {
   host: SimHost;
   pool: Pool;
   /** Rewords recap lines through the grounding check. Without one, recaps are templates. */
   narrator?: Narrator;
+  /** Observer insights (TypeSafe AI); absent insights are reported as not configured. */
+  insights?: Insights;
   rewards?: RewardConfig | undefined;
   receiptRpc?: ReceiptRpc;
   social?: SocialConfig | undefined;
@@ -44,7 +47,7 @@ export function trustedProxyHops(env: NodeJS.ProcessEnv): number {
  * World routes are read-only. The optional reward ledger has independent write routes and
  * receives only a read-only subject visibility adapter, never a simulation mutation capability.
  */
-export function buildApi({ host, pool, narrator, rewards, receiptRpc, social, holder, holderChain, trustedProxyHops: hops = 0 }: ApiDeps): FastifyInstance {
+export function buildApi({ host, pool, narrator, insights: insightDeps, rewards, receiptRpc, social, holder, holderChain, trustedProxyHops: hops = 0 }: ApiDeps): FastifyInstance {
   // Without this, behind Caddy every visitor has the proxy's address and shares one rate limit.
   const app = Fastify({ logger: false, trustProxy: hops > 0 ? (_address: string, hop: number) => hop < hops : false });
   const events = new EventStore(pool);
@@ -67,6 +70,8 @@ export function buildApi({ host, pool, narrator, rewards, receiptRpc, social, ho
   observationRoutes.add('/people/:id');
   observationRoutes.add('/people/:id/events');
   observationRoutes.add('/people/:id/motion');
+  observationRoutes.add('/insights/animals/:id/outlook');
+  observationRoutes.add('/insights/highlights');
   app.addHook('preHandler', async (request, reply) => {
     if (!observationRoutes.has(request.routeOptions.url ?? '')) return;
     reply.header('Cache-Control', 'no-store');
@@ -390,6 +395,32 @@ export function buildApi({ host, pool, narrator, rewards, receiptRpc, social, ho
     if (limit === null) return reply.code(400).send({ error: 'invalid_limit' });
     return await historyPage(null, request.query.cursor, limit, observed(request))
       ?? reply.code(400).send({ error: 'invalid_history_cursor', restart: true });
+  });
+
+  // Observer insights: estimates from TypeSafe AI's Jev about saved state, shown to viewers
+  // and never read by the simulation. Absent unless a key is configured.
+  const insights = insightDeps ?? new Insights(null);
+  const speciesFacts = (id: string) => {
+    const config = host.world.species.get(id);
+    return { displayName: config?.displayName ?? id, hunts: config?.hunting !== undefined, scavenges: config?.diet.canScavenge ?? false };
+  };
+  const INSIGHT_NOTICE = 'An estimate by TypeSafe AI (Jev) from saved checkpoint state. The simulation decides what actually happens.';
+  app.get<{ Params: { id: string } }>('/insights/animals/:id/outlook', async (request, reply) => {
+    if (!insights.configured) return { available: false, reason: 'not_configured' };
+    const view = observed(request), agent = view.animal(request.params.id);
+    if (!agent) return reply.code(404).send({ error: 'not_found' });
+    const patch = view.patches().find((p) => p.id === agent.patchId);
+    const result = await insights.outlook(agent, speciesFacts(agent.speciesId), view.worldTime,
+      patch && { habitat: patch.habitat, waterVolume: patch.waterVolume, grass: patch.plant.grass });
+    return result.ok ? { available: true, ...result.value, notice: INSIGHT_NOTICE } : { available: false, reason: result.reason };
+  });
+  app.get('/insights/highlights', async (request) => {
+    const view = observed(request);
+    if (!insights.configured) return { available: false, reason: 'not_configured' };
+    const page = await events.page({ actorId: null, boundary: { worldTime: view.worldTime, nextSequence: view.nextSequence },
+      limit: 80, descending: true, summary: true });
+    const result = await insights.highlights(page.events, view.worldTime, view.nextSequence, (id) => speciesFacts(id).displayName);
+    return result.ok ? { available: true, ...result.value, notice: INSIGHT_NOTICE } : { available: false, reason: result.reason };
   });
 
   app.get('/patches', async (request) => ({

@@ -5,6 +5,8 @@ import { SimHost } from './simHost.js';
 import { buildApi, trustedProxyHops } from './api.js';
 import { Narrator } from './narration/narrator.js';
 import { claudeRephraser } from './narration/claude.js';
+import { Insights } from './insights/insights.js';
+import { typesafeConfig, typesafeDailyCalls, typesafeSystemOne } from './insights/typesafe.js';
 import { Gateway } from './gateway.js';
 import { rewardConfig } from './rewards.js';
 import { socialConfig } from './socialOutbox.js';
@@ -95,7 +97,12 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
     });
     console.log(rephrase === null ? 'narration: templates only (no API key)' : 'narration: model rephrasing on');
 
-    api = buildApi({ host, pool, narrator, rewards, social, holder, trustedProxyHops: trustedProxyHops(process.env) });
+    // Observer insights (TypeSafe AI) are optional too: without a key they are simply absent.
+    const typesafe = typesafeConfig(process.env);
+    const insights = new Insights(typesafe ? typesafeSystemOne(typesafe) : null, typesafeDailyCalls(process.env));
+    console.log(typesafe === null ? 'insights: off (no TypeSafe key)' : `insights: TypeSafe ${typesafe.model} on`);
+
+    api = buildApi({ host, pool, narrator, insights, rewards, social, holder, trustedProxyHops: trustedProxyHops(process.env) });
     await api.ready();
 
     server = createServer((req, res) => { api!.server.emit('request', req, res); });

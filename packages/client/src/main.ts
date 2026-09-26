@@ -5,6 +5,7 @@ import { createScene } from './scene.js';
 import { hideFarFieldNear } from './terrain.js';
 import { TerrainCheckpoints, type PreparedTerrain } from './terrainCheckpoints.js';
 import { NEAR_RADIUS_M, TREE_DETAIL_RADIUS_M, NearVegetation } from './vegetation.js';
+import { InsightPanel } from './insights.js';
 import { COVER_RADIUS_M, GroundCover } from './groundCover.js';
 import { AnimalLayer } from './animals.js';
 import { FollowCamera, followDistanceFor } from './camera.js';
@@ -109,6 +110,8 @@ try { revealAnimal.checked = storage?.getItem('vana.observer-cutaway') !== 'off'
 revealAnimal.addEventListener('change', () => {
   try { storage?.setItem('vana.observer-cutaway', revealAnimal.checked ? 'on' : 'off'); } catch { /* optional viewer preference */ }
 });
+// Created with the HUD: watch() can run before the feed timers below are set up.
+const insightPanel = new InsightPanel(document.querySelector('#outlook')!, document.querySelector('#highlights')!);
 const lastSeen = new LastSeen(storage);
 /** The animal this viewer last followed, so coming back returns them to it. */
 const lastFollowed = {
@@ -348,6 +351,7 @@ function watch(id: string | null): void {
   recapPending = id;
   lastFollowed.set(id);
   void hud.refreshPassport(id).then(() => hud.render(followedId));
+  void insightPanel.outlook(id);
   if (socket?.readyState !== WebSocket.OPEN) return;
   socket.send(JSON.stringify(id === null ? { type: 'unwatch' } : { type: 'watch', actorId: id }));
 }
@@ -599,6 +603,10 @@ store.onChange(() => {
 });
 void hud.refreshFeed();
 setInterval(() => { void hud.refreshFeed(); }, 10_000);
+// TypeSafe AI estimates (server-side, optional): highlights above the feed and the followed
+// animal's likely next hour. Answers are cached per checkpoint, so polling costs no calls.
+void insightPanel.highlights();
+setInterval(() => { void insightPanel.highlights(); void insightPanel.outlook(followedId); }, 30_000);
 
 // Dev-only handle so the running world can be inspected from the console.
 if (import.meta.env.DEV) {

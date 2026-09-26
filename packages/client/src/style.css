@@ -170,6 +170,15 @@ button:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid
 .feed-entry > div { min-width: 0; width: 100%; }
 .feed-entry .etype { font-weight: 500; }
 .feed-meta { margin-top: 2px; color: var(--ink-3); font-size: 11px; overflow-wrap: anywhere; display: flex; flex-wrap: wrap; gap: 0 10px; align-items: baseline; }
+.outlook { margin: 12px 0 0; border-top: 1px solid var(--line); padding-top: 6px; }
+.outlook summary { cursor: pointer; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); font-weight: 650; padding: 4px 0; }
+.outlook .meter { grid-template-columns: 96px 1fr 36px; }
+.outlook .hint { margin: 6px 0 0; font-size: 10.5px; line-height: 1.4; }
+.highlights { margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.highlights h4 { margin: 0 0 2px; font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--clay); font-weight: 650; }
+.highlights .highlight { border-bottom: 0; padding: 5px 0; }
+.highlights .highlight .etype::before { content: '\2605  '; color: var(--clay); }
+.highlights .hint { margin: 2px 0 0; font-size: 10px; }
 .feed-provenance { color: var(--ink-3); font: 10px/1.4 var(--mono); }
 .feed-provenance summary { cursor: pointer; padding: 2px 0; width: fit-content; list-style: none; text-decoration: underline dotted; }
 .feed-provenance summary::-webkit-details-marker { display: none; }
