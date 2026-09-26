@@ -33,7 +33,7 @@ const FAR = {
   riparian: hex(0x3f7a3a), marsh: hex(0x557a5a), rock: hex(0x8a8579), water: hex(0x2f6f86), sea: hex(0x235667),
 };
 const NEAR = {
-  lush: hex(0x9fcf72), golden: hex(0xe6d29a), bare: hex(0xeadcc4), canopy: hex(0x8fb872),
+  lush: hex(0xb4e67a), golden: hex(0xeedc9e), bare: hex(0xeadcc4), canopy: hex(0x9cc47a),
   riparian: hex(0x9fcb82), marsh: hex(0xa6c29d), rock: hex(0xd8d4ca), water: hex(0xa7c9cf), sea: hex(0x9fb8c0),
 };
 
@@ -120,7 +120,8 @@ varying vec3 vGroundWorld;\n` + shader.fragmentShader.replace('#include <color_f
           farColour = mix(farColour, sandColour, sand);
         #endif
         float groundFarness = smoothstep(groundFarRange.x, groundFarRange.y, distance(vGroundWorld, cameraPosition));
-        diffuseColor.rgb = mix(diffuseColor.rgb * nearTint * 1.35, farColour, groundFarness);
+        // The scanned soil is dark; lift it so near grassland reads green, not olive.
+        diffuseColor.rgb = mix(diffuseColor.rgb * nearTint * 1.6, farColour, groundFarness);
       `);
     };
     material.customProgramCacheKey = () => 'vana-ground-tint';

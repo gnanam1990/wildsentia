@@ -3,7 +3,11 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { visualFor } from '../src/species.js';
 
+// The live hare was later shrunk to 512 px textures from the same pinned source
+// (tools/assets/shrink_rabbit_textures.py), which superseded this lossless WebP review.
+// Both keep the source's non-image bytes, so they are compared with each other.
 const source = readFileSync(new URL('../public/assets/animals/Rabbit.glb', import.meta.url));
+const PINNED_SOURCE = '763c19a2606208f0560386b5e207b4995b0f71f857d75ebfa7f25af04956bfa3';
 const review = readFileSync(new URL('../../../docs/art-review/rabbit-2026-09-25/RabbitLosslessWebPReview.glb', import.meta.url));
 const sha = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 function unpack(bytes: Buffer) {
@@ -22,20 +26,21 @@ function unpack(bytes: Buffer) {
 }
 
 describe('review-only lossless Rabbit texture payload', () => {
-  it('reduces the exact pinned asset by >1.5 MB without a live hare swap', () => {
-    expect(sha(source)).toBe('763c19a2606208f0560386b5e207b4995b0f71f857d75ebfa7f25af04956bfa3');
+  it('derives from the same pinned source as the live hare, which is now smaller than this review', () => {
+    expect(unpack(source).json.asset.extras.textureBudget.sourceSha256).toBe(PINNED_SOURCE);
     expect(sha(review)).toBe('a6bf4165eba72356738954a79231f4c7034e0f40df2a01c6d894458acd699453');
-    expect(source.length).toBe(4_821_832);
     expect(review.length).toBe(3_309_144);
-    expect(source.length - review.length).toBeGreaterThan(1_500_000);
+    expect(source.length).toBeLessThan(review.length);
     expect(visualFor('hare').model?.file).toBe('/assets/animals/Rabbit.glb');
   });
 
   it('preserves every non-image buffer view and all mesh/skin/animation/material semantics', () => {
     const a = unpack(source), b = unpack(review);
     const imageViews = new Set<number>(a.json.images.map((image: { bufferView: number }) => image.bufferView));
-    for (const key of ['asset', 'scene', 'scenes', 'nodes', 'meshes', 'skins', 'animations', 'accessors', 'materials', 'samplers'])
+    for (const key of ['scene', 'scenes', 'nodes', 'meshes', 'skins', 'animations', 'accessors', 'materials', 'samplers'])
       expect(b.json[key], key).toEqual(a.json[key]);
+    const { extras: _budget, ...liveAsset } = a.json.asset;
+    expect(b.json.asset).toEqual(liveAsset);
     expect(b.json.bufferViews).toHaveLength(a.json.bufferViews.length);
     expect(b.json.images.map((image: { name: string }) => image.name))
       .toEqual(a.json.images.map((image: { name: string }) => image.name));
@@ -63,7 +68,6 @@ describe('review-only lossless Rabbit texture payload', () => {
     for (let index = 0; index < 3; index++) {
       const image = json.images[index], view = json.bufferViews[image.bufferView];
       expect(image.mimeType).toBe('image/webp');
-      expect(view.byteLength).toBeLessThan(a.bufferViews[a.images[index].bufferView].byteLength);
       expect(bin.toString('ascii', view.byteOffset, view.byteOffset + 4)).toBe('RIFF');
       expect(bin.toString('ascii', view.byteOffset + 8, view.byteOffset + 12)).toBe('WEBP');
       expect(json.textures[index].source).toBeUndefined();

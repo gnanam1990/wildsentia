@@ -79,6 +79,30 @@ function disposeTemplate(template: HumanTemplate): void {
 }
 
 /** Bounded, lazy, checkpoint-only human rendering. Never extrapolates a planned journey. */
+/**
+ * People given the same spot (a household resting at home all share the house's position)
+ * are drawn in a small ring round it, in id order, instead of inside one another. Anyone
+ * standing on their own is left exactly where recorded. Presentation only.
+ */
+export function spreadCrowded<T extends { id: string; position: { x: number; z: number; heading: number } }>(people: readonly T[]): T[] {
+  const TOUCH_M = 0.6, RING_M = 0.8;
+  const groups: T[][] = [];
+  for (const p of [...people].sort((a, b) => a.id.localeCompare(b.id))) {
+    const group = groups.find(g => Math.hypot(g[0]!.position.x - p.position.x, g[0]!.position.z - p.position.z) < TOUCH_M);
+    if (group) group.push(p); else groups.push([p]);
+  }
+  const moved = new Map<string, T>();
+  for (const group of groups) {
+    if (group.length < 2) continue;
+    const { x, z } = group[0]!.position;
+    group.forEach((p, i) => {
+      const angle = i / group.length * Math.PI * 2;
+      moved.set(p.id, { ...p, position: { ...p.position, x: x + Math.sin(angle) * RING_M, z: z + Math.cos(angle) * RING_M } });
+    });
+  }
+  return people.map(p => moved.get(p.id) ?? p);
+}
+
 export class HumanLayer {
   readonly root = new THREE.Group();
   readonly #geometry = new THREE.BufferGeometry();
@@ -99,6 +123,8 @@ export class HumanLayer {
   #ground: (x: number, z: number) => number = () => 0;
   #disposed = false;
   nearby = false;
+  /** Where the people drawn in 3D stand, for animals to keep clear of. */
+  placed: Array<{ x: number; z: number; radius: number }> = [];
   constructor(private readonly load: HumanLoader = loadHuman) {
     this.root.name = 'checkpoint-humans'; this.#markers.name = 'saved-person-location-markers'; this.#childMarkers.name = 'saved-child-location-markers';
     this.root.add(this.#markers, this.#childMarkers);
@@ -122,7 +148,10 @@ export class HumanLayer {
   positionOf(id: string, poses: ReadonlyMap<string, HumanPlaybackPose> = new Map()):
     { x: number; y: number; z: number; heading: number; moving: boolean; name: string; alive: boolean; recorded: boolean; scale: number } | null {
     const saved = this.#people.find(p => p.id === id); if (!saved || this.#disposed) return null;
-    const pose = poses.get(id), p = pose ? { ...saved, ...pose } : saved;
+    const pose = poses.get(id);
+    // Where the person is drawn: the same spreading as update(), so a followed person is centred.
+    const p = spreadCrowded(this.#people.map(q => { const qp = poses.get(q.id); return qp ? { ...q, ...qp } : q; }))
+      .find(q => q.id === id)!;
     return { ...p.position, y: this.#ground(p.position.x, p.position.z) + (humanPose(p).lying ? .09 : .03),
       moving: p.moving ?? false, name: saved.name, alive: p.alive, recorded: !!pose, scale: humanAgeScale(saved.ageDays) };
   }
@@ -208,13 +237,18 @@ export class HumanLayer {
     if (this.#disposed) return;
     const radius = tier === 'smooth' ? 65 : 120, limit = tier === 'smooth' ? 2 : 4;
     const distance = (p: SavedPerson) => Math.hypot(p.position.x - camera.x, this.#ground(p.position.x, p.position.z) - camera.y, p.position.z - camera.z);
-    const sources = historicOnlyId === null ? this.#people : this.#people.filter(p => p.id === historicOnlyId);
-    const people = (!reducedMotion || staticRecordedPose) && enabled ? sources.map(p => {
+    // Spread over the whole household, then pick, so positionOf() agrees in historic view too.
+    const recordedPeople = (!reducedMotion || staticRecordedPose) && enabled ? this.#people.map(p => {
       const pose = poses.get(p.id); return pose ? { ...p, ...pose } : p;
-    }) : sources;
+    }) : this.#people;
+    const pick = <T extends { id: string }>(list: T[]) => historicOnlyId === null ? list : list.filter(p => p.id === historicOnlyId);
+    const people = pick(spreadCrowded(recordedPeople));
+    // Distant location dots stay exactly on the recorded positions; only 3D figures need room.
+    const markers = pick(recordedPeople);
     const nearest = enabled ? people.filter(p => distance(p) <= radius).sort((a, b) => Number(b.id === preferredId) - Number(a.id === preferredId)
       || distance(a) - distance(b) || a.id.localeCompare(b.id)).slice(0, limit) : [];
     this.nearby = nearest.length > 0;
+    this.placed = nearest.map(p => ({ x: p.position.x, z: p.position.z, radius: 0.35 * humanAgeScale(p.ageDays) }));
     const wanted = new Set(nearest.map(p => p.id)), detailed = new Set<string>();
     for (const [id, rig] of this.#rigs) if (!wanted.has(id)) { this.#release(rig); this.#rigs.delete(id); }
     for (const p of nearest) {
@@ -241,7 +275,7 @@ export class HumanLayer {
       rig.root.rotation.y = p.position.heading;
       detailed.add(p.id);
     }
-    this.#drawMarkers(detailed, people);
+    this.#drawMarkers(detailed, markers);
   }
   #release(rig: Rig): void {
     rig.mixer.stopAllAction(); rig.mixer.uncacheRoot(rig.visual); rig.root.removeFromParent();

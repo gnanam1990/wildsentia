@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { waterAccessPosition, waterContactPosition } from '@vana/shared';
-import { buildTerrain, countDrawCalls, hideFarFieldNear, makeHeightSampler, type PatchView } from '../src/terrain.js';
+import { buildTerrain, countDrawCalls, hideFarFieldNear, makeHeightSampler, poolMatrix, type PatchView } from '../src/terrain.js';
 
 const patches: PatchView[] = Array.from({ length: 400 }, (_, id) => ({
   id, x: id % 20, y: Math.floor(id / 20),
@@ -54,6 +54,19 @@ describe('buildTerrain', () => {
     expect(matrix.elements[14]).toBeCloseTo(access.z);
     expect(matrix.elements[0]).toBeGreaterThanOrEqual(Math.hypot(contact.x - access.x, contact.z - access.z));
     expect(matrix.elements[0]).toBeCloseTo(2);
+  });
+
+  it('lays an island pool on a hillside instead of burying its uphill side', () => {
+    const slope = (x: number, z: number) => 0.25 * x - 0.1 * z + 0.02 * Math.sin(x);
+    const pool = { x: 40, z: -12, radius: 9 }, matrix = poolMatrix(pool, slope);
+    for (let k = 0; k < 24; k++) {
+      const a = k / 24 * Math.PI * 2;
+      for (const f of [0.5, 1]) {
+        const rim = new THREE.Vector3(Math.cos(a) * f, 0, Math.sin(a) * f).applyMatrix4(matrix);
+        expect(rim.y).toBeGreaterThanOrEqual(slope(rim.x, rim.z));
+        expect(rim.y - slope(rim.x, rim.z)).toBeLessThan(0.2);
+      }
+    }
   });
 
   it('renders authoritative drainage as a river and steep drop as a waterfall', () => {

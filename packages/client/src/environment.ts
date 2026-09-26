@@ -1,13 +1,24 @@
 import * as THREE from 'three';
+import { showerIntensity } from '@vana/shared';
 import { SkyDome } from './sky.js';
 
-/** Presentation of the world's existing seasonal moisture model, not client-controlled weather. */
+/** How heavy a shower can get, and how cloudy it stays between showers, by season. */
+const SEASON_RAIN: Record<string, number> = { monsoon: 1, wet: 0.75, transition: 0.5, dry: 0.35 };
+const SEASON_CLOUD: Record<string, number> = { monsoon: 0.6, wet: 0.4, transition: 0.22, dry: 0.08 };
+
+/**
+ * The sky and light at a world time. Rain comes in showers and dry spells (showerIntensity,
+ * the same for every viewer) that spread the season's steady modelled rainfall over time;
+ * `seasonRain` is that steady level. Presentation only.
+ */
 export function atmosphereAt(worldTime: number, season: string) {
   const hour = ((worldTime % 86400) + 86400) % 86400 / 3600;
   const angle = (hour - 6) / 24 * Math.PI * 2;
   const daylight = Math.max(0, Math.sin(angle));
-  const rain = ({ monsoon: 0.8, wet: 0.4, transition: 0.1, dry: 0 } as Record<string, number>)[season] ?? 0;
-  return { angle, daylight, rain, sunIntensity: 0.45 + daylight * (1.85 - rain) };
+  const rain = (SEASON_RAIN[season] ?? 0) * showerIntensity(worldTime, season);
+  const cloud = Math.max(SEASON_CLOUD[season] ?? 0, rain);
+  const seasonRain = ({ monsoon: 0.8, wet: 0.4, transition: 0.1, dry: 0 } as Record<string, number>)[season] ?? 0;
+  return { angle, daylight, rain, cloud, seasonRain, sunIntensity: 0.45 + daylight * (1.85 - cloud * 0.9) };
 }
 
 /**
@@ -15,8 +26,24 @@ export function atmosphereAt(worldTime: number, season: string) {
  * coats (boar, gaur) read as animals rather than holes, while the sky and light colour still
  * say it is night. Presentation only; the world's time and light are unchanged.
  */
-export function observerExposure(daylight: number): number {
-  return 1.1 + (1 - Math.min(1, Math.max(0, daylight))) * 0.75;
+export function observerExposure(daylight: number, viewDistance = 0): number {
+  return 1.1 + (1 - Math.min(1, Math.max(0, daylight))) * (0.25 + 0.5 * closeness(viewDistance));
+}
+
+/** 1 near the ground, falling to 0 by 2 km up: close up the eye adapts, from above it does not. */
+const closeness = (viewDistance: number) => 1 - Math.min(1, Math.max(0, (viewDistance - 300) / 1700));
+
+const DAY_SKY_LIGHT = new THREE.Color(0xcfe3ef), MOON_SKY_LIGHT = new THREE.Color(0x8fa5cc);
+
+/**
+ * Sun (or moon) and sky-light intensities for the observer. At night from high above both
+ * fall to a little over half, so the overview reads as a moonlit island, not a dim day;
+ * close up they stay as they were so animals remain legible. Presentation only.
+ */
+export function observerLights(daylight: number, sunIntensity: number, viewDistance = 0): { sun: number; sky: number } {
+  const d = Math.min(1, Math.max(0, daylight));
+  const dim = 1 - (1 - d) * 0.45 * (1 - closeness(viewDistance));
+  return { sun: sunIntensity * dim, sky: (0.85 + d * 0.45) * dim };
 }
 
 export class Atmosphere {
@@ -41,7 +68,7 @@ export class Atmosphere {
     this.sun.color.setHex(state.daylight === 0 ? 0xadc8ed : state.daylight < 0.25 ? 0xe7ae7c : 0xffeccf);
     const sunDirection = new THREE.Vector3(Math.cos(state.angle) * 130, 30 + state.daylight * 180, 80);
     // The land fades into the sky's own horizon colour, so there is no seam at the fog line.
-    this.#sky.copy(this.dome.update(state.daylight, state.rain, sunDirection, this.sun.color, seconds, eye));
+    this.#sky.copy(this.dome.update(state.daylight, state.cloud, sunDirection, this.sun.color, seconds, eye));
     (this.scene.background as THREE.Color).copy(this.#sky);
     if (this.scene.fog instanceof THREE.Fog) {
       this.scene.fog.color.copy(this.#sky);
@@ -50,13 +77,18 @@ export class Atmosphere {
       this.scene.fog.far = Math.max(far, viewDistance * 2.4);
       this.scene.fog.near = Math.max(200, viewDistance * 0.9);
     }
-    this.sun.intensity = state.sunIntensity;
+    const lights = observerLights(state.daylight, state.sunIntensity, viewDistance);
+    this.sun.intensity = lights.sun;
     this.sun.target.position.copy(focus);
     this.sun.position.set(focus.x + Math.cos(state.angle) * 130, focus.y + 30 + state.daylight * 180, focus.z + 80);
     this.sun.target.updateMatrixWorld();
     const hemi = this.scene.children.find((o) => (o as THREE.HemisphereLight).isHemisphereLight) as THREE.HemisphereLight | undefined;
     // Moonlit observer exposure keeps silhouettes legible without changing world time.
-    if (hemi) hemi.intensity = 0.85 + state.daylight * 0.45;
+    if (hemi) {
+      hemi.intensity = lights.sky;
+      // Sky light cools toward moonlight as the sun goes down.
+      hemi.color.copy(DAY_SKY_LIGHT).lerp(MOON_SKY_LIGHT, 1 - state.daylight);
+    }
     const count = reducedMotion ? 0 : Math.round(600 * state.rain);
     this.rain.geometry.setDrawRange(0, count * 2);
     // Rain falls around the viewer, wherever the camera is, not in a column over the

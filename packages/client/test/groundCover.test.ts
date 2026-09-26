@@ -3,10 +3,22 @@ import { describe, expect, it, vi } from 'vitest';
 import { COVER_RADIUS_M, CURVED_BLADE_RADIUS_M, DENSE_COVER_RADIUS_M, GroundCover, grassTuftGeometry, planGroundCover } from '../src/groundCover.js';
 import { countDrawCalls, type PatchView } from '../src/terrain.js';
 import { ObserverVisibility } from '../src/observerVisibility.js';
+import { islandPool } from '../src/pools.js';
 
 const patch: PatchView = { id: 0, x: 0, y: 0, habitat: 'grassland', grass: 6000, browse: 10, water: 200 };
 const focus = { x: 0, z: 0 };
 describe('dense ground cover', () => {
+  it('leaves an island drinking pool clear of grass', () => {
+    const island: PatchView = { ...patch, islandSeed: 1, surface: 'land', water: 400_000 };
+    const pool = islandPool(island)!;
+    expect(pool.radius).toBeGreaterThan(10);
+    const tufts = planGroundCover([island], { x: pool.x, z: pool.z }, () => 0, 'high');
+    expect(tufts.length).toBeGreaterThan(1000);
+    expect(tufts.every((t) => Math.hypot(t.x - pool.x, t.z - pool.z) >= pool.radius)).toBe(true);
+    expect(islandPool({ ...island, water: 0 })).toBeNull();
+    expect(islandPool(patch)).toBeNull(); // Mainland planes keep their own water surfaces.
+  });
+
   it('budgets even empty-cell scanning and commits the exact complete carpet, never a partial buffer', () => {
     for (const patches of [[patch], [{ ...patch, grass: 0 }]]) {
       const cover = new GroundCover(patches, (x, z) => x * .2 + z * .1);

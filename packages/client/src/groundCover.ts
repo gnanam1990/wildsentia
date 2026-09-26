@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GRID_SIZE, PATCH_METRES, spatialHash } from '@vana/shared';
 import type { HeightSampler, PatchView } from './terrain.js';
 import { RENDER_BUDGETS, type RenderTier } from './renderQuality.js';
+import { islandPool } from './pools.js';
 
 export const COVER_RADIUS_M = 144;
 export const DENSE_COVER_RADIUS_M = 64;
@@ -33,6 +34,8 @@ function* visitGroundCover(
   tier: RenderTier, accept: (tuft: GrassTuft) => void,
 ): Generator<void> {
   const byId = new Map(patches.map((p) => [p.id, p]));
+  // No grass standing in a drinking pool: the pool is a flat disc, so blades would pierce it.
+  const pools = new Map(patches.flatMap((p) => { const pool = islandPool(p); return pool ? [[p.id, pool] as const] : []; }));
   let cells = 0;
   // Two fixed world grids extend cover without multiplying close-up cost. The outer
   // clumps overlap the fine carpet's tapered edge rather than leaving a bare ring.
@@ -58,7 +61,10 @@ function* visitGroundCover(
         const row = Math.floor((z + PATCH_METRES / 2) / PATCH_METRES);
         if (col < 0 || col >= GRID_SIZE || row < 0 || row >= GRID_SIZE) continue;
         const patch = byId.get(row * GRID_SIZE + col);
-        if (!patch || patch.surface === 'ocean' || patch.surface === 'coast' || patch.habitat === 'water' || patch.water > 20_000 || patch.grass <= 0) continue;
+        if (!patch || patch.surface === 'ocean' || patch.surface === 'coast' || patch.habitat === 'water' || patch.grass <= 0) continue;
+        // An island patch's water is its pool, not the whole patch as on the mainland plane.
+        const pool = pools.get(patch.id);
+        if (pool ? Math.hypot(x - pool.x, z - pool.z) < pool.radius + 0.4 : patch.water > 20_000) continue;
         const vigour = Math.min(1, patch.grass / (CAPACITY[patch.habitat] ?? 9000));
         if (random() > Math.sqrt(vigour) * (DENSITY[patch.habitat] ?? 0)) continue;
         const rotation = random() * Math.PI * 2;

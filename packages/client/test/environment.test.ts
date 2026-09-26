@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { Atmosphere, atmosphereAt, observerExposure } from '../src/environment.js';
+import { Atmosphere, atmosphereAt, observerExposure, observerLights } from '../src/environment.js';
 
 describe('authoritative clock and seasonal atmosphere', () => {
   it('is dark at midnight and brightest at noon', () => {
@@ -8,10 +8,18 @@ describe('authoritative clock and seasonal atmosphere', () => {
     expect(atmosphereAt(12 * 3600, 'dry').daylight).toBe(1);
     expect(atmosphereAt(86400, 'dry')).toEqual(atmosphereAt(0, 'dry'));
   });
-  it('uses the reported season rather than random local weather', () => {
-    expect(atmosphereAt(0, 'monsoon').rain).toBeGreaterThan(atmosphereAt(0, 'wet').rain);
-    expect(atmosphereAt(0, 'dry').rain).toBe(0);
+  it('rains in showers that follow the reported season, the same for every viewer', () => {
+    // Showers come and go, but a monsoon day is wetter than a wet-season day, and a dry day barely rains.
+    const mean = (season: string) => Array.from({ length: 30 * 48 }, (_, i) => atmosphereAt(i * 1800, season).rain)
+      .reduce((a, b) => a + b, 0) / (30 * 48);
+    expect(mean('monsoon')).toBeGreaterThan(mean('wet'));
+    expect(mean('wet')).toBeGreaterThan(mean('dry'));
+    expect(mean('dry')).toBeLessThan(0.02);
     expect(atmosphereAt(0, 'unknown').rain).toBe(0);
+    // The same moment looks the same for every viewer, and it stays cloudy between monsoon showers.
+    expect(atmosphereAt(123_456, 'monsoon')).toEqual(atmosphereAt(123_456, 'monsoon'));
+    const dryMoment = Array.from({ length: 200 }, (_, i) => i * 1800).find((t) => atmosphereAt(t, 'monsoon').rain === 0)!;
+    expect(atmosphereAt(dryMoment, 'monsoon').cloud).toBeGreaterThan(0.5);
   });
 });
 
@@ -21,6 +29,10 @@ describe('observer exposure', () => {
     expect(observerExposure(0)).toBeGreaterThan(1.7);
     expect(observerExposure(0.5)).toBeGreaterThan(observerExposure(1));
     expect(observerExposure(-3)).toBe(observerExposure(0));
+    // From the island overview the night is darker than close up.
+    expect(observerExposure(0, 3000)).toBeLessThan(observerExposure(0, 20));
+    expect(observerExposure(0, 3000)).toBeGreaterThan(observerExposure(1, 3000));
+    expect(observerExposure(1, 3000)).toBeCloseTo(1.1);
   });
 });
 
@@ -42,5 +54,19 @@ describe('monsoon rain', () => {
     expect((scene.fog as THREE.Fog).far).toBeGreaterThanOrEqual(3000 * 2.4);
     atmosphere.update(12 * 3600, 'dry', 3, focus, false, 20, eye);
     expect(atmosphere.rain.geometry.drawRange.count).toBe(0);
+  });
+
+  it('dims the moon and sky light over the night overview but not close up or by day', () => {
+    const night = atmosphereAt(0, 'dry'), noon = atmosphereAt(12 * 3600, 'dry');
+    const nearNight = observerLights(night.daylight, night.sunIntensity, 20);
+    const farNight = observerLights(night.daylight, night.sunIntensity, 3000);
+    expect(nearNight.sun).toBeCloseTo(night.sunIntensity);
+    expect(nearNight.sky).toBeCloseTo(0.85);
+    expect(farNight.sun).toBeLessThan(nearNight.sun * 0.6);
+    expect(farNight.sky).toBeLessThan(nearNight.sky * 0.6);
+    // Overall brightness from above at night, light times exposure, stays under a third of day.
+    const total = (l: { sun: number; sky: number }, d: number) => (l.sun + l.sky) * observerExposure(d, 3000);
+    expect(total(farNight, night.daylight)).toBeLessThan(total(observerLights(noon.daylight, noon.sunIntensity, 3000), noon.daylight) / 3);
+    expect(observerLights(noon.daylight, noon.sunIntensity, 3000).sun).toBeCloseTo(noon.sunIntensity);
   });
 });

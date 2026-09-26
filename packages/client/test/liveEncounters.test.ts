@@ -29,6 +29,26 @@ describe('checkpointed live encounter playback', () => {
       .toMatchObject({ sex: 'male', lifeStage: 'juvenile' });
     expect(withRecordedVisualIdentity(recorded, { ...current, speciesId: 'tiger' })).toBe(recorded);
   });
+  it('advances the animation clip in real time, not at the world rate', () => {
+    const player = new LiveEncounterPlayer();
+    expect(player.apply(frame(), 0)).toBe(true);
+    const a = player.poses(1000).get('t')!, b = player.poses(3000).get('t')!;
+    // Two real seconds: the clip moves two seconds while the recorded hunt moves further.
+    expect(b.clipSeconds! - a.clipSeconds!).toBeCloseTo(2);
+    expect(b.seconds - a.seconds).toBeGreaterThan(2);
+  });
+  it('runs the rig only when an hour holds more route than fits at a walk', () => {
+    const route = (id: string, metres: number) => ({ eventId: id, actor: { id, speciesId: 'chital', sizeRatio: 1, coatVariant: 0 },
+      trace: { version: 1 as const, actorId: id, startWorldTime: 0, destinationPatchId: 0, goal: 'wander', completed: false,
+        samples: [{ seconds: 0, position: { x: 0, z: 0, heading: 0 } }, { seconds: 3600, position: { x: metres, z: 0, heading: 0 } }] } });
+    const f = frame(); f.encounters = []; f.movements = [route('near', 200), route('far', 3000)];
+    const player = new LiveEncounterPlayer(); expect(player.apply(f, 0)).toBe(true);
+    const poses = player.poses(60_000);
+    expect(poses.get('near')!.position.moving).toBe(true);
+    expect(poses.get('near')!.hurried).toBeUndefined();
+    expect(poses.get('far')!.hurried).toBe(true);
+    expect(poses.get('far')!.animal.state).toBe('travelling'); // The label stays what was recorded.
+  });
   it('accepts recorded sex/stage but rejects malformed visual identity', () => {
     const f = frame(); f.encounters[0]!.predator.sex = 'male';
     f.encounters[0]!.predator.lifeStage = 'adult';
@@ -212,7 +232,7 @@ describe('checkpointed live encounter playback', () => {
   it('rejects malformed route envelopes and enforces actor/sample payload budgets', () => {
     const actor = { id: 'x', speciesId: 'sambar', sizeRatio: 1, coatVariant: 0 };
     const movement = { eventId: 'm', actor, trace: { version: 1, actorId: 'x', startWorldTime: 0,
-      destinationPatchId: 0, goal: 'wander', completed: true,
+      destinationPatchId: 0, goal: 'wander', completed: false,
       samples: [{ seconds: 0, position: p(0) }, { seconds: 10, position: p(10) }] } };
     const base = { ...frame(), encounters: [], movements: [movement] };
     expect(isLiveEncounterFrame(base)).toBe(true);

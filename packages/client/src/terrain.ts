@@ -1,7 +1,8 @@
 import * as THREE from 'three';
-import { ISLAND_SEGMENTS, treeAnchorForPatch, treeAnchorRemnantForPatch, waterAccessPosition } from '@vana/shared';
+import { ISLAND_SEGMENTS, treeAnchorForPatch, treeAnchorRemnantForPatch } from '@vana/shared';
 import { islandHeightField } from './islandHeightField.js';
 import { groundTint } from './groundTint.js';
+import { islandPool } from './pools.js';
 import { PATCH_METRES, patchCentre } from './space.js';
 
 export interface PatchView {
@@ -310,6 +311,24 @@ function buildIslandGround(patches: readonly PatchView[], seed: number): THREE.M
   mesh.name = 'ground'; mesh.receiveShadow = true; return mesh;
 }
 
+/**
+ * A pool disc laid on the ground's slope around it, not level: a level disc on a hillside
+ * sinks under the uphill ground and shows only a sliced-off part. It is lifted just enough to
+ * clear the ground at its rim, which a plane fit leaves close to the surface.
+ */
+export function poolMatrix(pool: { x: number; z: number; radius: number }, groundAt: HeightSampler, out = new THREE.Matrix4()): THREE.Matrix4 {
+  const { x, z, radius: r } = pool, y = groundAt(x, z);
+  const sx = (groundAt(x + r, z) - groundAt(x - r, z)) / (2 * r), sz = (groundAt(x, z + r) - groundAt(x, z - r)) / (2 * r);
+  let lift = 0;
+  for (let k = 0; k < 12; k++) {
+    const a = k / 12 * Math.PI * 2, dx = Math.cos(a) * r, dz = Math.sin(a) * r;
+    lift = Math.max(lift, groundAt(x + dx, z + dz) - (y + sx * dx + sz * dz));
+  }
+  const normal = new THREE.Vector3(-sx, 1, -sz).normalize();
+  const tilt = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
+  return out.compose(new THREE.Vector3(x, y + Math.min(lift, 1.5) + 0.04, z), tilt, new THREE.Vector3(r, 1, r));
+}
+
 export const TERRAIN_LAYERS = ['ground', 'grass', 'water', 'rock', 'trunk', 'canopy', 'ocean'] as const;
 export type TerrainLayer = typeof TERRAIN_LAYERS[number];
 
@@ -387,6 +406,7 @@ export function buildTerrain(patches: readonly PatchView[], layers?: ReadonlySet
   for (const patch of grass ? grassPatches : []) {
     const centre = patchCentre(patch.id);
     const density = Math.min(1, patch.grass / 6000);
+    const pool = island ? islandPool(patch) : null;
     let seed = patch.id * 2654435761;
     const random = (): number => {
       seed = (seed * 1664525 + 1013904223) >>> 0;
@@ -396,18 +416,23 @@ export function buildTerrain(patches: readonly PatchView[], layers?: ReadonlySet
       matrix.makeScale(1, 0.5 + density, 1);
       const gx = centre.x + (random() - 0.5) * PATCH_METRES;
       const gz = centre.z + (random() - 0.5) * PATCH_METRES;
+      // A tuft that would stand in the pool is sunk out of sight; the instance count stays fixed.
+      const wet = pool !== null && Math.hypot(gx - pool.x, gz - pool.z) < pool.radius + 0.4;
+      if (wet) matrix.makeScale(0, 0, 0);
       matrix.setPosition(gx, groundAt(gx, gz), gz);
       grass!.setMatrixAt(g++, matrix);
     }
   }
 
   (water ? waterPatches : []).forEach((patch, index) => {
-    const centre = island ? waterAccessPosition(patch.id) : patchCentre(patch.id);
-    if (island) {
+    const pool = island ? islandPool(patch) : null;
+    if (pool) {
       // Representative small pool, not a 300 m square lake invented from a few thousand litres.
-      const radius = Math.max(2, Math.min(40, Math.sqrt(patch.water / 1000 / Math.PI)));
-      matrix.makeScale(radius, 1, radius); matrix.setPosition(centre.x, groundAt(centre.x, centre.z) + 0.04, centre.z);
-    } else matrix.makeTranslation(centre.x, patchHeight(patch) + 0.4, centre.z);
+      poolMatrix(pool, groundAt, matrix);
+    } else {
+      const centre = patchCentre(patch.id);
+      matrix.makeTranslation(centre.x, patchHeight(patch) + 0.4, centre.z);
+    }
     water!.setMatrixAt(index, matrix);
   });
 

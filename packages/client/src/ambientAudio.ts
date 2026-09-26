@@ -11,7 +11,7 @@ export interface AmbientView {
 
 /** Only saved seasonal rain and currently visible saved water can drive this viewer effect. */
 export function ambientLevels(season: string, patches: readonly PatchView[], view: AmbientView): AmbientLevels {
-  const rain = atmosphereAt(0, season).rain;
+  const rain = atmosphereAt(0, season).seasonRain;
   let water = 0;
   for (const patch of patches) {
     const { x, z } = patchCentre(patch.id);

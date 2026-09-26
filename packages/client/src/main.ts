@@ -82,6 +82,7 @@ const communityLayer = new CommunityLayer();
 scene.add(communityLayer.root);
 
 const follow = new FollowCamera(camera, canvas);
+const EXPLORE_DISTANCE_M = 900;
 // The observer camera stays above sea level; animals still use the actual ground sampler.
 follow.groundHeightAt = (x, z) => Math.max(0, animals.groundHeightAt(x, z));
 // Dragging the ground explores the island: it lets go of the followed animal or person.
@@ -511,7 +512,12 @@ function pickedAnimal(event: MouseEvent | PointerEvent): string | null {
     event instanceof PointerEvent && event.pointerType === 'touch' ? 36 : 22);
 }
 
-document.querySelector('#freecam')!.addEventListener('click', () => { watch(null); });
+// Explore lets go and rises to a wide view, so the button always shows the island around you.
+document.querySelector('#freecam')!.addEventListener('click', () => {
+  watch(null);
+  if (follow.distance < EXPLORE_DISTANCE_M) follow.flyToDistance(EXPLORE_DISTANCE_M);
+  canvas.focus();
+});
 const speciesPicker = document.querySelector<HTMLSelectElement>('#species-picker')!;
 for (const id of Object.keys(SPECIES_VISUALS)) {
   const option = document.createElement('option');
@@ -650,7 +656,7 @@ function frame(): void {
   refreshEncounterPicker(now);
   if (store.world !== null) {
     atmosphere.update(store.world.worldTime, store.world.season, now / 1000, follow.target, reducedMotion.matches, follow.distance, camera.position);
-    renderer.toneMappingExposure = observerExposure(atmosphereAt(store.world.worldTime, store.world.season).daylight);
+    renderer.toneMappingExposure = observerExposure(atmosphereAt(store.world.worldTime, store.world.season).daylight, follow.distance);
   }
 
   groundCover?.animate(now / 1000, reducedMotion.matches);
@@ -700,7 +706,9 @@ function frame(): void {
     } else {
       const playhead = life.track[0]!.worldTime + (life.track.at(-1)!.worldTime - life.track[0]!.worldTime) * progress;
       const point = pointAt(life.track, life.id, playhead);
-      animals.syncReplay({ id: life.id, speciesId: life.speciesId, patchId: 0, state: point.state, currentGoal: '', drives: point.drives }, point, playhead);
+      // The clip runs on the replay's own clock: a whole life compressed into minutes would
+      // otherwise spin the walk and graze cycles thousands of times faster than life.
+      animals.syncReplay({ id: life.id, speciesId: life.speciesId, patchId: 0, state: point.state, currentGoal: '', drives: point.drives }, point, playback.elapsedMs / 1000);
       observerSubjects = [observerSubject(life.speciesId, point)];
       follow.follow({ ...point, moving: !playback.paused && point.moving, y: renderBaseY(point, animals.groundHeightAt) }, playback.paused || reducedMotion.matches ? 1 : dt);
       replayMoment.textContent = momentAt(life.moments, playhead)?.text ?? '';
@@ -738,6 +746,8 @@ function frame(): void {
       ? `Replaying its recorded ${followedEncounter.climbVisualPhase ? 'climb' : 'route'} · about an hour behind live`
       : `Replaying a recorded hunt · ${followedEncounter.phase}`;
   if (encounterNotice.textContent !== encounterShort) { encounterNotice.textContent = encounterShort; encounterNotice.title = encounterText; }
+  animals.avoid = nature?.obstacles ?? null;
+  animals.people = communityLayer.placedPeople;
   animals.sync(visibleAnimals, now, followedId, { x: follow.target.x, z: follow.target.z }, poses);
   animals.update(dt);
 

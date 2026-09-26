@@ -22,7 +22,8 @@ describe('local fish catch, carrying and cooking', () => {
     stepCommunity(c, w.patches, w.waterBudget, 0, 1, w.log, w.microEcology);
     expect(c.people.every(p => p.task?.kind === 'fish' && p.task.phase === 'travel')).toBe(true);
     expect(pool.fishBiomassKg).toBe(2); expect(c.people.every(p => p.inventory.rawFishKg === 0)).toBe(true);
-    stepCommunity(c, w.patches, w.waterBudget, 1, 1900, w.log, w.microEcology);
+    // Long enough to walk to the (off-centre since sim_0.30.0) access point and fish.
+    stepCommunity(c, w.patches, w.waterBudget, 1, 2600, w.log, w.microEcology);
     const attempts = w.log.all().filter(e => e.type === 'human_task_finished' && e.conditions.action === 'fish');
     expect(attempts).toHaveLength(4); expect(attempts.some(e => e.outcome === 'success')).toBe(true);
     const caught = attempts.reduce((n, e) => n + (e.effects.rawFishKg ?? 0), 0);
@@ -38,7 +39,7 @@ describe('local fish catch, carrying and cooking', () => {
       expect(c.people.every(p => p.task?.kind === 'fish')).toBe(true);
       if (dry) patch.waterVolume = 0;
       const baseline = w.totalNutrients();
-      stepCommunity(c, w.patches, w.waterBudget, 100, 1800, w.log, w.microEcology);
+      stepCommunity(c, w.patches, w.waterBudget, 100, 2500, w.log, w.microEcology);
       const attempts = w.log.all().filter(e => e.type === 'human_task_finished' && e.conditions.action === 'fish');
       expect(attempts).toHaveLength(4);
       expect(attempts.reduce((n, e) => n + (e.effects.rawFishKg ?? 0), 0)).toBeLessThanOrEqual(.06);

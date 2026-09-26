@@ -8,6 +8,7 @@ import { chooseVisible } from './lod.js';
 import { RENDER_BUDGETS, type RenderTier } from './renderQuality.js';
 import { visualFor, visualForAnimal } from './species.js';
 import { characterScale, coatMultiplier, markerSize } from './appearance.js';
+import { separateBodies, type Body, type Obstacle, type ObstacleField } from './obstacles.js';
 import type { LivePose } from './liveEncounters.js';
 import { AnimalDots } from './animalDots.js';
 import { elephantSurface } from './elephantSurface.js';
@@ -71,6 +72,10 @@ function markerTexture(): THREE.Texture {
 export class AnimalLayer {
   readonly root = new THREE.Group();
   readonly tracker = new PositionTracker();
+  /** Obstacles near the camera that placed animals are drawn clear of; null draws them as recorded. */
+  avoid: ObstacleField | null = null;
+  /** People drawn in the scene; animals are drawn clear of them. */
+  people: ReadonlyArray<Obstacle> = [];
   quality: RenderTier = 'balanced';
   #renderPositions = new Map<string, RenderPosition>();
   /** Set once the terrain is known, so animals stand on the ground rather than at sea level. */
@@ -287,6 +292,8 @@ export class AnimalLayer {
     this.#renderPositions = positions;
     this.#prepareRigs([followedId, partner]);
 
+    this.#keepApart(visible, animals, positions, recorded);
+
     for (const id of visible) {
       const animal = animals.get(id)!;
       void this.#ensureRig(animal);
@@ -304,7 +311,8 @@ export class AnimalLayer {
         const unknownAirborne = pose.kind === 'movement' && (position.altitudeM ?? 0) > 0
           && (animal.speciesId === 'vulture' && flightPhase === null
             || arboreal(animal.speciesId) && position.moving && climbPhase === null);
-        this.#poseAt(rig, renderStateFor(pose.animal.state, position.moving), pose.seconds,
+        const shown = renderStateFor(pose.animal.state, position.moving);
+        this.#poseAt(rig, pose.hurried && shown === 'travelling' ? 'fleeing' : shown, pose.clipSeconds ?? pose.seconds,
           flightPhase, unknownAirborne, climbPhase);
       } else {
         const climbing = arboreal(animal.speciesId) && animal.locomotionMode === 'climb';
@@ -358,6 +366,32 @@ export class AnimalLayer {
         && !position.moving && animal.state === 'travelling' ? 'resting' : renderStateFor(animal.state, position.moving);
       this.#poseAt(rig, state, seconds, null, unknownClimb);
       rig.marker.visible = true;
+    }
+  }
+
+  /**
+   * Draws nearby ground animals clear of each other, of people and of trunks and boulders
+   * (presentation only; see separateBodies). A langur or squirrel climbing a trunk must reach
+   * it, and a vulture in the air is above it all, so they are left where they are recorded.
+   */
+  #keepApart(visible: ReadonlySet<string>, animals: ReadonlyMap<string, AnimalState>,
+    positions: Map<string, RenderPosition>, recorded: ReadonlyMap<string, LivePose>): void {
+    const bodies: Body[] = [], fixed: Obstacle[] = [...this.people];
+    for (const id of visible) {
+      const animal = animals.get(id), position = positions.get(id);
+      if (!animal || !position || (position.altitudeM ?? 0) > 0 || animal.speciesId === 'vulture') continue;
+      const pose = recorded.get(id);
+      if (arboreal(animal.speciesId) && (animal.locomotionMode === 'climb' || pose?.climbVisualPhase !== undefined)) continue;
+      const radius = visualFor(animal.speciesId).heightM * 0.5 * characterScale(animal);
+      // A carcass lies where it fell; scavengers gather round it rather than nudging it.
+      if ((pose?.animal ?? animal).state === 'dead') { fixed.push({ x: position.x, z: position.z, radius: radius * 0.8 }); continue; }
+      bodies.push({ id, x: position.x, z: position.z, heading: position.heading, radius,
+        ...(pose?.partnerId ? { partnerId: pose.partnerId } : {}) });
+    }
+    if (bodies.length === 0) return;
+    for (const [id, clear] of separateBodies(bodies, fixed, this.avoid)) {
+      const position = positions.get(id)!;
+      if (clear.x !== position.x || clear.z !== position.z) positions.set(id, { ...position, ...clear });
     }
   }
 

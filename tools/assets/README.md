@@ -179,3 +179,11 @@ proof of exact hand/foot contact. Runtime and `/characters.html?species=human-fe
 `human-male`) use the real embedded GLBs and Three.js skeletal animation. Run
 `npx vitest run packages/client/test/humanAssets.test.ts packages/client/test/humans.test.ts`
 for source integrity, skin/pose and live rendering-contract checks.
+
+## Rabbit texture budget (26 September 2026)
+
+`shrink_rabbit_textures.py` rewrote only the three embedded images of
+`packages/client/public/assets/animals/Rabbit.glb`: 1024 px to 512 px, the alpha-masked fur
+and the normal map as PNG, the opaque body (whose alpha channel is unused) as JPEG q90.
+Every geometry, skin and animation buffer view is byte-identical to the source; the source
+file's SHA-256 is recorded in `asset.extras.textureBudget`. 4.82 MB to 1.93 MB.

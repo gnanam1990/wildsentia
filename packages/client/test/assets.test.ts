@@ -59,6 +59,12 @@ describe('free local character assets', () => {
     const gltf = manifest('Rabbit.glb');
     expect(gltf.skins?.length).toBeGreaterThan(0);
     expect(gltf.images?.length).toBe(3);
+    // A 22 cm hare needs no 1024 px textures: shrunk once by tools/assets/shrink_rabbit_textures.py,
+    // with the alpha-masked fur kept as PNG and only image bytes changed.
+    const budget = (gltf.asset as { extras?: { textureBudget?: { sourceSha256?: string } } }).extras?.textureBudget;
+    expect(budget?.sourceSha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(gltf.images?.find((i: { name?: string }) => i.name === 'Fur-skin')?.mimeType).toBe('image/png');
+    expect(readFileSync(new URL('../public/assets/animals/Rabbit.glb', import.meta.url)).length).toBeLessThan(2_200_000);
     for (const name of ['Idle', 'Gallop', 'Death']) expect(gltf.animations?.find((a) => a.name === name)?.channels.length).toBeGreaterThan(0);
     expect(modelStatus('hare')).toContain('approximation');
   });

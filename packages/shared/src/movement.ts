@@ -2,7 +2,7 @@ import { isWorldPosition, patchAtPosition, type WorldPosition } from './spatial.
 import { isGoalId, type GoalId } from './types/agent.js';
 import { PATCH_COUNT } from './types/patch.js';
 import type { EncounterAppearance } from './encounter.js';
-import { atWaterAccess } from './waterAccess.js';
+import { atRecordedWaterAccess } from './waterAccess.js';
 
 /** Server-produced route, not a client-authored interpolation. */
 export interface MovementTrace {
@@ -45,7 +45,8 @@ export function isDrinkingActivity(value: unknown): value is DrinkingActivity {
     && typeof a.endSeconds === 'number' && Number.isFinite(a.endSeconds)
     && a.endSeconds > a.startSeconds && a.endSeconds <= 3600
     && typeof a.litres === 'number' && Number.isFinite(a.litres) && a.litres > 0
-    && isWorldPosition(a.position) && atWaterAccess(a.position, patchAtPosition(a.position));
+    // Recordings may predate sim_0.30.0, when the access point was the patch centre.
+    && isWorldPosition(a.position) && atRecordedWaterAccess(a.position, patchAtPosition(a.position));
 }
 
 /** Routes belong to one hourly decision. Reject teleports hidden behind equal timestamps. */

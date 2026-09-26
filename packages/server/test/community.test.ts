@@ -97,7 +97,8 @@ maybe('durable community observer path', () => {
     const rawStock = () => first.world.community!.stores.rawFishKg!
       + first.world.community!.people.reduce((n, p) => n + p.inventory.rawFishKg!, 0);
     // Wait for the actual persisted state, not an old rules version's particular hour.
-    for (let hour = 0; hour < 240 && rawStock() <= 0; hour++) await first.advance(1);
+    // sim_0.30.0's first seed-1 catch is at hour 304 (the access point moved, so the rolls did).
+    for (let hour = 0; hour < 480 && rawStock() <= 0; hour++) await first.advance(1);
     await first.snapshotNow();
     const saved = structuredClone(first.world.community!);
     expect(saved.version).toBe(2);
