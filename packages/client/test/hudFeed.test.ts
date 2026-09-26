@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { feedEventSummary, feedSentence, friendlyWorldTime, Hud, type HudElements } from '../src/hud.js';
+import { feedEventSummary, feedSentence, friendlyWorldTime, happenedBy, Hud, type HudElements } from '../src/hud.js';
 import { WorldStore } from '../src/protocol.js';
 
 const elements = (): HudElements => ({
@@ -70,5 +70,11 @@ describe('factual live event feed', () => {
     expect(friendlyWorldTime(0)).toBe('Year 1 · Day 1 · 12 am');
     expect(friendlyWorldTime(360 * 86400 + 12 * 3600)).toBe('Year 2 · Day 1 · 12 pm');
     expect(friendlyWorldTime(Number.NaN)).toBe('—');
+  });
+
+  it('holds back events the played hour has not reached yet', () => {
+    const events = [{ id: 'later', worldTime: 9000 }, { id: 'now', worldTime: 7300 }, { id: 'undated' }];
+    expect(happenedBy(events, 7300).map((e) => e.id)).toEqual(['now', 'undated']);
+    expect(happenedBy(events, null).map((e) => e.id)).toEqual(['later', 'now', 'undated']);
   });
 });

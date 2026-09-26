@@ -199,7 +199,7 @@ export function createCommunityDialog(focus: (position: WorldPosition, distance:
     const relationships = document.createElement('ul'); content.append(relationships);
     for (const text of communityRelationshipText(c)) line(relationships, text, 'li');
     line(content, 'Recent household milestones and food work', 'h3');
-    line(content, 'Latest 25 recorded household milestones, including family and care events; routine resting is omitted. Older routine tasks may be pruned. Nearby people load CC0 game-style character rigs; distant, loading or failed models remain location markers (reload to retry a failed download). During an active recording, actual travel and task windows play one hour behind this checkpoint. Otherwise positions hold here, with no extrapolation of planned routes. Poses and smaller child rigs are illustrative, not a reconstruction of any real community or a guarantee of task success.');
+    line(content, 'Latest 25 recorded household milestones, including family and care events; routine resting is omitted. Older routine tasks may be pruned. Nearby people load CC0 game-style character rigs; distant, loading or failed models remain location markers (reload to retry a failed download). People walk their actual paths and tasks as each hour plays; between hours they stay where they are, with no guessed routes. Poses and smaller child rigs are illustrative, not a reconstruction of any real community or a guarantee of task success.');
     const events = document.createElement('ol'); content.append(events);
     for (const e of page.events) line(events, communityEventText(e), 'li');
   });

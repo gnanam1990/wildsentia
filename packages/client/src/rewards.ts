@@ -67,7 +67,7 @@ export class RewardObserver {
           button.onclick = () => this.openClaim(); this.#panel.append(button);
           const note = document.createElement('p'); note.className = 'hint';
           note.textContent = drop.revealWhen === 'carcass' ? 'Reward on checkpointed remains. Recorded animation may show an earlier living animal.'
-            : 'Reward belongs to the current checkpoint, not historical replay.';
+            : 'This reward is for the animal as it is now.';
           this.#panel.append(note);
           this.#badge.textContent = `${drop.amount} USDC · Claim reward`;
         }

@@ -188,4 +188,18 @@ maybe('insight routes', () => {
     expect(body.available).toBe(true);
     for (const h of body.highlights) expect(h.score).toBeGreaterThanOrEqual(2);
   });
+
+  it('serves the live feed only up to the time being played', async () => {
+    const all = (await api.inject('/events?limit=200')).json().events as Array<{ worldTime: number }>;
+    expect(all.length).toBeGreaterThan(2);
+    const until = all[Math.floor(all.length / 2)]!.worldTime;
+    const res = await api.inject(`/events?limit=50&until=${until}`);
+    expect(res.statusCode).toBe(200);
+    const events = res.json().events as Array<{ worldTime: number }>;
+    expect(events.length).toBeGreaterThan(0);
+    expect(events.every((e) => e.worldTime <= until)).toBe(true);
+    expect(events.map((e) => e.worldTime)).toEqual([...events.map((e) => e.worldTime)].sort((a, b) => b - a));
+    expect((await api.inject('/events?until=soon')).statusCode).toBe(400);
+    expect((await api.inject(`/events?until=${until}&cursor=x`)).statusCode).toBe(400);
+  });
 });

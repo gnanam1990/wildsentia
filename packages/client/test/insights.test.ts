@@ -29,6 +29,9 @@ describe('observer insights in the browser', () => {
     const html = highlightsHtml(body);
     expect(html).toContain('Highlights'); expect(html).toContain('A tiger caught a sambar'); expect(html).toContain('★ 3.4');
     expect(highlightsHtml({ ...body, highlights: [] })).toBe('');
+    // Not before it happens on screen.
+    expect(highlightsHtml(body, 6900)).toBe('');
+    expect(highlightsHtml(body, 7000)).toContain('A tiger caught a sambar');
     expect(highlightsHtml({ available: false, reason: 'not_configured' })).toBe('');
   });
 

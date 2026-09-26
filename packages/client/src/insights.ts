@@ -1,4 +1,4 @@
-import { feedSentence, friendlyWorldTime } from './hud.js';
+import { feedSentence, friendlyWorldTime, happenedBy } from './hud.js';
 
 /**
  * Observer insights from the server's TypeSafe AI (Jev) integration: a followed animal's
@@ -57,9 +57,12 @@ export function outlookHtml(body: OutlookBody | null): string {
 }
 
 /** Up to three standout moments, above the plain chronological feed. */
-export function highlightsHtml(body: HighlightsBody | null): string {
-  if (!body || !body.available || body.highlights.length === 0) return '';
-  const items = body.highlights.map((h) => {
+export function highlightsHtml(body: HighlightsBody | null, time: number | null = null): string {
+  if (!body || !body.available) return '';
+  // Nothing before it has happened on screen: the saved hour runs ahead of the played one.
+  const shown = body.highlights.filter((h) => happenedBy([h.event], time).length > 0);
+  if (shown.length === 0) return '';
+  const items = shown.map((h) => {
     const when = finite(h.event.worldTime) ? friendlyWorldTime(h.event.worldTime).replace(/^Year \d+ · /, '') : '';
     return `<div class="event feed-entry highlight"><div><div class="etype">${escape(feedSentence(h.event))}</div>
       <div class="feed-meta">${escape(when)} · <span title="Remarkableness, 0-4">★ ${h.score.toFixed(1)}</span></div></div></div>`;
@@ -73,7 +76,8 @@ export class InsightPanel {
   #outlookRequest = 0;
 
   constructor(private readonly outlookEl: HTMLElement, private readonly highlightsEl: HTMLElement,
-    private readonly fetchImpl: typeof fetch = (input, init) => fetch(input, init)) {}
+    private readonly fetchImpl: typeof fetch = (input, init) => fetch(input, init),
+    private readonly clock: () => number | null = () => null) {}
 
   /** Shows the followed animal's likely next hour; null clears it. Stale replies are dropped. */
   async outlook(id: string | null): Promise<void> {
@@ -97,6 +101,6 @@ export class InsightPanel {
       const json: unknown = response.ok ? await response.json() : null;
       body = validHighlights(json) ? json : null;
     } catch { body = null; }
-    this.highlightsEl.innerHTML = highlightsHtml(body);
+    this.highlightsEl.innerHTML = highlightsHtml(body, this.clock());
   }
 }

@@ -165,6 +165,17 @@ export class LiveEncounterPlayer {
     return true;
   }
 
+  /**
+   * The island's time as shown: the hour being played, advancing with it. The server works
+   * each hour out ahead and the browser plays it through, so this — not the newest saved
+   * hour's end — is "now" for everything on screen: clock, light, weather and feed.
+   */
+  worldTimeAt(nowMs: number): number | null {
+    const frame = this.#frame;
+    if (!frame || !finite(nowMs)) return null;
+    return Math.min(frame.endWorldTime, frame.startWorldTime + Math.max(0, this.elapsed(nowMs)));
+  }
+
   elapsed(nowMs: number): number {
     return this.#elapsed + Math.max(0, nowMs - this.#receivedAt) * (this.#frame?.rate ?? 0) / 1000;
   }

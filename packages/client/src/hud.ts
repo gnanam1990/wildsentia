@@ -129,6 +129,11 @@ export function feedSentence(event: Record<string, unknown>): string {
   return feedEventSummary(event).title;
 }
 
+/** Only what has happened by the played time: the saved hour runs ahead of the screen. */
+export function happenedBy<T extends Record<string, unknown>>(events: readonly T[], time: number | null): T[] {
+  return time === null ? [...events] : events.filter((e) => typeof e.worldTime !== 'number' || e.worldTime <= time);
+}
+
 /** Short, factual labels for the live feed. Event IDs remain available on disclosure. */
 export function feedEventSummary(event: Record<string, unknown>): { title: string; meta: string; id: string } {
   const type = typeof event.type === 'string' ? event.type : 'event';
@@ -209,7 +214,22 @@ export class Hud {
     }
   }
 
+  /** The island's time as played on screen; falls back to the newest saved hour. */
+  clockTime: () => number | null = () => this.store.world?.worldTime ?? null;
+  /** What the followed animal is doing in the hour being played, when that is known. */
+  liveActivity: (id: string) => { state: string; goal: string } | null = () => null;
+  #clockText = '';
+
   constructor(private readonly elements: HudElements, private readonly store: WorldStore) {}
+
+  /** Keeps the top-bar clock moving with the played hour; cheap enough for every frame. */
+  tickClock(): void {
+    const time = this.clockTime();
+    const text = time === null ? '' : friendlyWorldTime(time);
+    if (text === this.#clockText) return;
+    this.#clockText = text;
+    this.elements.clock.innerHTML = time === null ? UNKNOWN : escape(text);
+  }
 
   async refreshPassport(id: string | null): Promise<void> {
     const request = ++this.#passportRequest;
@@ -225,7 +245,7 @@ export class Hud {
 
   render(followedId: string | null): void {
     const world = this.store.world;
-    this.elements.clock.innerHTML = world ? escape(friendlyWorldTime(world.worldTime)) : UNKNOWN;
+    this.#clockText = ''; this.tickClock();
     this.elements.clock.title = world?.formatted ?? '';
     this.elements.season.innerHTML = world ? escape(world.season.replace(/^./, (c) => c.toUpperCase())) : UNKNOWN;
     if (world) {
@@ -267,6 +287,7 @@ export class Hud {
     }
 
     const viewers = this.store.viewerCounts.get(followedId);
+    const live = this.liveActivity(followedId);
     const identity = p === null
       ? `${animal.speciesId} &middot; patch ${animal.patchId}`
       : `${escape(p.sex)} &middot; ${escape(p.lifeStage)} &middot; ${age(p.ageDays)} &middot; generation ${p.generation}`;
@@ -278,12 +299,12 @@ export class Hud {
       ${bar('Thirst', animal.drives.thirst, 'var(--mist)')}
       ${bar('Fatigue', animal.drives.fatigue, 'var(--ink-3)')}
       ${bar('Fear', animal.drives.fear, 'var(--blood)')}
-      <div class="row"><span>State</span><b>${escape(animal.state)}</b></div>
+      <div class="row"><span>State</span><b>${escape(live?.state ?? animal.state)}</b></div>
       ${animal.illnessStatus === 'symptomatic'
         ? '<div class="row"><span>Health</span><b>Modelled illness symptoms</b></div>' : ''}
       ${animal.woundStatus
         ? `<div class="row"><span>Injury</span><b>Modelled ${animal.woundStatus === 'infected' ? 'wound infection' : 'open wound'}</b></div>` : ''}
-      <div class="row"><span>Goal</span><b>${escape(animal.currentGoal)}</b></div>
+      <div class="row"><span>Goal</span><b>${escape(live?.goal || animal.currentGoal)}</b></div>
       <div class="row"><span>Watching now</span><b>${viewers ?? UNKNOWN}</b></div>
       ${p === null ? '' : `<details class="story"><summary>Life story, family and skills</summary>${this.#skills(p) + this.#lineage(p) + this.#timeline(p)}</details>`}
       <div class="card-actions">
@@ -293,7 +314,7 @@ export class Hud {
       </div>
       <details class="about"><summary>About this view</summary>
         <p class="prov">Model: ${escape(modelStatusForAnimal(animal))}.
-        ${animal.position ? 'Positions are recorded by the server; paths between updates are interpolated, not collision-aware.' : 'Legacy patch-only data: within-patch placement is approximate.'} Visual coverage is asset metadata. Narration never changes outcomes.</p>
+        ${animal.position ? 'The server works the island out an hour at a time and this page plays each hour through as it happens, so the clock, light and feed follow what you see. Paths between points are drawn smoothly.' : 'Legacy patch-only data: within-patch placement is approximate.'} Visual coverage is asset metadata. Narration never changes outcomes.</p>
       </details>`;
   }
 
@@ -342,12 +363,14 @@ export class Hud {
 
   async refreshFeed(): Promise<void> {
     try {
-      const response = await fetch('/api/events?limit=12');
+      const time = this.clockTime();
+      const response = await fetch(`/api/events?limit=12${time === null ? '' : `&until=${Math.floor(time)}`}`);
       if (!response.ok) throw new Error('Event feed unavailable');
       const body = (await response.json()) as { events: Array<Record<string, unknown>> };
       if (!Array.isArray(body.events)) throw new Error('Invalid event feed');
-      // Newest few, in plain words; the factual label and record ID stay one tap away.
-      this.elements.feed.innerHTML = body.events.slice(0, 6)
+      // Newest few that have happened by the played clock, in plain words; the factual
+      // label and record ID stay one tap away. Later ones appear as the hour plays on.
+      this.elements.feed.innerHTML = happenedBy(body.events, time).slice(0, 6)
         .map((event) => {
           const item = feedEventSummary(event);
           const when = typeof event.worldTime === 'number' ? friendlyWorldTime(event.worldTime).replace(/^Year \d+ · /, '') : '';

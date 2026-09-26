@@ -68,6 +68,9 @@ ambientToggle.addEventListener('click', async () => {
 
 const store = new WorldStore();
 const liveEncounters = new LiveEncounterPlayer();
+/** The island's time as played on screen (see LiveEncounterPlayer.worldTimeAt). */
+const liveWorldTime = (now = performance.now()): number | null =>
+  liveEncounters.worldTimeAt(now) ?? store.world?.worldTime ?? null;
 const encounterNotice = document.querySelector<HTMLElement>('#live-encounter-status')!;
 const communityMotionNotice = document.querySelector<HTMLElement>('#community-motion-status')!;
 const liveEncounterPicker = document.querySelector<HTMLSelectElement>('#live-encounter-picker')!;
@@ -111,7 +114,19 @@ revealAnimal.addEventListener('change', () => {
   try { storage?.setItem('vana.observer-cutaway', revealAnimal.checked ? 'on' : 'off'); } catch { /* optional viewer preference */ }
 });
 // Created with the HUD: watch() can run before the feed timers below are set up.
-const insightPanel = new InsightPanel(document.querySelector('#outlook')!, document.querySelector('#highlights')!);
+/** Plain words for what an animal is doing in the played hour. */
+const SPECIES_LABEL: Record<string, string> = { boar: 'Wild boar', squirrel: 'Giant squirrel' };
+const ACTIVITY_LABEL: Record<string, string> = {
+  travelling: 'walking', fleeing: 'running away', drinking: 'drinking', resting: 'resting', chasing: 'chasing',
+  stalking: 'stalking', dead: 'dead', grazing: 'grazing', feeding: 'feeding',
+};
+hud.clockTime = () => liveWorldTime();
+hud.liveActivity = (id) => {
+  const pose = liveEncounters.poses(performance.now(), reducedMotion.matches).get(id);
+  return pose ? { state: ACTIVITY_LABEL[pose.animal.state] ?? pose.animal.state, goal: pose.animal.currentGoal } : null;
+};
+const insightPanel = new InsightPanel(document.querySelector('#outlook')!, document.querySelector('#highlights')!,
+  undefined, () => hud.clockTime());
 const lastSeen = new LastSeen(storage);
 /** The animal this viewer last followed, so coming back returns them to it. */
 const lastFollowed = {
@@ -634,7 +649,7 @@ function renderFrame(dt: number, now: number): void {
       hideFarFieldNear(terrainRoot, camera.position, NEAR_RADIUS_M,
         nature.hasTreeLod ? Number.POSITIVE_INFINITY : TREE_DETAIL_RADIUS_M, COVER_RADIUS_M - 12);
     }
-    nature.setDistantLight(store.world ? atmosphereAt(store.world.worldTime, store.world.season).daylight : 1);
+    nature.setDistantLight(store.world ? atmosphereAt(liveWorldTime(now)!, store.world.season).daylight : 1);
   }
   groundCover?.update(camera.position, 2);
   communityLayer.update(dt, camera.position, quality.tier, reducedMotion.matches, now, followedPersonId);
@@ -663,8 +678,9 @@ function frame(): void {
   follow.reducedMotion = reducedMotion.matches;
   refreshEncounterPicker(now);
   if (store.world !== null) {
-    atmosphere.update(store.world.worldTime, store.world.season, now / 1000, follow.target, reducedMotion.matches, follow.distance, camera.position);
-    renderer.toneMappingExposure = observerExposure(atmosphereAt(store.world.worldTime, store.world.season).daylight, follow.distance);
+    const shownTime = liveWorldTime(now)!;
+    atmosphere.update(shownTime, store.world.season, now / 1000, follow.target, reducedMotion.matches, follow.distance, camera.position);
+    renderer.toneMappingExposure = observerExposure(atmosphereAt(shownTime, store.world.season).daylight, follow.distance);
   }
 
   groundCover?.animate(now / 1000, reducedMotion.matches);
@@ -743,16 +759,11 @@ function frame(): void {
     visibleAnimals.set(id, withRecordedVisualIdentity(pose.animal, current));
   }
   const followedEncounter = followedId === null ? undefined : poses.get(followedId);
-  encounterNotice.hidden = followedEncounter === undefined;
-  const encounterText = followedEncounter === undefined ? ''
-    : followedEncounter.kind === 'movement'
-      ? `Recorded activity · ${followedEncounter.phase}. One-hour delayed server route${followedEncounter.climbVisualPhase ? ' with saved altitude' : ''}; drinking uses an aggregate action window, not exact sip timing. Poses are illustrative; the passport shows the newer checkpoint.`
-      : `Recorded encounter · ${followedEncounter.phase}. Both animals share one server timeline. Passport and event log show the newer checkpoint.`;
-  // A short line on the card; the full account of what is recorded stays in the tooltip.
-  const encounterShort = followedEncounter === undefined ? ''
-    : followedEncounter.kind === 'movement'
-      ? `Replaying its recorded ${followedEncounter.climbVisualPhase ? 'climb' : 'route'} · about an hour behind live`
-      : `Replaying a recorded hunt · ${followedEncounter.phase}`;
+  // Only a hunt in progress earns a line on the card; ordinary movement is just what you see.
+  const hunting = followedEncounter !== undefined && followedEncounter.kind !== 'movement';
+  encounterNotice.hidden = !hunting;
+  const encounterShort = hunting ? `Hunt in progress · ${followedEncounter!.phase}` : '';
+  const encounterText = hunting ? 'Both animals move on one shared timeline from the server; poses are illustrative.' : '';
   if (encounterNotice.textContent !== encounterShort) { encounterNotice.textContent = encounterShort; encounterNotice.title = encounterText; }
   animals.avoid = nature?.obstacles ?? null;
   animals.people = communityLayer.placedPeople;
@@ -799,7 +810,8 @@ function frame(): void {
       observerSubjects = [{ x: person.x, y: person.y + (person.alive ? .9 * person.scale : .2), z: person.z, radius: 1.5 * person.scale }];
       const head = new THREE.Vector3(person.x, person.y + (person.alive ? 2 * person.scale : .5), person.z).project(camera);
       humanLabel.hidden = head.z < -1 || head.z > 1 || Math.abs(head.x) > 1 || Math.abs(head.y) > 1;
-      const text = `${person.name} · ${communityLayer.showingHistoricFrame ? 'saved hourly movement' : person.recorded ? 'recorded activity' : 'saved checkpoint'}`;
+      // Browsing a person's history is explicitly the past; otherwise they are simply there.
+      const text = communityLayer.showingHistoricFrame ? `${person.name} · saved hourly movement` : person.name;
       if (humanLabel.textContent !== text) humanLabel.textContent = text;
       humanLabel.style.left = `${Math.max(82, Math.min(innerWidth - 82, (head.x + 1) / 2 * innerWidth))}px`;
       humanLabel.style.top = `${Math.max(30, (1 - head.y) / 2 * innerHeight)}px`;
@@ -817,14 +829,17 @@ function frame(): void {
     const p = new THREE.Vector3(pose.position.x,
       renderBaseY(pose.position, animals.groundHeightAt) + bubbleHeight(pose.animal), pose.position.z).project(camera);
     label.hidden = p.z < -1 || p.z > 1 || Math.abs(p.x) > 1 || Math.abs(p.y) > 1;
-    const text = `${pose.animal.speciesId} · recorded position`;
+    const species = SPECIES_LABEL[pose.animal.speciesId] ?? pose.animal.speciesId.replace(/^./, (c) => c.toUpperCase());
+    const text = `${species} · ${ACTIVITY_LABEL[pose.animal.state] ?? pose.animal.state}`;
     if (label.textContent !== text) label.textContent = text;
     label.style.left = `${Math.max(82, Math.min(innerWidth - 82, (p.x + 1) / 2 * innerWidth))}px`;
     label.style.top = `${Math.max(30, (1 - p.y) / 2 * innerHeight)}px`;
   });
 
+  hud.tickClock();
   renderFrame(dt, now);
 }
+
 
 // Start looking at the middle of the world until the first animal is followed.
 follow.target.set(3000, 0, 3000);

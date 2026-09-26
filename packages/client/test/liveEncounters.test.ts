@@ -49,6 +49,17 @@ describe('checkpointed live encounter playback', () => {
     expect(poses.get('far')!.hurried).toBe(true);
     expect(poses.get('far')!.animal.state).toBe('travelling'); // The label stays what was recorded.
   });
+  it('keeps the shown island time on the hour being played, not the newest saved hour', () => {
+    const player = new LiveEncounterPlayer();
+    expect(player.worldTimeAt(0)).toBeNull();
+    const f = { ...frame(), startWorldTime: 7200, endWorldTime: 10_800 };
+    f.encounters = [];
+    expect(player.apply(f, 0)).toBe(true);
+    expect(player.worldTimeAt(0)).toBe(7200);
+    expect(player.worldTimeAt(10_000)).toBe(7200 + 120); // Ten real seconds at 12x.
+    expect(player.worldTimeAt(10_000_000)).toBe(10_800); // Never past the saved hour.
+  });
+
   it('accepts recorded sex/stage but rejects malformed visual identity', () => {
     const f = frame(); f.encounters[0]!.predator.sex = 'male';
     f.encounters[0]!.predator.lifeStage = 'adult';
