@@ -4,7 +4,7 @@ This package runs **one persistent island world** with the household, the built 
 PostgreSQL, and HTTPS. At 12 world-hours per real hour, an uninterrupted 30-day run advances
 360 simulated days. The user supplies and operates the VPS, DNS/domain, firewall, backups and
 external monitoring. A successful local soak is not proof of 30 days of wall-clock uptime.
-The current `sim_0.29.0` tree is a **release candidate, not a completed 30-day deployment**.
+The current `sim_0.30.0` tree is a **release candidate, not a completed 30-day deployment**.
 The flowering guild's first seed recruitment is eligible only in the next simulated year
 (around simulated day 370), so a fresh exactly-30-real-day run at 12× reaches blooms
 and seed maturation, but not that first recruitment window.
@@ -22,8 +22,14 @@ and seed maturation, but not that first recruitment window.
   housekeeping prunes old routine rows but does not remove every life event.
 - Use a **fresh** database volume for the current world. Do not point this package at a
   differently versioned world or change the island/household profile on an existing save.
-- Leave `VANA_REWARD_*`, `VANA_SOCIAL_*` and model/API keys unset. This run
-  package does not send USDC, publish to X or require paid services.
+- Leave `VANA_SOCIAL_*` and model/API keys unset. This run package does not
+  send USDC, publish to X or require paid services.
+- Rewards stay off until you set `VANA_REWARD_NETWORK`, `VANA_REWARD_POLICY` and
+  `VANA_REWARD_ADMIN_TOKEN` (see `env.example`). With them set, visitors can claim drops you
+  allocate in `/rewards-admin.html`; you send each USDC payment yourself and then mark it paid
+  there. Defaults: 60 s of watching before a claim, 5 wins per wallet per day, no per-network
+  limit. `VANA_TRUSTED_PROXY_HOPS` is already `1` for Caddy; do not raise it unless another
+  proxy sits in front.
 
 From the repository root on the VPS:
 
@@ -104,11 +110,13 @@ Stop/start with `docker compose ... stop` and `docker compose ... start`. Never 
 `docker compose down -v`: that deletes the persistent world and TLS volumes. Before a code
 upgrade, take and verify a backup; preserve the old image and database until the new build
 passes restart and health checks. Do not enable version-upgrade flags without a separate
-checkpoint migration review.
+checkpoint migration review. To move a saved `sim_0.29.0` world to this code after a
+verified backup, add `VANA_ALLOW_V29_UPGRADE: "1"` to the server's environment in a compose
+override for one start, confirm `/api/health`, then remove it.
 
 ## Verification boundary
 
-The current `sim_0.29.0` candidate completed three independent **730-simulated-day** island +
+The `sim_0.29.0` candidate completed three independent **730-simulated-day** island +
 household samples with zero reported hard failures; all three ended with six living people
 and all 12 listed animal species, but low predator counts and animal-care warnings remain.
 These are ecology samples, **not** 30 real days or visual-quality acceptance. The last full

@@ -7,6 +7,15 @@ One shared, server-authoritative wildlife simulation. You can watch it. You cann
 
 ## Status
 
+**26 September 2026: `sim_0.30.0`, observer and rewards journeys working end to end on local
+staging.** The feature-by-feature evidence and what still needs the owner (VPS/domain, funding
+the USDC payout wallet, boar art) is in [`docs/LAUNCH-CHECKLIST.md`](docs/LAUNCH-CHECKLIST.md).
+This round added whole-island free exploration with tap-to-follow, walking-pace playback,
+island-wide seasonal showers, a sky dome, checkpoint-driven ground colour, soft forest edges,
+a friendlier HUD, reward integrity (watch time, per-wallet limit, world binding, receipts),
+compressed delivery, and drinking points moved off the patch-centre grid. The history below
+is kept as the record of earlier increments.
+
 **Current working tree, 25 September 2026: remaining-build goal active; not launch-complete.**
 The latest [household implementation](docs/2026-09-25-community-household.md) adds an opt-in,
 checkpointed four-person household, finite-resource construction and a public observer panel.
@@ -330,14 +339,17 @@ of the 63 starvation deaths.
 - **Visitor accounts are not required.** Removed from scope by the 25 September user decision;
   observation stays open, with browser-local preferences. Admin authorization and reward claim
   wallet-address entry remain separate requirements.
-- **Deployment hardening.** Assets are not yet compressed (meshopt/KTX2). A regression workflow
-  is implemented with local fresh-install proof; GitHub activation and full release gates remain pending.
+- **Deployment hardening.** Caddy compresses JS/CSS/JSON/GLB (zstd/gzip) and caches hashed
+  assets for a year; the hare's textures were re-encoded. Geometry/texture compression
+  (meshopt/KTX2) is not used. The VPS, domain and 30-day run are the owner's to start.
 
 ### Running an existing world on new code
 
-The last fully integrated regression-and-matched-year-tested ruleset is `sim_0.28.0`.
-The current runtime identifies as `sim_0.29.0`; its multi-seed/multi-year and
-browser/device acceptance gates are separate from a code regression pass.
+The current runtime identifies as `sim_0.30.0`. Its only rule change from `sim_0.29.0` is the
+position of each patch's water access point (30–95 m off the centre instead of on it), so
+drinkers no longer line up on a grid; older recordings at the centre still validate. A saved
+0.29 world starts on this code only with `VANA_ALLOW_V29_UPGRADE=1`, and each older version
+has its own flag. The 26 September staging world was upgraded this way after a backup.
 Do not upgrade a
 saved or preview world without backup, explicit operator choice, and a restore
 drill; future in-progress `SIM_VERSION` values are not release approvals.
