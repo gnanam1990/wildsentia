@@ -9,14 +9,21 @@
  */
 
 export type Gait = 'walk' | 'trot' | 'run';
-export type LiveAction = 'idle' | 'graze' | 'drink' | 'rest' | 'open';
+export type LiveAction = 'idle' | 'graze' | 'drink' | 'rest' | 'open' | 'feed' | 'hunt';
 
 export interface AnimalView {
   id: string; speciesId: string; alive: boolean; controller?: string | undefined;
   position: { x: number; z: number; heading: number }; patchId: number; state: string; lifeStage: string;
   drives: { hunger: number; thirst: number; fatigue: number; fear: number };
 }
-export interface SpeciesMotion { displayName: string; walkMs: number; trotMs: number; sprintMs: number; sprintStaminaS: number; predator: boolean }
+export interface SpeciesMotion {
+  displayName: string; walkMs: number; trotMs: number; sprintMs: number; sprintStaminaS: number; predator: boolean;
+  /** What it hunts, and how often a hunt that reaches its prey ends in a kill. */
+  preferredPrey: string[]; baseSuccess: number; eatsMeat: boolean;
+  /** How well it hides while stalking (0-1), and how close it creeps before it sprints. */
+  stalkConcealment: number; commitDistanceM: number;
+  sightRangeM: number; detectionM: number; flightInitiationM: number; evasiveness: number; shoulderHeightM: number;
+}
 export interface PatchView { id: number; habitat: string; grassKg: number; waterL: number; land: boolean }
 
 /** Everything the live layer may ask of, or do to, the world. */
@@ -39,6 +46,17 @@ export interface WorldPort {
   route(speciesId: string, from: { x: number; z: number }, to: { x: number; z: number }): { points: Array<{ x: number; z: number }>; metres: number } | null;
   /** Animals an agent could take now, for the possess menu. */
   candidates(speciesId: string | null, limit: number): AnimalView[];
+  /** Where a wild animal is being shown right now (its recorded route at the played moment). */
+  playedPosition(id: string): { x: number; z: number; heading: number } | null;
+  /** The world time being played on screen, which trails the newest saved hour. */
+  playedTime(): number;
+  /** Records a hunt that reached its prey; true if it killed (a carcass now lies there). */
+  resolveHunt(predatorId: string, preyId: string, at: { x: number; z: number; heading: number }, time: number, killed: boolean): boolean;
+  /** An agent's meat-eater feeds at a carcass beside it; false if none is within reach. */
+  feed(id: string, seconds: number): boolean;
+  carcassNear(x: number, z: number, radius: number): { id: string; x: number; z: number } | null;
+  /** Moves a wild animal during a real-time chase; the next hourly step starts from there. */
+  placeWild(id: string, position: { x: number; z: number; heading: number }): boolean;
 }
 
 export interface PlaceDrop {
@@ -67,16 +85,53 @@ export interface Avatar {
   action: LiveAction; pendingSeconds: number;
   stamina: number; since: number; lastCommand: number;
   opening: { dropId: string; seconds: number } | null;
+  /** The animal this agent's predator is chasing. */
+  hunt?: { targetId: string; warned?: boolean } | null;
+  /** A failed catch costs a moment before the predator can move again. */
+  stunnedUntil?: number;
 }
 export interface Notice { at: number; text: string }
 
+/**
+ * A wild animal the live layer has taken off its recorded route for a real-time chase:
+ * prey fleeing an agent's predator, or a wild predator hunting an agent's animal. It stays
+ * live until the next hour's recording starts from where the chase left it.
+ */
+export interface WildRunner {
+  animalId: string; speciesId: string; x: number; z: number; heading: number;
+  mode: 'flee' | 'chase' | 'idle'; otherId: string | null; stamina: number; stunnedUntil: number;
+  /** A hunting runner creeps up first and only sprints once it commits. */
+  committed?: boolean;
+}
+
+export const DEATH_COOLDOWN_MS = 2 * 60_000;
+const SCAN_SECONDS = 1;
+
 export class LiveLayer {
   readonly avatars = new Map<string, Avatar>();
+  /** Wild animals taken off their recordings for a chase, by animal id. */
+  readonly wild = new Map<string, WildRunner>();
   readonly #notices = new Map<string, Notice[]>();
+  readonly #cooldowns = new Map<string, number>();
   #claiming = new Set<string>();
+  #scanIn = 0;
+  #hour = Number.NaN;
 
   constructor(private readonly world: WorldPort, private readonly drops: DropLedger | null = null,
-    private readonly clock: () => number = Date.now) {}
+    private readonly clock: () => number = Date.now, private readonly random: () => number = Math.random) {}
+
+  /** Where an animal is right now: an agent's, a live chase's, or its recorded route's. */
+  positionOf(animalId: string): { x: number; z: number; heading: number } | null {
+    for (const a of this.avatars.values()) if (a.animalId === animalId) return { x: a.x, z: a.z, heading: a.heading };
+    const runner = this.wild.get(animalId);
+    if (runner) return { x: runner.x, z: runner.z, heading: runner.heading };
+    return this.world.playedPosition(animalId);
+  }
+
+  #avatarOf(animalId: string): Avatar | undefined {
+    for (const a of this.avatars.values()) if (a.animalId === animalId) return a;
+    return undefined;
+  }
 
   notices(agentId: string): Notice[] { return this.#notices.get(agentId) ?? []; }
   notify(agentId: string, text: string): void {
@@ -89,8 +144,11 @@ export class LiveLayer {
   /** Takes over an animal: a named one, or any free one of a species. */
   possess(agentId: string, agentName: string, choice: { animalId?: string; speciesId?: string }): { ok: true; avatar: Avatar } | { ok: false; reason: string } {
     if (this.avatars.has(agentId)) return { ok: false, reason: 'already_possessing' };
-    const target = choice.animalId ?? this.world.candidates(choice.speciesId ?? null, 1)[0]?.id;
+    // After an animal dies, a short wait before the next: death has to cost something.
+    if ((this.#cooldowns.get(agentId) ?? 0) > this.clock()) return { ok: false, reason: 'cooldown' };
+    const target = choice.animalId ?? this.world.candidates(choice.speciesId ?? null, 20).find((a) => !this.wild.has(a.id))?.id;
     if (!target) return { ok: false, reason: 'no_free_animal' };
+    if (this.wild.has(target)) return { ok: false, reason: 'in_a_chase' };
     const block = this.world.possess(target, agentId);
     if (block) return { ok: false, reason: block };
     const animal = this.world.animal(target)!;
@@ -139,7 +197,7 @@ export class LiveLayer {
     for (const p of points) if (!Number.isFinite(p.x) || !Number.isFinite(p.z) || !this.world.patchAt(p.x, p.z)?.land) return 'not_on_land';
     this.#flushAction(avatar);
     avatar.path = points.map((p) => ({ x: p.x, z: p.z }));
-    avatar.gait = gait; avatar.moving = true; avatar.action = 'idle'; avatar.opening = null;
+    avatar.gait = gait; avatar.moving = true; avatar.action = 'idle'; avatar.opening = null; avatar.hunt = null;
     avatar.lastCommand = this.clock();
     return null;
   }
@@ -157,18 +215,45 @@ export class LiveLayer {
   stop(agentId: string): string | null {
     const avatar = this.avatars.get(agentId);
     if (!avatar) return 'not_possessing';
-    avatar.path = []; avatar.moving = false; avatar.lastCommand = this.clock();
+    avatar.path = []; avatar.moving = false; avatar.hunt = null; if (avatar.action === 'hunt') avatar.action = 'idle';
+    avatar.lastCommand = this.clock();
     return null;
   }
 
-  /** Graze, drink or rest where the animal stands; moving again ends it. */
-  act(agentId: string, action: 'graze' | 'drink' | 'rest'): string | null {
+  /** Graze, drink, rest, or (a meat-eater at a carcass) feed where the animal stands; moving again ends it. */
+  act(agentId: string, action: 'graze' | 'drink' | 'rest' | 'feed'): string | null {
     const avatar = this.avatars.get(agentId);
     if (!avatar) return 'not_possessing';
     if (action === 'drink' && !this.world.waterPoints(avatar.x, avatar.z, 3).length) return 'not_at_water';
+    if (action === 'feed') {
+      if (!this.world.species(avatar.speciesId)?.eatsMeat) return 'does_not_eat_meat';
+      if (!this.world.carcassNear(avatar.x, avatar.z, 3)) return 'no_carcass_here';
+    }
+    avatar.hunt = null;
     this.#flushAction(avatar);
     avatar.path = []; avatar.moving = false; avatar.opening = null;
     avatar.action = action; avatar.lastCommand = this.clock();
+    return null;
+  }
+
+  /**
+   * Hunts an animal in sight: the predator runs it down in real time. A wild animal bolts when
+   * the hunter comes within its flight distance; an agent's animal is warned and can run. On
+   * reaching it, the species' own hunt odds decide. Only a species' natural prey can be hunted.
+   */
+  hunt(agentId: string, targetId: string): string | null {
+    const avatar = this.avatars.get(agentId);
+    if (!avatar) return 'not_possessing';
+    const me = this.world.species(avatar.speciesId);
+    if (!me?.preferredPrey.length) return 'not_a_hunter';
+    const target = this.world.animal(targetId);
+    if (!target?.alive || target.id === avatar.animalId) return 'no_such_animal';
+    if (!me.preferredPrey.includes(target.speciesId)) return 'not_its_prey';
+    const at = this.positionOf(targetId);
+    if (!at || Math.hypot(at.x - avatar.x, at.z - avatar.z) > me.sightRangeM) return 'out_of_sight';
+    this.#flushAction(avatar);
+    avatar.path = []; avatar.moving = true; avatar.opening = null;
+    avatar.hunt = { targetId }; avatar.action = 'hunt'; avatar.lastCommand = this.clock();
     return null;
   }
 
@@ -189,21 +274,189 @@ export class LiveLayer {
     if (!(dt > 0)) return;
     dt = Math.min(dt, 1);
     const now = this.clock();
+    // A new hour's recording starts from where each finished chase left its animal.
+    const hour = this.world.now();
+    if (hour !== this.#hour) {
+      this.#hour = hour;
+      for (const [id, r] of this.wild) if (r.mode === 'idle') this.wild.delete(id);
+    }
     for (const avatar of [...this.avatars.values()]) {
       const animal = this.world.animal(avatar.animalId);
-      if (!animal?.alive) { this.#end(avatar, `${avatar.animalId} died. You can take over another animal.`); continue; }
+      if (!animal?.alive) {
+        this.#cooldowns.set(avatar.agentId, now + DEATH_COOLDOWN_MS);
+        this.#end(avatar, `${avatar.animalId} died. You can take over another animal in two minutes.`); continue;
+      }
       if (animal.controller !== avatar.agentId) { this.#end(avatar, `${avatar.animalId} gave birth and went back to the wild to raise her young.`); continue; }
       if (now - avatar.lastCommand > IDLE_RELEASE_MS) { this.release(avatar.agentId, 'You were idle for 15 minutes, so your animal went back to the wild.'); continue; }
       const motion = this.world.species(avatar.speciesId)!;
-      if (avatar.moving) this.#move(avatar, motion, dt);
+      if (avatar.hunt) this.#huntStep(avatar, motion, dt, now);
+      else if (avatar.moving) this.#move(avatar, motion, dt);
       else avatar.stamina = Math.min(1, avatar.stamina + dt / (3 * motion.sprintStaminaS));
-      if (avatar.action === 'graze' || avatar.action === 'drink' || avatar.action === 'rest') {
+      if (avatar.action === 'graze' || avatar.action === 'drink' || avatar.action === 'rest' || avatar.action === 'feed') {
         avatar.pendingSeconds += dt;
         if (avatar.pendingSeconds >= ACTION_FLUSH_SECONDS) this.#flushAction(avatar);
       }
       if (avatar.opening) this.#advanceOpening(avatar, dt);
     }
+    for (const runner of [...this.wild.values()]) this.#runnerStep(runner, dt, now);
+    this.#scanIn -= dt;
+    if (this.#scanIn <= 0) { this.#scanIn = SCAN_SECONDS; this.#scanForWildHunters(); }
     this.#spot();
+  }
+
+  // ---- Hunting (Phase 2) -------------------------------------------------------------------
+
+  #contact(a: SpeciesMotion, b: SpeciesMotion): number {
+    return Math.max(1.2, (a.shoulderHeightM + b.shoulderHeightM) * 0.65);
+  }
+
+  /** One step towards, or away from, a point at a gait; false if the ground ahead is not land. */
+  #stepToward(id: string, from: { x: number; z: number }, to: { x: number; z: number }, metres: number, away: boolean, wild: boolean):
+    { x: number; z: number; heading: number } | null {
+    let dx = to.x - from.x, dz = to.z - from.z;
+    const gap = Math.hypot(dx, dz);
+    if (gap < 1e-6) return { x: from.x, z: from.z, heading: 0 };
+    if (away) { dx = -dx; dz = -dz; }
+    // A fleeing animal that meets water or sea veers to either side before it gives up.
+    for (const turn of away ? [0, 0.7, -0.7, 1.4, -1.4] : [0]) {
+      const heading = Math.atan2(dx, dz) + turn, step = away ? metres : Math.min(metres, gap);
+      const next = { x: from.x + Math.sin(heading) * step, z: from.z + Math.cos(heading) * step, heading };
+      if (wild ? this.world.placeWild(id, next) : this.world.place(id, next)) return next;
+    }
+    return null;
+  }
+
+  #huntStep(avatar: Avatar, motion: SpeciesMotion, dt: number, now: number): void {
+    if (now < (avatar.stunnedUntil ?? 0)) return;
+    const targetId = avatar.hunt!.targetId;
+    const target = this.world.animal(targetId);
+    const at = target?.alive ? this.positionOf(targetId) : null;
+    const stop = (text: string) => { avatar.hunt = null; avatar.action = 'idle'; avatar.moving = false; this.notify(avatar.agentId, text); };
+    if (!at || !target) return stop('Your prey is gone.');
+    const gap = Math.hypot(at.x - avatar.x, at.z - avatar.z);
+    if (gap > motion.sightRangeM * 1.5) return stop('You lost sight of it.');
+    const prey = this.world.species(target.speciesId)!;
+    // Stalk (walk, hidden) until close enough to commit, then sprint.
+    const committed = gap <= motion.commitDistanceM;
+    if (!committed || avatar.stamina <= 0) avatar.stamina = Math.min(1, avatar.stamina + dt / (3 * motion.sprintStaminaS));
+    // Prey spots a sprinting hunter at its detection distance, a stalker only when it is close.
+    const spotAt = committed ? prey.detectionM : prey.flightInitiationM * (1 - motion.stalkConcealment);
+    if (gap <= spotAt) {
+      if (!target.controller && !this.wild.has(targetId)) this.#startRunner(targetId, target.speciesId, at, 'flee', avatar.animalId);
+      const quarry = this.#avatarOf(targetId);
+      if (quarry && !avatar.hunt!.warned) {
+        avatar.hunt!.warned = true;
+        this.notify(quarry.agentId, `A ${motion.displayName.toLowerCase()} is charging at you. Run!`);
+      }
+    }
+    const reach = this.#contact(motion, prey);
+    if (gap <= reach) { this.#reach(avatar.animalId, targetId, at); return; }
+    const gait: Gait = committed && avatar.stamina > 0 ? 'run' : committed ? 'trot' : 'walk';
+    if (gait === 'run') avatar.stamina = Math.max(0, avatar.stamina - dt / motion.sprintStaminaS);
+    const speed = (gait === 'run' ? motion.sprintMs : gait === 'trot' ? motion.trotMs : motion.walkMs) * this.world.speedFactor(avatar.animalId, avatar.x, avatar.z);
+    const next = this.#stepToward(avatar.animalId, avatar, at, Math.min(speed * dt, Math.max(0, gap - reach * 0.5)), false, false);
+    if (!next) return stop('Blocked: the way to your prey is not walkable land.');
+    avatar.x = next.x; avatar.z = next.z; avatar.heading = next.heading; avatar.gait = gait; avatar.moving = true;
+    // Contact is judged after the step, or a fleeing animal that moves next would always be just out of reach.
+    if (Math.hypot(at.x - avatar.x, at.z - avatar.z) <= reach) this.#reach(avatar.animalId, targetId, at);
+  }
+
+  #startRunner(animalId: string, speciesId: string, at: { x: number; z: number; heading: number }, mode: 'flee' | 'chase', otherId: string): void {
+    const existing = this.wild.get(animalId);
+    if (existing) { existing.mode = mode; existing.otherId = otherId; existing.committed = false; return; }
+    this.wild.set(animalId, { animalId, speciesId, x: at.x, z: at.z, heading: at.heading, mode, otherId, stamina: 1, stunnedUntil: 0, committed: false });
+  }
+
+  #runnerStep(r: WildRunner, dt: number, now: number): void {
+    const animal = this.world.animal(r.animalId);
+    if (!animal?.alive || animal.controller) { this.wild.delete(r.animalId); return; }
+    const motion = this.world.species(r.speciesId)!;
+    if (r.mode === 'idle' || now < r.stunnedUntil) { r.stamina = Math.min(1, r.stamina + dt / (3 * motion.sprintStaminaS)); return; }
+    const other = r.otherId ? this.positionOf(r.otherId) : null;
+    const otherAlive = r.otherId ? this.world.animal(r.otherId)?.alive : false;
+    if (!other || !otherAlive) { r.mode = 'idle'; return; }
+    const gap = Math.hypot(other.x - r.x, other.z - r.z);
+    // A wild hunter creeps up at a walk until it is close enough to commit, like any stalker.
+    const stalking = r.mode === 'chase' && !r.committed && gap > motion.commitDistanceM;
+    if (r.mode === 'chase' && !stalking && !r.committed) {
+      r.committed = true;
+      const quarry = this.#avatarOf(r.otherId!);
+      if (quarry) this.notify(quarry.agentId, `A ${motion.displayName.toLowerCase()} is charging at you. Run!`);
+    }
+    const running = !stalking && r.stamina > 0;
+    if (running) r.stamina = Math.max(0, r.stamina - dt / motion.sprintStaminaS);
+    else r.stamina = Math.min(1, r.stamina + dt / (3 * motion.sprintStaminaS));
+    const speed = (stalking ? motion.walkMs : running ? motion.sprintMs : motion.trotMs) * this.world.speedFactor(r.animalId, r.x, r.z);
+    if (r.mode === 'flee') {
+      if (gap > Math.max(3 * motion.flightInitiationM, 80)) { r.mode = 'idle'; return; }
+      const next = this.#stepToward(r.animalId, r, other, speed * dt, true, true);
+      if (!next) { r.mode = 'idle'; return; }
+      Object.assign(r, next);
+      return;
+    }
+    // A wild predator chasing an agent's animal: flat out until its breath gives out.
+    const preyId = r.otherId!, prey = this.world.species(this.world.animal(preyId)!.speciesId)!;
+    const reach = this.#contact(motion, prey);
+    if (gap <= reach) { this.#reach(r.animalId, preyId, other); return; }
+    if ((!running && !stalking) || gap > motion.sightRangeM * 1.5) {
+      r.mode = 'idle';
+      const quarry = this.#avatarOf(preyId);
+      if (quarry) this.notify(quarry.agentId, `The ${motion.displayName.toLowerCase()} gave up the chase.`);
+      return;
+    }
+    const next = this.#stepToward(r.animalId, r, other, Math.min(speed * dt, Math.max(0, gap - reach * 0.5)), false, true);
+    if (!next) { r.mode = 'idle'; return; }
+    Object.assign(r, next);
+    if (Math.hypot(other.x - r.x, other.z - r.z) <= reach) this.#reach(r.animalId, preyId, other);
+  }
+
+  /** A hunter reached its prey: the species' odds decide, and the world records it. */
+  #reach(predatorId: string, preyId: string, at: { x: number; z: number; heading: number }): void {
+    const predatorAnimal = this.world.animal(predatorId), preyAnimal = this.world.animal(preyId);
+    if (!predatorAnimal || !preyAnimal) return;
+    const pm = this.world.species(predatorAnimal.speciesId)!, prm = this.world.species(preyAnimal.speciesId)!;
+    const hunterAvatar = this.#avatarOf(predatorId), hunterRunner = this.wild.get(predatorId);
+    const preyAvatar = this.#avatarOf(preyId), preyRunner = this.wild.get(preyId);
+    const tired = (preyAvatar?.stamina ?? preyRunner?.stamina ?? 1) < 0.15;
+    const chance = Math.min(0.9, Math.max(0.1, pm.baseSuccess * (1.4 - prm.evasiveness * 0.8) * (tired ? 1.3 : 1)));
+    const killed = this.random() < chance;
+    const recorded = this.world.resolveHunt(predatorId, preyId, at, this.world.playedTime(), killed);
+    const now = this.clock();
+    if (killed && recorded) {
+      if (hunterAvatar) {
+        hunterAvatar.hunt = null; hunterAvatar.action = 'idle'; hunterAvatar.moving = false;
+        this.notify(hunterAvatar.agentId, `You caught the ${prm.displayName.toLowerCase()}. Stay by it and feed (act feed).`);
+      }
+      if (hunterRunner) hunterRunner.mode = 'idle';
+      this.wild.delete(preyId);
+      if (preyAvatar) {
+        this.#cooldowns.set(preyAvatar.agentId, now + DEATH_COOLDOWN_MS);
+        this.#end(preyAvatar, `Your ${prm.displayName.toLowerCase()} was caught by a ${pm.displayName.toLowerCase()}. You can take over another animal in two minutes.`);
+      }
+      return;
+    }
+    // It broke free: the hunter loses a moment, the prey a head start.
+    if (hunterAvatar) { hunterAvatar.stunnedUntil = now + 2000; this.notify(hunterAvatar.agentId, 'It broke free. Keep after it, or stop.'); }
+    if (hunterRunner) hunterRunner.stunnedUntil = now + 2000;
+    if (preyAvatar) this.notify(preyAvatar.agentId, `You broke free of the ${pm.displayName.toLowerCase()}. Keep running!`);
+    else if (!preyAnimal.controller) this.#startRunner(preyId, preyAnimal.speciesId, at, 'flee', predatorId);
+  }
+
+  /** Hungry wild predators that can see an agent's animal they hunt come after it. */
+  #scanForWildHunters(): void {
+    for (const avatar of this.avatars.values()) {
+      if ([...this.wild.values()].some((r) => r.mode === 'chase' && r.otherId === avatar.animalId)) continue;
+      for (const candidate of this.world.nearby(avatar.x, avatar.z, 1200, 60)) {
+        if (candidate.controller || this.wild.has(candidate.id) || candidate.drives.hunger < 0.3) continue;
+        const motion = this.world.species(candidate.speciesId);
+        if (!motion?.preferredPrey.includes(avatar.speciesId)) continue;
+        const at = this.world.playedPosition(candidate.id);
+        if (!at || Math.hypot(at.x - avatar.x, at.z - avatar.z) > Math.min(motion.sightRangeM, 160)) continue;
+        // It begins to stalk; the agent's animal only notices once it charges (or sees it nearby).
+        this.#startRunner(candidate.id, candidate.speciesId, at, 'chase', avatar.animalId);
+        break;
+      }
+    }
   }
 
   #move(avatar: Avatar, motion: SpeciesMotion, dt: number): void {
@@ -234,6 +487,8 @@ export class LiveLayer {
     const action = avatar.action;
     if ((action === 'graze' || action === 'drink' || action === 'rest') && avatar.pendingSeconds > 0) {
       this.world.act(avatar.animalId, action, Math.min(3600, avatar.pendingSeconds));
+    } else if (action === 'feed' && avatar.pendingSeconds > 0) {
+      this.world.feed(avatar.animalId, Math.min(3600, avatar.pendingSeconds));
     }
     avatar.pendingSeconds = 0;
   }
@@ -276,7 +531,7 @@ export class LiveLayer {
   }
 
   /** What spectators see: every avatar and every live drop, positions only where public. */
-  publicState(): { avatars: object[]; drops: object[] } {
+  publicState(): { avatars: object[]; drops: object[]; wild: object[] } {
     return {
       avatars: [...this.avatars.values()].map((a) => ({ agentId: a.agentId, name: a.agentName, animalId: a.animalId,
         speciesId: a.speciesId, x: round(a.x), z: round(a.z), heading: round(a.heading, 3), gait: a.gait, moving: a.moving,
@@ -284,6 +539,8 @@ export class LiveLayer {
       drops: (this.drops?.active() ?? []).map((d) => ({ id: d.id, amountMicro: d.amountMicro,
         hint: { x: round(d.hintX), z: round(d.hintZ), radius: d.hintRadius }, expiresAt: d.expiresAt,
         ...(d.spottedBy ? { spotted: { x: round(d.x), z: round(d.z), by: d.spottedBy } } : {}) })),
+      wild: [...this.wild.values()].map((r) => ({ animalId: r.animalId, speciesId: r.speciesId, x: round(r.x), z: round(r.z),
+        heading: round(r.heading, 3), mode: r.mode === 'chase' && !r.committed ? 'stalk' : r.mode })),
     };
   }
 }

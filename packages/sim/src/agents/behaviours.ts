@@ -10,7 +10,7 @@ import { choosePrey } from './predation.js';
 import { resolveSpatialHunt } from './encounters.js';
 import { canRetryPrey, rememberFailedHunt } from './huntMemory.js';
 import type { GoalChoice } from './goals.js';
-import type { Percept, WorldView } from './perception.js';
+import { heldByPredatorOf, type Percept, type WorldView } from './perception.js';
 import { locateAgent, locateCarcass } from './spatial.js';
 import { approachContact } from './movement.js';
 import { navigate } from './navigation.js';
@@ -399,6 +399,8 @@ function consume(ctx: BehaviourContext, carcass: Carcass, elapsedSeconds = 0, ca
   // perception or a mother who died earlier in this decision. No debit before this check.
   if (needsProvisioning(ctx.agent, ctx.species)
     && !canEatMaternalCarcass(ctx.agent, ctx.species, carcass, ctx.view, ctx.worldTime)) return;
+  // Nothing feeds beside something that hunts it (see heldByPredatorOf, sim_0.31.0).
+  if (heldByPredatorOf(carcass, ctx.agent.speciesId, ctx.worldTime, ctx.view)) { ctx.agent.state = 'resting'; return; }
   const end = ctx.endWorldTime ?? ctx.worldTime + ctx.hours * 3600;
   // Another actor may create this body partway through the same coarse tick. Never grant
   // approach or feeding time before it exists, nor reuse time already spent hunting.
@@ -594,6 +596,11 @@ export function controlledAction(ctx: BehaviourContext, action: ControlledAction
     if (!atWaterAccess(locateAgent(ctx.agent), ctx.agent.patchId)) { ctx.agent.state = 'resting'; return; }
     drink(ctx, false);
   } else rest(ctx);
+}
+
+/** An agent-steered meat-eater feeding at the carcass it stands beside (no approach walk). */
+export function controlledFeed(ctx: BehaviourContext, carcass: Carcass): void {
+  consume(ctx, carcass);
 }
 
 export function executeGoal(ctx: BehaviourContext): void {

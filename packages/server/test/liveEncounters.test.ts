@@ -5,7 +5,7 @@ import { collectLiveEncounters, collectLiveMovements, encounterAppearance, index
 import { createWorld } from '../../sim/src/world.js';
 import { makeAgent } from '../../sim/test/helpers.js';
 import { isLiveEncounterFrame, LiveEncounterPlayer } from '../../client/src/liveEncounters.js';
-import { displaySecondAt, paceMovement } from '../../client/src/pacing.js';
+import { displaySecondAt, paceMovement } from '@vana/shared';
 
 const p = (x: number) => ({ x, z: 0, heading: 0 });
 const actors = new Map<string, EncounterAppearance>([

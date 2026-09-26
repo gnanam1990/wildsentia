@@ -18,7 +18,7 @@ import { foundCommunity, stepCommunity } from './community.js';
 import { updateDrives } from './agents/drives.js';
 import { perceive, type WorldView } from './agents/perception.js';
 import { selectGoal } from './agents/goals.js';
-import { controlledAction, descendPerchedAnimal, executeGoal, type ControlledAction, type WorldServices } from './agents/behaviours.js';
+import { controlledAction, controlledFeed, descendPerchedAnimal, executeGoal, type ControlledAction, type WorldServices } from './agents/behaviours.js';
 import { foundingTraits } from './agents/genetics.js';
 import { Pedigree } from './agents/pedigree.js';
 import { mortalityFor, stageFor, targetMass } from './agents/lifecycle.js';
@@ -39,7 +39,7 @@ import {
   packAllowsBreeding,
 } from './agents/reproduction.js';
 
-export const SIM_VERSION = 'sim_0.30.0';
+export const SIM_VERSION = 'sim_0.31.0';
 
 /** Uncalibrated group-decision policy, not a claim of a species-specific thirst measurement.
  * An unweaned independent drinker need not leave a nearby caregiver every hour for a sip. */
@@ -212,6 +212,7 @@ export class World {
       carcassesInPatch: (patchId) => this.#carcassesByPatch.get(patchId) ?? [],
       speciesOf: (speciesId) => this.species.get(speciesId)!,
       groupPatch: (groupId) => this.#groupPatch(groupId),
+      worldTime: this.#time,
     };
   }
 
@@ -628,16 +629,16 @@ export class World {
     if (!agent.alive) return 'not_alive';
     if (agent.controller) return 'already_controlled';
     const cfg = this.species.get(agent.speciesId)!;
-    if (cfg.archetype === 'apex_predator' || cfg.archetype === 'pack_predator') return 'predators_later';
     // The live layer moves animals on the ground; flight comes later.
     if (agent.speciesId === 'vulture') return 'flight_later';
     if (agent.lifeStage !== 'adult' && agent.lifeStage !== 'elder') return 'not_adult';
     if (agent.dependentOn !== null) return 'dependent';
     if (facts.parents.has(agent.id)) return 'raising_young';
     if ((agent.altitudeM ?? 0) > 0) return 'off_the_ground';
-    // Most of every species stays wild: a fifth at most, and one once there are three.
+    // Most of every species stays wild: a fifth at most, and one once there are two (so of
+    // the island's two tigers one may be steered and one always stays wild).
     const living = this.livingCount(agent.speciesId);
-    const cap = living >= 3 ? Math.max(1, Math.floor(living * 0.2)) : 0;
+    const cap = living >= 2 ? Math.max(1, Math.floor(living * 0.2)) : 0;
     if ((facts.held.get(agent.speciesId) ?? 0) >= cap) return 'species_cap';
     return null;
   }
@@ -691,6 +692,68 @@ export class World {
       choice: { goal, score: 1, alternative: null }, hours: seconds / 3600, worldTime: this.#time,
       log: this.log, rng: this.#rng, services: this.#services() }, action);
     agent.currentGoal = goal;
+    return true;
+  }
+
+  /**
+   * A hunt the live layer resolved in real time: the predator physically reached its prey at
+   * `position`, at world time `at` (the moment being played, which trails the saved hour).
+   * On success the prey dies there as predation and leaves a carcass, exactly as a wild kill;
+   * either way the hunt is recorded. Returns the carcass, or null if the attempt failed or
+   * either animal can no longer take part. (docs/2026-09-26-live-agents-design.md, Phase 2)
+   */
+  resolveLiveHunt(predatorId: string, preyId: string, position: WorldPosition, at: number, killed: boolean): Carcass | null {
+    const predator = this.#agentsById.get(predatorId), prey = this.#agentsById.get(preyId);
+    if (!predator?.alive || !prey?.alive || predator.id === prey.id) return null;
+    const cfg = this.species.get(predator.speciesId)!;
+    if (!(cfg.hunting?.preferredPrey ?? []).includes(prey.speciesId)) return null;
+    const patchId = patchAtPosition(position);
+    if (!landWalkable(this.patches[patchId]) || !positionInPatch(position, patchId)) return null;
+    const when = Math.min(this.#time, Math.max(0, Math.floor(at)));
+    prey.position = { ...position }; prey.patchId = patchId;
+    predator.stamina = Math.max(0, (predator.stamina ?? 1) - 0.3);
+    const hunt = this.log.append({ type: 'hunt', worldTime: when, simVersion: SIM_VERSION, patchId,
+      position: { ...position }, actors: [predator.id, prey.id], goal: 'hunt',
+      conditions: { source: 'live', predatorSpecies: predator.speciesId, preySpecies: prey.speciesId,
+        ...(predator.controller ? { predatorSteered: 1 } : {}), ...(prey.controller ? { preySteered: 1 } : {}) },
+      outcome: killed ? 'success' : 'failure', effects: killed ? { preyMassKg: prey.massKg } : {},
+      causalParents: [], confidence: 'authoritative' });
+    if (!killed) return null;
+    return this.#kill(prey, 'predation', predator.id, { at: when, causalParent: hunt.id });
+  }
+
+  /**
+   * Where the live layer has taken a wild animal during a real-time chase (fleeing from, or
+   * chasing, an agent's animal). Only onto walkable land; the next hourly step starts from here.
+   */
+  placeWild(id: string, position: WorldPosition): boolean {
+    const agent = this.#agentsById.get(id);
+    if (!agent?.alive || agent.controller) return false;
+    if (![position.x, position.z, position.heading].every(Number.isFinite)) return false;
+    const patchId = patchAtPosition(position);
+    if (patchId < 0 || !landWalkable(this.patches[patchId]) || !positionInPatch(position, patchId)) return false;
+    agent.position = { x: position.x, z: position.z, heading: position.heading };
+    agent.patchId = patchId; delete agent.journey;
+    return true;
+  }
+
+  /**
+   * An agent-steered predator eats from a carcass it stands at, for `seconds`, by the same
+   * finite rules as a wild one. False if there is no carcass within reach.
+   */
+  feedControlled(id: string, seconds: number): boolean {
+    const agent = this.#agentsById.get(id);
+    if (!agent?.alive || !agent.controller || !(seconds > 0) || seconds > 3600) return false;
+    const cfg = this.species.get(agent.speciesId)!;
+    if (!cfg.diet.eats.some((e) => e.target === 'meat')) return false;
+    const here = locateAgent(agent);
+    const carcass = this.carcasses.find((c) => c.position && Math.hypot(c.position.x - here.x, c.position.z - here.z) <= 3);
+    if (!carcass) return false;
+    const view = this.#view();
+    controlledFeed({ agent, species: cfg, patches: this.patches, view, percept: perceive(agent, cfg, view),
+      choice: { goal: 'scavenge', score: 1, alternative: null }, hours: seconds / 3600, worldTime: this.#time,
+      log: this.log, rng: this.#rng, services: this.#services() }, carcass);
+    agent.currentGoal = 'scavenge';
     return true;
   }
 

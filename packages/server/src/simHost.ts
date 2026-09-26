@@ -1,9 +1,10 @@
-import type { Agent, Carcass, Patch, WorldEvent, LiveEncounterFrame, LiveMovement, WaterBudget, TerrainProfile, MicroEcologyState, CommunityProfile, CommunityState, CommunityMotion } from '@vana/shared';
+import type { Agent, Carcass, Patch, WorldEvent, LiveEncounterFrame, LiveMovement, WaterBudget, TerrainProfile, MicroEcologyState, CommunityProfile, CommunityState, CommunityMotion, WorldPosition } from '@vana/shared';
+import { movementAt, paceMovement, recordedSecondAt, type Pacing } from '@vana/shared';
 import { randomUUID } from 'node:crypto';
 import { collectLiveEncounters, indexLiveMovements, selectLiveMovements, encounterAppearance } from './liveEncounters.js';
 import {
   FOREST_FLOOR, FOREST_LANDSCAPE, FOREST_POPULATION, ISLAND_POPULATION, SIM_VERSION,
-  upgradeV16Snapshot, upgradeV17Snapshot, upgradeV18Snapshot, upgradeV19Snapshot, upgradeV20Snapshot, upgradeV21Snapshot, upgradeV22Snapshot, upgradeV23Snapshot, upgradeV24Snapshot, upgradeV25Snapshot, upgradeV26Snapshot, upgradeV27Snapshot, upgradeV28Snapshot, upgradeV29Snapshot,
+  upgradeV16Snapshot, upgradeV17Snapshot, upgradeV18Snapshot, upgradeV19Snapshot, upgradeV20Snapshot, upgradeV21Snapshot, upgradeV22Snapshot, upgradeV23Snapshot, upgradeV24Snapshot, upgradeV25Snapshot, upgradeV26Snapshot, upgradeV27Snapshot, upgradeV28Snapshot, upgradeV29Snapshot, upgradeV30Snapshot,
   createWorld, restoreSnapshot, takeSnapshot, totalNutrients, upgradeV5Snapshot, upgradeV6Snapshot, upgradeV7Snapshot, upgradeV8Snapshot, upgradeV9Snapshot, upgradeV10Snapshot, upgradeV11Snapshot, upgradeV12Snapshot, upgradeV13Snapshot, upgradeV14Snapshot, upgradeV15Snapshot, type Snapshot, type World, type WorldOptions,
 } from '@vana/sim';
 import type { Pool } from './db/pool.js';
@@ -45,6 +46,8 @@ export interface SimHostOptions {
   allowV28Upgrade?: boolean;
   /** v0.30 moves water access points off patch centres; see upgradeV29Snapshot. */
   allowV29Upgrade?: boolean;
+  /** v0.31 keeps prey off a predator's kill and allows agent-steered animals; see upgradeV30Snapshot. */
+  allowV30Upgrade?: boolean;
   allowV15Upgrade?: boolean;
   allowV14Upgrade?: boolean;
   /** Explicit rules-change acknowledgement. Back up the database before enabling. Default false. */
@@ -251,6 +254,7 @@ export class SimHost {
       allowV27Upgrade: false,
       allowV28Upgrade: false,
       allowV29Upgrade: false,
+      allowV30Upgrade: false,
       allowV5Upgrade: false,
       allowV6Upgrade: false,
       allowV7Upgrade: false,
@@ -304,6 +308,28 @@ export class SimHost {
   get consecutiveTickFailures(): number { return this.#consecutiveTickFailures; }
 
   /** A monotonic server-relative clock lets joins/repeated broadcasts share the same playhead. */
+  readonly #pacing = new WeakMap<object, Pacing>();
+  /**
+   * Where a wild animal is being shown right now: on its recorded route at the moment being
+   * played, paced exactly as the observer paces it, or else where it was last saved. The live
+   * layer uses this to tell whether a predator has really reached its prey.
+   */
+  playedPosition(id: string): WorldPosition | null {
+    const frame = this.liveEncounterFrame();
+    const movement = frame ? this.#movementIndex.get(id) : undefined;
+    if (frame && movement) {
+      let pacing = this.#pacing.get(movement.trace);
+      if (!pacing) { pacing = paceMovement(movement.trace, movement.actor.speciesId, frame.rate); this.#pacing.set(movement.trace, pacing); }
+      const seconds = recordedSecondAt(pacing, frame.elapsedWorldSeconds);
+      const activity = movement.activity;
+      if (activity && seconds >= activity.startSeconds) return { ...activity.position };
+      const at = movementAt(movement.trace, seconds);
+      return { x: at.x, z: at.z, heading: at.heading };
+    }
+    const agent = this.world.animal(id);
+    return agent?.alive && agent.position ? { ...agent.position } : null;
+  }
+
   liveEncounterFrame(priorityActorId: string | null = null): LiveEncounterFrame | null {
     const frame = this.#encounterFrame;
     if (!this.isWriterActive || this.lastError || !frame) return null;
@@ -349,13 +375,13 @@ export class SimHost {
     if (snapshot.simVersion !== SIM_VERSION) {
       // Wounds first existed in v0.26. Pre-v0.26 direct jumps must not smuggle them in;
       // a genuine v0.26 checkpoint may preserve its active wound across this upgrade.
-      if (!['sim_0.26.0', 'sim_0.27.0', 'sim_0.28.0', 'sim_0.29.0'].includes(snapshot.simVersion)
+      if (!['sim_0.26.0', 'sim_0.27.0', 'sim_0.28.0', 'sim_0.29.0', 'sim_0.30.0'].includes(snapshot.simVersion)
         && snapshot.agents.some(agent => agent.wound !== undefined))
         throw new Error('refusing to upgrade: old snapshot contains future wound state');
-      if (!['sim_0.27.0', 'sim_0.28.0', 'sim_0.29.0'].includes(snapshot.simVersion)
+      if (!['sim_0.27.0', 'sim_0.28.0', 'sim_0.29.0', 'sim_0.30.0'].includes(snapshot.simVersion)
         && snapshot.microEcology?.patches.some(patch => patch.fishCohort !== undefined))
         throw new Error('refusing to upgrade: old snapshot contains future fish cohort state');
-      if (!['sim_0.28.0', 'sim_0.29.0'].includes(snapshot.simVersion)
+      if (!['sim_0.28.0', 'sim_0.29.0', 'sim_0.30.0'].includes(snapshot.simVersion)
         && snapshot.patches.some(patch => patch.floweringGuild !== undefined))
         throw new Error('refusing to upgrade: old snapshot contains future flowering guild state');
       if (this.#options.allowV5Upgrade && snapshot.simVersion === 'sim_0.5.0') {
@@ -433,6 +459,9 @@ export class SimHost {
       } else if (this.#options.allowV29Upgrade && snapshot.simVersion === 'sim_0.29.0') {
         upgradedFrom = snapshot.simVersion;
         snapshot = upgradeV29Snapshot(snapshot);
+      } else if (this.#options.allowV30Upgrade && snapshot.simVersion === 'sim_0.30.0') {
+        upgradedFrom = snapshot.simVersion;
+        snapshot = upgradeV30Snapshot(snapshot);
       } else throw new Error(
         `refusing to boot: snapshot ${snapshot.simVersion} predates runtime ${SIM_VERSION}`,
       );

@@ -19,3 +19,4 @@ export * from './communityMotion.js';
 export * from './narration/thought.js';
 export * from './narration/recap.js';
 export * from './weather.js';
+export * from './pacing.js';

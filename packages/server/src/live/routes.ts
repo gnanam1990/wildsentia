@@ -178,8 +178,15 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
     scope.post('/agents/me/act', async (req, reply) => {
       const ctx = await me(req, reply, commands); if (!ctx) return reply;
       const action = ctx.json.action;
-      if (action !== 'graze' && action !== 'drink' && action !== 'rest') return reply.code(400).send({ error: 'bad_action' });
+      if (action !== 'graze' && action !== 'drink' && action !== 'rest' && action !== 'feed') return reply.code(400).send({ error: 'bad_action' });
       const error = live.act(ctx.agent.id, action);
+      return error ? reply.code(409).send({ error }) : { ok: true };
+    });
+
+    scope.post('/agents/me/hunt', async (req, reply) => {
+      const ctx = await me(req, reply, commands); if (!ctx) return reply;
+      const animalId = typeof ctx.json.animalId === 'string' ? ctx.json.animalId : '';
+      const error = live.hunt(ctx.agent.id, animalId);
       return error ? reply.code(409).send({ error }) : { ok: true };
     });
 
@@ -216,12 +223,25 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
         speedsMs: motion ? { walk: motion.walkMs, trot: motion.trotMs, run: motion.sprintMs, runSeconds: motion.sprintStaminaS } : null,
         here: patch ? { habitat: patch.habitat, grassKg: Math.round(patch.grassKg), waterL: Math.round(patch.waterL) } : null,
         opening: avatar.opening,
+        hunting: avatar.hunt?.targetId ?? null,
+        carcassBeside: !!world.carcassNear(avatar.x, avatar.z, 3),
       } : null,
-      nearby: at ? world.nearby(at.x, at.z, 150, 30).filter((a) => a.id !== avatar!.animalId).map((a) => ({
-        id: a.id, speciesId: a.speciesId, x: Math.round(a.position.x * 10) / 10, z: Math.round(a.position.z * 10) / 10,
-        distance: dist(a.position.x, a.position.z), state: a.state, predator: world.species(a.speciesId)?.predator ?? false,
-        steeredByAgent: a.controller ? (live.avatars.get(a.controller)?.agentName ?? 'an agent') : null,
-      })) : [],
+      /** What this animal may hunt (empty for non-predators). */
+      huntable: avatar ? world.species(avatar.speciesId)?.preferredPrey ?? [] : [],
+      // Where each animal is right now (its route as played, or its live chase), not the saved hour's end.
+      nearby: at ? world.nearby(at.x, at.z, 900, 120).filter((a) => a.id !== avatar!.animalId)
+        .map((a) => ({ a, p: live.positionOf(a.id) ?? a.position }))
+        .map(({ a, p }) => ({ a, p, d: dist(p.x, p.z)! })).filter(({ d }) => d <= 200).sort((x, y) => x.d - y.d).slice(0, 30)
+        .map(({ a, p, d }) => {
+          const runner = live.wild.get(a.id);
+          return { id: a.id, speciesId: a.speciesId, x: Math.round(p.x * 10) / 10, z: Math.round(p.z * 10) / 10, distance: d,
+            state: runner ? (runner.mode === 'idle' ? 'resting' : runner.mode === 'flee' ? 'fleeing' : 'chasing') : a.state,
+            predator: world.species(a.speciesId)?.predator ?? false,
+            huntsYou: avatar ? (world.species(a.speciesId)?.preferredPrey.includes(avatar.speciesId) ?? false) : false,
+            chasingYou: !!runner && runner.mode === 'chase' && runner.committed === true && runner.otherId === avatar!.animalId,
+            steeredByAgent: a.controller ? (live.avatars.get(a.controller)?.agentName ?? 'an agent') : null };
+        }) : [],
+      carcass: at ? world.carcassNear(at.x, at.z, 60) : null,
       water: at ? world.waterPoints(at.x, at.z, 900).map((w) => ({ x: Math.round(w.x * 10) / 10, z: Math.round(w.z * 10) / 10,
         litres: Math.round(w.litres), distance: dist(w.x, w.z) })).sort((a, b) => a.distance! - b.distance!).slice(0, 5) : [],
       drops: (ledger?.active() ?? []).map((d) => ({ id: d.id, usdc: displayAmount(d.amountMicro),
@@ -243,7 +263,10 @@ The animal is real in this world: it gets hungry and thirsty, tires, ages, and c
 Rules
 - Most animals stay wild. You may take an independent adult non-predator (chital, sambar, gaur,
   wild boar, hare, langur, giant squirrel, elephant), at most a fifth of each species.
-  Predators, and being hunted, come in a later phase; until then no one can hunt you.
+  Predators too: a tiger or dhole can hunt its natural prey in real time (hunt), then feed on
+  the carcass. Hungry wild predators that see you will come after you: observe shows who is
+  chasing you, and running (gait run) uses your breath. If your animal dies, wait two minutes
+  and take over another.
 - Move with exact points, or give a destination and the server routes you round water and sea.
   The server moves you at your species' walk/trot/run speed. Running
   uses breath (stamina) and you slow to a trot when it runs out.
@@ -261,7 +284,8 @@ Client (Node 18+, no dependencies), sha256 ${scriptHash}:
   node client.mjs observe
   node client.mjs possess chital
   node client.mjs goto 1200 850 trot   # routed round water; "move" goes straight
-  node client.mjs act graze | drink | rest
+  node client.mjs act graze | drink | rest | feed
+  node client.mjs hunt <animalId>
   node client.mjs open <dropId>
   node client.mjs wallet 0xYourAddress <signature>   # sign the message it prints first
   node client.mjs demo      # a simple rule-based player
@@ -274,7 +298,8 @@ API (paths relative to <server>/api), every /agents/me call signed:
   POST /agents/me/move        {to:{x,z}, gait} (server finds the land route) or {points:[{x,z}...], gait}
   GET  /agents/me/route?x=&z=  the land route and how long it takes, without moving
   POST /agents/me/stop
-  POST /agents/me/act         {action: graze|drink|rest}
+  POST /agents/me/act         {action: graze|drink|rest|feed}   (feed: a meat-eater at a carcass)
+  POST /agents/me/hunt        {animalId}   (a predator runs down its natural prey, in sight)
   POST /agents/me/open        {dropId}
   POST /agents/me/release
   POST /agents/me/wallet      {wallet, signature}

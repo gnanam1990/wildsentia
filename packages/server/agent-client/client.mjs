@@ -66,6 +66,7 @@ export const api = {
   stop: () => call('POST', '/agents/me/stop'),
   act: (action) => call('POST', '/agents/me/act', { action }),
   open: (dropId) => call('POST', '/agents/me/open', { dropId }),
+  hunt: (animalId) => call('POST', '/agents/me/hunt', { animalId }),
   wallet: (wallet, signature) => call('POST', '/agents/me/wallet', { wallet, signature }),
 };
 
@@ -86,7 +87,19 @@ async function demo(species = 'chital') {
     const a = o.animal, here = a.position;
     const near = (p) => Math.hypot(p.x - here.x, p.z - here.z);
     const blocked = (o.notices ?? []).some((n) => n.at > (demo.lastMove ?? 0) && n.text.startsWith('Blocked'));
+    const chaser = (o.nearby ?? []).find((n) => n.chasingYou) ?? (o.nearby ?? []).find((n) => n.huntsYou && n.distance < 40);
+    const meal = a.drives.hunger > 0.3 && (o.nearby ?? []).filter((n) => !n.predator && !n.steeredByAgent && n.distance < 120)
+      .find((n) => o.huntable?.includes?.(n.speciesId));
     try {
+      if (chaser) {
+        // Run: straight away from whatever is hunting us.
+        const dx = here.x - chaser.x, dz = here.z - chaser.z, d = Math.hypot(dx, dz) || 1;
+        if (a.gait !== 'run' || !a.moving) await api.move([{ x: here.x + dx / d * 150, z: here.z + dz / d * 150 }], 'run').catch(() => undefined);
+        demo.lastMove = Date.now(); await sleep(1000); continue;
+      }
+      if (a.carcassBeside && a.drives.hunger > 0.2) { if (a.action !== 'feed') await api.act('feed').catch(() => undefined); await sleep(2000); continue; }
+      if (meal && a.action !== 'hunt') { await api.hunt(meal.id).catch(() => undefined); await sleep(2000); continue; }
+      if (a.action === 'hunt') { await sleep(1000); continue; }
       if (blocked && !a.moving) {
         // Water or sea in the way: step off sideways, then carry on.
         const angle = Math.random() * Math.PI * 2;
@@ -133,6 +146,7 @@ async function main() {
     case 'stop': return out(await api.stop());
     case 'act': return out(await api.act(args[0]));
     case 'open': return out(await api.open(args[0]));
+    case 'hunt': return out(await api.hunt(args[0]));
     case 'wallet-message': {
       const o = await api.observe();
       return console.log(`Vana payout wallet\nAgent: ${o.you.agentId}\nWallet: ${String(args[0]).toLowerCase()}\nWorld: ${(await info()).audience}`);

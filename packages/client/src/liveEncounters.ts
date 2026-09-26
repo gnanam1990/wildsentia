@@ -6,7 +6,7 @@ import type { AnimalState } from './protocol.js';
 import type { RenderPosition } from './space.js';
 import type { ClimbVisualPhase, FlightVisualPhase } from './animation.js';
 import type { MovementTrace } from '@vana/shared';
-import { paceEncounter, paceMovement, recordedSecondAt, walkingPace, type Pacing } from './pacing.js';
+import { paceEncounter, paceMovement, recordedSecondAt, walkingPace, type Pacing } from '@vana/shared';
 
 /** A wing pose may follow only two explicit adjacent altitude samples from the saved route. */
 export function recordedFlightPhase(trace: MovementTrace, seconds: number): FlightVisualPhase | null {

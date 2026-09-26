@@ -32,7 +32,10 @@ export function positiveSetting(env: NodeJS.ProcessEnv, name: string, fallback: 
 export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | undefined, env: NodeJS.ProcessEnv): LiveRuntime | null {
   if (env.VANA_LIVE_AGENTS !== '1') return null;
   const store = new AgentStore(pool);
-  const port = worldPort(() => host.world, () => host.worldId);
+  const port = worldPort(() => host.world, () => host.worldId, {
+    position: (id) => host.playedPosition(id),
+    time: () => { const f = host.liveEncounterFrame(); return f ? f.startWorldTime + f.elapsedWorldSeconds : host.world.now(); },
+  });
   const ledger = rewards ? new PlaceDropLedger(pool, rewards, () => host.worldId, store) : null;
   const live = new LiveLayer(port, ledger);
   const timers: NodeJS.Timeout[] = [];

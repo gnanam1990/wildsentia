@@ -16,15 +16,16 @@ const adults = (world: World, species: string): Agent[] =>
     && a.dependentOn === null && !world.agents.some((c) => c.alive && c.dependentOn === a.id));
 
 describe('agent-steered animals', () => {
-  it('lets agents take only independent adult non-predators, and a fifth of a species at most', () => {
+  it('lets agents take only independent adults, and a fifth of a species at most', () => {
     const world = island();
     const [first, second, third] = adults(world, 'sambar');
     expect(world.possess(first!.id, 'agent_a')).toBeNull();
     expect(world.possess(first!.id, 'agent_b')).toBe('already_controlled');
     expect(world.possess(second!.id, 'agent_b')).toBeNull();
     expect(world.possess(third!.id, 'agent_c')).toBe('species_cap'); // 10 sambar: two may be held.
+    // A lone tiger stays wild; with two, one may be steered (predators since Phase 2).
     const tiger = world.agents.find((a) => a.speciesId === 'tiger')!;
-    expect(world.possessionBlock(tiger.id)).toBe('predators_later');
+    expect(world.possessionBlock(tiger.id)).toBe('species_cap');
     expect(world.possessionBlock('nobody')).toBe('not_alive');
     world.release(first!.id);
     expect(world.possess(third!.id, 'agent_c')).toBeNull();

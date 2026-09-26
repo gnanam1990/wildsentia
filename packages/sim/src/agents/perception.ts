@@ -10,6 +10,8 @@ export interface WorldView {
   speciesOf(speciesId: string): SpeciesConfig;
   /** Production O(1) identity lookup; array-backed test views may omit it. */
   agentById?(id: string): Agent | undefined;
+  /** The decision's world time, where the rule needs it (the held-kill check). */
+  worldTime?: number;
   /** Where a group currently is, so a separated member can rejoin it. Null if the group is gone. */
   groupPatch(groupId: string): number | null;
 }
@@ -41,6 +43,21 @@ const isPredator = (config: SpeciesConfig): boolean =>
   config.archetype === 'apex_predator' || config.archetype === 'pack_predator';
 
 export const MAX_PERCEPTION_RADIUS = 8;
+
+/**
+ * A carcass something that hunts this animal has fed from within the past hour is that
+ * predator's kill. The start-of-hour guard below only sees who stood in the patch then; a
+ * tiger arriving at a dhole's kill in the same hour as four boar left them all eating
+ * together at arm's length. (sim_0.31.0)
+ */
+export function heldByPredatorOf(carcass: Carcass, speciesId: string, worldTime: number, view: WorldView): boolean {
+  return carcass.consumers.some((c) => {
+    if (c.at < worldTime - 3600) return false;
+    const eater = view.agentById?.(c.agentId);
+    if (!eater?.alive || eater.speciesId === speciesId) return false;
+    return (view.speciesOf(eater.speciesId)?.hunting?.preferredPrey ?? []).includes(speciesId);
+  });
+}
 
 /**
  * How far an animal knows its range beyond what it can sense: about two and a half kilometres.
@@ -198,6 +215,7 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
       for (const candidate of view.carcassesInPatch(p.id)) {
         if (needsProvisioning(agent, species)
           && !canEatMaternalCarcass(agent, species, candidate, view)) continue;
+        if (view.worldTime !== undefined && heldByPredatorOf(candidate, agent.speciesId, view.worldTime, view)) continue;
         const smelt = distanceM <= candidate.scentRadiusM + species.senses.smellRangeM;
         const seen = distanceM <= species.senses.sightRangeM;
         if (!smelt && !seen) continue;

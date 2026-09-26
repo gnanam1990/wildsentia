@@ -68,4 +68,19 @@ describe('live agents in the observer', () => {
     live.clear();
     expect(live.roster).toEqual([]);
   });
+
+  it('draws a wild animal in a live chase off its recording, running', () => {
+    const live = new LiveAgents(() => 0);
+    const wild = [{ animalId: 'chital_0001', speciesId: 'chital', x: 0, z: 0, heading: 0, mode: 'flee' as const }];
+    expect(isLiveMessage({ ...message(1, 0), avatars: [], wild })).toBe(true);
+    expect(isLiveMessage({ ...message(1, 0), avatars: [], wild: [{ ...wild[0], mode: 'fly' }] })).toBe(false);
+    live.apply({ ...message(1000, 0), avatars: [], wild }, 0);
+    const pose = live.poses(10, animals).get('chital_0001')!;
+    expect(pose.animal.state).toBe('fleeing');
+    expect(pose.hurried).toBe(true);
+    live.apply({ ...message(1250, 0), avatars: [], wild: [{ ...wild[0], x: 10, mode: 'stalk' }] }, 250);
+    expect(live.poses(375, animals).get('chital_0001')!.position.x).toBeCloseTo(5);
+    expect(live.poses(375, animals).get('chital_0001')!.animal.state).toBe('stalking');
+    expect(activityOf(avatar(0, { action: 'hunt', gait: 'run' }))).toBe('charging');
+  });
 });

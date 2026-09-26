@@ -402,6 +402,18 @@ export function upgradeV27Snapshot(snapshot: Snapshot): Snapshot {
 }
 
 /**
+ * v0.31: nothing feeds at a carcass a predator of its kind fed from in the past hour, and
+ * an outside agent may steer an animal (the optional `controller` field). Future decisions
+ * only; every v0.30 state byte is kept.
+ */
+export function upgradeV30Snapshot(snapshot: Snapshot): Snapshot {
+  if (snapshot.simVersion !== 'sim_0.30.0') throw new Error('only sim_0.30.0 snapshots can use this upgrade');
+  const upgraded = structuredClone(snapshot);
+  upgraded.simVersion = SIM_VERSION;
+  return upgraded;
+}
+
+/**
  * v0.30 moves each patch's water access point off its centre. Every state byte is kept; an
  * animal or person standing at an old centre simply walks to the new point when it next
  * drinks or fishes. Recorded history keeps its old positions and still validates.

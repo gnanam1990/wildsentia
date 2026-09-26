@@ -12,14 +12,16 @@ import type { LivePose } from './liveEncounters.js';
 export interface LiveAvatar {
   agentId: string; name: string; animalId: string; speciesId: string;
   x: number; z: number; heading: number; gait: 'walk' | 'trot' | 'run'; moving: boolean;
-  action: 'idle' | 'graze' | 'drink' | 'rest' | 'open';
+  action: 'idle' | 'graze' | 'drink' | 'rest' | 'open' | 'feed' | 'hunt';
   opening: { dropId: string; progress: number } | null;
 }
 export interface LiveDrop {
   id: string; amountMicro: string; hint: { x: number; z: number; radius: number }; expiresAt: number;
   spotted?: { x: number; z: number; by: string };
 }
-export interface LiveMessage { type: 'live'; at: number; avatars: LiveAvatar[]; drops: LiveDrop[] }
+/** A wild animal in a live chase, off its recording: fleeing an agent's hunter, or stalking/chasing an agent's animal. */
+export interface LiveWild { animalId: string; speciesId: string; x: number; z: number; heading: number; mode: 'flee' | 'stalk' | 'chase' | 'idle' }
+export interface LiveMessage { type: 'live'; at: number; avatars: LiveAvatar[]; drops: LiveDrop[]; wild?: LiveWild[] }
 /** Everyone playing, in brief, every couple of seconds; `live` carries only those near the camera. */
 export interface RosterEntry { agentId: string; name: string; animalId: string; speciesId: string; x: number; z: number; activity: string }
 export interface RosterMessage { type: 'live-roster'; agents: RosterEntry[] }
@@ -48,18 +50,26 @@ export function isLiveMessage(value: unknown): value is LiveMessage {
     const v = a as Record<string, unknown>;
     return text(v.agentId) && text(v.name, 40) && text(v.animalId) && text(v.speciesId) && finite(v.x) && finite(v.z) && finite(v.heading)
       && ['walk', 'trot', 'run'].includes(v.gait as string) && typeof v.moving === 'boolean'
-      && ['idle', 'graze', 'drink', 'rest', 'open'].includes(v.action as string);
-  }) && m.drops.every((d) => {
+      && ['idle', 'graze', 'drink', 'rest', 'open', 'feed', 'hunt'].includes(v.action as string);
+  }) && (m.wild === undefined || (Array.isArray(m.wild) && m.wild.length <= 2000 && m.wild.every((w) => {
+    const v = w as Record<string, unknown>;
+    return text(v.animalId) && text(v.speciesId) && finite(v.x) && finite(v.z) && finite(v.heading)
+      && ['flee', 'stalk', 'chase', 'idle'].includes(v.mode as string);
+  }))) && m.drops.every((d) => {
     const v = d as Record<string, unknown>, hint = v.hint as Record<string, unknown> | undefined;
     return text(v.id) && typeof v.amountMicro === 'string' && /^[0-9]{1,15}$/.test(v.amountMicro) && !!hint
       && finite(hint.x) && finite(hint.z) && finite(hint.radius);
   });
 }
 
-const ACTION_STATE: Record<LiveAvatar['action'], string> = { idle: 'resting', graze: 'grazing', drink: 'drinking', rest: 'resting', open: 'resting' };
-const ACTION_LABEL: Record<LiveAvatar['action'], string> = { idle: 'standing', graze: 'grazing', drink: 'drinking', rest: 'resting', open: 'opening a drop' };
+const ACTION_STATE: Record<LiveAvatar['action'], string> = { idle: 'resting', graze: 'grazing', drink: 'drinking', rest: 'resting', open: 'resting',
+  feed: 'feeding', hunt: 'stalking' };
+const ACTION_LABEL: Record<LiveAvatar['action'], string> = { idle: 'standing', graze: 'grazing', drink: 'drinking', rest: 'resting', open: 'opening a drop',
+  feed: 'feeding on a carcass', hunt: 'hunting' };
+const WILD_STATE: Record<LiveWild['mode'], string> = { flee: 'fleeing', stalk: 'stalking', chase: 'chasing', idle: 'resting' };
 
 export function activityOf(a: LiveAvatar): string {
+  if (a.action === 'hunt') return a.gait === 'run' ? 'charging' : 'stalking prey';
   if (a.moving) return a.gait === 'run' ? 'running' : a.gait === 'trot' ? 'trotting' : 'walking';
   return ACTION_LABEL[a.action];
 }
@@ -118,15 +128,42 @@ export class LiveAgents {
     return result;
   }
 
-  /** Avatars as poses for the animal layer, over the recorded and checkpoint ones. */
+  /** Wild animals in a live chase, drawn between the last two updates like agents' animals. */
+  wildPositions(nowMs: number): Map<string, { wild: LiveWild; x: number; z: number; heading: number }> {
+    const result = new Map<string, { wild: LiveWild; x: number; z: number; heading: number }>();
+    const latest = this.#latest;
+    if (!latest?.wild) return result;
+    const previous = new Map((this.#previous?.wild ?? []).map((w) => [w.animalId, w]));
+    const span = Math.max(1, latest.at - (this.#previous?.at ?? latest.at));
+    const t = Math.min(1, Math.max(0, (nowMs - this.#receivedAt) / span));
+    for (const w of latest.wild) {
+      const p = previous.get(w.animalId);
+      result.set(w.animalId, p ? { wild: w, x: p.x + (w.x - p.x) * t, z: p.z + (w.z - p.z) * t, heading: lerpAngle(p.heading, w.heading, t) }
+        : { wild: w, x: w.x, z: w.z, heading: w.heading });
+    }
+    return result;
+  }
+
+  /** Avatars (and wild animals in a live chase) as poses for the animal layer, over the recorded and checkpoint ones. */
   poses(nowMs: number, animals: ReadonlyMap<string, AnimalState>): Map<string, LivePose> {
     const result = new Map<string, LivePose>();
+    for (const [animalId, p] of this.wildPositions(nowMs)) {
+      const base = animals.get(animalId);
+      if (!base) continue;
+      const moving = p.wild.mode !== 'idle';
+      const position = { x: p.x, z: p.z, heading: p.heading, moving };
+      result.set(animalId, { kind: 'movement', animal: { ...base, position, state: WILD_STATE[p.wild.mode] },
+        position, seconds: nowMs / 1000, clipSeconds: nowMs / 1000, partnerId: '', eventId: '', phase: WILD_STATE[p.wild.mode],
+        ...(p.wild.mode === 'flee' || p.wild.mode === 'chase' ? { hurried: true } : {}) });
+    }
     for (const [animalId, p] of this.positions(nowMs)) {
       const base = animals.get(animalId);
       if (!base) continue;
       const moving = p.avatar.moving;
       const position = { x: p.x, z: p.z, heading: p.heading, moving };
-      result.set(animalId, { kind: 'movement', animal: { ...base, position, state: moving ? 'travelling' : ACTION_STATE[p.avatar.action] },
+      const state = p.avatar.action === 'hunt' ? (p.avatar.gait === 'run' ? 'chasing' : 'stalking')
+        : moving ? 'travelling' : ACTION_STATE[p.avatar.action];
+      result.set(animalId, { kind: 'movement', animal: { ...base, position, state },
         position, seconds: nowMs / 1000, clipSeconds: nowMs / 1000, partnerId: '', eventId: '', phase: activityOf(p.avatar),
         ...(moving && p.avatar.gait === 'run' ? { hurried: true } : {}) });
     }

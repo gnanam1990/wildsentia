@@ -28,7 +28,13 @@ function patchIndex(w: World): Map<number, Agent[]> {
 }
 
 /** The live layer's view of, and hands on, the running simulation. */
-export function worldPort(world: () => World, worldId: () => string | null): WorldPort {
+/** What only the host knows: where the observer is being shown each wild animal right now. */
+export interface PlayedClock {
+  position(id: string): { x: number; z: number; heading: number } | null;
+  time(): number;
+}
+
+export function worldPort(world: () => World, worldId: () => string | null, played?: PlayedClock): WorldPort {
   const patchAt = (x: number, z: number) => {
     if (!inWorld(x, z)) return null;
     const id = patchAtPosition({ x, z, heading: 0 });
@@ -43,7 +49,12 @@ export function worldPort(world: () => World, worldId: () => string | null): Wor
       if (!cfg) return null;
       const l = cfg.locomotion;
       return { displayName: cfg.displayName, walkMs: l.walkMs, trotMs: l.trotMs, sprintMs: l.sprintMs,
-        sprintStaminaS: l.sprintStaminaS, predator: cfg.archetype === 'apex_predator' || cfg.archetype === 'pack_predator' };
+        sprintStaminaS: l.sprintStaminaS, predator: cfg.archetype === 'apex_predator' || cfg.archetype === 'pack_predator',
+        preferredPrey: [...(cfg.hunting?.preferredPrey ?? [])], baseSuccess: cfg.hunting?.baseSuccess ?? 0,
+        stalkConcealment: cfg.hunting?.stalkConcealment ?? 0, commitDistanceM: cfg.hunting?.commitDistanceM ?? 0,
+        eatsMeat: cfg.diet.eats.some((e) => e.target === 'meat'), sightRangeM: cfg.senses.sightRangeM,
+        detectionM: cfg.escape.detectionDistanceM, flightInitiationM: cfg.escape.flightInitiationM,
+        evasiveness: cfg.escape.evasiveness, shoulderHeightM: cfg.body.shoulderHeightM };
     },
     possessionBlock: (id) => world().possessionBlock(id),
     possess: (id, controller) => world().possess(id, controller),
@@ -89,6 +100,25 @@ export function worldPort(world: () => World, worldId: () => string | null): Wor
       return landRoute(world().patches, from, to, (habitat) => costs?.[habitat] ?? 1);
     },
     candidates: (speciesId, limit) => world().possessionCandidates(speciesId, limit).map(view),
+    playedPosition: (id) => {
+      const shown = played?.position(id);
+      if (shown) return shown;
+      const a = world().animal(id);
+      return a?.alive && a.position ? { ...a.position } : null;
+    },
+    playedTime: () => played?.time() ?? world().now(),
+    resolveHunt: (predatorId, preyId, at, time, killed) => world().resolveLiveHunt(predatorId, preyId, at, time, killed) !== null,
+    feed: (id, seconds) => world().feedControlled(id, seconds),
+    carcassNear: (x, z, radius) => {
+      let best: { id: string; x: number; z: number } | null = null, bestGap = radius;
+      for (const c of world().carcasses) {
+        if (!c.position) continue;
+        const gap = Math.hypot(c.position.x - x, c.position.z - z);
+        if (gap <= bestGap) { bestGap = gap; best = { id: c.id, x: c.position.x, z: c.position.z }; }
+      }
+      return best;
+    },
+    placeWild: (id, position) => world().placeWild(id, position),
   };
 }
 

@@ -19,6 +19,8 @@ export type ClientMessage =
 export interface LiveBroadcast {
   avatars: Array<{ agentId: string; name: string; animalId: string; speciesId: string; x: number; z: number } & Record<string, unknown>>;
   drops: object[];
+  /** Wild animals in a live chase, off their recordings. */
+  wild?: Array<{ animalId: string; x: number; z: number } & Record<string, unknown>>;
 }
 /** Largest view a viewer may ask for: past this the island is dots, not animals. */
 export const MAX_VIEW_RADIUS_M = 1500;
@@ -110,10 +112,12 @@ export class Gateway {
       const view = session.view;
       const avatars = state.avatars.filter((a) => a.animalId === session.watching
         || (view !== null && Math.hypot(a.x - view.x, a.z - view.z) <= view.radius));
-      const empty = avatars.length === 0 && state.drops.length === 0;
+      const wild = (state.wild ?? []).filter((w) => w.animalId === session.watching
+        || (view !== null && Math.hypot(w.x - view.x, w.z - view.z) <= view.radius));
+      const empty = avatars.length === 0 && state.drops.length === 0 && wild.length === 0;
       if (empty && session.liveEmpty) continue;
       session.liveEmpty = empty;
-      session.socket.send(JSON.stringify({ type: 'live', at, avatars, drops: state.drops }));
+      session.socket.send(JSON.stringify({ type: 'live', at, avatars, drops: state.drops, wild }));
     }
   }
 
