@@ -706,7 +706,9 @@ function frame(): void {
     } else {
       const playhead = life.track[0]!.worldTime + (life.track.at(-1)!.worldTime - life.track[0]!.worldTime) * progress;
       const point = pointAt(life.track, life.id, playhead);
-      animals.syncReplay({ id: life.id, speciesId: life.speciesId, patchId: 0, state: point.state, currentGoal: '', drives: point.drives }, point, playhead);
+      // The clip runs on the replay's own clock: a whole life compressed into minutes would
+      // otherwise spin the walk and graze cycles thousands of times faster than life.
+      animals.syncReplay({ id: life.id, speciesId: life.speciesId, patchId: 0, state: point.state, currentGoal: '', drives: point.drives }, point, playback.elapsedMs / 1000);
       observerSubjects = [observerSubject(life.speciesId, point)];
       follow.follow({ ...point, moving: !playback.paused && point.moving, y: renderBaseY(point, animals.groundHeightAt) }, playback.paused || reducedMotion.matches ? 1 : dt);
       replayMoment.textContent = momentAt(life.moments, playhead)?.text ?? '';
@@ -744,6 +746,7 @@ function frame(): void {
       ? `Replaying its recorded ${followedEncounter.climbVisualPhase ? 'climb' : 'route'} · about an hour behind live`
       : `Replaying a recorded hunt · ${followedEncounter.phase}`;
   if (encounterNotice.textContent !== encounterShort) { encounterNotice.textContent = encounterShort; encounterNotice.title = encounterText; }
+  animals.avoid = nature?.obstacles ?? null;
   animals.sync(visibleAnimals, now, followedId, { x: follow.target.x, z: follow.target.z }, poses);
   animals.update(dt);
 

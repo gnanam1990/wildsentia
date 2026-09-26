@@ -71,6 +71,8 @@ function markerTexture(): THREE.Texture {
 export class AnimalLayer {
   readonly root = new THREE.Group();
   readonly tracker = new PositionTracker();
+  /** Obstacles near the camera that placed animals are drawn clear of; null draws them as recorded. */
+  avoid: { deflect(x: number, z: number, bodyRadius: number, heading?: number): { x: number; z: number } } | null = null;
   quality: RenderTier = 'balanced';
   #renderPositions = new Map<string, RenderPosition>();
   /** Set once the terrain is known, so animals stand on the ground rather than at sea level. */
@@ -292,7 +294,19 @@ export class AnimalLayer {
       void this.#ensureRig(animal);
       const rig = this.#rigs.get(id);
       if (!rig) continue;
-      const position = positions.get(id)!;
+      let position = positions.get(id)!;
+      // Walk round drawn trunks and boulders rather than through them (presentation only).
+      // A langur or squirrel climbing a trunk must reach it, and a vulture is above it all.
+      const climbing = arboreal(animal.speciesId) && (animal.locomotionMode === 'climb'
+        || recorded.get(id)?.climbVisualPhase !== undefined);
+      if (this.avoid && !climbing && animal.speciesId !== 'vulture' && !((position.altitudeM ?? 0) > 0)) {
+        const body = visualFor(animal.speciesId).heightM * 0.35 * characterScale(animal);
+        const clear = this.avoid.deflect(position.x, position.z, body, position.heading);
+        if (clear.x !== position.x || clear.z !== position.z) {
+          position = { ...position, ...clear };
+          positions.set(id, position);
+        }
+      }
       this.#place(rig, position);
       const pose = recorded.get(id);
       // A delayed route must not borrow a later checkpoint's feeding/death appearance or clip.
@@ -304,7 +318,8 @@ export class AnimalLayer {
         const unknownAirborne = pose.kind === 'movement' && (position.altitudeM ?? 0) > 0
           && (animal.speciesId === 'vulture' && flightPhase === null
             || arboreal(animal.speciesId) && position.moving && climbPhase === null);
-        this.#poseAt(rig, renderStateFor(pose.animal.state, position.moving), pose.seconds,
+        const shown = renderStateFor(pose.animal.state, position.moving);
+        this.#poseAt(rig, pose.hurried && shown === 'travelling' ? 'fleeing' : shown, pose.clipSeconds ?? pose.seconds,
           flightPhase, unknownAirborne, climbPhase);
       } else {
         const climbing = arboreal(animal.speciesId) && animal.locomotionMode === 'climb';

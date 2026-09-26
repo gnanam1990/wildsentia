@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { ObstacleField, obstaclesFrom } from './obstacles.js';
 import { GRID_SIZE, treeAnchorForPatch, treeAnchorRemnantForPatch } from '@vana/shared';
 import { PATCH_METRES, patchCentre } from './space.js';
 import { terrainHeightKey, type HeightSampler, type PatchView } from './terrain.js';
@@ -361,6 +362,8 @@ export class NearVegetation {
   #quality: RenderTier = 'high';
   readonly #treeCache = new TreePlacementCache();
   #nearPlan: Map<string, PlacedPlant[]> | null = null;
+  /** Trunks and boulders of the current near plan, for animals to walk around. */
+  obstacles = new ObstacleField();
   #viewMatrix: THREE.Matrix4 | null = null;
   readonly #drawnItems = new Map<string, readonly PlacedPlant[]>();
   #lastFocus: { x: number; y: number; z: number } | null = null;
@@ -586,6 +589,7 @@ export class NearVegetation {
     if (moved || !this.#nearPlan) {
       this.#lastFocus = { x: focus.x, y, z: focus.z };
       this.#nearPlan = nearPlan(this.patches, focus, this.groundAt, this.#treeFade.value.y + TREE_PLAN_MARGIN_M);
+      this.obstacles = new ObstacleField(obstaclesFrom(this.#nearPlan));
     }
     const plan = this.#nearPlan;
     const matrix = new THREE.Matrix4();

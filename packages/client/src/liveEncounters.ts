@@ -6,7 +6,7 @@ import type { AnimalState } from './protocol.js';
 import type { RenderPosition } from './space.js';
 import type { ClimbVisualPhase, FlightVisualPhase } from './animation.js';
 import type { MovementTrace } from '@vana/shared';
-import { paceEncounter, paceMovement, recordedSecondAt, type Pacing } from './pacing.js';
+import { paceEncounter, paceMovement, recordedSecondAt, walkingPace, type Pacing } from './pacing.js';
 
 /** A wing pose may follow only two explicit adjacent altitude samples from the saved route. */
 export function recordedFlightPhase(trace: MovementTrace, seconds: number): FlightVisualPhase | null {
@@ -101,11 +101,26 @@ export function isLiveEncounterFrame(value: unknown): value is LiveEncounterFram
   return true;
 }
 
+/** On-screen speed, as a multiple of walking pace, above which a recorded route is run. */
+const HURRIED_FACTOR = 1.8;
+
 export interface LivePose {
   kind?: 'encounter' | 'movement';
   animal: AnimalState;
   position: RenderPosition;
   seconds: number;
+  /**
+   * Real seconds into the shown hour, for the animation clip. Recorded seconds race along
+   * at the world's rate (12x, faster still through compressed idle time), so a grazing or
+   * resting animal driven by them moved its head and legs frantically.
+   */
+  clipSeconds?: number;
+  /**
+   * Moving on screen well above walking pace: an hour holding a longer route than fits at
+   * a walk plays it faster, and a walk cycle at that speed looks like fast-forward, so the
+   * rig runs instead. Clip choice only.
+   */
+  hurried?: boolean;
   partnerId: string;
   eventId: string;
   phase: string;
@@ -160,10 +175,11 @@ export class LiveEncounterPlayer {
     if (!frame || !finite(nowMs) || reducedMotion) return result;
     const shown = this.elapsed(nowMs);
     if (shown >= 3600) return result; // No unlimited extrapolation after disconnection/stall.
-    const paced = (trace: object, build: () => Pacing): number => {
+    const clipSeconds = shown / frame.rate;
+    const paced = (trace: object, build: () => Pacing, later = 0): number => {
       let pacing = this.#pacing.get(trace);
       if (pacing === undefined) { pacing = build(); this.#pacing.set(trace, pacing); }
-      return recordedSecondAt(pacing, shown);
+      return recordedSecondAt(pacing, shown + later);
     };
     for (const e of frame.encounters) {
       const seconds = paced(e.trace, () => paceEncounter(e.trace, frame.rate));
@@ -171,7 +187,7 @@ export class LiveEncounterPlayer {
       const add = (body: EncounterAppearance, position: RenderPosition, state: string, partnerId: string): void => {
         result.set(body.id, { animal: { ...body, patchId: patchAtPosition(position), position,
           state, currentGoal: '', drives: { hunger: 0, thirst: 0, fatigue: 0, fear: 0 } },
-          position, seconds: Math.min(seconds, e.trace.samples.at(-1)!.seconds), partnerId,
+          position, seconds: Math.min(seconds, e.trace.samples.at(-1)!.seconds), clipSeconds, partnerId,
           eventId: e.eventId, phase: at.finished ? `recorded ${e.outcome}` : at.phase });
       };
       add(e.predator, at.predator, at.predator.moving ? at.phase === 'chase' ? 'chasing' : 'stalking' : 'resting', e.prey.id);
@@ -180,6 +196,9 @@ export class LiveEncounterPlayer {
     for (const m of frame.movements ?? []) {
       const seconds = paced(m.trace, () => paceMovement(m.trace, m.actor.speciesId, frame.rate));
       let position = movementAt(m.trace, seconds);
+      // On-screen speed over the next real second of display.
+      const ahead = movementAt(m.trace, paced(m.trace, () => paceMovement(m.trace, m.actor.speciesId, frame.rate), frame.rate));
+      const hurried = position.moving && Math.hypot(ahead.x - position.x, ahead.z - position.z) > walkingPace(m.actor.speciesId) * HURRIED_FACTOR;
       const activity = m.activity;
       const drinking = activity !== undefined && seconds >= activity.startSeconds && seconds < activity.endSeconds;
       if (activity && seconds >= activity.startSeconds) position = { ...activity.position, moving: false };
@@ -192,7 +211,8 @@ export class LiveEncounterPlayer {
       result.set(m.actor.id, { kind: 'movement', animal: { ...m.actor, patchId: patchAtPosition(position), position,
         state: drinking ? 'drinking' : position.moving ? m.trace.goal === 'flee' ? 'fleeing' : 'travelling' : 'resting',
         currentGoal: m.trace.goal, drives: { hunger: 0, thirst: 0, fatigue: 0, fear: 0 } },
-        position, seconds: Math.min(seconds, activity?.endSeconds ?? m.trace.samples.at(-1)!.seconds), partnerId: '',
+        position, seconds: Math.min(seconds, activity?.endSeconds ?? m.trace.samples.at(-1)!.seconds), clipSeconds,
+        ...(hurried && !drinking ? { hurried: true } : {}), partnerId: '',
         eventId: drinking ? activity!.eventId : m.eventId,
         phase: drinking ? 'recorded drinking window' : activity && seconds >= activity.endSeconds ? 'recorded drinking completed'
           : climbVisualPhase ? `recorded tree ${climbVisualPhase === 'ascending' ? 'ascent' : 'descent'}`
