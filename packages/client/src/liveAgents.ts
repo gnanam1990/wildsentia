@@ -14,6 +14,8 @@ export interface LiveAvatar {
   x: number; z: number; heading: number; gait: 'walk' | 'trot' | 'run'; moving: boolean;
   action: 'idle' | 'graze' | 'drink' | 'rest' | 'open' | 'feed' | 'hunt';
   opening: { dropId: string; progress: number } | null;
+  /** Metres above ground: up a tree, or in the air. */
+  altitude?: number;
 }
 export interface LiveDrop {
   id: string; amountMicro: string; hint: { x: number; z: number; radius: number }; expiresAt: number;
@@ -50,7 +52,8 @@ export function isLiveMessage(value: unknown): value is LiveMessage {
     const v = a as Record<string, unknown>;
     return text(v.agentId) && text(v.name, 40) && text(v.animalId) && text(v.speciesId) && finite(v.x) && finite(v.z) && finite(v.heading)
       && ['walk', 'trot', 'run'].includes(v.gait as string) && typeof v.moving === 'boolean'
-      && ['idle', 'graze', 'drink', 'rest', 'open', 'feed', 'hunt'].includes(v.action as string);
+      && ['idle', 'graze', 'drink', 'rest', 'open', 'feed', 'hunt'].includes(v.action as string)
+      && (v.altitude === undefined || (finite(v.altitude) && v.altitude >= 0 && v.altitude <= 200));
   }) && (m.wild === undefined || (Array.isArray(m.wild) && m.wild.length <= 2000 && m.wild.every((w) => {
     const v = w as Record<string, unknown>;
     return text(v.animalId) && text(v.speciesId) && finite(v.x) && finite(v.z) && finite(v.heading)
@@ -70,6 +73,8 @@ const WILD_STATE: Record<LiveWild['mode'], string> = { flee: 'fleeing', stalk: '
 
 export function activityOf(a: LiveAvatar): string {
   if (a.action === 'hunt') return a.gait === 'run' ? 'charging' : 'stalking prey';
+  if ((a.altitude ?? 0) >= 20) return 'flying';
+  if ((a.altitude ?? 0) > 0) return 'up a tree';
   if (a.moving) return a.gait === 'run' ? 'running' : a.gait === 'trot' ? 'trotting' : 'walking';
   return ACTION_LABEL[a.action];
 }
@@ -160,7 +165,7 @@ export class LiveAgents {
       const base = animals.get(animalId);
       if (!base) continue;
       const moving = p.avatar.moving;
-      const position = { x: p.x, z: p.z, heading: p.heading, moving };
+      const position = { x: p.x, z: p.z, heading: p.heading, moving, ...(p.avatar.altitude ? { altitudeM: p.avatar.altitude } : {}) };
       const state = p.avatar.action === 'hunt' ? (p.avatar.gait === 'run' ? 'chasing' : 'stalking')
         : moving ? 'travelling' : ACTION_STATE[p.avatar.action];
       result.set(animalId, { kind: 'movement', animal: { ...base, position, state },

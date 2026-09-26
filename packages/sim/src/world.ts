@@ -629,8 +629,6 @@ export class World {
     if (!agent.alive) return 'not_alive';
     if (agent.controller) return 'already_controlled';
     const cfg = this.species.get(agent.speciesId)!;
-    // The live layer moves animals on the ground; flight comes later.
-    if (agent.speciesId === 'vulture') return 'flight_later';
     if (agent.lifeStage !== 'adult' && agent.lifeStage !== 'elder') return 'not_adult';
     if (agent.dependentOn !== null) return 'dependent';
     if (facts.parents.has(agent.id)) return 'raising_young';

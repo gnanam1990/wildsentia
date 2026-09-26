@@ -1,4 +1,4 @@
-import { landWalkable, patchAtPosition, patchCentre, waterAccessPosition, GRID_SIZE, PATCH_METRES, type Agent } from '@vana/shared';
+import { landWalkable, patchAtPosition, patchCentre, treeAnchorForPatch, waterAccessPosition, GRID_SIZE, PATCH_METRES, type Agent } from '@vana/shared';
 import { locomotionFactor, type World } from '@vana/sim';
 import type { AnimalView, PatchView, SpeciesMotion, WorldPort } from './liveLayer.js';
 import { landRoute } from './route.js';
@@ -42,6 +42,11 @@ export function worldPort(world: () => World, worldId: () => string | null, play
   };
   return {
     worldId,
+    treeAt: (x, z) => {
+      const p = patchAt(x, z);
+      const anchor = p ? treeAnchorForPatch(p) : null;
+      return anchor ? { x: anchor.x, z: anchor.z } : null;
+    },
     now: () => world().now(),
     animal: (id) => { const a = world().animal(id); return a ? view(a) : null; },
     species: (id): SpeciesMotion | null => {
@@ -54,7 +59,9 @@ export function worldPort(world: () => World, worldId: () => string | null, play
         stalkConcealment: cfg.hunting?.stalkConcealment ?? 0, commitDistanceM: cfg.hunting?.commitDistanceM ?? 0,
         eatsMeat: cfg.diet.eats.some((e) => e.target === 'meat'), sightRangeM: cfg.senses.sightRangeM,
         detectionM: cfg.escape.detectionDistanceM, flightInitiationM: cfg.escape.flightInitiationM,
-        evasiveness: cfg.escape.evasiveness, shoulderHeightM: cfg.body.shoulderHeightM };
+        evasiveness: cfg.escape.evasiveness, shoulderHeightM: cfg.body.shoulderHeightM,
+        alarmSharing: cfg.social.alarmSharing === true, packHunter: cfg.archetype === 'pack_predator',
+        climbs: cfg.id === 'langur' || cfg.id === 'squirrel', flies: cfg.id === 'vulture' };
     },
     possessionBlock: (id) => world().possessionBlock(id),
     possess: (id, controller) => world().possess(id, controller),

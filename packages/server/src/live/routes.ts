@@ -131,7 +131,10 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
       const speciesId = typeof ctx.json.speciesId === 'string' ? ctx.json.speciesId : undefined;
       if (!animalId && !speciesId) return reply.code(400).send({ error: 'animalId_or_speciesId_required' });
       const result = live.possess(ctx.agent.id, ctx.agent.name, { ...(animalId ? { animalId } : {}), ...(speciesId ? { speciesId } : {}) });
-      return result.ok ? { animalId: result.avatar.animalId, speciesId: result.avatar.speciesId } : reply.code(409).send({ error: result.reason });
+      if (result.ok) return { animalId: result.avatar.animalId, speciesId: result.avatar.speciesId };
+      // Waiting in line for a species with none free: the agent is told its place and notified when its turn comes.
+      if (result.reason.startsWith('queued:')) return reply.code(202).send({ queued: Number(result.reason.slice(7)), speciesId });
+      return reply.code(409).send({ error: result.reason });
     });
 
     scope.post('/agents/me/release', async (req, reply) => {
@@ -183,6 +186,12 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
       return error ? reply.code(409).send({ error }) : { ok: true };
     });
 
+    scope.post('/agents/me/climb', async (req, reply) => {
+      const ctx = await me(req, reply, commands); if (!ctx) return reply;
+      const error = live.climb(ctx.agent.id);
+      return error ? reply.code(409).send({ error }) : { ok: true };
+    });
+
     scope.post('/agents/me/hunt', async (req, reply) => {
       const ctx = await me(req, reply, commands); if (!ctx) return reply;
       const animalId = typeof ctx.json.animalId === 'string' ? ctx.json.animalId : '';
@@ -224,6 +233,8 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
         here: patch ? { habitat: patch.habitat, grassKg: Math.round(patch.grassKg), waterL: Math.round(patch.waterL) } : null,
         opening: avatar.opening,
         hunting: avatar.hunt?.targetId ?? null,
+        perched: !!avatar.perched, flying: !!avatar.flying,
+        tree: world.species(avatar.speciesId)?.climbs ? world.treeAt(avatar.x, avatar.z) : null,
         carcassBeside: !!world.carcassNear(avatar.x, avatar.z, 3),
       } : null,
       /** What this animal may hunt (empty for non-predators). */
@@ -266,7 +277,9 @@ Rules
   Predators too: a tiger or dhole can hunt its natural prey in real time (hunt), then feed on
   the carcass. Hungry wild predators that see you will come after you: observe shows who is
   chasing you, and running (gait run) uses your breath. If your animal dies, wait two minutes
-  and take over another.
+  and take over another. If no animal of a species is free, possess puts you in line for it.
+- Herds warn each other; dholes hunting together do better; langurs and squirrels can climb
+  their patch's tree to escape; a vulture flies (gait trot or run) straight over water and sea.
 - Move with exact points, or give a destination and the server routes you round water and sea.
   The server moves you at your species' walk/trot/run speed. Running
   uses breath (stamina) and you slow to a trot when it runs out.
@@ -299,7 +312,8 @@ API (paths relative to <server>/api), every /agents/me call signed:
   GET  /agents/me/route?x=&z=  the land route and how long it takes, without moving
   POST /agents/me/stop
   POST /agents/me/act         {action: graze|drink|rest|feed}   (feed: a meat-eater at a carcass)
-  POST /agents/me/hunt        {animalId}   (a predator runs down its natural prey, in sight)
+  POST /agents/me/hunt        {animalId}   (a predator stalks, then runs down, its natural prey in sight)
+  POST /agents/me/climb       (langur, squirrel: up the patch's tree, out of every ground hunter's reach)
   POST /agents/me/open        {dropId}
   POST /agents/me/release
   POST /agents/me/wallet      {wallet, signature}

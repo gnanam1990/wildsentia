@@ -67,6 +67,7 @@ export const api = {
   act: (action) => call('POST', '/agents/me/act', { action }),
   open: (dropId) => call('POST', '/agents/me/open', { dropId }),
   hunt: (animalId) => call('POST', '/agents/me/hunt', { animalId }),
+  climb: () => call('POST', '/agents/me/climb'),
   wallet: (wallet, signature) => call('POST', '/agents/me/wallet', { wallet, signature }),
 };
 
@@ -91,6 +92,12 @@ async function demo(species = 'chital') {
     const meal = a.drives.hunger > 0.3 && (o.nearby ?? []).filter((n) => !n.predator && !n.steeredByAgent && n.distance < 120)
       .find((n) => o.huntable?.includes?.(n.speciesId));
     try {
+      if (chaser && a.tree && Math.hypot(a.tree.x - here.x, a.tree.z - here.z) < 40) {
+        // A climber's best escape is up.
+        if (Math.hypot(a.tree.x - here.x, a.tree.z - here.z) > 3.5) await api.move([a.tree], 'run').catch(() => undefined);
+        else await api.climb().catch(() => undefined);
+        await sleep(1000); continue;
+      }
       if (chaser) {
         // Run: straight away from whatever is hunting us.
         const dx = here.x - chaser.x, dz = here.z - chaser.z, d = Math.hypot(dx, dz) || 1;
@@ -147,6 +154,7 @@ async function main() {
     case 'act': return out(await api.act(args[0]));
     case 'open': return out(await api.open(args[0]));
     case 'hunt': return out(await api.hunt(args[0]));
+    case 'climb': return out(await api.climb());
     case 'wallet-message': {
       const o = await api.observe();
       return console.log(`Vana payout wallet\nAgent: ${o.you.agentId}\nWallet: ${String(args[0]).toLowerCase()}\nWorld: ${(await info()).audience}`);
