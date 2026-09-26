@@ -1,6 +1,7 @@
 import {
   NUTRIENT_PER_KG_BIOMASS, PATCH_COUNT, WORLD_SECONDS_PER_DAY, WORLD_SECONDS_PER_HOUR,
-  createRng, seasonAt, carcassMass, landWalkable, treeAnchorForPatch, type TerrainProfile,
+  createRng, seasonAt, carcassMass, landWalkable, treeAnchorForPatch, patchAtPosition, positionInPatch, type TerrainProfile,
+  type WorldPosition,
   type Agent, type Carcass, type DeathCause, type Patch, type Rng, type SkillId,
   type RngState, type SpeciesConfig, type WorldTime, type WaterBudget, type MicroEcologyState, type CommunityState, type CommunityProfile,
 } from '@vana/shared';
@@ -17,7 +18,7 @@ import { foundCommunity, stepCommunity } from './community.js';
 import { updateDrives } from './agents/drives.js';
 import { perceive, type WorldView } from './agents/perception.js';
 import { selectGoal } from './agents/goals.js';
-import { descendPerchedAnimal, executeGoal, type WorldServices } from './agents/behaviours.js';
+import { controlledAction, descendPerchedAnimal, executeGoal, type ControlledAction, type WorldServices } from './agents/behaviours.js';
 import { foundingTraits } from './agents/genetics.js';
 import { Pedigree } from './agents/pedigree.js';
 import { mortalityFor, stageFor, targetMass } from './agents/lifecycle.js';
@@ -436,6 +437,8 @@ export class World {
     for (const patchId of [agent.patchId, ...this.patches[agent.patchId]!.neighbours]) {
       for (const other of view.agentsInPatch(patchId)) {
         if (!other.alive || other.speciesId !== agent.speciesId || (other.altitudeM ?? 0) > 0) continue;
+        // An agent-steered animal is not led off by a wild suitor's plan.
+        if (other.controller) continue;
         if (!isReceptive(other, cfg, this.#time)) continue;
         const target = starts.get(other.id);
         if (!target || !landWalkable(this.patches[target.patchId])
@@ -473,6 +476,8 @@ export class World {
   }
 
   #giveBirth(mother: Agent, cfg: SpeciesConfig): void {
+    // A mother raises her young in the wild: an agent steering her lets go at the birth.
+    delete mother.controller;
     const fatherId = mother.pregnancyFatherId;
     const father = fatherId == null ? null : this.#agentsById.get(fatherId) ?? null;
 
@@ -586,6 +591,79 @@ export class World {
       this.#agentsById.delete(agent.id);
     }
     return released.reverse();
+  }
+
+  // ---- Agent-steered animals (docs/2026-09-26-live-agents-design.md) ----------------------
+
+  /** Why this animal cannot be taken over now, or null if it can. */
+  possessionBlock(id: string): string | null {
+    const agent = this.#agentsById.get(id);
+    if (!agent || !agent.alive) return 'not_alive';
+    if (agent.controller) return 'already_controlled';
+    const cfg = this.species.get(agent.speciesId)!;
+    if (cfg.archetype === 'apex_predator' || cfg.archetype === 'pack_predator') return 'predators_later';
+    if (agent.lifeStage !== 'adult' && agent.lifeStage !== 'elder') return 'not_adult';
+    if (agent.dependentOn !== null) return 'dependent';
+    if (this.agents.some((a) => a.alive && a.dependentOn === agent.id)) return 'raising_young';
+    if ((agent.altitudeM ?? 0) > 0) return 'off_the_ground';
+    // Most of every species stays wild: a fifth at most, and one once there are three.
+    const living = this.livingCount(agent.speciesId);
+    const held = this.agents.filter((a) => a.alive && a.speciesId === agent.speciesId && a.controller).length;
+    const cap = living >= 3 ? Math.max(1, Math.floor(living * 0.2)) : 0;
+    if (held >= cap) return 'species_cap';
+    return null;
+  }
+
+  /** Hands the animal to an outside agent. Its body stays in the ecology; its choices do not. */
+  possess(id: string, controller: string): string | null {
+    if (!controller) throw new Error('controller required');
+    const block = this.possessionBlock(id);
+    if (block) return block;
+    const agent = this.#agentsById.get(id)!;
+    agent.controller = controller;
+    agent.currentGoal = 'rest'; agent.alternativeGoal = null; agent.goalScore = 1;
+    agent.targetId = null; agent.state = 'resting'; delete agent.journey;
+    locateAgent(agent);
+    return null;
+  }
+
+  /** Returns the animal to the wild where it stands. */
+  release(id: string): void {
+    const agent = this.#agentsById.get(id);
+    if (agent) delete agent.controller;
+  }
+
+  /**
+   * Where the live layer has taken an agent-steered animal. Only on walkable land; the live
+   * layer is responsible for speed, so a move here is never a teleport it did not pay for.
+   */
+  placeControlled(id: string, position: WorldPosition): boolean {
+    const agent = this.#agentsById.get(id);
+    if (!agent?.alive || !agent.controller) return false;
+    if (![position.x, position.z, position.heading].every(Number.isFinite)) return false;
+    const patchId = patchAtPosition(position);
+    if (patchId < 0 || !landWalkable(this.patches[patchId]) || !positionInPatch(position, patchId)) return false;
+    agent.position = { x: position.x, z: position.z, heading: position.heading };
+    agent.patchId = patchId;
+    return true;
+  }
+
+  /**
+   * An agent-steered animal grazed, drank or rested for `seconds`. The same finite rules as
+   * a wild animal, from the patch it stands in; nothing is created.
+   */
+  applyControlledAction(id: string, action: ControlledAction, seconds: number): boolean {
+    const agent = this.#agentsById.get(id);
+    if (!agent?.alive || !agent.controller) return false;
+    if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 3600) throw new Error('invalid action seconds');
+    const cfg = this.species.get(agent.speciesId)!;
+    const view = this.#view();
+    const goal = action === 'graze' ? 'find_food' : action === 'drink' ? 'find_water' : 'rest';
+    controlledAction({ agent, species: cfg, patches: this.patches, view, percept: perceive(agent, cfg, view),
+      choice: { goal, score: 1, alternative: null }, hours: seconds / 3600, worldTime: this.#time,
+      log: this.log, rng: this.#rng, services: this.#services() }, action);
+    agent.currentGoal = goal;
+    return true;
   }
 
   /** @internal — lets the breed helper share the world view type. */
@@ -806,6 +884,9 @@ export class World {
       if (isReadyToGiveBirth(agent, cfg, this.#time)) { this.#giveBirth(agent, cfg); continue; }
       // The joint encounter already consumed this prey's action; physiology above still runs.
       if (agent.lastEncounterAt === this.#time) continue;
+      // An outside agent steers this animal: the live layer decides where it goes and what
+      // it does. Its body has aged, hungered and faced every hazard above like any other.
+      if (agent.controller) continue;
       // A male who has not spent his decision can respond to a real female approach
       // by staying at the recorded contact anchor. Urgent needs, care or territorial
       // displacement still take priority. No partner is teleported or frozen later.

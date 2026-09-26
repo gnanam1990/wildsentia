@@ -147,6 +147,12 @@ export interface Agent {
   bornAt: WorldTime;
   massKg: number;
   patchId: PatchId;
+  /**
+   * The outside agent steering this animal, if any (docs/2026-09-26-live-agents-design.md).
+   * Its body still ages, hungers and can die in the hourly step; where it goes and what it
+   * does come from the live layer. Absent for every wild animal.
+   */
+  controller?: string;
   /** Optional only for legacy snapshots; initialized deterministically by the simulation. */
   position?: WorldPosition;
   /** Authoritative non-ground travel state. Absent on old/ground-only checkpoints. */

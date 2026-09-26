@@ -579,6 +579,23 @@ export function descendPerchedAnimal(agent: Agent, patch: Patch, worldTime: Worl
     causalParents: [], confidence: 'authoritative', movement: vertical.trace });
 }
 
+/** What an agent-steered animal can do where it stands; the live layer handles moving. */
+export type ControlledAction = 'graze' | 'drink' | 'rest';
+
+/**
+ * An agent-steered animal's action, for the time it was held. The same finite feeding,
+ * drinking and resting rules as a wild animal, without moving: grass and water come out of
+ * the patch it stands in, and drinking needs the patch's water access point.
+ */
+export function controlledAction(ctx: BehaviourContext, action: ControlledAction): void {
+  if (action === 'graze') feed(ctx, false);
+  else if (action === 'drink') {
+    // Wild drinking walks to the access point; an agent has to bring its animal there.
+    if (!atWaterAccess(locateAgent(ctx.agent), ctx.agent.patchId)) { ctx.agent.state = 'resting'; return; }
+    drink(ctx, false);
+  } else rest(ctx);
+}
+
 export function executeGoal(ctx: BehaviourContext): void {
   // Enforce abilities here too: callers cannot force adult behavior through a stale goal.
   if (!allowsDependentGoal(ctx.agent, ctx.species, ctx.choice.goal)

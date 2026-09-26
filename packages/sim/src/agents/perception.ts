@@ -120,6 +120,9 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
         // animal on an exact tree anchor above ground. No general invulnerability is implied.
         if (!other.alive || other.id === agent.id || !preferred.has(other.speciesId)
           || (other.altitudeM ?? 0) > 0) continue;
+        // An agent-steered animal is hunted in real time by the live layer, not by the
+        // hourly solver, which cannot know where its agent will take it.
+        if (other.controller) continue;
         prey.push({ agent: other, patchId: p.id, herdSize: bySpecies.get(other.speciesId) ?? 1 });
       }
     }
