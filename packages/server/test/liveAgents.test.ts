@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createHash, generateKeyPairSync, randomBytes, randomUUID, sign, type KeyObject } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
@@ -245,5 +245,44 @@ maybe('live agent API', () => {
     expect((await call(bob, 'GET', '/agents/me/observe')).json().heard).toEqual([]);
     expect((await call(alice, 'POST', '/agents/me/say', { text: 'Still here' })).json()).toEqual({ error: 'muted' });
     expect((await api.inject({ method: 'POST', url: '/admin/rewards/agents/mute', headers: admin, payload: JSON.stringify({ agent: 'Nobody', muted: true }) })).statusCode).toBe(404);
+  });
+
+  it('can ask agents to hold a token: proven at registration, checked again to take an animal', async () => {
+    const rich = privateKeyToAccount(`0x${'3'.repeat(64)}`), poor = privateKeyToAccount(`0x${'4'.repeat(64)}`);
+    const balances = new Map<string, bigint>([[rich.address.toLowerCase(), 10n]]);
+    const holding = { minAtomic: 5n, tokenAddress: '0x' + '5'.repeat(40), chainId: 8453,
+      balance: async (w: string) => balances.get(w.toLowerCase()) ?? 0n };
+    const gated = buildApi({ host, pool: pool!, rewards, live: { ...deps, holding, limits: { slots: 10, perNetworkPerDay: 10 }, spot: () => randomLandSpot(host.world) } });
+    await gated.ready();
+    try {
+      const send = (k: ReturnType<typeof keypair>, method: string, path: string, body?: unknown) => {
+        const raw = body === undefined ? '' : JSON.stringify(body);
+        return gated.inject({ method, url: path, headers: signedHeaders(k, audience, method, path, raw), ...(raw ? { payload: raw } : {}) });
+      };
+      expect((await gated.inject('/agents/info')).json().holding).toEqual({ tokenAddress: holding.tokenAddress, chainId: 8453, minAtomic: '5' });
+      const dan = keypair(), danId = agentIdFor(dan.publicKey);
+      const bare = await send(dan, 'POST', '/agents/register', { name: 'Dan' });
+      expect(bare.statusCode).toBe(400);
+      expect(bare.json()).toMatchObject({ error: 'holding_wallet_required', message: expect.stringContaining(`Agent: ${danId}`) });
+      const proof = (a: typeof rich, id = danId) => a.signMessage({ message: walletProofMessage(id, a.address, audience) });
+      expect((await send(dan, 'POST', '/agents/register', { name: 'Dan', wallet: rich.address, signature: await proof(poor) })).json().error).toBe('wallet_signature_invalid');
+      expect((await send(dan, 'POST', '/agents/register', { name: 'Dan', wallet: poor.address, signature: await proof(poor) })).json()).toEqual({ error: 'holding_below_minimum' });
+      expect((await send(dan, 'POST', '/agents/register', { name: 'Dan', wallet: rich.address, signature: await proof(rich) })).json()).toMatchObject({ agentId: danId, created: true });
+      expect(await deps.store.byId(danId)).toMatchObject({ wallet: rich.address.toLowerCase(), walletProven: true });
+      // One agent per wallet.
+      const eve = keypair();
+      expect((await send(eve, 'POST', '/agents/register', { name: 'Eve', wallet: rich.address, signature: await proof(rich, agentIdFor(eve.publicKey)) })).statusCode).toBe(409);
+
+      expect((await send(dan, 'POST', '/agents/me/possess', { speciesId: 'sambar' })).statusCode).toBe(200);
+      expect((await send(dan, 'POST', '/agents/me/release')).json()).toEqual({ ok: true });
+      // Alice's proven wallet holds none of the token, so she cannot take an animal here.
+      expect((await send(alice, 'POST', '/agents/me/possess', { speciesId: 'chital' })).json()).toEqual({ error: 'holding_below_minimum' });
+      // Balances are re-read after ten minutes: Dan sold his tokens.
+      balances.set(rich.address.toLowerCase(), 0n);
+      const later = Date.now() + 11 * 60_000;
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(later);
+      try { expect((await send(dan, 'POST', '/agents/me/possess', { speciesId: 'sambar' })).json()).toEqual({ error: 'holding_below_minimum' }); }
+      finally { clock.mockRestore(); }
+    } finally { await gated.close(); }
   });
 });

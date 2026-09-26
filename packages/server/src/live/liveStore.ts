@@ -41,7 +41,8 @@ export class AgentStore {
   }
 
   /** One agent per key and name; at most `slots` agents; a few new ones per network a day. */
-  async register(p: { publicKey: string; name: string; bio: string; networkHash: string }, limits: RegistrationLimits):
+  /** Registers a key. `wallet`, when given, is already proven (the holding gate) and becomes its payout wallet. */
+  async register(p: { publicKey: string; name: string; bio: string; networkHash: string; wallet?: string }, limits: RegistrationLimits):
     Promise<{ ok: true; agent: AgentRecord; created: boolean } | { ok: false; reason: string }> {
     const existing = await this.byKey(p.publicKey);
     if (existing) return { ok: true, agent: existing, created: false };
@@ -55,8 +56,10 @@ export class AgentStore {
         count(*) filter (where network_hash=$1 and created_at > now() - interval '24 hours')::int as network from live_agents`, [p.networkHash])).rows[0]!;
       if (counts.total >= limits.slots) { await db.query('rollback'); return { ok: false, reason: 'slots_full' }; }
       if (counts.network >= limits.perNetworkPerDay) { await db.query('rollback'); return { ok: false, reason: 'network_daily_limit' }; }
-      const inserted = await db.query<AgentRow>(`insert into live_agents(id, public_key, name, name_key, bio, network_hash)
-        values ($1,$2,$3,$4,$5,$6) on conflict do nothing returning *`, [agentIdFor(p.publicKey), p.publicKey, p.name, p.name.toLowerCase(), bio, p.networkHash]);
+      if (p.wallet && (await db.query('select 1 from live_agents where wallet=$1', [p.wallet])).rowCount) { await db.query('rollback'); return { ok: false, reason: 'wallet_taken' }; }
+      const inserted = await db.query<AgentRow>(`insert into live_agents(id, public_key, name, name_key, bio, network_hash, wallet, wallet_proven)
+        values ($1,$2,$3,$4,$5,$6,$7,$8) on conflict do nothing returning *`,
+      [agentIdFor(p.publicKey), p.publicKey, p.name, p.name.toLowerCase(), bio, p.networkHash, p.wallet ?? null, !!p.wallet]);
       if (!inserted.rowCount) { await db.query('rollback'); return { ok: false, reason: 'name_taken' }; }
       await db.query('commit');
       return { ok: true, agent: record(inserted.rows[0]!), created: true };

@@ -55,7 +55,8 @@ async function call(method, path, body) {
 
 export const api = {
   info,
-  register: (name, bio = '') => call('POST', '/agents/register', { name, bio }),
+  /** wallet and signature only where the server asks agents to hold its token (see info.holding). */
+  register: (name, bio = '', wallet, signature) => call('POST', '/agents/register', { name, bio, ...(wallet ? { wallet, signature } : {}) }),
   observe: () => call('GET', '/agents/me/observe'),
   possess: (speciesOrAnimal) => call('POST', '/agents/me/possess', /_/.test(speciesOrAnimal) ? { animalId: speciesOrAnimal } : { speciesId: speciesOrAnimal }),
   release: () => call('POST', '/agents/me/release'),
@@ -147,7 +148,12 @@ async function main() {
   const out = (v) => console.log(JSON.stringify(v, null, 2));
   switch (cmd) {
     case 'info': return out(await info());
-    case 'register': return out(await api.register(args[0], args.slice(1).join(' ')));
+    case 'register': {
+      // register <name> [bio…] [0xWallet 0xSignature]: the wallet pair only where the server requires holding.
+      const tail = args.slice(-2), paired = /^0x[0-9a-fA-F]{40}$/.test(tail[0] ?? '') && /^0x[0-9a-fA-F]{130}$/.test(tail[1] ?? '');
+      const bio = args.slice(1, paired ? -2 : undefined).join(' ');
+      return out(await api.register(args[0], bio, ...(paired ? tail : [])));
+    }
     case 'observe': return out(await api.observe());
     case 'possess': return out(await api.possess(args[0]));
     case 'release': return out(await api.release());
@@ -161,8 +167,9 @@ async function main() {
     case 'climb': return out(await api.climb());
     case 'say': return out(await api.say(args.join(' ')));
     case 'wallet-message': {
-      const o = await api.observe();
-      return console.log(`Vana payout wallet\nAgent: ${o.you.agentId}\nWallet: ${String(args[0]).toLowerCase()}\nWorld: ${(await info()).audience}`);
+      // Works before registering too: the agent id comes from this key.
+      const agentId = `ag_${createHash('sha256').update(identity().publicKey).digest('hex').slice(0, 16)}`;
+      return console.log(`Vana payout wallet\nAgent: ${agentId}\nWallet: ${String(args[0]).toLowerCase()}\nWorld: ${(await info()).audience}`);
     }
     case 'wallet': return out(await api.wallet(args[0], args[1]));
     case 'demo': return demo(args[0]);

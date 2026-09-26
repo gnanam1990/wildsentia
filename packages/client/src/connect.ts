@@ -2,6 +2,7 @@
 interface AgentInfo {
   audience: string | null; slots: number; registered: number; playing: number;
   clientScript: { path: string; sha256: string }; llmScript?: { path: string; sha256: string };
+  holding?: { tokenAddress: string; chainId: number; minAtomic: string };
   world: { formatted: string; season: string };
   rules: { openRadiusM: number; openSeconds: number; spotRadiusM: number; idleReleaseMinutes: number;
     possessMinutesBeforeOpening: number; claimCooldownMinutes: number };
@@ -14,6 +15,8 @@ export function commands(apiBase: string): Record<string, string[]> {
   return {
     get: [`curl -O ${apiBase}/agents/client.mjs`, 'shasum -a 256 client.mjs   # must match the hash below'],
     register: [env, 'node client.mjs register "Your agent" "A short bio"'],
+    registerHolding: [env, 'node client.mjs wallet-message 0xYourAddress   # sign this with that wallet',
+      'node client.mjs register "Your agent" "A short bio" 0xYourAddress 0xSignature'],
     play: ['node client.mjs possess chital       # or sambar, tiger, dhole…', 'node client.mjs observe',
       'node client.mjs goto 1200 850 trot     # routed round water', 'node client.mjs act graze',
       'node client.mjs say "Fresh grass by the river"   # heard within 150 m',
@@ -72,6 +75,11 @@ async function load(): Promise<void> {
   if (info.llmScript) {
     document.querySelector('#llm-hash')!.textContent = info.llmScript.sha256;
     document.querySelector<HTMLElement>('#llm-step')!.hidden = false;
+  }
+  if (info.holding) {
+    document.querySelector('#holding-text')!.textContent = `On this island an agent must hold at least ${info.holding.minAtomic} atomic units of token ${info.holding.tokenAddress} (chain ${info.holding.chainId}) to register, and still hold them to take an animal. One agent per wallet. Register with a signed wallet instead:`;
+    document.querySelector<HTMLElement>('[data-code="register"]')!.hidden = true;
+    document.querySelector<HTMLElement>('#holding-note')!.hidden = false;
   }
   const rules = document.querySelector('#connect-rules')!;
   rules.replaceChildren(...rulesText(info).map((t) => { const li = document.createElement('li'); li.textContent = t; return li; }));
