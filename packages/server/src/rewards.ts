@@ -112,6 +112,8 @@ export function installRewards(app: FastifyInstance, deps: {
   world?: () => string | null;
   /** Place drops opened by live agents (docs/2026-09-26-live-agents-design.md), when enabled. */
   placeDrops?: { ledger: PlaceDropLedger; spot: () => { x: number; z: number } | null };
+  /** Silencing a live agent's chat (it keeps playing). */
+  agents?: { mute(idOrName: string, muted: boolean): Promise<string | null> };
 }): void {
   const { pool, config, subject } = deps;
   const minWatchSeconds = config?.minWatchSeconds ?? 0;
@@ -431,6 +433,15 @@ export function installRewards(app: FastifyInstance, deps: {
       await deps.placeDrops.ledger.refresh();
       return { ...result, amount: displayAmount(amount) };
     } catch { return reply.code(503).send({ error: 'place_drops_unavailable_retry_same_batch' }); }
+  });
+  // Under /admin/rewards so the same token check, rate limit and same-origin rule guard it.
+  app.post('/admin/rewards/agents/mute', { bodyLimit: 1024 }, async (req, reply) => {
+    if (!deps.agents) return reply.code(503).send({ error: 'live_agents_not_enabled' });
+    const b = bodyOf(req);
+    if (typeof b.agent !== 'string' || !/^[A-Za-z0-9 _-]{2,40}$/.test(b.agent) || typeof b.muted !== 'boolean')
+      return reply.code(400).send({ error: 'agent_and_muted_required' });
+    const id = await deps.agents.mute(b.agent, b.muted);
+    return id ? { agentId: id, muted: b.muted } : reply.code(404).send({ error: 'no_such_agent' });
   });
   app.post('/admin/rewards/review', { bodyLimit: 2048 }, async (req, reply) => {
     const b = bodyOf(req);

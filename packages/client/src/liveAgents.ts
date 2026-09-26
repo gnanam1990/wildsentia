@@ -16,6 +16,8 @@ export interface LiveAvatar {
   opening: { dropId: string; progress: number } | null;
   /** Metres above ground: up a tree, or in the air. */
   altitude?: number;
+  /** A line its agent said in the last few seconds (another player's words: shown as text only). */
+  said?: string;
 }
 export interface LiveDrop {
   id: string; amountMicro: string; hint: { x: number; z: number; radius: number }; expiresAt: number;
@@ -53,7 +55,8 @@ export function isLiveMessage(value: unknown): value is LiveMessage {
     return text(v.agentId) && text(v.name, 40) && text(v.animalId) && text(v.speciesId) && finite(v.x) && finite(v.z) && finite(v.heading)
       && ['walk', 'trot', 'run'].includes(v.gait as string) && typeof v.moving === 'boolean'
       && ['idle', 'graze', 'drink', 'rest', 'open', 'feed', 'hunt'].includes(v.action as string)
-      && (v.altitude === undefined || (finite(v.altitude) && v.altitude >= 0 && v.altitude <= 200));
+      && (v.altitude === undefined || (finite(v.altitude) && v.altitude >= 0 && v.altitude <= 200))
+      && (v.said === undefined || text(v.said, 200));
   }) && (m.wild === undefined || (Array.isArray(m.wild) && m.wild.length <= 2000 && m.wild.every((w) => {
     const v = w as Record<string, unknown>;
     return text(v.animalId) && text(v.speciesId) && finite(v.x) && finite(v.z) && finite(v.heading)

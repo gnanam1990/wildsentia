@@ -15,6 +15,10 @@ describe('live agents in the observer', () => {
     expect(isLiveMessage({ ...message(1, 5), avatars: [{ ...avatar(5), action: 'fly' }] })).toBe(false);
     expect(isLiveMessage({ ...message(1, 5), drops: [{ id: 'd', amountMicro: '1e9', hint: { x: 0, z: 0, radius: 40 }, expiresAt: 0 }] })).toBe(false);
     expect(isLiveMessage({ type: 'scene' })).toBe(false);
+    // What an agent said rides along as plain text of bounded length.
+    expect(isLiveMessage({ ...message(1, 5), avatars: [avatar(5, { said: 'Water to the east' })] })).toBe(true);
+    expect(isLiveMessage({ ...message(1, 5), avatars: [avatar(5, { said: 'x'.repeat(201) })] })).toBe(false);
+    expect(isLiveMessage({ ...message(1, 5), avatars: [avatar(5, { said: { html: '<b>' } })] })).toBe(false);
   });
 
   it('draws an agent between its last two updates, so it glides rather than jumps', () => {

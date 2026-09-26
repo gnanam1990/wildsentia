@@ -70,6 +70,7 @@ beforeAll(async () => {
   const port = worldPort(() => host.world, () => host.worldId);
   ledger = new PlaceDropLedger(pool!, rewards, () => host.worldId, store);
   live = new LiveLayer(port, ledger);
+  live.onEnded = (life) => { void store.recordLife(life); };
   deps = { live, world: port, store, ledger, limits: { slots: 3, perNetworkPerDay: 10 }, networkSecret: 'test',
     clientScriptPath: fileURLToPath(new URL('../agent-client/client.mjs', import.meta.url)) };
   api = buildApi({ host, pool: pool!, rewards, live: { ...deps, spot: () => randomLandSpot(host.world) } });
@@ -85,12 +86,18 @@ maybe('live agent API', () => {
     return api.inject({ method, url: path, headers: signedHeaders(k, audience, method, path, raw), ...(raw ? { payload: raw } : {}) });
   };
 
-  it('publishes its audience, rules and the hash of the client people run', async () => {
+  it('publishes its audience, rules, slot use and the hashes of the scripts people run', async () => {
     const info = (await api.inject('/agents/info')).json();
     expect(info.audience).toBe(`vana:${host.worldId}`);
+    expect(info).toMatchObject({ slots: 3, registered: 0, playing: 0 });
     const script = await api.inject('/agents/client.mjs');
     expect(createHash('sha256').update(script.body).digest('hex')).toBe(info.clientScript.sha256);
-    expect((await api.inject('/agents/guide.txt')).body).toContain(info.clientScript.sha256);
+    const llm = await api.inject('/agents/llm.mjs');
+    expect(llm.headers['x-content-sha256']).toBe(info.llmScript.sha256);
+    expect(createHash('sha256').update(llm.body).digest('hex')).toBe(info.llmScript.sha256);
+    const guide = (await api.inject('/agents/guide.txt')).body;
+    expect(guide).toContain(info.clientScript.sha256);
+    expect(guide).toContain(info.llmScript.sha256);
   });
 
   it('registers a key once, refuses bad names and unknown keys, and caps the slots', async () => {
@@ -196,5 +203,47 @@ maybe('live agent API', () => {
     expect(again.avatars.get(saved[0]!.agentId)!.animalId).toBe(saved[0]!.animalId);
     expect((await call(alice, 'POST', '/agents/me/release')).json()).toEqual({ ok: true });
     expect(host.world.animal(saved[0]!.animalId)!.controller).toBeUndefined();
+  });
+
+  it('ranks agents by drops won, then their longest life with one animal', async () => {
+    const aliceId = agentIdFor(alice.publicKey), bobId = agentIdFor(bob.publicKey);
+    for (let i = 0; i < 50 && !(await pool!.query('select 1 from live_lives where agent_id=$1', [aliceId])).rowCount; i++) await new Promise((r) => setTimeout(r, 20));
+    expect((await pool!.query('select how from live_lives where agent_id=$1', [aliceId])).rows).toEqual([{ how: 'released' }]);
+    const now = Date.now();
+    await deps.store.recordLife({ agentId: bobId, animalId: 'sambar_0001', speciesId: 'sambar', since: now - 600_000, endedAt: now - 60_000, how: 'caught' });
+    expect((await call(bob, 'POST', '/agents/me/possess', { speciesId: 'sambar' })).statusCode).toBe(200);
+    live.avatars.get(bobId)!.since = now - 900_000;
+
+    const board = (await api.inject('/agents/leaderboard')).json();
+    expect(board.agents).toEqual([
+      { agentId: aliceId, name: 'Sora', drops: 1, usdcMicro: '2500000', usdc: '2.500000', longestLifeSeconds: expect.any(Number), animalsLost: 0, playing: false },
+      { agentId: bobId, name: expect.any(String), drops: 0, usdcMicro: '0', usdc: '0.000000', longestLifeSeconds: expect.any(Number), animalsLost: 1, playing: true },
+    ]);
+    expect(board.agents[0].longestLifeSeconds).toBeGreaterThanOrEqual(360);
+    // Bob's current sambar (15 minutes) beats his earlier life (9 minutes).
+    expect(board.agents[1].longestLifeSeconds).toBeGreaterThanOrEqual(900);
+    expect(board.agents[1].longestLifeSeconds).toBeLessThan(960);
+  });
+
+  it('lets an agent say a line that nearby agents hear, and lets the operator mute it', async () => {
+    const aliceId = agentIdFor(alice.publicKey), bobId = agentIdFor(bob.publicKey);
+    for (let i = 0; i < 30 && (await call(alice, 'POST', '/agents/me/possess', { speciesId: 'chital' })).statusCode !== 200; i++) live.tick(0.1);
+    const bobAt = live.avatars.get(bobId)!, aliceAvatar = live.avatars.get(aliceId)!;
+    aliceAvatar.x = bobAt.x + 20; aliceAvatar.z = bobAt.z;
+    await new Promise((r) => setTimeout(r, 2100)); // Let the command rate limit refill after the tests above.
+
+    expect((await call(alice, 'POST', '/agents/me/say', { text: 'visit www.free-usdc.xyz' })).json()).toEqual({ error: 'no_links' });
+    expect((await call(alice, 'POST', '/agents/me/say', { text: 'Fresh water to the east' })).json()).toEqual({ ok: true });
+    const heard = (await call(bob, 'GET', '/agents/me/observe')).json();
+    expect(heard.heard).toEqual([expect.objectContaining({ from: 'Sora', agentId: aliceId, text: 'Fresh water to the east', distance: 20 })]);
+    expect(heard.untrusted).toContain('heard');
+
+    const admin = { authorization: `Bearer ${rewards.adminToken}`, 'content-type': 'application/json' };
+    expect((await api.inject({ method: 'POST', url: '/admin/rewards/agents/mute', payload: JSON.stringify({ agent: 'Sora', muted: true }) })).statusCode).toBe(401);
+    const muted = await api.inject({ method: 'POST', url: '/admin/rewards/agents/mute', headers: admin, payload: JSON.stringify({ agent: 'sora', muted: true }) });
+    expect(muted.json()).toEqual({ agentId: aliceId, muted: true });
+    expect((await call(bob, 'GET', '/agents/me/observe')).json().heard).toEqual([]);
+    expect((await call(alice, 'POST', '/agents/me/say', { text: 'Still here' })).json()).toEqual({ error: 'muted' });
+    expect((await api.inject({ method: 'POST', url: '/admin/rewards/agents/mute', headers: admin, payload: JSON.stringify({ agent: 'Nobody', muted: true }) })).statusCode).toBe(404);
   });
 });

@@ -238,6 +238,16 @@ $('#place-form').addEventListener('submit', (e) => {
     status.textContent = `${error.message}. ${error.status === 400 ? 'Correct the input and retry.' : 'Retry unchanged to avoid a duplicate batch.'}`;
   }).finally(() => { submit.disabled = false; });
 });
+$('#mute-form').addEventListener('submit', (e) => {
+  e.preventDefault(); const form = e.currentTarget as HTMLFormElement;
+  const submit = form.querySelector('button')!; if (submit.disabled) return;
+  const muted = (form.querySelector('#mute-state') as HTMLSelectElement).value === 'mute';
+  submit.disabled = true;
+  void api('/admin/rewards/agents/mute', { agent: input('#mute-agent').value.trim(), muted }).then((result) => {
+    const r = result as { agentId: string; muted: boolean };
+    status.textContent = `${r.agentId} ${r.muted ? 'is muted' : 'may speak again'}.`; form.reset();
+  }).catch((error: Error) => { status.textContent = `${error.message}.`; }).finally(() => { submit.disabled = false; });
+});
 $('#drop-form').addEventListener('submit', (e) => {
   e.preventDefault(); const form = e.currentTarget as HTMLFormElement;
   const submit = form.querySelector('button')!; if (submit.disabled) return;

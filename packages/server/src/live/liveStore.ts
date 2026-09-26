@@ -1,21 +1,23 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { Pool } from '../db/pool.js';
 import type { RewardConfig } from '../rewards.js';
-import type { Avatar, DropLedger, PlaceDrop } from './liveLayer.js';
+import type { Avatar, DropLedger, EndedLife, PlaceDrop } from './liveLayer.js';
 
 /**
  * PostgreSQL for the live layer: registered agents, who is steering which animal, and the
  * place drops in the shared reward ledger (docs/2026-09-26-live-agents-design.md).
  */
 
-export interface AgentRecord { id: string; publicKey: string; name: string; bio: string; wallet: string | null; walletProven: boolean }
-interface AgentRow { id: string; public_key: string; name: string; bio: string; wallet: string | null; wallet_proven: boolean }
-const record = (r: AgentRow): AgentRecord => ({ id: r.id, publicKey: r.public_key, name: r.name, bio: r.bio, wallet: r.wallet, walletProven: r.wallet_proven });
+export interface AgentRecord { id: string; publicKey: string; name: string; bio: string; wallet: string | null; walletProven: boolean; muted: boolean }
+interface AgentRow { id: string; public_key: string; name: string; bio: string; wallet: string | null; wallet_proven: boolean; muted: boolean }
+const record = (r: AgentRow): AgentRecord => ({ id: r.id, publicKey: r.public_key, name: r.name, bio: r.bio, wallet: r.wallet,
+  walletProven: r.wallet_proven, muted: r.muted });
 
 export const NAME_RE = /^[A-Za-z][A-Za-z0-9 _-]{1,19}$/;
 const RESERVED = /^(admin|vana|system|server|moderator|official|support|staff)/i;
 export const agentIdFor = (publicKey: string) => `ag_${createHash('sha256').update(publicKey).digest('hex').slice(0, 16)}`;
 
+export interface LeaderRow { agentId: string; name: string; drops: number; usdcMicro: string; longestLifeSeconds: number; animalsLost: number; playing: boolean }
 export interface RegistrationLimits { slots: number; perNetworkPerDay: number }
 
 export class AgentStore {
@@ -76,6 +78,53 @@ export class AgentStore {
 
   async list(): Promise<Array<{ id: string; name: string; bio: string }>> {
     return (await this.pool.query<{ id: string; name: string; bio: string }>('select id, name, bio from live_agents order by created_at')).rows;
+  }
+
+  /** Silences (or lets speak again) an agent, found by id or name. Returns its id, or null if there is none. */
+  async setMuted(idOrName: string, muted: boolean): Promise<string | null> {
+    const row = (await this.pool.query<{ id: string }>('update live_agents set muted=$2 where id=$1 or name_key=lower($1) returning id',
+      [idOrName.trim(), muted])).rows[0];
+    this.#byKey.clear();
+    return row?.id ?? null;
+  }
+
+  /** Registered agents, each holding one of the slots. */
+  async count(): Promise<number> {
+    return Number((await this.pool.query<{ n: string }>('select count(*) as n from live_agents')).rows[0]!.n);
+  }
+
+  /** One finished possession. */
+  async recordLife(life: EndedLife): Promise<void> {
+    await this.pool.query(`insert into live_lives (agent_id, animal_id, species_id, started_at, ended_at, how)
+      values ($1, $2, $3, to_timestamp($4 / 1000.0), to_timestamp($5 / 1000.0), $6)`,
+    [life.agentId, life.animalId, life.speciesId, life.since, Math.max(life.since, life.endedAt), life.how]);
+  }
+
+  /**
+   * Agents ranked by drops won (then USDC won, then their longest life with one animal). A life
+   * still going counts from when it began. Agents with nothing yet are left out.
+   */
+  async leaderboard(playing: Iterable<{ agentId: string; since: number }>, now: number, limit = 50): Promise<LeaderRow[]> {
+    const { rows } = await this.pool.query<{ id: string; name: string; drops: string; usdc_micro: string; best_s: string | null; lost: string }>(`
+      with lives as (
+        select agent_id, max(extract(epoch from ended_at - started_at)) as best_s,
+          count(*) filter (where how in ('died', 'caught')) as lost
+        from live_lives group by agent_id),
+      wins as (
+        select c.agent_id, count(*) as drops, sum(d.amount_micro) as usdc_micro
+        from reward_claims c join reward_drops d on d.id = c.drop_id
+        where c.agent_id is not null and c.status in ('reserved', 'paid_reported') group by c.agent_id)
+      select a.id, a.name, coalesce(w.drops, 0) as drops, coalesce(w.usdc_micro, 0) as usdc_micro,
+        l.best_s, coalesce(l.lost, 0) as lost
+      from live_agents a left join wins w on w.agent_id = a.id left join lives l on l.agent_id = a.id`);
+    const current = new Map<string, number>();
+    for (const p of playing) current.set(p.agentId, Math.max(0, (now - p.since) / 1000));
+    return rows.map((r) => ({ agentId: r.id, name: r.name, drops: Number(r.drops), usdcMicro: r.usdc_micro,
+      longestLifeSeconds: Math.round(Math.max(Number(r.best_s ?? 0), current.get(r.id) ?? 0)), animalsLost: Number(r.lost),
+      playing: current.has(r.id) }))
+      .filter((r) => r.drops > 0 || r.longestLifeSeconds > 0 || r.playing)
+      .sort((a, b) => b.drops - a.drops || Number(BigInt(b.usdcMicro) - BigInt(a.usdcMicro)) || b.longestLifeSeconds - a.longestLifeSeconds || a.name.localeCompare(b.name))
+      .slice(0, limit);
   }
 
   /** Frees the slot of an agent unseen for `days`, so slots cannot be squatted forever. */

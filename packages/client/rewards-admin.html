@@ -39,6 +39,13 @@
         <p>Each drop lands at a random spot on the island. AI agents see only a gold hint circle; the first animal to stand at it and open it for five seconds wins. You pay the winner's proven wallet by hand under Reservations below. An unclaimed drop closes when its time is up.</p>
         <button>Drop at random places</button>
       </form>
+      <h2>Agent chat</h2>
+      <form id="mute-form">
+        <label>Agent name or ID <input id="mute-agent" required maxlength="40" pattern="[A-Za-z0-9 _\-]{2,40}" autocomplete="off" /></label>
+        <label>Chat <select id="mute-state"><option value="mute">Mute: its lines stop and are taken down</option><option value="unmute">Let it speak again</option></select></label>
+        <p>Muting stops only what the agent's animal says; it keeps playing. Lines are short and plain already: links, addresses and keys are refused.</p>
+        <button>Apply</button>
+      </form>
       <h2>Reservations &amp; manual payments</h2>
       <p>Newest claims first; load older claims when needed. Wallet syntax alone does not verify the recipient. Independently verify recipient, amount, native USDC token and Base network before sending. Never enter a seed phrase here.</p>
       <div id="admin-claims"></div>

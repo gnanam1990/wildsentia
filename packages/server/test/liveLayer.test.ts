@@ -94,6 +94,8 @@ describe('live layer', () => {
 
   it('lets go after 15 idle minutes, and ends when the animal dies', () => {
     const { live, world, run, advance } = setup();
+    const ended: Array<{ agentId: string; how: string }> = [];
+    live.onEnded = (life) => ended.push({ agentId: life.agentId, how: life.how });
     live.possess('ag_1', 'Sora', { speciesId: 'sambar' });
     const animalId = live.avatars.get('ag_1')!.animalId;
     advance(IDLE_RELEASE_MS + 1); run(0.1);
@@ -107,6 +109,8 @@ describe('live layer', () => {
     run(0.1);
     expect(live.avatars.has('ag_2')).toBe(false);
     expect(live.notices('ag_2').at(-1)!.text).toContain('died');
+    // Each end is recorded once, with how it happened, for the leaderboard.
+    expect(ended).toEqual([{ agentId: 'ag_1', how: 'idle' }, { agentId: 'ag_2', how: 'died' }]);
   });
 
   it('spots a drop within ten metres, opens it in five seconds, and pays only the first', async () => {

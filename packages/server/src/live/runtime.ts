@@ -46,6 +46,7 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
   };
   const ledger = rewards ? new PlaceDropLedger(pool, rewards, () => host.worldId, store) : null;
   const live = new LiveLayer(port, ledger);
+  live.onEnded = (life) => { void store.recordLife(life).catch((e) => console.error('[live] life record failed', e)); };
   const timers: NodeJS.Timeout[] = [];
   const save = async () => { const id = host.worldId; if (id) await store.savePossessions(id, live.avatars.values()); };
   const routes: LiveRouteDeps = {

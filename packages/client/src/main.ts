@@ -893,7 +893,14 @@ function drawAgentTags(now: number): void {
     const { p } = entry;
     tagPoint.set(p.x, animals.groundHeightAt(p.x, p.z) + visualFor(p.avatar.speciesId).heightM + 0.9, p.z).project(camera);
     tag.hidden = tagPoint.z < -1 || tagPoint.z > 1 || Math.abs(tagPoint.x) > 1 || Math.abs(tagPoint.y) > 1;
-    if (tag.textContent !== p.avatar.name) tag.textContent = p.avatar.name;
+    const key = `${p.avatar.name}\n${p.avatar.said ?? ''}`;
+    if (tag.dataset.key !== key) {
+      tag.dataset.key = key;
+      // Another player's words: set as text, never as markup.
+      const name = document.createElement('b'); name.textContent = p.avatar.name;
+      if (p.avatar.said) { const line = document.createElement('span'); line.className = 'said'; line.textContent = p.avatar.said; tag.replaceChildren(name, line); }
+      else tag.replaceChildren(name);
+    }
     tag.style.left = `${(tagPoint.x + 1) / 2 * innerWidth}px`;
     tag.style.top = `${(1 - tagPoint.y) / 2 * innerHeight}px`;
   });
@@ -933,6 +940,10 @@ function placeAgentsList(): void {
   agentsList.style.left = `${Math.round(Math.max(12, Math.min(r.left, innerWidth - 292)))}px`;
 }
 setInterval(renderAgentsChip, 1000);
+// The way in for agents, shown only when this island takes them.
+void fetch('/api/agents/info', { cache: 'no-store' }).then((r) => {
+  if (r.ok) document.querySelector<HTMLElement>('#connect-agent')!.hidden = false;
+}).catch(() => undefined);
 agentsChip.addEventListener('click', () => {
   agentsList.hidden = !agentsList.hidden;
   agentsChip.setAttribute('aria-expanded', String(!agentsList.hidden));

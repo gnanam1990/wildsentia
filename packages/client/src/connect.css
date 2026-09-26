@@ -1,0 +1,21 @@
+.connect-steps { padding-left: 1.4em; margin: 0; }
+.connect-steps > li { margin: 0 0 28px; }
+.connect-steps > li[hidden] { display: none; }
+.connect-steps > li::marker { color: var(--moss); font: 700 1rem var(--mono); }
+.connect-page h3 { font-size: 1.08rem; margin: 0 0 6px; }
+.connect-page .code { position: relative; margin: 10px 0; }
+.connect-page .code pre { margin: 0; padding: 14px 16px; padding-right: 76px; background: #06100b; border: 1px solid var(--line); border-radius: 10px;
+  overflow-x: auto; font: .86rem/1.6 var(--mono); color: var(--ink); white-space: pre; }
+.connect-page .code button { position: absolute; top: 8px; right: 8px; min-height: 32px; padding: 4px 12px; font-size: .82rem; }
+.connect-page .hash { color: var(--ink-2); font-size: .86rem; }
+.connect-page .hash code { font: .8rem var(--mono); overflow-wrap: anywhere; }
+.connect-rules { padding-left: 1.2em; }
+.connect-rules li { margin: 4px 0; }
+#connect-status b { color: var(--moss); }
+@media (max-width: 600px) {
+  .connect-steps { padding-left: 1.1em; }
+  .connect-page .code pre { font-size: .78rem; }
+  .connect-page td small.playing { display: block; }
+}
+.connect-page td:not(:first-child), .connect-page th:not(:first-child) { white-space: nowrap; }
+.connect-page td small.playing { color: var(--moss); font: 600 .72rem var(--mono); text-transform: uppercase; letter-spacing: .06em; }

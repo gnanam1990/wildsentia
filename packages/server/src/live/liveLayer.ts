@@ -8,6 +8,8 @@
  * timed open, and handing a finished open to the reward ledger.
  */
 
+import { CHAT_GAP_MS, HEAR_RADIUS_M, HEARD_FOR_MS, SHOWN_FOR_MS, cleanChat } from './chat.js';
+
 export type Gait = 'walk' | 'trot' | 'run';
 export type LiveAction = 'idle' | 'graze' | 'drink' | 'rest' | 'open' | 'feed' | 'hunt';
 
@@ -100,6 +102,11 @@ export interface Avatar {
   alarmedAt?: number;
 }
 export interface Notice { at: number; text: string }
+/** A line an agent's animal said, heard by agents nearby. */
+export interface Said { agentId: string; name: string; animalId: string; x: number; z: number; text: string; at: number }
+/** How a possession ended, for the leaderboard: a death counts as an animal lost. */
+export type LifeEnd = 'died' | 'caught' | 'birth' | 'idle' | 'released';
+export interface EndedLife { agentId: string; animalId: string; speciesId: string; since: number; endedAt: number; how: LifeEnd }
 
 /**
  * A wild animal the live layer has taken off its recorded route for a real-time chase:
@@ -127,6 +134,10 @@ export class LiveLayer {
   #claiming = new Set<string>();
   #scanIn = 0;
   #hour = Number.NaN;
+  readonly #said: Said[] = [];
+  readonly #lastSaid = new Map<string, number>();
+  /** Told whenever an agent's time with an animal ends (the runtime records it). */
+  onEnded: ((life: EndedLife) => void) | null = null;
 
   constructor(private readonly world: WorldPort, private readonly drops: DropLedger | null = null,
     private readonly clock: () => number = Date.now, private readonly random: () => number = Math.random) {}
@@ -199,14 +210,12 @@ export class LiveLayer {
     return true;
   }
 
-  release(agentId: string, why = 'You let your animal go back to the wild.'): boolean {
+  release(agentId: string, why = 'You let your animal go back to the wild.', how: LifeEnd = 'released'): boolean {
     const avatar = this.avatars.get(agentId);
     if (!avatar) return false;
     this.#flushAction(avatar);
     this.world.release(avatar.animalId);
-    this.avatars.delete(agentId);
-    this.notify(agentId, why);
-    this.#offerNext(avatar.speciesId);
+    this.#end(avatar, why, how);
     return true;
   }
 
@@ -324,10 +333,10 @@ export class LiveLayer {
       const animal = this.world.animal(avatar.animalId);
       if (!animal?.alive) {
         this.#cooldowns.set(avatar.agentId, now + DEATH_COOLDOWN_MS);
-        this.#end(avatar, `${avatar.animalId} died. You can take over another animal in two minutes.`); continue;
+        this.#end(avatar, `${avatar.animalId} died. You can take over another animal in two minutes.`, 'died'); continue;
       }
-      if (animal.controller !== avatar.agentId) { this.#end(avatar, `${avatar.animalId} gave birth and went back to the wild to raise her young.`); continue; }
-      if (now - avatar.lastCommand > IDLE_RELEASE_MS) { this.release(avatar.agentId, 'You were idle for 15 minutes, so your animal went back to the wild.'); continue; }
+      if (animal.controller !== avatar.agentId) { this.#end(avatar, `${avatar.animalId} gave birth and went back to the wild to raise her young.`, 'birth'); continue; }
+      if (now - avatar.lastCommand > IDLE_RELEASE_MS) { this.release(avatar.agentId, 'You were idle for 15 minutes, so your animal went back to the wild.', 'idle'); continue; }
       const motion = this.world.species(avatar.speciesId)!;
       if (avatar.hunt) this.#huntStep(avatar, motion, dt, now);
       else if (avatar.moving) this.#move(avatar, motion, dt);
@@ -483,7 +492,7 @@ export class LiveLayer {
       this.wild.delete(preyId);
       if (preyAvatar) {
         this.#cooldowns.set(preyAvatar.agentId, now + DEATH_COOLDOWN_MS);
-        this.#end(preyAvatar, `Your ${prm.displayName.toLowerCase()} was caught by a ${pm.displayName.toLowerCase()}. You can take over another animal in two minutes.`);
+        this.#end(preyAvatar, `Your ${prm.displayName.toLowerCase()} was caught by a ${pm.displayName.toLowerCase()}. You can take over another animal in two minutes.`, 'caught');
       }
       return;
     }
@@ -607,10 +616,46 @@ export class LiveLayer {
     }
   }
 
-  #end(avatar: Avatar, why: string): void {
+  #end(avatar: Avatar, why: string, how: LifeEnd): void {
     this.avatars.delete(avatar.agentId);
     this.notify(avatar.agentId, why);
+    this.onEnded?.({ agentId: avatar.agentId, animalId: avatar.animalId, speciesId: avatar.speciesId, since: avatar.since, endedAt: this.clock(), how });
     this.#offerNext(avatar.speciesId);
+  }
+
+  /**
+   * A short line from an agent's animal, heard by other agents within HEAR_RADIUS_M. The text is
+   * cleaned and checked (chat.ts); a muted agent, or one speaking again too soon, is refused.
+   */
+  say(agentId: string, raw: unknown, muted = false): string | null {
+    const avatar = this.avatars.get(agentId);
+    if (!avatar) return 'not_possessing';
+    if (muted) return 'muted';
+    const clean = cleanChat(raw);
+    if (!clean.ok) return clean.error;
+    const now = this.clock();
+    if (now - (this.#lastSaid.get(agentId) ?? -Infinity) < CHAT_GAP_MS) return 'too_soon';
+    this.#lastSaid.set(agentId, now);
+    this.#said.push({ agentId, name: avatar.agentName, animalId: avatar.animalId, x: avatar.x, z: avatar.z, text: clean.text, at: now });
+    while (this.#said.length > 500 || (this.#said[0] && now - this.#said[0].at > HEARD_FOR_MS)) this.#said.shift();
+    avatar.lastCommand = now;
+    return null;
+  }
+
+  /** What an agent's animal heard in the last two minutes: others' lines said within earshot of where it is now. */
+  heard(agentId: string): Array<{ from: string; agentId: string; animalId: string; text: string; secondsAgo: number; distance: number }> {
+    const avatar = this.avatars.get(agentId);
+    if (!avatar) return [];
+    const now = this.clock();
+    return this.#said.filter((s) => s.agentId !== agentId && now - s.at <= HEARD_FOR_MS)
+      .map((s) => ({ s, d: Math.hypot(s.x - avatar.x, s.z - avatar.z) })).filter(({ d }) => d <= HEAR_RADIUS_M)
+      .slice(-10).map(({ s, d }) => ({ from: s.name, agentId: s.agentId, animalId: s.animalId, text: s.text,
+        secondsAgo: Math.round((now - s.at) / 1000), distance: Math.round(d) }));
+  }
+
+  /** Takes back everything an agent said (when the operator mutes it). */
+  forgetSaid(agentId: string): void {
+    for (let i = this.#said.length - 1; i >= 0; i--) if (this.#said[i]!.agentId === agentId) this.#said.splice(i, 1);
   }
 
   /** Up the tree beside it (langur, squirrel): no ground hunter can reach it there. */
@@ -631,12 +676,22 @@ export class LiveLayer {
   }
 
   /** What spectators see: every avatar and every live drop, positions only where public. */
+  /** The line an agent's animal said in the last few seconds, for spectators. */
+  #showing(agentId: string): { said?: string } {
+    const now = this.clock();
+    for (let i = this.#said.length - 1; i >= 0 && now - this.#said[i]!.at <= SHOWN_FOR_MS; i--) {
+      if (this.#said[i]!.agentId === agentId) return { said: this.#said[i]!.text };
+    }
+    return {};
+  }
+
   publicState(): { avatars: object[]; drops: object[]; wild: object[] } {
     return {
       avatars: [...this.avatars.values()].map((a) => ({ agentId: a.agentId, name: a.agentName, animalId: a.animalId,
         speciesId: a.speciesId, x: round(a.x), z: round(a.z), heading: round(a.heading, 3), gait: a.gait, moving: a.moving,
         action: a.action, opening: a.opening ? { dropId: a.opening.dropId, progress: round(a.opening.seconds / OPEN_SECONDS, 2) } : null,
-        ...(a.perched ? { altitude: 6 } : a.flying ? { altitude: 30 } : {}) })),
+        ...(a.perched ? { altitude: 6 } : a.flying ? { altitude: 30 } : {}),
+        ...this.#showing(a.agentId) })),
       drops: (this.drops?.active() ?? []).map((d) => ({ id: d.id, amountMicro: d.amountMicro,
         hint: { x: round(d.hintX), z: round(d.hintZ), radius: d.hintRadius }, expiresAt: d.expiresAt,
         ...(d.spottedBy ? { spotted: { x: round(d.x), z: round(d.z), by: d.spottedBy } } : {}) })),

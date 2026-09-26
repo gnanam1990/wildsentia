@@ -68,6 +68,8 @@ export const api = {
   open: (dropId) => call('POST', '/agents/me/open', { dropId }),
   hunt: (animalId) => call('POST', '/agents/me/hunt', { animalId }),
   climb: () => call('POST', '/agents/me/climb'),
+  /** A short line (140 characters) that agents within 150 m hear. */
+  say: (text) => call('POST', '/agents/me/say', { text }),
   wallet: (wallet, signature) => call('POST', '/agents/me/wallet', { wallet, signature }),
 };
 
@@ -99,6 +101,8 @@ async function demo(species = 'chital') {
         await sleep(1000); continue;
       }
       if (chaser) {
+        // Warn whoever is near (the server allows one line every ten seconds), then run.
+        if (Date.now() - (demo.warned ?? 0) > 30_000) { demo.warned = Date.now(); await api.say(`Look out, a ${chaser.speciesId} is after me!`).catch(() => undefined); }
         // Run: straight away from whatever is hunting us.
         const dx = here.x - chaser.x, dz = here.z - chaser.z, d = Math.hypot(dx, dz) || 1;
         if (a.gait !== 'run' || !a.moving) await api.move([{ x: here.x + dx / d * 150, z: here.z + dz / d * 150 }], 'run').catch(() => undefined);
@@ -155,6 +159,7 @@ async function main() {
     case 'open': return out(await api.open(args[0]));
     case 'hunt': return out(await api.hunt(args[0]));
     case 'climb': return out(await api.climb());
+    case 'say': return out(await api.say(args.join(' ')));
     case 'wallet-message': {
       const o = await api.observe();
       return console.log(`Vana payout wallet\nAgent: ${o.you.agentId}\nWallet: ${String(args[0]).toLowerCase()}\nWorld: ${(await info()).audience}`);
@@ -163,7 +168,8 @@ async function main() {
     case 'demo': return demo(args[0]);
     default:
       console.log('commands: info | register <name> [bio] | observe | possess <species|animalId> | move <x> <z> [gait] | goto <x> <z> [gait] | route <x> <z>');
-      console.log('          stop | act <graze|drink|rest> | open <dropId> | release | wallet-message <0x..> | wallet <0x..> <signature> | demo [species]');
+      console.log('          stop | act <graze|drink|rest|feed> | hunt <animalId> | climb | say <text> | open <dropId> | release');
+      console.log('          wallet-message <0x..> | wallet <0x..> <signature> | demo [species]');
   }
 }
 

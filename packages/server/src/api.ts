@@ -59,7 +59,12 @@ export function buildApi({ host, pool, narrator, insights: insightDeps, live, re
   const humanMotion = new HumanMotionStore(pool);
   const historyCursors = new HistoryCursors();
   installRewards(app, { pool, config: rewards, ...(receiptRpc ? { receiptRpc } : {}), subject: (id) => host.rewardSubject(id), world: () => host.worldId,
-    ...(live?.ledger ? { placeDrops: { ledger: live.ledger as PlaceDropLedger, spot: live.spot } } : {}) });
+    ...(live?.ledger ? { placeDrops: { ledger: live.ledger as PlaceDropLedger, spot: live.spot } } : {}),
+    ...(live ? { agents: { mute: async (idOrName: string, muted: boolean) => {
+      const id = await live.store.setMuted(idOrName, muted);
+      if (id && muted) live.live.forgetSaid(id);
+      return id;
+    } } } : {}) });
   if (live) installLiveAgents(app, live);
   installSocialOutbox(app, { pool, config: social, boundary: () => {
     const view = host.observation();
