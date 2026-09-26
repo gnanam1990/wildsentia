@@ -401,6 +401,18 @@ export function upgradeV27Snapshot(snapshot: Snapshot): Snapshot {
   return upgraded;
 }
 
+/**
+ * v0.30 moves each patch's water access point off its centre. Every state byte is kept; an
+ * animal or person standing at an old centre simply walks to the new point when it next
+ * drinks or fishes. Recorded history keeps its old positions and still validates.
+ */
+export function upgradeV29Snapshot(snapshot: Snapshot): Snapshot {
+  if (snapshot.simVersion !== 'sim_0.29.0') throw new Error('only sim_0.29.0 snapshots can use this upgrade');
+  const upgraded = structuredClone(snapshot);
+  upgraded.simVersion = SIM_VERSION;
+  return upgraded;
+}
+
 /** Mate-response rules affect future decisions only; preserve every v0.28 state byte. */
 export function upgradeV28Snapshot(snapshot: Snapshot): Snapshot {
   if (snapshot.simVersion !== 'sim_0.28.0') throw new Error('only sim_0.28.0 snapshots can use this upgrade');

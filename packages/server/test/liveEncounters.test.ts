@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fileURLToPath } from 'node:url';
-import { treeAnchorForPatch, treeAnchorGeometry, type EncounterAppearance, type WorldEvent } from '@vana/shared';
+import { treeAnchorForPatch, treeAnchorGeometry, waterAccessPosition, type EncounterAppearance, type WorldEvent } from '@vana/shared';
 import { collectLiveEncounters, collectLiveMovements, encounterAppearance, indexLiveMovements, isRecordedTreeClimb, selectLiveMovements } from '../src/liveEncounters.js';
 import { createWorld } from '../../sim/src/world.js';
 import { makeAgent } from '../../sim/test/helpers.js';
@@ -93,14 +93,17 @@ describe('bounded live encounter collection', () => {
       expect(collectLiveMovements([invalid], appearance, 0, [end])).toEqual([]);
     }
   });
+  // Water contact is recorded around the patch's access point, which sim_0.30.0 moved off the centre.
+  const source = waterAccessPosition(0);
+  const w = (dx: number) => ({ x: source.x + dx, z: source.z, heading: Math.PI / 2 });
   const drinking = () => {
     const { encounter: _encounter, ...base } = event;
     const moved: WorldEvent = { ...base, id: 'approach', type: 'moved', actors: ['s'],
       movement: { version: 1, actorId: 's', startWorldTime: 0, destinationPatchId: 0, goal: 'find_water', completed: true,
-        samples: [{ seconds: 0, position: p(10) }, { seconds: 30, position: p(1.5) }] } };
+        samples: [{ seconds: 0, position: w(10) }, { seconds: 30, position: w(1.5) }] } };
     const drank: WorldEvent = { ...base, id: 'drink', type: 'drank', actors: ['s'], worldTime: 3600, goal: 'find_water',
-      position: { ...p(1.5), heading: -Math.PI / 2 }, causalParents: ['approach'], effects: { litres: 2 },
-      conditions: { arrivalWorldTime: 30, drinkingSeconds: 3570, sourceX: 0, sourceZ: 0, contactRadiusM: 2 } };
+      position: { ...w(1.5), heading: -Math.PI / 2 }, causalParents: ['approach'], effects: { litres: 2 },
+      conditions: { arrivalWorldTime: 30, drinkingSeconds: 3570, sourceX: source.x, sourceZ: source.z, contactRadiusM: 2 } };
     const end = makeAgent('sambar', { id: 's', position: { ...drank.position! } });
     return { moved, drank, end };
   };
@@ -111,30 +114,30 @@ describe('bounded live encounter collection', () => {
     expect(isLiveEncounterFrame({ id: 'water', startWorldTime: 0, endWorldTime: 3600, rate: 12,
       elapsedWorldSeconds: 0, encounters: [], movements: routes })).toBe(true);
     drank.position!.x = 99;
-    expect(routes[0]!.activity!.position.x).toBe(1.5);
+    expect(routes[0]!.activity!.position.x).toBe(source.x + 1.5);
   });
   it('holds a stationary drinker only with matching pre-tick evidence and no movement', () => {
     const { moved, drank, end } = drinking();
     drank.conditions.arrivalWorldTime = 0; drank.conditions.drinkingSeconds = 3600; drank.causalParents = [];
-    const initial = p(1.5), starts = new Map([['s', initial]]);
+    const initial = w(1.5), starts = new Map([['s', initial]]);
     const index = indexLiveMovements([drank], actors, 0, [end], starts);
     expect(index.get('s')).toMatchObject({ eventId: 'drink', stationary: true,
       trace: { samples: [{ seconds: 0, position: initial }] }, activity: { startSeconds: 0 } });
     initial.x = 20;
-    expect(index.get('s')!.trace.samples[0]!.position.x).toBe(1.5);
+    expect(index.get('s')!.trace.samples[0]!.position.x).toBe(source.x + 1.5);
     expect(indexLiveMovements([drank], actors, 0, [end]).size).toBe(0);
     expect(indexLiveMovements([drank], actors, 0, [end], starts).size).toBe(0);
-    expect(indexLiveMovements([moved, drank], actors, 0, [end], new Map([['s', p(1.5)]]))
+    expect(indexLiveMovements([moved, drank], actors, 0, [end], new Map([['s', w(1.5)]]))
       .get('s')!.activity).toBeUndefined();
-    expect(indexLiveMovements([drank], actors, 3600, [end], new Map([['s', p(1.5)]])).size).toBe(0);
+    expect(indexLiveMovements([drank], actors, 3600, [end], new Map([['s', w(1.5)]])).size).toBe(0);
   });
   it('omits ambiguous, unlinked, malformed or displaced drinking without inventing an action', () => {
     const edits: Array<(e: WorldEvent) => void> = [
       e => { e.causalParents = []; }, e => { e.conditions.arrivalWorldTime = 31; },
       e => { e.conditions.drinkingSeconds = -1; }, e => { e.conditions.drinkingSeconds = 3571; },
       e => { e.conditions.drinkingSeconds = NaN; }, e => { e.effects.litres = 0; },
-      e => { e.conditions.sourceX = 1; }, e => { e.conditions.contactRadiusM = 10; },
-      e => { e.position!.x = 2.1; }, e => { e.worldTime = 3500; },
+      e => { e.conditions.sourceX = source.x + 1; }, e => { e.conditions.contactRadiusM = 10; },
+      e => { e.position!.x = source.x + 2.1; }, e => { e.worldTime = 3500; },
       e => { e.actors.push('t'); }, e => { delete e.conditions.arrivalWorldTime; },
     ];
     for (const edit of edits) {
@@ -145,7 +148,7 @@ describe('bounded live encounter collection', () => {
     expect(collectLiveMovements([moved, drank, { ...drank, id: 'drink2' }], actors, 0, [end])[0]!.activity).toBeUndefined();
     expect(collectLiveMovements([moved, drank, event], actors, 0, [end])).toEqual([]);
     expect(collectLiveMovements([moved, drank], actors, 0, [{ ...end, alive: false }])).toEqual([]);
-    expect(collectLiveMovements([moved, drank], actors, 0, [{ ...end, position: p(30) }])).toEqual([]);
+    expect(collectLiveMovements([moved, drank], actors, 0, [{ ...end, position: w(30) }])).toEqual([]);
   });
   it('tolerates sub-microsecond hour-boundary rounding, not out-of-hour drinking', () => {
     const { moved, drank, end } = drinking();
