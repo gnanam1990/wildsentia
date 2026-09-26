@@ -181,4 +181,14 @@ maybe('SnapshotStore', () => {
     expect(await store.prune(2)).toBe(3);
     expect((await store.loadLatest())!.worldTime).toBe(500);
   });
+
+  it('keeps the newest of several checkpoints at one world time, and counts world times not rows', async () => {
+    const store = new SnapshotStore(pool!);
+    await pool!.query('truncate snapshots');
+    for (const t of [100, 200, 200, 200, 300]) await store.save({ ...baseSnapshot, worldTime: t, rngState: t as never });
+    await store.save({ ...baseSnapshot, worldTime: 300, simVersion: 'newest-at-300' as never });
+    expect(await store.prune(2)).toBe(4); // 100, two older 200s, the older 300.
+    expect((await store.loadLatest())!.simVersion).toBe('newest-at-300');
+    expect((await pool!.query('select count(*)::int as n from snapshots')).rows[0].n).toBe(2);
+  });
 });

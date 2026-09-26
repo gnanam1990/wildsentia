@@ -38,7 +38,7 @@ export function isRosterMessage(value: unknown): value is RosterMessage {
 }
 
 const ROSTER_ACTIVITY: Record<string, string> = { walk: 'walking', trot: 'trotting', run: 'running', idle: 'standing',
-  graze: 'grazing', drink: 'drinking', rest: 'resting', open: 'opening a drop' };
+  graze: 'grazing', drink: 'drinking', rest: 'resting', open: 'opening a drop', hunt: 'hunting', feed: 'feeding', fly: 'flying' };
 export const rosterActivity = (a: RosterEntry) => ROSTER_ACTIVITY[a.activity] ?? a.activity;
 
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);

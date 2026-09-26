@@ -32,10 +32,18 @@ export function positiveSetting(env: NodeJS.ProcessEnv, name: string, fallback: 
 export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | undefined, env: NodeJS.ProcessEnv): LiveRuntime | null {
   if (env.VANA_LIVE_AGENTS !== '1') return null;
   const store = new AgentStore(pool);
-  const port = worldPort(() => host.world, () => host.worldId, {
+  // Live changes to the world are checkpointed between hours: a hunt within a minute (so the
+  // kill reaches the feed), anything else at most every quarter hour.
+  let huntPending = false, changedAt = 0, checkpointedAt = Date.now();
+  const inner = worldPort(() => host.world, () => host.worldId, {
     position: (id) => host.playedPosition(id),
     time: () => { const f = host.liveEncounterFrame(); return f ? f.startWorldTime + f.elapsedWorldSeconds : host.world.now(); },
   });
+  const port: typeof inner = { ...inner,
+    resolveHunt: (...args) => { huntPending = true; changedAt = Date.now(); return inner.resolveHunt(...args); },
+    act: (...args) => { changedAt = Date.now(); return inner.act(...args); },
+    feed: (...args) => { changedAt = Date.now(); return inner.feed(...args); },
+  };
   const ledger = rewards ? new PlaceDropLedger(pool, rewards, () => host.worldId, store) : null;
   const live = new LiveLayer(port, ledger);
   const timers: NodeJS.Timeout[] = [];
@@ -64,6 +72,13 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
       }, 1000 / TICK_HZ));
       timers.push(setInterval(() => { void ledger?.refresh().catch((e) => console.error('[live] drop refresh failed', e)); }, 3000));
       timers.push(setInterval(() => { void save().catch((e) => console.error('[live] save failed', e)); }, 10_000));
+      timers.push(setInterval(() => {
+        const now = Date.now();
+        const due = huntPending ? now - checkpointedAt > 60_000 : changedAt > checkpointedAt && now - checkpointedAt > 15 * 60_000;
+        if (!due || !host.isWriterActive) return;
+        huntPending = false; checkpointedAt = now;
+        void host.snapshotNow().catch((e) => console.error('[live] checkpoint failed', e));
+      }, 10_000));
       timers.push(setInterval(() => { void store.reapInactive().catch(() => undefined); }, 6 * 3_600_000));
       // Four times a second, filtered per viewer by the gateway; the roster every two seconds.
       timers.push(setInterval(() => broadcast.live(live.publicState(), Date.now()), 250));

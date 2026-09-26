@@ -18,10 +18,14 @@ export class SnapshotStore {
     return rows[0]?.payload ?? null;
   }
 
+  /**
+   * Keeps the newest snapshot of each of the last `keep` world times. Live agents' changes are
+   * checkpointed between hours at the same world time; those must not push out the hourly history.
+   */
   async prune(keep: number): Promise<number> {
     const { rowCount } = await this.pool.query(
       `delete from snapshots where id not in (
-         select id from snapshots order by world_time desc, id desc limit $1)`,
+         select max(id) from snapshots group by world_time order by world_time desc limit $1)`,
       [keep],
     );
     return rowCount ?? 0;

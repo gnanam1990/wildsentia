@@ -124,7 +124,8 @@ export class Gateway {
   /** Who is playing, everywhere, in brief: for the agents list, every couple of seconds. */
   broadcastRoster(state: LiveBroadcast): void {
     const payload = JSON.stringify({ type: 'live-roster', agents: state.avatars.map((a) => ({ agentId: a.agentId, name: a.name,
-      animalId: a.animalId, speciesId: a.speciesId, x: Math.round(a.x), z: Math.round(a.z), activity: a.moving ? `${a.gait}` : a.action })) });
+      animalId: a.animalId, speciesId: a.speciesId, x: Math.round(a.x), z: Math.round(a.z),
+      activity: a.action === 'hunt' || a.action === 'feed' ? a.action : (a.altitude as number) >= 20 ? 'fly' : a.moving ? `${a.gait}` : a.action })) });
     for (const { socket } of this.#sessions.values()) socket.send(payload);
   }
 
