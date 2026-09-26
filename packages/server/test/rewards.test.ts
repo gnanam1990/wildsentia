@@ -461,7 +461,9 @@ maybe('private manual Base reward ledger', () => {
 
   it('reads anti-abuse limits from the environment, with defaults, and rejects nonsense', () => {
     const base = { VANA_REWARD_NETWORK: 'base', VANA_REWARD_POLICY: 'first_valid', VANA_REWARD_ADMIN_TOKEN: 'test-only-'.repeat(5) };
-    expect(rewardConfig(base)).toMatchObject({ minWatchSeconds: 60, walletDailyLimit: 1, clientDailyLimit: 3 });
+    expect(rewardConfig(base)).toMatchObject({ minWatchSeconds: 60, walletDailyLimit: 5 });
+    // Off by default: one mobile-carrier address can stand for a whole neighbourhood.
+    expect(rewardConfig(base)?.clientDailyLimit).toBeUndefined();
     expect(rewardConfig({ ...base, VANA_REWARD_MIN_WATCH_SECONDS: '0', VANA_REWARD_WALLET_DAILY_LIMIT: '5', VANA_REWARD_CLIENT_DAILY_LIMIT: '20' }))
       .toMatchObject({ minWatchSeconds: 0, walletDailyLimit: 5, clientDailyLimit: 20 });
     for (const [key, bad] of [['VANA_REWARD_MIN_WATCH_SECONDS', '-1'], ['VANA_REWARD_MIN_WATCH_SECONDS', '3601'],

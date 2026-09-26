@@ -11,11 +11,14 @@ export interface RewardConfig {
   minWatchSeconds?: number;
   /** Winning claims one wallet may hold in any 24 hours. */
   walletDailyLimit?: number;
-  /** Winning claims one network address may make in any 24 hours. */
+  /**
+   * Winning claims one network address may make in any 24 hours. Off unless set: mobile
+   * carriers put many people behind one address, so a low cap would lock out a whole area.
+   */
   clientDailyLimit?: number;
 }
 /** Anti-abuse defaults for a configured server. A config built directly (tests) leaves them off. */
-export const REWARD_LIMIT_DEFAULTS = { minWatchSeconds: 60, walletDailyLimit: 1, clientDailyLimit: 3 } as const;
+export const REWARD_LIMIT_DEFAULTS = { minWatchSeconds: 60, walletDailyLimit: 5 } as const;
 function boundedInteger(value: string | undefined, fallback: number, min: number, max: number, name: string): number {
   if (value === undefined || value === '') return fallback;
   const n = Number(value);
@@ -40,7 +43,8 @@ export function rewardConfig(env: NodeJS.ProcessEnv): RewardConfig | undefined {
   return { adminToken: env.VANA_REWARD_ADMIN_TOKEN!, network: 'base', claimPolicy: 'first_valid',
     minWatchSeconds: boundedInteger(env.VANA_REWARD_MIN_WATCH_SECONDS, REWARD_LIMIT_DEFAULTS.minWatchSeconds, 0, 3600, 'VANA_REWARD_MIN_WATCH_SECONDS'),
     walletDailyLimit: boundedInteger(env.VANA_REWARD_WALLET_DAILY_LIMIT, REWARD_LIMIT_DEFAULTS.walletDailyLimit, 1, 100, 'VANA_REWARD_WALLET_DAILY_LIMIT'),
-    clientDailyLimit: boundedInteger(env.VANA_REWARD_CLIENT_DAILY_LIMIT, REWARD_LIMIT_DEFAULTS.clientDailyLimit, 1, 1000, 'VANA_REWARD_CLIENT_DAILY_LIMIT'),
+    ...(env.VANA_REWARD_CLIENT_DAILY_LIMIT
+      ? { clientDailyLimit: boundedInteger(env.VANA_REWARD_CLIENT_DAILY_LIMIT, 0, 1, 1000, 'VANA_REWARD_CLIENT_DAILY_LIMIT') } : {}),
     ...(env.VANA_REWARD_RECEIPT_RPC_URL ? { receiptRpcUrl: env.VANA_REWARD_RECEIPT_RPC_URL,
       payoutWallet: walletAddress(env.VANA_REWARD_PAYOUT_WALLET, 'base')! } : {}) };
 }
