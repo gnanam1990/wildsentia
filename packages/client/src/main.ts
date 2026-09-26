@@ -899,42 +899,56 @@ function drawAgentTags(now: number): void {
   });
 }
 
-const agentsChip = document.querySelector<HTMLElement>('#live-agents')!;
-let agentsChipKey = '';
+const agentsChip = document.querySelector<HTMLButtonElement>('#live-agents')!;
+const agentsList = document.querySelector<HTMLElement>('#agents-list')!;
+let agentsListKey = '';
 /** Who is playing and which drops are out, with a way to go and look. Built from text nodes. */
 function renderAgentsChip(): void {
   const avatars = liveAgents.roster, drops = liveAgents.drops;
   agentsChip.hidden = avatars.length === 0 && drops.length === 0;
+  if (agentsChip.hidden) { agentsList.hidden = true; agentsChip.setAttribute('aria-expanded', 'false'); return; }
+  const summary = `${avatars.length} agent${avatars.length === 1 ? '' : 's'} · ${drops.length} drop${drops.length === 1 ? '' : 's'}`;
+  if (agentsChip.textContent !== summary) agentsChip.textContent = summary;
   const key = JSON.stringify([avatars.map((a) => [a.agentId, a.name, a.speciesId, rosterActivity(a)]), drops.map((d) => [d.id, d.amountMicro, !!d.spotted])]);
-  if (agentsChip.hidden || key === agentsChipKey) return;
-  agentsChipKey = key;
-  const open = agentsChip.querySelector('details')?.open ?? false;
-  const details = document.createElement('details'); details.open = open;
-  const summary = document.createElement('summary');
-  summary.textContent = `${avatars.length} agent${avatars.length === 1 ? '' : 's'} · ${drops.length} drop${drops.length === 1 ? '' : 's'}`;
-  const list = document.createElement('div'); list.className = 'pop-list';
-  const row = (title: string, note: string, label: string, data: Record<string, string>, cls = '') => {
-    const r = document.createElement('div'); r.className = `agent-row ${cls}`;
-    const span = document.createElement('span'); span.textContent = title;
-    const small = document.createElement('small'); small.textContent = note; span.append(small);
-    const button = document.createElement('button'); button.type = 'button'; button.textContent = label;
-    Object.assign(button.dataset, data);
-    r.append(span, button); list.append(r);
-  };
-  for (const a of avatars.slice(0, 200)) row(a.name, `${SPECIES_LABEL[a.speciesId] ?? a.speciesId.replace(/^./, (c) => c.toUpperCase())} · ${rosterActivity(a)}`, 'Follow', { followAnimal: a.animalId });
-  for (const d of drops) row(`${usdc(d.amountMicro)} USDC drop`, d.spotted ? 'spotted: race to open it' : 'somewhere in the gold circle', 'Look', { lookDrop: d.id }, 'drop-row');
-  details.append(summary, list);
-  agentsChip.replaceChildren(details);
+  if (key !== agentsListKey) {
+    agentsListKey = key;
+    const rows: HTMLElement[] = [];
+    const row = (title: string, note: string, label: string, data: Record<string, string>, cls = '') => {
+      const r = document.createElement('div'); r.className = `agent-row ${cls}`;
+      const span = document.createElement('span'); span.textContent = title;
+      const small = document.createElement('small'); small.textContent = note; span.append(small);
+      const button = document.createElement('button'); button.type = 'button'; button.textContent = label;
+      Object.assign(button.dataset, data);
+      r.append(span, button); rows.push(r);
+    };
+    for (const a of avatars.slice(0, 200)) row(a.name, `${SPECIES_LABEL[a.speciesId] ?? a.speciesId.replace(/^./, (c) => c.toUpperCase())} · ${rosterActivity(a)}`, 'Follow', { followAnimal: a.animalId });
+    for (const d of drops) row(`${usdc(d.amountMicro)} USDC drop`, d.spotted ? 'spotted: race to open it' : 'somewhere in the gold circle', 'Look', { lookDrop: d.id }, 'drop-row');
+    agentsList.replaceChildren(...rows);
+  }
+  if (!agentsList.hidden) placeAgentsList();
+}
+function placeAgentsList(): void {
+  const r = agentsChip.getBoundingClientRect();
+  agentsList.style.top = `${Math.round(r.bottom + 6)}px`;
+  agentsList.style.left = `${Math.round(Math.max(12, Math.min(r.left, innerWidth - 292)))}px`;
 }
 setInterval(renderAgentsChip, 1000);
-agentsChip.addEventListener('click', (event) => {
+agentsChip.addEventListener('click', () => {
+  agentsList.hidden = !agentsList.hidden;
+  agentsChip.setAttribute('aria-expanded', String(!agentsList.hidden));
+  if (!agentsList.hidden) placeAgentsList();
+});
+addEventListener('resize', () => { if (!agentsList.hidden) placeAgentsList(); });
+agentsList.addEventListener('click', (event) => {
   const target = event.target as HTMLElement;
   const animal = target.closest<HTMLElement>('[data-follow-animal]')?.dataset.followAnimal;
   if (animal) {
     // It may be far from the camera, so not yet in the live stream: fly there first.
     const at = liveAgents.roster.find((a) => a.animalId === animal);
     if (at) follow.target.set(at.x, animals.groundHeightAt(at.x, at.z), at.z);
-    watch(animal); sendView(true); return;
+    watch(animal); sendView(true);
+    agentsList.hidden = true; agentsChip.setAttribute('aria-expanded', 'false');
+    return;
   }
   const dropId = target.closest<HTMLElement>('[data-look-drop]')?.dataset.lookDrop;
   const drop = dropId ? liveAgents.drops.find((d) => d.id === dropId) : undefined;
@@ -943,6 +957,7 @@ agentsChip.addEventListener('click', (event) => {
     const at = drop.spotted ?? drop.hint;
     follow.target.set(at.x, animals.groundHeightAt(at.x, at.z), at.z);
     follow.flyToDistance(drop.spotted ? 40 : drop.hint.radius * 3);
+    agentsList.hidden = true; agentsChip.setAttribute('aria-expanded', 'false');
   }
 });
 
