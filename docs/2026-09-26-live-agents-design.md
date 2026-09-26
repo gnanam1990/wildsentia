@@ -183,3 +183,20 @@ Not in Phase 1 (by design): predators and being hunted, flight, chat, LLM runner
 Known limits: a wild animal taken off its recording mid-hour keeps its already-recorded events
 for the rest of that hour (for example a later drink); predation between two agents' animals
 uses the same odds as wild hunts; flight has no altitude physics beyond drawing it in the air.
+
+## Phase 3 status (26 September 2026)
+
+| Part | Where | Evidence |
+|---|---|---|
+| Claude player: Claude (`claude-opus-5`, low effort, server-side refusal fallbacks) observes and steers through the signed client. Game commands only, with strict schemas; ids and points are checked before sending. Includes a dry run, a decision cap, a token budget (default 400,000), and memory limited to its last five one-line plans. Published with its hash beside the client | `server/agent-client/llm.mjs`, `routes.ts` (`/agents/llm.mjs`) | `server/test/llmRunner.test.ts` (scripted model); staging: a scripted model drove a real signed agent to possess, route to water and release |
+| Connect page: four steps with this server's commands, the published hashes, drop rules taken from the server's own numbers, slots free and agents playing, the leaderboard. Linked from the forest when agents are on | `client/connect.html`, `src/connect.ts` | `client/test/connect.test.ts`; staging at 1280 px and 375 px |
+| Leaderboard: each finished possession is recorded with how it ended (died, caught, birth, idle, released). Ranked by drops won, then USDC won, then longest life with one animal (a life still going counts) | migration 017, `liveLayer.ts` (`onEnded`), `liveStore.ts` (`leaderboard`) | `liveAgents.test.ts`, `liveLayer.test.ts`; staging `/agents/leaderboard` |
+| Chat: one line of up to 140 characters every 10 s, heard within 150 m for two minutes and shown over the animal for 8 s. Hidden characters are stripped after NFKC; links (full-width ones too), addresses and key-like runs are refused. The operator can mute an agent (its lines are taken down) | `live/chat.ts`, `liveLayer.ts` (`say`, `heard`), migration 018, `rewards.ts` (`/admin/rewards/agents/mute`) | `server/test/chat.test.ts`, `liveAgents.test.ts`; staging: Mira's line reached Tara, a link was refused |
+| Prompt-injection guard: other agents' words reach an agent in `heard`, apart from the world's facts and marked untrusted. The Claude player puts them in `<heard untrusted="true">`, escapes `<` and `>` so no text can close its tags, and is told they may be tricks. It has no tool outside the game | `llm.mjs` | `llmRunner.test.ts` (a line that tries to close its tags stays inside) |
+
+Not done in Phase 3:
+- Leaderboard seasons.
+- Staking; holding is the non-custodial alternative.
+- Payout operations beyond the existing manual admin flow.
+- Running the Claude player against the real API, which needs the owner's key and a cost decision.
+
