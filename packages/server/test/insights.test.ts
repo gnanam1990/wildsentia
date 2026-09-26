@@ -7,7 +7,7 @@ import { migrate } from '../src/db/migrate.js';
 import { SimHost } from '../src/simHost.js';
 import { buildApi } from '../src/api.js';
 import { testDatabaseUrl } from './testDatabase.js';
-import { distinctEvents, Insights, outlookGoals, outlookState } from '../src/insights/insights.js';
+import { distinctEvents, Insights, oneMomentEach, outlookGoals, outlookState } from '../src/insights/insights.js';
 import { typesafeConfig, typesafeDailyCalls, typesafeSystemOne, validAnswer, type Question, type SystemOne } from '../src/insights/typesafe.js';
 
 const config = { apiKey: 'test-key', baseUrl: 'https://typesafe.example/v1', model: 'jev-latest', timeoutMs: 1000 };
@@ -114,6 +114,13 @@ describe('observer insights', () => {
     expect(await new Insights(null).outlook(agent(), tiger, 0, undefined)).toEqual({ ok: false, reason: 'not_configured' });
     const failing = new Insights(async () => { throw new Error('down'); });
     expect(await failing.outlook(agent(), tiger, 0, undefined)).toEqual({ ok: false, reason: 'unavailable' });
+  });
+
+  it('shows a kill once, not as both the hunt and the death', () => {
+    const h = (id: string, type: string, actors: string[], score: number) => ({ event: { id, type, actors } as unknown as WorldEvent, score, confidence: 1 });
+    const kept = oneMomentEach([h('d', 'died', ['boar_1', 'dhole_2'], 3.1), h('k', 'hunt', ['dhole_2', 'boar_1'], 3.0),
+      h('b', 'born', ['chital_9'], 2.5), h('c', 'born', ['chital_9'], 2.4)]);
+    expect(kept.map((x) => x.event.id)).toEqual(['d', 'b', 'c']);
   });
 
   it('keeps only the moments scored notable or better, highest first', async () => {

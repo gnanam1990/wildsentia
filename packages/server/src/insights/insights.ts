@@ -193,8 +193,22 @@ export class Insights {
         const answer = result.answers[`e${i}`]!;
         return answer.type === 'score' ? { event, score: answer.score, confidence: answer.confidence } : null;
       }).filter((h): h is Highlight => h !== null && h.score >= HIGHLIGHT_MIN_SCORE)
-        .sort((a, b) => b.score - a.score).slice(0, 3);
-      return { asOfWorldTime: worldTime, model: result.model, highlights };
+        .sort((a, b) => b.score - a.score);
+      return { asOfWorldTime: worldTime, model: result.model, highlights: oneMomentEach(highlights).slice(0, 3) };
     });
   }
+}
+
+/**
+ * A kill is recorded twice, as the hunt and as the prey's death, with the same two animals;
+ * show that moment once, by its higher-scored record.
+ */
+export function oneMomentEach(highlights: readonly Highlight[]): Highlight[] {
+  const seen = new Set<string>(), result: Highlight[] = [];
+  for (const h of highlights) {
+    const who = [...h.event.actors].sort().join('|');
+    if (h.event.actors.length > 1 && seen.has(who)) continue;
+    seen.add(who); result.push(h);
+  }
+  return result;
 }

@@ -417,8 +417,10 @@ export function buildApi({ host, pool, narrator, insights: insightDeps, rewards,
   app.get('/insights/highlights', async (request) => {
     const view = observed(request);
     if (!insights.configured) return { available: false, reason: 'not_configured' };
+    // Candidates are the life events of the past world-day (hunts, births, deaths, illness,
+    // climbs...); the latest few hundred records are nearly all drinking and grazing.
     const page = await events.page({ actorId: null, boundary: { worldTime: view.worldTime, nextSequence: view.nextSequence },
-      limit: 80, descending: true, summary: true });
+      limit: 60, descending: true, summary: true, since: view.worldTime - 86_400, types: RECAP_EVENT_TYPES });
     const result = await insights.highlights(page.events, view.worldTime, view.nextSequence, (id) => speciesFacts(id).displayName);
     return result.ok ? { available: true, ...result.value, notice: INSIGHT_NOTICE } : { available: false, reason: result.reason };
   });

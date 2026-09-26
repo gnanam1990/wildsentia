@@ -100,8 +100,24 @@ export function feedSentence(event: Record<string, unknown>): string {
       case 'drank': return `${an(first)} drank water`;
       case 'rested': return actors.length > 1 && first === second ? `Two ${first === 'wild boar' ? 'wild boars' : `${first}s`} rested together` : `${an(first)} rested`;
       case 'moved': return failed ? `${an(first)} changed course` : `${an(first)} moved on`;
-      case 'birth': return `${an(first)} was born`;
+      case 'birth': case 'born': return `${an(first)} was born`;
       case 'death': return `${an(first)} died`;
+      case 'died': {
+        const cause = typeof (event.conditions as Record<string, unknown> | undefined)?.cause === 'string'
+          ? (event.conditions as Record<string, string>).cause : '';
+        return cause === 'predation' && second ? `${an(first)} was killed by ${an(second).toLowerCase()}` : `${an(first)} died`;
+      }
+      case 'fled': return `${an(first)} fled`;
+      case 'courtship': return `${an(first)} courted a mate`;
+      case 'wounded': return `${an(first)} was wounded`;
+      case 'wound_healed': return `${an(first)}'s wound healed`;
+      case 'disease_symptomatic': return `${an(first)} fell ill`;
+      case 'disease_recovered': return `${an(first)} recovered from illness`;
+      case 'disease_fatal': case 'wound_infection_fatal': return `${an(first)} did not survive its illness`;
+      case 'life_stage': return `${an(first)} grew into its next life stage`;
+      case 'dispersed': return `${an(first)} left to find a range of its own`;
+      case 'parent_lost': return `A young ${first} lost its mother`;
+      case 'skill_taught': return `${an(first)} taught a skill`;
       case 'tree_climbed': return `${an(first)} climbed a tree`;
       case 'illness_started': return `${an(first)} fell ill`;
       case 'illness_ended': return `${an(first)} recovered`;

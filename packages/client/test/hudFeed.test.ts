@@ -52,6 +52,11 @@ describe('factual live event feed', () => {
   it('tells visitors what happened in plain words', () => {
     expect(feedSentence({ type: 'scavenged', actors: ['vulture_0721', 'sambar_0339'], outcome: 'success' })).toBe('A vulture fed on a sambar carcass');
     expect(feedSentence({ type: 'hunt', actors: ['dhole_01', 'hare_02'], outcome: 'success' })).toBe('A dhole caught a hare');
+    expect(feedSentence({ type: 'died', actors: ['boar_05ec', 'dhole_0703'], outcome: 'success', conditions: { cause: 'predation' } }))
+      .toBe('A wild boar was killed by a dhole');
+    expect(feedSentence({ type: 'died', actors: ['boar_05ec'], outcome: 'success', conditions: { cause: 'starvation' } })).toBe('A wild boar died');
+    expect(feedSentence({ type: 'born', actors: ['chital_0102'], outcome: 'success' })).toBe('A chital was born');
+    expect(feedSentence({ type: 'parent_lost', actors: ['sambar_0102'], outcome: 'success' })).toBe('A young sambar lost its mother');
     expect(feedSentence({ type: 'hunt', actors: ['tiger_01', 'elephant_02'], outcome: 'failed' })).toBe("A tiger's hunt for an elephant failed");
     expect(feedSentence({ type: 'rested', actors: ['squirrel_1', 'squirrel_2'] })).toBe('Two giant squirrels rested together');
     expect(feedSentence({ type: 'drank', actors: ['elephant_06fc'] })).toBe('An elephant drank water');
