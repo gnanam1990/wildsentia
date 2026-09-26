@@ -16,7 +16,7 @@ export interface LiveRuntime {
   routes: LiveRouteDeps;
   ledger: PlaceDropLedger | null;
   /** Restores saved possessions and starts the tick, refresh, save and broadcast timers. */
-  start(broadcast: (payload: string) => void): Promise<void>;
+  start(broadcast: { live(state: ReturnType<LiveLayer['publicState']>, at: number): void; roster(state: ReturnType<LiveLayer['publicState']>): void }): Promise<void>;
   stop(): Promise<void>;
   spot(): { x: number; z: number } | null;
 }
@@ -62,14 +62,15 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
       timers.push(setInterval(() => { void ledger?.refresh().catch((e) => console.error('[live] drop refresh failed', e)); }, 3000));
       timers.push(setInterval(() => { void save().catch((e) => console.error('[live] save failed', e)); }, 10_000));
       timers.push(setInterval(() => { void store.reapInactive().catch(() => undefined); }, 6 * 3_600_000));
-      // Four times a second while anything is live, and once more when the last of it goes.
+      // Four times a second, filtered per viewer by the gateway; the roster every two seconds.
+      timers.push(setInterval(() => broadcast.live(live.publicState(), Date.now()), 250));
       let wasEmpty = true;
       timers.push(setInterval(() => {
-        const empty = live.avatars.size === 0 && (ledger?.active().length ?? 0) === 0;
+        const empty = live.avatars.size === 0;
         if (empty && wasEmpty) return;
         wasEmpty = empty;
-        broadcast(JSON.stringify({ type: 'live', at: Date.now(), ...live.publicState() }));
-      }, 250));
+        broadcast.roster(live.publicState());
+      }, 2000));
       console.log(`live agents: on (${routes.limits.slots} slots, drops ${ledger ? 'on' : 'off: rewards not configured'})`);
     },
     async stop() {

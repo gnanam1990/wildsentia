@@ -124,7 +124,7 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
     gateway.attach(server);
     host.start();
     broadcastTimer = setInterval(() => gateway!.broadcast(), 1000);
-    await live?.start((payload) => gateway!.broadcastRaw(payload));
+    await live?.start({ live: (state, at) => gateway!.broadcastLive(state as never, at), roster: (state) => gateway!.broadcastRoster(state as never) });
     // Docker restart policies react to process exit, not an unhealthy healthcheck. A lost
     // writer or three consecutive failed scheduled ticks must exit so one writer can recover
     // from the last durable checkpoint. A single transient failure gets the next tick to retry.

@@ -6,7 +6,7 @@ import { hideFarFieldNear } from './terrain.js';
 import { TerrainCheckpoints, type PreparedTerrain } from './terrainCheckpoints.js';
 import { NEAR_RADIUS_M, TREE_DETAIL_RADIUS_M, NearVegetation } from './vegetation.js';
 import { InsightPanel } from './insights.js';
-import { LiveAgents, activityOf, isLiveMessage, usdc } from './liveAgents.js';
+import { LiveAgents, activityOf, isLiveMessage, isRosterMessage, rosterActivity, usdc } from './liveAgents.js';
 import { COVER_RADIUS_M, GroundCover } from './groundCover.js';
 import { AnimalLayer } from './animals.js';
 import { FollowCamera, followDistanceFor } from './camera.js';
@@ -211,6 +211,8 @@ function connect(): void {
   const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
   const connection = socket = new WebSocket(`${protocol}://${location.host}/live`);
   restoreFollowOnOpen(connection, () => followedId);
+  // A new connection has no view yet: say where the camera looks straight away.
+  connection.addEventListener('open', () => { viewSent = null; sendView(true); }, { once: true });
   connection.addEventListener('message', (event) => {
     if (socket !== connection) return;
     try {
@@ -220,6 +222,7 @@ function connect(): void {
           if (!sceneUpdates.receive(message, performance.now())) connection.close();
         } else if (message.type === 'viewers' || message.type === 'error') store.apply(message);
         else if (message.type === 'live') { if (isLiveMessage(message)) liveAgents.apply(message, performance.now()); }
+        else if (message.type === 'live-roster') { if (isRosterMessage(message)) liveAgents.applyRoster(message); }
         else if (message.type === 'heartbeat') return;
         else connection.close(); // Incompatible split-state protocol: never mix generations.
       }
@@ -852,12 +855,25 @@ function frame(): void {
   });
 
   drawAgentTags(now);
+  sendView();
   hud.tickClock();
   renderFrame(dt, now);
 }
 
 
 // ---- AI agents: name tags over their animals, and the agents chip in the top bar ----------
+
+/** Tells the server where the camera looks, so it sends the agents there; at most once a second. */
+let viewSentAt = 0, viewSent: { x: number; z: number; radius: number } | null = null;
+function sendView(force = false): void {
+  if (socket?.readyState !== WebSocket.OPEN) return;
+  const now = performance.now();
+  const view = { x: follow.target.x, z: follow.target.z, radius: Math.min(1500, Math.max(300, follow.distance * 2.5 + 200)) };
+  const moved = !viewSent || Math.hypot(view.x - viewSent.x, view.z - viewSent.z) > 25 || Math.abs(view.radius - viewSent.radius) > viewSent.radius * 0.2;
+  if (!force && (!moved || now - viewSentAt < 1000)) return;
+  viewSentAt = now; viewSent = view;
+  socket.send(JSON.stringify({ type: 'view', x: Math.round(view.x), z: Math.round(view.z), radius: Math.round(view.radius) }));
+}
 
 const agentTags: HTMLElement[] = [];
 const tagPoint = new THREE.Vector3();
@@ -887,9 +903,9 @@ const agentsChip = document.querySelector<HTMLElement>('#live-agents')!;
 let agentsChipKey = '';
 /** Who is playing and which drops are out, with a way to go and look. Built from text nodes. */
 function renderAgentsChip(): void {
-  const avatars = liveAgents.avatars, drops = liveAgents.drops;
+  const avatars = liveAgents.roster, drops = liveAgents.drops;
   agentsChip.hidden = avatars.length === 0 && drops.length === 0;
-  const key = JSON.stringify([avatars.map((a) => [a.agentId, a.name, a.speciesId, activityOf(a)]), drops.map((d) => [d.id, d.amountMicro, !!d.spotted])]);
+  const key = JSON.stringify([avatars.map((a) => [a.agentId, a.name, a.speciesId, rosterActivity(a)]), drops.map((d) => [d.id, d.amountMicro, !!d.spotted])]);
   if (agentsChip.hidden || key === agentsChipKey) return;
   agentsChipKey = key;
   const open = agentsChip.querySelector('details')?.open ?? false;
@@ -905,7 +921,7 @@ function renderAgentsChip(): void {
     Object.assign(button.dataset, data);
     r.append(span, button); list.append(r);
   };
-  for (const a of avatars) row(a.name, `${SPECIES_LABEL[a.speciesId] ?? a.speciesId.replace(/^./, (c) => c.toUpperCase())} · ${activityOf(a)}`, 'Follow', { followAnimal: a.animalId });
+  for (const a of avatars.slice(0, 200)) row(a.name, `${SPECIES_LABEL[a.speciesId] ?? a.speciesId.replace(/^./, (c) => c.toUpperCase())} · ${rosterActivity(a)}`, 'Follow', { followAnimal: a.animalId });
   for (const d of drops) row(`${usdc(d.amountMicro)} USDC drop`, d.spotted ? 'spotted: race to open it' : 'somewhere in the gold circle', 'Look', { lookDrop: d.id }, 'drop-row');
   details.append(summary, list);
   agentsChip.replaceChildren(details);
@@ -914,7 +930,12 @@ setInterval(renderAgentsChip, 1000);
 agentsChip.addEventListener('click', (event) => {
   const target = event.target as HTMLElement;
   const animal = target.closest<HTMLElement>('[data-follow-animal]')?.dataset.followAnimal;
-  if (animal) { watch(animal); return; }
+  if (animal) {
+    // It may be far from the camera, so not yet in the live stream: fly there first.
+    const at = liveAgents.roster.find((a) => a.animalId === animal);
+    if (at) follow.target.set(at.x, animals.groundHeightAt(at.x, at.z), at.z);
+    watch(animal); sendView(true); return;
+  }
   const dropId = target.closest<HTMLElement>('[data-look-drop]')?.dataset.lookDrop;
   const drop = dropId ? liveAgents.drops.find((d) => d.id === dropId) : undefined;
   if (drop) {

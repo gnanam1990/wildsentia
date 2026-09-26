@@ -601,7 +601,31 @@ export class World {
   /** Why this animal cannot be taken over now, or null if it can. */
   possessionBlock(id: string): string | null {
     const agent = this.#agentsById.get(id);
-    if (!agent || !agent.alive) return 'not_alive';
+    return agent ? this.#blockFor(agent, this.#possessionFacts()) : 'not_alive';
+  }
+
+  /** Up to `limit` animals an agent could take now, in one pass over the population. */
+  possessionCandidates(speciesId: string | null, limit: number): Agent[] {
+    const facts = this.#possessionFacts(), result: Agent[] = [];
+    for (const agent of this.agents) {
+      if (result.length >= limit) break;
+      if ((speciesId === null || agent.speciesId === speciesId) && this.#blockFor(agent, facts) === null) result.push(agent);
+    }
+    return result;
+  }
+
+  #possessionFacts(): { parents: Set<string>; held: Map<string, number> } {
+    const parents = new Set<string>(), held = new Map<string, number>();
+    for (const a of this.agents) {
+      if (!a.alive) continue;
+      if (a.dependentOn !== null) parents.add(a.dependentOn);
+      if (a.controller) held.set(a.speciesId, (held.get(a.speciesId) ?? 0) + 1);
+    }
+    return { parents, held };
+  }
+
+  #blockFor(agent: Agent, facts: { parents: Set<string>; held: Map<string, number> }): string | null {
+    if (!agent.alive) return 'not_alive';
     if (agent.controller) return 'already_controlled';
     const cfg = this.species.get(agent.speciesId)!;
     if (cfg.archetype === 'apex_predator' || cfg.archetype === 'pack_predator') return 'predators_later';
@@ -609,13 +633,12 @@ export class World {
     if (agent.speciesId === 'vulture') return 'flight_later';
     if (agent.lifeStage !== 'adult' && agent.lifeStage !== 'elder') return 'not_adult';
     if (agent.dependentOn !== null) return 'dependent';
-    if (this.agents.some((a) => a.alive && a.dependentOn === agent.id)) return 'raising_young';
+    if (facts.parents.has(agent.id)) return 'raising_young';
     if ((agent.altitudeM ?? 0) > 0) return 'off_the_ground';
     // Most of every species stays wild: a fifth at most, and one once there are three.
     const living = this.livingCount(agent.speciesId);
-    const held = this.agents.filter((a) => a.alive && a.speciesId === agent.speciesId && a.controller).length;
     const cap = living >= 3 ? Math.max(1, Math.floor(living * 0.2)) : 0;
-    if (held >= cap) return 'species_cap';
+    if ((facts.held.get(agent.speciesId) ?? 0) >= cap) return 'species_cap';
     return null;
   }
 

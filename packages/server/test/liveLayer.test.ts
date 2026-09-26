@@ -177,3 +177,23 @@ describe('live settings', () => {
     expect(() => positiveSetting({ VANA_AGENT_SLOTS: 'many' }, 'VANA_AGENT_SLOTS', 500)).toThrow();
   });
 });
+
+describe('indexed lookups', () => {
+  it('finds exactly the animals a full scan finds, nearest first', () => {
+    const world = island(), port = worldPort(() => world, () => 'w');
+    for (const [x, z, r] of [[3000, 3000, 150], [2900, 3600, 400], [100, 100, 150], [4200, 2000, 300]] as const) {
+      const brute = world.agents.filter((a) => a.alive && a.position && Math.hypot(a.position.x - x, a.position.z - z) <= r)
+        .sort((a, b) => Math.hypot(a.position!.x - x, a.position!.z - z) - Math.hypot(b.position!.x - x, b.position!.z - z)).map((a) => a.id);
+      expect(port.nearby(x, z, r, 1000).map((a) => a.id)).toEqual(brute);
+    }
+    expect(port.nearby(-5000, 0, 150, 10)).toEqual([]);
+  });
+
+  it('lists free animals in one pass, never one that is held or raising young', () => {
+    const world = island(), port = worldPort(() => world, () => 'w');
+    const free = port.candidates(null, 1000);
+    expect(free.length).toBeGreaterThan(0);
+    for (const a of free) expect(world.possessionBlock(a.id)).toBeNull();
+    expect(port.candidates('sambar', 2)).toHaveLength(2);
+  });
+});

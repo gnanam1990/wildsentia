@@ -11,7 +11,17 @@ export interface GatewaySocket {
 
 export type ClientMessage =
   | { type: 'watch'; actorId: string }
-  | { type: 'unwatch' };
+  | { type: 'unwatch' }
+  /** Where the viewer's camera looks, so live agents are sent only for that part of the island. */
+  | { type: 'view'; x: number; z: number; radius: number };
+
+/** What the live layer publishes each quarter second (see live/liveLayer.ts publicState). */
+export interface LiveBroadcast {
+  avatars: Array<{ agentId: string; name: string; animalId: string; speciesId: string; x: number; z: number } & Record<string, unknown>>;
+  drops: object[];
+}
+/** Largest view a viewer may ask for: past this the island is dots, not animals. */
+export const MAX_VIEW_RADIUS_M = 1500;
 
 interface Session {
   socket: GatewaySocket;
@@ -20,6 +30,8 @@ interface Session {
   recordingDirty: boolean;
   checkpointId: string;
   lastHeartbeatAt: number;
+  view: { x: number; z: number; radius: number } | null;
+  liveEmpty: boolean;
 }
 
 /**
@@ -39,7 +51,7 @@ export class Gateway {
     if (!view) { socket.close(); return; }
     const frame = this.host.liveEncounterFrame();
     this.#sessions.set(socket, { socket, watching: null, recordedFrameId: frame?.id ?? null,
-      recordingDirty: false, checkpointId: view.id, lastHeartbeatAt: Date.now() });
+      recordingDirty: false, checkpointId: view.id, lastHeartbeatAt: Date.now(), view: null, liveEmpty: true });
     const scene = this.#scene(view);
     socket.send(`${scene.base},"environment":${scene.environment},"frame":${JSON.stringify(frame)}}`);
   }
@@ -62,6 +74,13 @@ export class Gateway {
       return;
     }
 
+    if (message?.type === 'view') {
+      const { x, z, radius } = message;
+      if (![x, z, radius].every((v) => typeof v === 'number' && Number.isFinite(v)) || radius <= 0) return;
+      session.view = { x, z, radius: Math.min(radius, MAX_VIEW_RADIUS_M) };
+      return;
+    }
+
     if (message?.type === 'unwatch') {
       if (session.watching !== null) session.recordingDirty = true;
       this.#unwatch(session);
@@ -81,8 +100,27 @@ export class Gateway {
     return this.#watchers.get(actorId)?.size ?? 0;
   }
 
-  /** Sends one already-serialised message to every connected viewer (the live layer's state). */
-  broadcastRaw(payload: string): void {
+  /**
+   * The live layer's state, a quarter second's worth, per viewer: agents near where that
+   * viewer's camera looks and the one it follows, and every drop. A viewer that has not said
+   * where it looks gets none; the roster (below) still tells it who is playing.
+   */
+  broadcastLive(state: LiveBroadcast, at: number): void {
+    for (const session of this.#sessions.values()) {
+      const view = session.view;
+      const avatars = state.avatars.filter((a) => a.animalId === session.watching
+        || (view !== null && Math.hypot(a.x - view.x, a.z - view.z) <= view.radius));
+      const empty = avatars.length === 0 && state.drops.length === 0;
+      if (empty && session.liveEmpty) continue;
+      session.liveEmpty = empty;
+      session.socket.send(JSON.stringify({ type: 'live', at, avatars, drops: state.drops }));
+    }
+  }
+
+  /** Who is playing, everywhere, in brief: for the agents list, every couple of seconds. */
+  broadcastRoster(state: LiveBroadcast): void {
+    const payload = JSON.stringify({ type: 'live-roster', agents: state.avatars.map((a) => ({ agentId: a.agentId, name: a.name,
+      animalId: a.animalId, speciesId: a.speciesId, x: Math.round(a.x), z: Math.round(a.z), activity: a.moving ? `${a.gait}` : a.action })) });
     for (const { socket } of this.#sessions.values()) socket.send(payload);
   }
 

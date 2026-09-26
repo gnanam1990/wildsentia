@@ -20,6 +20,22 @@ export interface LiveDrop {
   spotted?: { x: number; z: number; by: string };
 }
 export interface LiveMessage { type: 'live'; at: number; avatars: LiveAvatar[]; drops: LiveDrop[] }
+/** Everyone playing, in brief, every couple of seconds; `live` carries only those near the camera. */
+export interface RosterEntry { agentId: string; name: string; animalId: string; speciesId: string; x: number; z: number; activity: string }
+export interface RosterMessage { type: 'live-roster'; agents: RosterEntry[] }
+
+export function isRosterMessage(value: unknown): value is RosterMessage {
+  if (typeof value !== 'object' || value === null) return false;
+  const m = value as Record<string, unknown>;
+  return m.type === 'live-roster' && Array.isArray(m.agents) && m.agents.length <= 5000 && m.agents.every((a) => {
+    const v = a as Record<string, unknown>;
+    return text(v.agentId) && text(v.name, 40) && text(v.animalId) && text(v.speciesId) && finite(v.x) && finite(v.z) && text(v.activity, 16);
+  });
+}
+
+const ROSTER_ACTIVITY: Record<string, string> = { walk: 'walking', trot: 'trotting', run: 'running', idle: 'standing',
+  graze: 'grazing', drink: 'drinking', rest: 'resting', open: 'opening a drop' };
+export const rosterActivity = (a: RosterEntry) => ROSTER_ACTIVITY[a.activity] ?? a.activity;
 
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const text = (v: unknown, max = 64): v is string => typeof v === 'string' && v.length > 0 && v.length <= max;
@@ -56,6 +72,7 @@ export class LiveAgents {
   #previous: LiveMessage | null = null;
   #latest: LiveMessage | null = null;
   #receivedAt = 0;
+  #roster: RosterEntry[] = [];
   readonly #drops = new Map<string, { group: THREE.Group; ring: THREE.Mesh; beam: THREE.Mesh; crate: THREE.Mesh; progress: THREE.Mesh }>();
   readonly #ringGeometry = new THREE.RingGeometry(0.97, 1, 96).rotateX(-Math.PI / 2);
   readonly #ringMaterial = new THREE.MeshBasicMaterial({ color: 0xf2c14e, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide });
@@ -74,7 +91,11 @@ export class LiveAgents {
     this.#syncDrops(message.drops);
   }
 
-  clear(): void { this.#previous = this.#latest = null; this.#syncDrops([]); }
+  applyRoster(message: RosterMessage): void { this.#roster = message.agents; }
+  /** Everyone playing, near the camera or not. */
+  get roster(): RosterEntry[] { return this.#roster; }
+
+  clear(): void { this.#previous = this.#latest = null; this.#roster = []; this.#syncDrops([]); }
 
   get avatars(): LiveAvatar[] { return this.#latest?.avatars ?? []; }
   get drops(): LiveDrop[] { return this.#latest?.drops ?? []; }

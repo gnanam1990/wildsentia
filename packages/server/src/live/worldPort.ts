@@ -12,6 +12,21 @@ const inWorld = (x: number, z: number) => {
   return Number.isFinite(x) && Number.isFinite(z) && x >= -PATCH_METRES / 2 && z >= -PATCH_METRES / 2 && x < edge && z < edge;
 };
 
+let indexed: { world: World; at: number; byPatch: Map<number, Agent[]> } | null = null;
+/** Animals by the patch they stand in; agents' animals move, so it is rebuilt every half second. */
+function patchIndex(w: World): Map<number, Agent[]> {
+  const now = Date.now();
+  if (indexed && indexed.world === w && now - indexed.at < 500) return indexed.byPatch;
+  const byPatch = new Map<number, Agent[]>();
+  for (const a of w.agents) {
+    if (!a.alive) continue;
+    const list = byPatch.get(a.patchId);
+    if (list) list.push(a); else byPatch.set(a.patchId, [a]);
+  }
+  indexed = { world: w, at: now, byPatch };
+  return byPatch;
+}
+
 /** The live layer's view of, and hands on, the running simulation. */
 export function worldPort(world: () => World, worldId: () => string | null): WorldPort {
   const patchAt = (x: number, z: number) => {
@@ -46,10 +61,23 @@ export function worldPort(world: () => World, worldId: () => string | null): Wor
       const p = patchAt(x, z);
       return p ? { id: p.id, habitat: p.habitat, grassKg: p.plant.grass + p.plant.browse, waterL: p.waterVolume, land: landWalkable(p) } : null;
     },
-    nearby: (x, z, radius, limit) => world().agents
-      .filter((a) => a.alive && a.position && Math.hypot(a.position.x - x, a.position.z - z) <= radius)
-      .sort((a, b) => Math.hypot(a.position!.x - x, a.position!.z - z) - Math.hypot(b.position!.x - x, b.position!.z - z))
-      .slice(0, limit).map(view),
+    nearby: (x, z, radius, limit) => {
+      // Only the patches the circle touches, from an index rebuilt at most twice a second.
+      const byPatch = patchIndex(world());
+      const found: Agent[] = [];
+      const span = Math.ceil(radius / PATCH_METRES) + 1, centre = inWorld(x, z) ? patchAtPosition({ x, z, heading: 0 }) : -1;
+      if (centre < 0) return [];
+      const cx = centre % GRID_SIZE, cy = Math.floor(centre / GRID_SIZE);
+      for (let dy = -span; dy <= span; dy++) for (let dx = -span; dx <= span; dx++) {
+        const px = cx + dx, py = cy + dy;
+        if (px < 0 || py < 0 || px >= GRID_SIZE || py >= GRID_SIZE) continue;
+        for (const a of byPatch.get(py * GRID_SIZE + px) ?? []) {
+          if (a.alive && a.position && Math.hypot(a.position.x - x, a.position.z - z) <= radius) found.push(a);
+        }
+      }
+      return found.sort((a, b) => Math.hypot(a.position!.x - x, a.position!.z - z) - Math.hypot(b.position!.x - x, b.position!.z - z))
+        .slice(0, limit).map(view);
+    },
     waterPoints: (x, z, radius) => world().patches
       .filter((p) => landWalkable(p) && p.waterVolume > 0)
       .map((p) => ({ patchId: p.id, ...waterAccessPosition(p.id), litres: p.waterVolume }))
@@ -60,11 +88,7 @@ export function worldPort(world: () => World, worldId: () => string | null): Wor
       const costs = cfg?.locomotion.terrainCost as Record<string, number> | undefined;
       return landRoute(world().patches, from, to, (habitat) => costs?.[habitat] ?? 1);
     },
-    candidates: (speciesId, limit) => {
-      const w = world();
-      return w.agents.filter((a) => (speciesId === null || a.speciesId === speciesId) && w.possessionBlock(a.id) === null)
-        .slice(0, limit).map(view);
-    },
+    candidates: (speciesId, limit) => world().possessionCandidates(speciesId, limit).map(view),
   };
 }
 

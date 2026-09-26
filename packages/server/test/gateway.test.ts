@@ -256,3 +256,40 @@ maybe('Gateway', () => {
     }
   });
 });
+
+maybe('live agents over the gateway', () => {
+  const state = (xs: number[]) => ({ drops: [{ id: 'd1' }], avatars: xs.map((x, i) => ({ agentId: `ag_${i}`, name: `A${i}`,
+    animalId: `chital_${i}`, speciesId: 'chital', x, z: 0, moving: i % 2 === 0, gait: 'walk', action: 'graze' })) });
+
+  it('sends each viewer only the agents near its camera, plus the one it follows', () => {
+    const near = new FakeSocket(), far = new FakeSocket(), blind = new FakeSocket();
+    for (const s of [near, far, blind]) gateway.handle(s);
+    gateway.receive(near, { type: 'view', x: 0, z: 0, radius: 300 });
+    gateway.receive(far, { type: 'view', x: 5000, z: 0, radius: 9999 }); // Clamped to 1,500 m.
+    gateway.receive(far, { type: 'watch', actorId: 'chital_0' });
+    gateway.broadcastLive(state([10, 250, 1000, 4000]) as never, 1);
+    const ids = (s: FakeSocket) => ((s.lastOfType('live')?.avatars ?? []) as Array<{ agentId: string }>).map((a) => a.agentId);
+    expect(ids(near)).toEqual(['ag_0', 'ag_1']);
+    expect(ids(far)).toEqual(['ag_0', 'ag_3']); // Followed, and within 1,500 m of x=5000.
+    expect(ids(blind)).toEqual([]); // No view yet: drops only.
+    expect(blind.lastOfType('live')?.drops).toEqual([{ id: 'd1' }]);
+    gateway.receive(near, { type: 'view', x: Number.NaN, z: 0, radius: 300 }); // Ignored, not an error.
+    expect(near.lastOfType('error')).toBeUndefined();
+  });
+
+  it('sends nothing to a viewer with nothing live, once it has said so', () => {
+    const idle = new FakeSocket();
+    gateway.handle(idle);
+    gateway.broadcastLive({ avatars: [], drops: [] }, 1);
+    expect(idle.lastOfType('live')).toBeUndefined();
+  });
+
+  it('tells every viewer who is playing, in brief', () => {
+    const viewer = new FakeSocket();
+    gateway.handle(viewer);
+    gateway.broadcastRoster(state([10, 4000]) as never);
+    expect(viewer.lastOfType('live-roster')).toEqual({ type: 'live-roster', agents: [
+      { agentId: 'ag_0', name: 'A0', animalId: 'chital_0', speciesId: 'chital', x: 10, z: 0, activity: 'walk' },
+      { agentId: 'ag_1', name: 'A1', animalId: 'chital_1', speciesId: 'chital', x: 4000, z: 0, activity: 'graze' }] });
+  });
+});

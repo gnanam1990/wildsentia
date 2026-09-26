@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LiveAgents, activityOf, isLiveMessage, usdc, type LiveMessage } from '../src/liveAgents.js';
+import { LiveAgents, activityOf, isLiveMessage, isRosterMessage, rosterActivity, usdc, type LiveMessage } from '../src/liveAgents.js';
 import type { AnimalState } from '../src/protocol.js';
 
 const avatar = (x: number, extra = {}) => ({ agentId: 'ag_1', name: 'Sora', animalId: 'chital_0001', speciesId: 'chital', x, z: 0, heading: 0,
@@ -55,5 +55,17 @@ describe('live agents in the observer', () => {
     expect(group.children[1]!.position.x).toBe(12);
     live.apply(message(3, 0, []), 2);
     expect(live.root.getObjectByName('drop-d1')).toBeUndefined();
+  });
+
+  it('keeps a brief roster of everyone playing, far from the camera or not', () => {
+    const roster = { type: 'live-roster', agents: [{ agentId: 'ag_1', name: 'Sora', animalId: 'chital_1', speciesId: 'chital', x: 1, z: 2, activity: 'trot' }] };
+    expect(isRosterMessage(roster)).toBe(true);
+    expect(isRosterMessage({ ...roster, agents: [{ ...roster.agents[0], x: 'far' }] })).toBe(false);
+    const live = new LiveAgents(() => 0);
+    live.applyRoster(roster as never);
+    expect(live.roster).toHaveLength(1);
+    expect(rosterActivity(live.roster[0]!)).toBe('trotting');
+    live.clear();
+    expect(live.roster).toEqual([]);
   });
 });
