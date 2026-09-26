@@ -137,6 +137,7 @@ export class SimHost {
   #checkpointTime: number | null = null;
   #checkpointEventSequence = 0;
   #rewardSubjects = new Map<string, { alive: boolean; carcass: boolean }>();
+  #worldId: string | null = null;
   #checkpointAnimals = new Map<string, Agent>();
   #checkpointEnvironment: Pick<Snapshot, 'patches' | 'carcasses'> = { patches: [], carcasses: [] };
   #checkpointSummary = { population: {} as Record<string, number>, patches: 0, totalNutrients: 0 };
@@ -170,6 +171,26 @@ export class SimHost {
       microEcology: () => structuredClone(this.#checkpointMicroEcology),
       summary: () => structuredClone(summary),
       animal(id) { const a = animals.get(id); return a === undefined ? undefined : structuredClone(a); } };
+  }
+
+  /**
+   * The founded world's durable identity. A new founding on the same database gets a new one,
+   * so records keyed by actor ID (the reward ledger) cannot carry over to a different world.
+   */
+  get worldId(): string | null {
+    return this.#worldId;
+  }
+
+  async #bindWorldIdentity(founded: boolean): Promise<void> {
+    if (!founded) {
+      const { rows } = await this.#writer.query<{ world_id: string }>('select world_id from world_identity');
+      // A world saved before identities existed is bound to one now, in place.
+      if (rows[0]) { this.#worldId = rows[0].world_id; return; }
+    }
+    const id = randomUUID();
+    await this.#writer.query(`insert into world_identity (singleton, world_id) values (true, $1)
+      on conflict (singleton) do update set world_id = excluded.world_id, founded_at = now()`, [id]);
+    this.#worldId = id;
   }
 
   /** A reward may reference only checkpointed subjects, never a rollback-prone birth/death. */
@@ -317,6 +338,7 @@ export class SimHost {
       if (await this.#humanMotion.hasAny())
         throw new Error('refusing to found world: historical human motion exists without a snapshot; recover the checkpoint explicitly');
       this.world = createWorld(this.worldOptions);
+      await this.#bindWorldIdentity(true);
       await this.#snapshotNow();
       return { restoredFrom: null, rolledBackEvents: 0 };
     }
@@ -443,6 +465,7 @@ export class SimHost {
       });
       await this.#snapshotNow();
     }
+    await this.#bindWorldIdentity(false);
     return { restoredFrom: snapshot.worldTime, rolledBackEvents: orphaned };
   }
 

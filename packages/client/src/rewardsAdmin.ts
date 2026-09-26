@@ -4,6 +4,8 @@ const $ = <T extends HTMLElement>(selector: string): T => document.querySelector
 let token = '';
 let generation = 0;
 let receiptVerificationAvailable = false;
+/** The world the server is running; a drop from another world can only be cancelled. */
+let currentWorldId: string | null = null;
 let dropId: string = crypto.randomUUID();
 interface PendingDrop { id: string; actorId: string; amount: string; revealWhen: string }
 const pendingKey = 'vana-pending-reward-allocation-v1';
@@ -45,10 +47,11 @@ async function api(path: string, body?: unknown): Promise<unknown> {
   if (!response.ok) throw Object.assign(new Error(data.error ?? 'Request failed'), { status: response.status }); return data;
 }
 interface Claim { id: string; drop_id: string; wallet: string; status: string; actor_id: string; amount_micro: string; network: string }
-interface Drop { id: string; actorId: string; amount: string; network: string; status: string; revealWhen: string }
+interface Drop { id: string; actorId: string; amount: string; network: string; status: string; revealWhen: string; worldId?: string | null }
 interface Audit { action: string; drop_id: string; transaction_ref: string | null; created_at: string; note: string }
 type LedgerKind = 'claims' | 'drops' | 'audit';
-interface Ledger { claims: Claim[]; drops: Drop[]; audit: Audit[]; next: Record<LedgerKind, string | null>; receiptVerificationAvailable: boolean }
+interface Ledger { claims: Claim[]; drops: Drop[]; audit: Audit[]; next: Record<LedgerKind, string | null>; receiptVerificationAvailable: boolean;
+  currentWorldId?: string | null; limits?: { minWatchSeconds: number; walletDailyLimit: number | null; clientDailyLimit: number | null } }
 const nextPage: Record<LedgerKind, string | null> = { claims: null, drops: null, audit: null };
 function paragraph(text: string): HTMLParagraphElement { const p = document.createElement('p'); p.textContent = text; return p; }
 function button(text: string, action: () => void): HTMLButtonElement {
@@ -66,7 +69,8 @@ function claimRow(c: Claim): HTMLElement {
 }
 function dropRow(d: Drop): HTMLElement {
   const row = document.createElement('section'); row.className = 'map-event';
-  row.append(paragraph(`${d.actorId} · ${d.amount} USDC · ${d.status}`), paragraph(d.id));
+  const elsewhere = d.worldId && currentWorldId && d.worldId !== currentWorldId;
+  row.append(paragraph(`${d.actorId} · ${d.amount} USDC · ${d.status}${elsewhere ? ' · from an earlier world: not claimable' : ''}`), paragraph(d.id));
   if (d.status === 'open') row.append(button('Cancel allocation', () => review(d.id, null, 'cancel')));
   return row;
 }
@@ -185,8 +189,10 @@ async function refresh(): Promise<void> {
       clearPending(); dropId = crypto.randomUUID(); $<HTMLFormElement>('#drop-form').reset();
     }
     receiptVerificationAvailable = ledger.receiptVerificationAvailable === true;
+    currentWorldId = ledger.currentWorldId ?? null;
     $('#admin-work').hidden = false; $('#admin-login').hidden = true;
-    $('#admin-totals').textContent = `${summary.available} USDC unclaimed allocation · ${summary.reserved} reserved · ${summary.verifiedPaid ?? '0.000000'} receipt-verified paid · ${summary.paidReported} payment reported (unverified). Allocation is not a proven treasury balance.`;
+    $('#admin-totals').textContent = `${summary.available} USDC unclaimed allocation · ${summary.reserved} reserved · ${summary.verifiedPaid ?? '0.000000'} receipt-verified paid · ${summary.paidReported} payment reported (unverified). Allocation is not a proven treasury balance.`
+      + (ledger.limits ? ` Claims need ${ledger.limits.minWatchSeconds} s of watching; at most ${ledger.limits.walletDailyLimit ?? 'unlimited'} win(s) per wallet and ${ledger.limits.clientDailyLimit ?? 'unlimited'} per network address in 24 h.` : '');
     $('#reward-animals').replaceChildren(...[...animals.animals.map((a) => a.id), ...carcasses.carcasses.map((c) => c.originId)]
       .map((id) => new Option(id, id)));
     rows('claims', ledger.claims, false); rows('drops', ledger.drops, false); rows('audit', ledger.audit, false);

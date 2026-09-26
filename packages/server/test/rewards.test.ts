@@ -441,4 +441,155 @@ maybe('private manual Base reward ledger', () => {
     expect((await app.inject({ url: `/admin/rewards/page?kind=claims&cursor=${first.next.drops}`, headers: admin })).statusCode).toBe(400);
     expect((await app.inject('/admin/rewards/page?kind=claims&cursor=broken')).statusCode).toBe(401);
   });
+
+  const withApp = async (extra: object, run: (other: FastifyInstance) => Promise<void>, deps: object = {}) => {
+    const other = buildApi({ host, pool: pool!, rewards: { adminToken, network: 'base', claimPolicy: 'first_valid', ...extra }, ...deps });
+    await other.ready();
+    try { await run(other); } finally { await other.close(); }
+  };
+  const call = (target: FastifyInstance, path: string, payload: object, token?: string, remoteAddress?: string) =>
+    target.inject({ method: 'POST', url: path, payload, ...(remoteAddress ? { remoteAddress } : {}),
+      headers: token ? { authorization: `Bearer ${token}` } : {} });
+  const openSession = async (target: FastifyInstance, actor: string, remoteAddress?: string) => {
+    const token = (await call(target, '/rewards/session', {}, undefined, remoteAddress)).json().token as string;
+    expect((await call(target, '/rewards/watch', { actorId: actor }, token, remoteAddress)).statusCode).toBe(200);
+    return token;
+  };
+  const ageWatch = (token: string, seconds: number) => pool!.query(
+    `update reward_observers set watch_started_at = now() - make_interval(secs => $1) where token_hash=$2`,
+    [seconds, createHash('sha256').update(token).digest('hex')]);
+
+  it('reads anti-abuse limits from the environment, with defaults, and rejects nonsense', () => {
+    const base = { VANA_REWARD_NETWORK: 'base', VANA_REWARD_POLICY: 'first_valid', VANA_REWARD_ADMIN_TOKEN: 'test-only-'.repeat(5) };
+    expect(rewardConfig(base)).toMatchObject({ minWatchSeconds: 60, walletDailyLimit: 1, clientDailyLimit: 3 });
+    expect(rewardConfig({ ...base, VANA_REWARD_MIN_WATCH_SECONDS: '0', VANA_REWARD_WALLET_DAILY_LIMIT: '5', VANA_REWARD_CLIENT_DAILY_LIMIT: '20' }))
+      .toMatchObject({ minWatchSeconds: 0, walletDailyLimit: 5, clientDailyLimit: 20 });
+    for (const [key, bad] of [['VANA_REWARD_MIN_WATCH_SECONDS', '-1'], ['VANA_REWARD_MIN_WATCH_SECONDS', '3601'],
+      ['VANA_REWARD_WALLET_DAILY_LIMIT', '0'], ['VANA_REWARD_CLIENT_DAILY_LIMIT', '1.5'], ['VANA_REWARD_CLIENT_DAILY_LIMIT', 'many']])
+      expect(() => rewardConfig({ ...base, [key!]: bad })).toThrow();
+  });
+
+  it('accepts a claim only after the observer has watched the animal long enough, and restarts on a change', async () => {
+    await withApp({ minWatchSeconds: 60 }, async (other) => {
+      const id = await allocate(), token = await openSession(other, actorId);
+      const early = await call(other, '/rewards/claims', { dropId: id, wallet: wallet(1) }, token);
+      expect(early.statusCode).toBe(425);
+      expect(early.json()).toMatchObject({ error: 'keep_watching' });
+      expect(early.json().retryAfterSeconds).toBeGreaterThan(55);
+      // Re-sending the same subject keeps the clock; switching away and back restarts it.
+      await ageWatch(token, 50);
+      expect((await call(other, '/rewards/watch', { actorId }, token)).json().claimableInSeconds).toBeLessThanOrEqual(10);
+      await call(other, '/rewards/watch', { actorId: host.world.agents[1]!.id }, token);
+      expect((await call(other, '/rewards/watch', { actorId }, token)).json().claimableInSeconds).toBeGreaterThan(55);
+      await ageWatch(token, 61);
+      expect((await call(other, '/rewards/claims', { dropId: id, wallet: wallet(1) }, token)).json().status).toBe('reserved');
+    });
+  });
+
+  it('caps winning claims per wallet and per network address in any 24 hours', async () => {
+    await withApp({ walletDailyLimit: 1, clientDailyLimit: 2 }, async (other) => {
+      const [a, b, c, d] = [await allocate(), await allocate(), await allocate(), await allocate()];
+      const s1 = await openSession(other, actorId, '10.0.0.1');
+      expect((await call(other, '/rewards/claims', { dropId: a, wallet: wallet(1) }, s1, '10.0.0.1')).statusCode).toBe(200);
+      const s2 = await openSession(other, actorId, '10.0.0.2');
+      const again = await call(other, '/rewards/claims', { dropId: b, wallet: wallet(1) }, s2, '10.0.0.2');
+      expect(again.statusCode).toBe(429); expect(again.json().error).toBe('wallet_daily_limit');
+      // The refused drop stays open for someone else.
+      expect((await call(other, '/rewards/claims', { dropId: b, wallet: wallet(2) }, s2, '10.0.0.2')).statusCode).toBe(200);
+      const s3 = await openSession(other, actorId, '10.0.0.1');
+      expect((await call(other, '/rewards/claims', { dropId: c, wallet: wallet(3) }, s3, '10.0.0.1')).statusCode).toBe(200);
+      const s4 = await openSession(other, actorId, '10.0.0.1');
+      const third = await call(other, '/rewards/claims', { dropId: d, wallet: wallet(4) }, s4, '10.0.0.1');
+      expect(third.statusCode).toBe(429); expect(third.json().error).toBe('client_daily_limit');
+      // Only a keyed hash of the address is stored.
+      const stored = (await pool!.query('select client_hash from reward_claims')).rows.map((r: { client_hash: string }) => r.client_hash);
+      expect(stored.every((h: string) => /^[0-9a-f]{64}$/.test(h))).toBe(true);
+      expect(JSON.stringify(stored)).not.toContain('10.0.0.1');
+    });
+  });
+
+  it('lets a claimant check their own claim with its receipt, and nobody else', async () => {
+    const id = await allocate(), token = await session();
+    const claim = (await post('/rewards/claims', { dropId: id, wallet: wallet(7) }, token)).json();
+    expect(claim.receipt).toMatch(/^[0-9a-f]{64}$/);
+    expect((await post('/rewards/claims', { dropId: id, wallet: wallet(7) }, token)).json().receipt).toBe(claim.receipt);
+    const status = (receipt: string, claimId = claim.claimId) => app.inject({ url: `/rewards/claims/${claimId}`, headers: { authorization: `Bearer ${receipt}` } });
+    const reserved = await status(claim.receipt);
+    expect(reserved.statusCode).toBe(200);
+    expect(reserved.json()).toMatchObject({ status: 'reserved', amount: '5.000001', network: 'base', animalId: actorId, payment: null });
+    expect(reserved.json().wallet).toBe(`${wallet(7).slice(0, 6)}…${wallet(7).slice(-4)}`);
+    expect(reserved.headers['cache-control']).toBe('no-store');
+    expect((await status('f'.repeat(64))).statusCode).toBe(404);
+    expect((await status(claim.receipt, randomUUID())).statusCode).toBe(404);
+    expect((await app.inject(`/rewards/claims/${claim.claimId}`)).statusCode).toBe(404);
+    const tx = `0x${'4'.repeat(64)}`;
+    expect((await post('/admin/rewards/review', { dropId: id, claimId: claim.claimId, action: 'report_paid', transactionRef: tx,
+      note: 'Local test only' }, adminToken)).statusCode).toBe(200);
+    expect((await status(claim.receipt)).json()).toMatchObject({ status: 'paid_reported', payment: { transactionRef: tx, verified: false } });
+  });
+
+  it('keeps a drop in the world it was allocated in', async () => {
+    const id = await allocate();
+    expect((await pool!.query('select world_id from reward_drops where id=$1', [id])).rows[0].world_id).toBe(host.worldId);
+    // The same actor ID in a different world is a different animal: nothing to see or claim.
+    const elsewhere = new Proxy(host, { get(target, key) {
+      if (key === 'worldId') return '00000000-0000-4000-8000-000000000001';
+      const value = Reflect.get(target, key, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    } });
+    await withApp({}, async (other) => {
+      const token = await openSession(other, actorId);
+      expect((await call(other, '/rewards/watch', { actorId }, token)).json().drops).toEqual([]);
+      expect((await call(other, '/rewards/claims', { dropId: id, wallet: wallet(1) }, token)).statusCode).toBe(404);
+      expect((await other.inject('/rewards/summary')).json().available).toBe('0.000000');
+      const ledger = (await other.inject({ url: '/admin/rewards', headers: admin })).json();
+      expect(ledger.currentWorldId).toBe('00000000-0000-4000-8000-000000000001');
+      expect(ledger.drops[0]).toMatchObject({ id, worldId: host.worldId });
+    }, { host: elsewhere });
+    // A drop saved before world identities existed is bound to the running world.
+    const legacy = randomUUID();
+    await pool!.query(`insert into reward_drops(id,actor_id,network,amount_micro,reveal_when) values ($1,$2,'base',1000000,'watch')`, [legacy, actorId]);
+    await app.close(); app = buildApi({ host, pool: pool!, rewards: { adminToken, network: 'base', claimPolicy: 'first_valid' } }); await app.ready();
+    expect((await app.inject('/rewards/summary')).json().available).toBe('6.000001');
+    expect((await pool!.query('select world_id from reward_drops where id=$1', [legacy])).rows[0].world_id).toBe(host.worldId);
+  });
+
+  it('limits each visitor behind the proxy separately, and only when the proxy is trusted', async () => {
+    const hammer = async (target: FastifyInstance, forwarded: string) => {
+      let last = 0;
+      for (let i = 0; i < 121; i++) last = (await target.inject({ url: '/rewards/summary', remoteAddress: '172.18.0.5',
+        headers: { 'x-forwarded-for': forwarded } })).statusCode;
+      return last;
+    };
+    await withApp({}, async (other) => {
+      expect(await hammer(other, '203.0.113.1')).toBe(429);
+      expect((await other.inject({ url: '/rewards/summary', remoteAddress: '172.18.0.5', headers: { 'x-forwarded-for': '203.0.113.2' } })).statusCode).toBe(200);
+    }, { trustedProxyHops: 1 });
+    await withApp({}, async (other) => {
+      // Untrusted: a forged header changes nothing; everyone behind the proxy is one address.
+      expect(await hammer(other, '203.0.113.1')).toBe(429);
+      expect((await other.inject({ url: '/rewards/summary', remoteAddress: '172.18.0.5', headers: { 'x-forwarded-for': '203.0.113.2' } })).statusCode).toBe(429);
+    });
+  });
 });
+
+describe('durable world identity', () => {
+  const maybeIdentity = url ? it : it.skip;
+  maybeIdentity('is kept across restarts and replaced when a new world is founded', async () => {
+    const identityPool = createPool(url!);
+    const options = { pool: identityPool, seed: 5, speciesDir: fileURLToPath(new URL('../../../config/species', import.meta.url)),
+      initialAgents: { sambar: 1 }, minPopulation: {}, landscape: null };
+    try {
+      await migrate(identityPool);
+      await identityPool.query('truncate events, snapshots, human_motion, tracks, animal_archive cascade');
+      const first = new SimHost(options); await first.boot(); const founded = first.worldId; await first.abort();
+      expect(founded).toMatch(/^[0-9a-f-]{36}$/);
+      const restarted = new SimHost(options); expect((await restarted.boot()).restoredFrom).not.toBeNull();
+      expect(restarted.worldId).toBe(founded); await restarted.abort();
+      await identityPool.query('truncate events, snapshots, human_motion, tracks, animal_archive cascade');
+      const refounded = new SimHost(options); await refounded.boot();
+      expect(refounded.worldId).not.toBe(founded); await refounded.abort();
+    } finally { await identityPool.end(); }
+  });
+});
+

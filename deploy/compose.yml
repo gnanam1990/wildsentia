@@ -34,6 +34,15 @@ services:
       PORT: "8080"
       WORLD_SEED: ${VANA_WORLD_SEED:-1}
       WORLD_HOURS_PER_REAL_HOUR: "12"
+      # Caddy is the only way in; trust its X-Forwarded-For so limits are per visitor.
+      VANA_TRUSTED_PROXY_HOPS: "1"
+      # Observer rewards: off unless all three are set in deploy/.env.
+      VANA_REWARD_NETWORK: ${VANA_REWARD_NETWORK:-}
+      VANA_REWARD_POLICY: ${VANA_REWARD_POLICY:-}
+      VANA_REWARD_ADMIN_TOKEN: ${VANA_REWARD_ADMIN_TOKEN:-}
+      VANA_REWARD_MIN_WATCH_SECONDS: ${VANA_REWARD_MIN_WATCH_SECONDS:-}
+      VANA_REWARD_WALLET_DAILY_LIMIT: ${VANA_REWARD_WALLET_DAILY_LIMIT:-}
+      VANA_REWARD_CLIENT_DAILY_LIMIT: ${VANA_REWARD_CLIENT_DAILY_LIMIT:-}
       VANA_TERRAIN_PROFILE: island_v1
       VANA_COMMUNITY_PROFILE: household_v1
     restart: unless-stopped
