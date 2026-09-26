@@ -1,5 +1,18 @@
 {$VANA_DOMAIN} {
-  encode zstd gzip
+  # 3D models are most of a first visit. Geometry compresses well (an animal GLB drops about
+  # 70%, a tree about 40%); Caddy's defaults only cover text types, so name the models too.
+  encode {
+    zstd
+    gzip
+    match {
+      header Content-Type text/*
+      header Content-Type application/json*
+      header Content-Type application/javascript*
+      header Content-Type image/svg+xml*
+      header Content-Type model/gltf-binary*
+      header Content-Type application/octet-stream*
+    }
+  }
 
   header {
     X-Content-Type-Options nosniff
@@ -17,6 +30,15 @@
 
   handle {
     root * /srv
+    # Build output carries a content hash in its name, so it never changes under that name.
+    @hashed path_regexp ^/assets/[^/]+-[A-Za-z0-9_-]{8}\.(js|css)$
+    header @hashed Cache-Control "public, max-age=31536000, immutable"
+    # Models, textures and pages keep their names across releases: reuse, but revalidate.
+    @models path *.glb *.jpg *.png *.webp
+    header @models Cache-Control "public, max-age=3600, must-revalidate"
+    # Go has no type for .glb; name it so the compression matcher and browsers know it.
+    @glb path *.glb
+    header @glb Content-Type model/gltf-binary
     file_server
   }
 }
