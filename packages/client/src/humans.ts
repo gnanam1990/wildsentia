@@ -238,10 +238,13 @@ export class HumanLayer {
     const radius = tier === 'smooth' ? 65 : 120, limit = tier === 'smooth' ? 2 : 4;
     const distance = (p: SavedPerson) => Math.hypot(p.position.x - camera.x, this.#ground(p.position.x, p.position.z) - camera.y, p.position.z - camera.z);
     // Spread over the whole household, then pick, so positionOf() agrees in historic view too.
-    const everyone = spreadCrowded((!reducedMotion || staticRecordedPose) && enabled ? this.#people.map(p => {
+    const recordedPeople = (!reducedMotion || staticRecordedPose) && enabled ? this.#people.map(p => {
       const pose = poses.get(p.id); return pose ? { ...p, ...pose } : p;
-    }) : this.#people);
-    const people = historicOnlyId === null ? everyone : everyone.filter(p => p.id === historicOnlyId);
+    }) : this.#people;
+    const pick = <T extends { id: string }>(list: T[]) => historicOnlyId === null ? list : list.filter(p => p.id === historicOnlyId);
+    const people = pick(spreadCrowded(recordedPeople));
+    // Distant location dots stay exactly on the recorded positions; only 3D figures need room.
+    const markers = pick(recordedPeople);
     const nearest = enabled ? people.filter(p => distance(p) <= radius).sort((a, b) => Number(b.id === preferredId) - Number(a.id === preferredId)
       || distance(a) - distance(b) || a.id.localeCompare(b.id)).slice(0, limit) : [];
     this.nearby = nearest.length > 0;
@@ -272,7 +275,7 @@ export class HumanLayer {
       rig.root.rotation.y = p.position.heading;
       detailed.add(p.id);
     }
-    this.#drawMarkers(detailed, people);
+    this.#drawMarkers(detailed, markers);
   }
   #release(rig: Rig): void {
     rig.mixer.stopAllAction(); rig.mixer.uncacheRoot(rig.visual); rig.root.removeFromParent();
