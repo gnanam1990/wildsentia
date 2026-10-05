@@ -1,8 +1,9 @@
 import { carcassMass, landWalkable, islandHeightAt, positionInPatch, isCommunityState, homeCondition, type CommunityProfile, type TerrainProfile, type WorldEvent } from '@vana/shared';
 import { writeFileSync } from 'node:fs';
-import { FOREST_FLOOR, FOREST_LANDSCAPE, FOREST_POPULATION, ISLAND_POPULATION, SIM_VERSION, createWorld, waterBudgetResidual, surfaceWaterL } from '@vana/sim';
+import { FOREST_FLOOR, FOREST_LANDSCAPE, FOREST_POPULATION, ISLAND_POPULATION, SIM_VERSION, careRadius, createWorld, waterBudgetResidual, surfaceWaterL } from '@vana/sim';
 import type { WaterBudget } from '@vana/shared';
 import { recordPopulationPeaks } from './populationMetrics.js';
+import { emptySoakYear, recordYearEvent, type ParentLookup, type SoakYear, type YoungDeprivationRecord } from './yearMetrics.js';
 import { recordHunt, type HuntMetrics } from './huntMetrics.js';
 import { emptyHumanFamilyMetrics, recordHumanFamily, validHumanFamilyMetrics } from './communityMetrics.js';
 import { emptyIllnessEventMetrics, recordIllnessEvent, type IllnessEventMetrics } from './illnessMetrics.js';
@@ -90,6 +91,11 @@ export interface SoakResult {
   carcassesOutstanding: number;
   scavengeEvents: number;
   deathsByCause: Record<string, number>;
+  /** Per world-year windows of `yearDays` (default 360); the last may be partial. */
+  yearDays: number;
+  years: SoakYear[];
+  /** Unweaned starvation/dehydration deaths with a living parent (first 500 kept). */
+  youngDeprivationWithParent: YoungDeprivationRecord[];
   failures: string[];
   /** Balance observations requiring review, separate from hard invariant failures. */
   warnings: string[];
@@ -123,11 +129,14 @@ export interface SoakOptions {
   seed: number;
   days: number;
   speciesDir: string;
+  /** Length of the per-year reporting window in days. Reporting only; never changes the world. */
+  yearDays?: number;
   onProgress?: (progress: { completedDays: number; requestedDays: number; livingAnimals: number; failures: number }) => void;
 }
 
-export function runSoak({ seed, days, speciesDir, terrainProfile = 'mainland', communityProfile = 'none', onProgress }: SoakOptions): SoakResult {
+export function runSoak({ seed, days, speciesDir, terrainProfile = 'mainland', communityProfile = 'none', yearDays = 360, onProgress }: SoakOptions): SoakResult {
   if (!Number.isSafeInteger(days) || days <= 0) throw new Error('soak days must be a positive safe integer');
+  if (!Number.isSafeInteger(yearDays) || yearDays <= 0) throw new Error('soak yearDays must be a positive safe integer');
   if (!Number.isSafeInteger(seed)) throw new Error('soak seed must be a safe integer');
   if (terrainProfile !== 'mainland' && terrainProfile !== 'island_v1') throw new Error('invalid soak terrain profile');
   const started = Date.now();
@@ -169,8 +178,22 @@ export function runSoak({ seed, days, speciesDir, terrainProfile = 'mainland', c
     collectedKg: 0, deliveredKg: 0, digestedKg: 0, releasedOnDeathKg: 0,
     exportedKg: 0, outstandingKg: 0, nursingParentDeliveries: 0, youngDeliveries: 0 };
 
+  const years: SoakYear[] = [];
+  let year = emptySoakYear(1, 0);
+  const youngWithParent: YoungDeprivationRecord[] = [];
+  const parents: ParentLookup = {
+    dependentOn: (id) => world.agents.find(agent => agent.id === id)?.dependentOn ?? null,
+    locate: (id) => {
+      const parent = world.agents.find(agent => agent.id === id);
+      return parent?.alive && parent.position ? { patchId: parent.patchId, position: { ...parent.position } } : null;
+    },
+    careRadiusM: (id) => { const cfg = world.species.get(id); return cfg ? careRadius(cfg) : NaN; },
+  };
+
   const tally = (): void => {
     for (const event of world.log.take()) {
+      const withParent = recordYearEvent(year, event, parents);
+      if (withParent && youngWithParent.length < 500) youngWithParent.push(withParent);
       recordHumanFamily(humanFamily, event);
       recordIllnessEvent(diseaseEvents, event);
       recordWoundEvent(woundEvents, event);
@@ -249,6 +272,16 @@ export function runSoak({ seed, days, speciesDir, terrainProfile = 'mainland', c
   };
 
   const baseline = world.totalNutrients();
+  const closeYear = (endDay: number): void => {
+    year.endDay = endDay;
+    for (const speciesId of world.species.keys()) {
+      year.population[speciesId] = world.livingCount(speciesId);
+      if (year.population[speciesId] === 0) year.extinct.push(speciesId);
+    }
+    year.nutrientDrift = Math.abs(world.totalNutrients() - baseline);
+    years.push(year);
+    year = emptySoakYear(year.year + 1, endDay);
+  };
   const failures: string[] = [];
   const warnings: string[] = [];
   const warned = new Set<string>();
@@ -274,6 +307,7 @@ export function runSoak({ seed, days, speciesDir, terrainProfile = 'mainland', c
     }
 
     completedDays = day + 1;
+    if (completedDays % yearDays === 0) { tally(); closeYear(completedDays); }
     if (world.community && !isCommunityState(world.community) && failures.length < MAX_RECORDED_FAILURES)
       failures.push(`day ${day}: invalid community state`);
     onProgress?.({ completedDays, requestedDays: days,
@@ -318,6 +352,7 @@ export function runSoak({ seed, days, speciesDir, terrainProfile = 'mainland', c
   }
 
   tally();
+  if (completedDays % yearDays !== 0) closeYear(completedDays);
   if (completedDays !== days) failures.push(`incomplete soak: ${completedDays} of ${days} requested days`);
   if (communityProfile === 'household_v1' && world.community?.people.every(person => !person.alive))
     failures.push('household extinct: no living village people at the end of the requested run');
@@ -421,6 +456,9 @@ export function runSoak({ seed, days, speciesDir, terrainProfile = 'mainland', c
     carcassesOutstanding: world.carcasses.length,
     scavengeEvents,
     deathsByCause,
+    yearDays,
+    years,
+    youngDeprivationWithParent: youngWithParent,
     failures,
     warnings,
     wallClockMs: Date.now() - started,
@@ -438,6 +476,7 @@ if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
       ? process.argv[process.argv.indexOf('--terrain-profile') + 1] : 'mainland') as TerrainProfile,
     seed: arg('seed', 1),
     days: arg('days', 1000),
+    yearDays: arg('year-days', 360),
     communityProfile: (process.argv.includes('--community-profile')
       ? process.argv[process.argv.indexOf('--community-profile') + 1] : 'none') as CommunityProfile,
     ...(process.argv.includes('--progress') ? { onProgress: (p: { completedDays: number; requestedDays: number; livingAnimals: number; failures: number }) => {
