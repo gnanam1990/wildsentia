@@ -307,6 +307,20 @@ maybe('live agents over the gateway', () => {
     expect(near.lastOfType('error')).toBeUndefined();
   });
 
+  it('serializes each agent once per live broadcast, not once per viewer', () => {
+    // Load test, 5 October 2026: 500 viewers and 250 agents at 4 Hz made one JSON.stringify of
+    // the visible agents per viewer, saturated the event loop and ran the heap out of memory.
+    const shared = new Gateway(host), viewers = Array.from({ length: 20 }, () => new FakeSocket());
+    for (const v of viewers) { shared.handle(v); shared.receive(v, { type: 'view', x: 0, z: 0, radius: 1500 }); }
+    const live = state([10, 20, 30]);
+    let serialized = 0; // Each time an agent is turned into JSON.
+    const counted = { ...live, avatars: live.avatars.map((a) => ({ ...a, toJSON() { serialized++; const { toJSON: _, ...rest } = this; return rest; } })) };
+    shared.broadcastLive(counted as never, 7);
+    expect(serialized).toBe(live.avatars.length);
+    for (const v of viewers) expect(v.lastOfType('live')).toEqual({ type: 'live', at: 7, avatars: live.avatars, drops: live.drops, wild: [] });
+    shared.close();
+  });
+
   it('sends nothing to a viewer with nothing live, once it has said so', () => {
     const idle = new FakeSocket();
     gateway.handle(idle);

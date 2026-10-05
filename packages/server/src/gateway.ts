@@ -156,16 +156,23 @@ export class Gateway {
    */
   broadcastLive(state: LiveBroadcast, at: number): void {
     const started = performance.now();
+    // Each agent, wild chaser and the drop list are serialized once per broadcast and joined per
+    // viewer. One JSON.stringify per viewer saturated the event loop and then the heap at 500
+    // viewers and 250 agents (load test, 5 October 2026).
+    let avatarJson: string[] | null = null, wildJson: string[] | null = null, dropsJson: string | null = null;
+    const wildState = state.wild ?? [];
     for (const session of this.#sessions.values()) {
       const view = session.view;
-      const avatars = state.avatars.filter((a) => a.animalId === session.watching
-        || (view !== null && Math.hypot(a.x - view.x, a.z - view.z) <= view.radius));
-      const wild = (state.wild ?? []).filter((w) => w.animalId === session.watching
-        || (view !== null && Math.hypot(w.x - view.x, w.z - view.z) <= view.radius));
+      const sees = (p: { animalId: string; x: number; z: number }) => p.animalId === session.watching
+        || (view !== null && Math.hypot(p.x - view.x, p.z - view.z) <= view.radius);
+      const avatars: string[] = [], wild: string[] = [];
+      for (let i = 0; i < state.avatars.length; i++) if (sees(state.avatars[i]!)) avatars.push((avatarJson ??= state.avatars.map((a) => JSON.stringify(a)))[i]!);
+      for (let i = 0; i < wildState.length; i++) if (sees(wildState[i]!)) wild.push((wildJson ??= wildState.map((w) => JSON.stringify(w)))[i]!);
       const empty = avatars.length === 0 && state.drops.length === 0 && wild.length === 0;
       if (empty && session.liveEmpty) continue;
       session.liveEmpty = empty;
-      this.#send(session.socket, JSON.stringify({ type: 'live', at, avatars, drops: state.drops, wild }));
+      dropsJson ??= JSON.stringify(state.drops);
+      this.#send(session.socket, `{"type":"live","at":${JSON.stringify(at)},"avatars":[${avatars.join(',')}],"drops":${dropsJson},"wild":[${wild.join(',')}]}`);
     }
     this.stats.broadcastSeconds.live.record((performance.now() - started) / 1000);
   }
