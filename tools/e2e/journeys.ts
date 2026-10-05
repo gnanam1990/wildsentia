@@ -212,6 +212,171 @@ const journeys: Record<string, (browser: Browser, errors: string[]) => Promise<s
     return text;
   },
 
+  async eventVisit(browser, errors) {
+    // From the event map, a visitor flies to where an event was recorded.
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const page = await openObserver(context, errors);
+    await page.click('#open-event-map');
+    const dialog = page.locator('dialog[open]').first();
+    const visit = dialog.locator('button', { hasText: 'Visit event location' }).first();
+    await visit.waitFor({ timeout: 30_000 });
+    await visit.click();
+    await page.locator('#event-visit').waitFor({ state: 'visible', timeout: 10_000 });
+    const title = (await page.locator('#event-visit-title').innerText()).trim();
+    await page.waitForTimeout(2000);
+    await page.screenshot({ path: join(out, 'event-visit.png') });
+    await page.click('#event-visit-clear');
+    await context.close();
+    return `visited: ${title}`;
+  },
+
+  async recordedHunt(browser, errors) {
+    // A recorded hunt plays on its shared timeline with both animals labelled.
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const page = await openObserver(context, errors);
+    await page.locator('details.live-encounters summary').click();
+    await page.waitForFunction(() => {
+      const picker = document.querySelector<HTMLSelectElement>('#live-encounter-picker');
+      return !!picker && !picker.disabled && [...picker.options].some((o) => o.value);
+    // Hunts are sporadic; at 12x a recorded world hour lasts five real minutes.
+    }, null, { timeout: 420_000 });
+    const value = await page.locator('#live-encounter-picker option').evaluateAll((options) =>
+      (options as HTMLOptionElement[]).find((o) => o.value)!.value);
+    await page.selectOption('#live-encounter-picker', value);
+    await page.locator('#live-subject-label').waitFor({ state: 'visible', timeout: 30_000 });
+    await page.waitForTimeout(3000);
+    await page.screenshot({ path: join(out, 'recorded-hunt.png') });
+    const label = (await page.locator('#live-subject-label').innerText()).replace(/\s+/g, ' ');
+    await context.close();
+    return `encounter ${value}: ${label}`;
+  },
+
+  async lifeReplay(browser, errors) {
+    // A followed animal's own recorded life plays back, then the visitor returns to live.
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const page = await openObserver(context, errors);
+    await followFirst(page, process.env.VANA_E2E_REPLAY_SPECIES ?? 'dhole');
+    await page.locator('#passport button', { hasText: 'Replay this life' }).click();
+    await page.locator('#replay').waitFor({ state: 'visible', timeout: 15_000 });
+    const status = page.locator('#replay .replay-status');
+    await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>('#replay-play')?.disabled
+      || /no recorded|nothing recorded|unavailable/i.test(document.querySelector('#replay .replay-status')?.textContent ?? ''), null, { timeout: 30_000 });
+    const playable = !(await page.locator('#replay-play').isDisabled());
+    let moved = false;
+    if (playable) {
+      const before = Number(await page.locator('#replay-seek').inputValue());
+      await page.click('#replay-play');
+      await page.waitForTimeout(4000);
+      moved = Number(await page.locator('#replay-seek').inputValue()) !== before;
+    }
+    await page.screenshot({ path: join(out, 'life-replay.png') });
+    const text = (await status.innerText()).replace(/\s+/g, ' ');
+    await page.click('[data-stop-replay]');
+    await page.locator('#replay').waitFor({ state: 'hidden', timeout: 10_000 });
+    await context.close();
+    if (playable && !moved) throw new Error(`replay did not advance: ${text}`);
+    return `${playable ? 'played and advanced' : 'no recording, said so'}: ${text.slice(0, 120)}`;
+  },
+
+  async lifeHistory(browser, errors) {
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const page = await openObserver(context, errors);
+    await followFirst(page, 'chital');
+    await page.locator('#passport button', { hasText: 'History' }).click();
+    const dialog = page.locator('dialog[open]').first();
+    await dialog.waitFor({ timeout: 15_000 });
+    await page.waitForFunction(() => !/Loading/i.test(document.querySelector('dialog[open]')?.textContent ?? 'Loading'), null, { timeout: 20_000 });
+    await page.screenshot({ path: join(out, 'life-history.png') });
+    const text = (await dialog.innerText()).replace(/\s+/g, ' ').slice(0, 160);
+    await context.close();
+    return text;
+  },
+
+  async share(browser, errors) {
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const page = await openObserver(context, errors);
+    await followFirst(page, 'chital');
+    await page.locator('#passport button', { hasText: 'Share' }).click();
+    const dialog = page.locator('dialog[open]').first();
+    await dialog.waitFor({ timeout: 15_000 });
+    await page.waitForFunction(() => (document.querySelector<HTMLTextAreaElement>('#share-text')?.value ?? '').length > 0, null, { timeout: 15_000 });
+    const text = await page.locator('#share-text').inputValue();
+    await page.screenshot({ path: join(out, 'share.png') });
+    await context.close();
+    if (!/#animal=[a-z]+_[0-9a-f]+/.test(text)) throw new Error(`share story has no animal link: ${text.slice(0, 200)}`);
+    return text.replace(/\s+/g, ' ').slice(0, 160);
+  },
+
+  async personHistory(browser, errors) {
+    // A human birth or death on the event map opens that person's retained history.
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const page = await openObserver(context, errors);
+    await page.click('#open-event-map');
+    const dialog = page.locator('dialog[open]').first();
+    await dialog.waitFor();
+    const filter = dialog.locator('select').first();
+    const humanOptions = await filter.locator('option').evaluateAll((options) =>
+      (options as HTMLOptionElement[]).filter((o) => /Human (births|deaths)/.test(o.textContent ?? '')).map((o) => o.value));
+    let opened = '';
+    for (const option of humanOptions) {
+      await filter.selectOption(option);
+      await page.waitForTimeout(1500);
+      const read = dialog.locator('button', { hasText: 'Read person’s retained history' }).first();
+      if (await read.count()) {
+        await read.click();
+        const history = page.locator('dialog[open]').last();
+        await page.waitForTimeout(2000);
+        opened = (await history.innerText()).replace(/\s+/g, ' ').slice(0, 160);
+        await page.screenshot({ path: join(out, 'person-history.png') });
+        break;
+      }
+    }
+    await context.close();
+    if (!opened) return 'no human birth or death recorded yet in this world (nothing to open)';
+    return opened;
+  },
+
+  async viewOptions(browser, errors) {
+    // Graphics quality and ambient audio respond, and the camera can be dragged and zoomed.
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const page = await openObserver(context, errors);
+    await page.click('#freecam');
+    const canvas = page.locator('#view');
+    const box = (await canvas.boundingBox())!;
+    await page.mouse.move(box.width / 2, box.height / 2);
+    await page.mouse.down(); await page.mouse.move(box.width / 2 - 200, box.height / 2 - 80, { steps: 12 }); await page.mouse.up();
+    await page.mouse.wheel(0, -600);
+    await page.waitForTimeout(1500);
+    await page.screenshot({ path: join(out, 'explore.png') });
+    await page.locator('details.observer-options summary').click();
+    await page.selectOption('#render-quality', 'smooth');
+    await page.waitForTimeout(800);
+    const quality = (await page.locator('#render-quality-status').innerText()).trim();
+    await page.click('#ambient-toggle');
+    await page.waitForTimeout(800);
+    const audio = (await page.locator('#ambient-toggle').innerText()).trim();
+    await context.close();
+    if (!/on/i.test(audio)) throw new Error(`ambient audio did not turn on: ${audio}`);
+    return `quality: ${quality || '(no status)'} | ${audio}`;
+  },
+
+  async placeDrop(browser, errors) {
+    // The operator scatters a drop on the island for agents; spectators see it in the list.
+    const batch = await admin('/admin/rewards/place-drops', { batchId: crypto.randomUUID(), amount: '0.5', count: 1, spacingMinutes: 0, lifetimeMinutes: 5 });
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const page = await openObserver(context, errors);
+    await page.waitForFunction(() => /[1-9]\d* drops?/.test(document.querySelector('#live-agents')?.textContent ?? ''), null, { timeout: 30_000 });
+    await page.click('#live-agents');
+    await page.locator('#agents-list').waitFor({ state: 'visible' });
+    const look = page.locator('#agents-list .drop-row button').first();
+    await look.click();
+    await page.waitForTimeout(2000);
+    await page.screenshot({ path: join(out, 'place-drop.png') });
+    const chip = (await page.locator('#live-agents').innerText()).trim();
+    await context.close();
+    return `batch ${JSON.stringify(batch).slice(0, 80)} | chip: ${chip}`;
+  },
+
   async connect(browser, errors) {
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     const page = await context.newPage(); watchErrors(page, errors);
