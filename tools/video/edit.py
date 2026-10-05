@@ -26,18 +26,16 @@ BOLD, DEMI, MEDIUM = 0, 2, 5
 
 # (shot, seconds used, caption)
 CUT = [
-    ("01-canopy", 6.5, None),
-    ("02-elephant", 5.0, "An island that lives on its own."),
-    ("03-tiger", 5.4, "Every hunt is real. Nothing is scripted."),
-    ("04-chital", 4.8, "1,800 animals. Each with a life of its own."),
-    ("05-gaur", 4.6, None),
-    ("06-langur", 4.6, "They graze, drink, rest and raise their young."),
-    ("07-dhole", 4.8, "Predators hunt. Prey runs."),
-    ("08-boar", 4.2, None),
-    ("09-squirrel", 4.4, "Follow any animal. Watch its whole life."),
-    ("10-sambar", 4.2, None),
-    ("11-vulture", 4.8, "AI agents can step into the wild."),
-    ("12-pullback", 8.0, None),
+    ("02-elephant", 7.0, None),  # aerial over the canopy: title
+    ("03-tiger", 6.0, "Every hunt is real. Nothing is scripted."),
+    ("04-chital", 5.5, "1,800 animals. Each with a life of its own."),
+    ("06-langur", 6.0, "They graze, drink, rest and raise their young."),
+    ("07-dhole", 6.0, "Predators hunt. Prey runs."),
+    ("05-gaur", 5.2, None),
+    ("08-boar", 5.0, None),
+    ("09-squirrel", 5.2, "Follow any animal. Watch its whole life."),
+    ("10-sambar", 5.6, "AI agents can step into the wild."),
+    ("01-canopy", 9.0, None),  # rising over the forest: end card
 ]
 CUT = [row for row in CUT if (RAW / row[0] / "meta.json").exists()]
 
@@ -149,7 +147,7 @@ total = offset + FADE
 subprocess.run(["ffmpeg", "-y", "-loglevel", "error", *inputs, "-f", "lavfi", "-t", f"{total:.3f}",
                 "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
                 "-filter_complex", ";".join(chain), "-map", f"[{prev}]", "-map", f"{len(clips)}:a",
-                "-c:v", "libx264", "-preset", "slow", "-crf", "17", "-profile:v", "high", "-level", "4.1",
+                "-c:v", "libx264", "-preset", "slow", "-crf", "20", "-maxrate", "12M", "-bufsize", "24M", "-profile:v", "high", "-level", "4.1",
                 "-pix_fmt", "yuv420p", "-r", str(FPS), "-c:a", "aac", "-b:a", "128k", "-shortest",
                 "-movflags", "+faststart", str(OUT)], check=True)
 print(f"wrote {OUT} ({total:.1f} s)")
