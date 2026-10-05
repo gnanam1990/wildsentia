@@ -273,6 +273,8 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
       // An agent that could not win must not start an open that blocks everyone else.
       const blocker = await ledger.blocker(ctx.agent.id, avatar.since);
       if (blocker) return reply.code(409).send({ error: blocker });
+      // The check was for that animal: one released and another taken meanwhile starts nothing.
+      if (live.avatars.get(ctx.agent.id) !== avatar) return reply.code(409).send({ error: 'possession_changed' });
       const error = live.openDrop(ctx.agent.id, dropId);
       return error ? reply.code(409).send({ error }) : { ok: true, seconds: 5 };
     });

@@ -286,6 +286,33 @@ maybe('live agent API', () => {
     } finally { await gated.close(); }
   });
 
+  it('starts an open only for the animal the eligibility check was made for', async () => {
+    // Security review 5 October 2026: the five-minute check awaited the database, and a release
+    // and possess landing meanwhile let an animal taken a moment ago start the open.
+    const aliceId = agentIdFor(alice.publicKey);
+    const admin = { authorization: `Bearer ${rewards.adminToken}`, 'content-type': 'application/json' };
+    const batch = { batchId: randomUUID(), amount: '1', count: 1, spacingMinutes: 0, lifetimeMinutes: 30 };
+    const created = await api.inject({ method: 'POST', url: '/admin/rewards/place-drops', headers: admin, payload: JSON.stringify(batch) });
+    await ledger.refresh();
+    const drop = ledger.active().find((d) => d.id === created.json().ids[0])!;
+    if (!live.avatars.has(aliceId)) expect(live.possess(aliceId, 'Sora', { speciesId: 'chital' }).ok).toBe(true);
+    const held = live.avatars.get(aliceId)!;
+    held.since -= 10 * 60_000; // Long enough with this animal to open.
+    const fresh = host.world.possessionCandidates('chital', 20).find((a) => a.id !== held.animalId && !live.wild.has(a.id))!;
+    const blocker = vi.spyOn(ledger, 'blocker').mockImplementationOnce(async () => {
+      live.release(aliceId);
+      expect(live.possess(aliceId, 'Sora', { animalId: fresh.id }).ok).toBe(true);
+      const swapped = live.avatars.get(aliceId)!;
+      expect(host.world.placeControlled(swapped.animalId, { x: drop.x, z: drop.z, heading: 0 })).toBe(true);
+      swapped.x = drop.x; swapped.z = drop.z;
+      return null;
+    });
+    try {
+      expect((await call(alice, 'POST', '/agents/me/open', { dropId: drop.id })).json()).toEqual({ error: 'possession_changed' });
+      expect(live.avatars.get(aliceId)!.opening).toBeNull();
+    } finally { blocker.mockRestore(); }
+  });
+
   it('counts registrations from one IPv6 /64 against one network', async () => {
     // Security review 5 October 2026: each address of a /64 used to be a network of its own.
     const limited = buildApi({ host, pool: pool!, rewards, live: { ...deps, limits: { slots: 50, perNetworkPerDay: 2 }, spot: () => randomLandSpot(host.world) } });
