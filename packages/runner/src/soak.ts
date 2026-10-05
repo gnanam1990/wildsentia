@@ -3,7 +3,7 @@ import { writeFileSync } from 'node:fs';
 import { FOREST_FLOOR, FOREST_LANDSCAPE, FOREST_POPULATION, ISLAND_POPULATION, SIM_VERSION, careRadius, createWorld, waterBudgetResidual, surfaceWaterL } from '@vana/sim';
 import type { WaterBudget } from '@vana/shared';
 import { recordPopulationPeaks } from './populationMetrics.js';
-import { emptySoakYear, foragePercent, recordYearEvent, sampleYearForage, type ParentLookup, type SoakYear, type YoungDeprivationRecord } from './yearMetrics.js';
+import { emptySoakYear, foragePercent, recordYearEvent, sampleYearForage, unreconciledPopulations, type ParentLookup, type SoakYear, type YoungDeprivationRecord } from './yearMetrics.js';
 import { recordHunt, type HuntMetrics } from './huntMetrics.js';
 import { emptyHumanFamilyMetrics, recordHumanFamily, validHumanFamilyMetrics } from './communityMetrics.js';
 import { emptyIllnessEventMetrics, recordIllnessEvent, type IllnessEventMetrics } from './illnessMetrics.js';
@@ -86,6 +86,13 @@ export interface SoakResult {
   generationsReached: number;
   meanInbreeding: number;
   immigrationEvents: number;
+  /** Immigration events by recorded route (`island_crossing` for sim_0.33.0 island arrivals). */
+  immigrationByRoute: Record<string, number>;
+  /** Every recorded island arrival (first 200), with its trigger and the body it brought. */
+  islandArrivals: Array<{ worldTime: number; species: string; actorId: string; patchId: number;
+    trigger: string; livingBefore: number; massKg: number; positioned: boolean }>;
+  /** Nutrient imported with arrivals, as recorded by the world's ledger. */
+  importedNutrient: number;
   carcassesCreated: number;
   carcassesCompleted: number;
   carcassesOutstanding: number;
@@ -156,6 +163,8 @@ export function runSoak({ seed, days, speciesDir, terrainProfile = 'mainland', c
   let carcassesCompleted = 0;
   let scavengeEvents = 0;
   let immigrationEvents = 0;
+  const immigrationByRoute: Record<string, number> = {};
+  const arrivalRecords: SoakResult['islandArrivals'] = [];
   const deathsByCause: Record<string, number> = {};
   const humanDeaths: SoakResult['community']['deathRecords'] = [];
   const humanFamily = emptyHumanFamilyMetrics();
@@ -180,6 +189,7 @@ export function runSoak({ seed, days, speciesDir, terrainProfile = 'mainland', c
 
   const years: SoakYear[] = [];
   let year = emptySoakYear(1, 0);
+  for (const speciesId of world.species.keys()) year.populationStart[speciesId] = world.livingCount(speciesId);
   const youngWithParent: YoungDeprivationRecord[] = [];
   const parents: ParentLookup = {
     dependentOn: (id) => world.agents.find(agent => agent.id === id)?.dependentOn ?? null,
@@ -227,7 +237,16 @@ export function runSoak({ seed, days, speciesDir, terrainProfile = 'mainland', c
         case 'emigration': packFood.exportedKg += Number(event.effects.carriedFoodKg ?? 0); break;
         case 'nutrients_returned': carcassesCompleted++; break;
         case 'scavenged': if (event.outcome === 'success') scavengeEvents++; break;
-        case 'immigration': immigrationEvents++; break;
+        case 'immigration': {
+          immigrationEvents++;
+          const route = String(event.conditions.route ?? 'landscape_exchange');
+          immigrationByRoute[route] = (immigrationByRoute[route] ?? 0) + 1;
+          if (route === 'island_crossing' && arrivalRecords.length < 200) arrivalRecords.push({ worldTime: event.worldTime,
+            species: String(event.conditions.species), actorId: event.actors[0]!, patchId: event.patchId,
+            trigger: String(event.conditions.trigger), livingBefore: Number(event.conditions.livingBefore),
+            massKg: Number(event.effects.massKg), positioned: event.position !== undefined });
+          break;
+        }
         case 'born': {
           const id = String(event.conditions.species ?? '?');
           birthsBySpecies[id] = (birthsBySpecies[id] ?? 0) + 1;
@@ -280,8 +299,14 @@ export function runSoak({ seed, days, speciesDir, terrainProfile = 'mainland', c
     }
     year.nutrientDrift = Math.abs(world.totalNutrients() - baseline);
     year.forage.endPct = foragePercent(world.patches.filter(landWalkable));
+    // Every animal is accounted for: no one appears or vanishes outside a recorded birth,
+    // arrival, death or departure (sim_0.33.0 arrivals included).
+    const unreconciled = unreconciledPopulations(year);
+    if (unreconciled.length && failures.length < MAX_RECORDED_FAILURES)
+      failures.push(`year ${year.year}: population ledger does not reconcile for ${unreconciled.join(', ')}`);
     years.push(year);
     year = emptySoakYear(year.year + 1, endDay);
+    year.populationStart = { ...years.at(-1)!.population };
   };
   const failures: string[] = [];
   const warnings: string[] = [];
@@ -440,6 +465,9 @@ export function runSoak({ seed, days, speciesDir, terrainProfile = 'mainland', c
     generationsReached,
     meanInbreeding: inbreedingSamples === 0 ? 0 : inbreedingTotal / inbreedingSamples,
     immigrationEvents,
+    immigrationByRoute,
+    islandArrivals: arrivalRecords,
+    importedNutrient: world.ledger.imported,
     events: world.log.size(),
     nutrientDrift: Math.abs(world.totalNutrients() - baseline),
     hydrology: { budget: { ...world.waterBudget }, storedL: surfaceWaterL(world.patches), residualL: waterResidual,
