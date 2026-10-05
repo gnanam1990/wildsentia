@@ -108,13 +108,14 @@ async function startPath(page: Page, path: Path, seconds: number, pair: [string,
     const theta1 = Array.isArray(path.theta) ? path.theta[1] : path.theta === 'behind' ? follow.theta + 0.5 : follow.theta;
     // Side-on to the chase: the camera sits perpendicular to the line from hunter to quarry, and
     // turns toward that only gently, so a swerve never whips the view round.
-    let side = follow.theta;
+    let side = null;
     const sideOn = () => {
       const a = v.animals.root.getObjectByName(pair[0]), b = v.animals.root.getObjectByName(pair[1]);
-      if (!a || !b) return side;
+      if (!a || !b) return side ?? follow.theta;
       const dx = b.position.x - a.position.x, dz = b.position.z - a.position.z;
-      if (Math.hypot(dx, dz) < 0.5) return side;
+      if (Math.hypot(dx, dz) < 0.5) return side ?? follow.theta;
       const want = Math.atan2(dx, dz) + Math.PI / 2;
+      if (side === null) { side = want; return side; }
       const diff = ((want - side + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
       // Of the two side-on views, keep to the one nearer where the camera already is.
       const turn = Math.abs(diff) > Math.PI / 2 ? diff - Math.sign(diff) * Math.PI : diff;
