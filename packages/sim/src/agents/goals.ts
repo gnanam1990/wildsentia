@@ -2,7 +2,7 @@ import { type Agent, type GoalId, type Rng, type SpeciesConfig } from '@vana/sha
 import { edibleMass } from '../fields/decomposition.js';
 import { goalsFor } from './archetypes.js';
 import type { Percept } from './perception.js';
-import { allowsDependentGoal, canDrinkIndependently, canEatMaternalMeat, canForageIndependently, canHuntIndependently, needsOf, needsProvisioning } from './needs.js';
+import { allowsDependentGoal, canDrinkIndependently, canFollowParent, canEatMaternalMeat, canForageIndependently, canHuntIndependently, needsOf, needsProvisioning } from './needs.js';
 
 export interface GoalChoice {
   goal: GoalId;
@@ -80,10 +80,16 @@ export function selectGoal(
     collect_pack_food: 0, deliver_pack_food: 0, wait_for_pack_food: 0,
   };
 
+  // sim_0.34.0: young too small to follow their parent are hiders. Fawns, piglets in the nest
+  // and pups in the den lie still when danger is near rather than run (the hider strategy);
+  // with prey now sensing predators hundreds of metres off, fleeing scattered whole litters
+  // where their mother could not reach them and they died of thirst.
+  const hider = needsProvisioning(agent, species) && !canFollowParent(agent, species);
+
   // Orphanhood never unlocks abilities. Precocial plant foraging has a separate age gate.
   if (needsProvisioning(agent, species) && !canForageIndependently(agent, species)
     && !canDrinkIndependently(agent, species) && !canEatMaternalMeat(agent, species)) {
-    return { goal: d.fear > 0.5 && percept.threat !== null ? 'flee' : 'rest', score: 1, alternative: null };
+    return { goal: !hider && d.fear > 0.5 && percept.threat !== null ? 'flee' : 'rest', score: 1, alternative: null };
   }
 
   const allowed = goalsFor(species.archetype)
@@ -91,7 +97,7 @@ export function selectGoal(
     .filter((goal) => goal !== 'find_water' || !needsProvisioning(agent, species)
       || canForageIndependently(agent, species) || d.thirst >= DEPENDENT_WATER_SEARCH_THIRST)
     .filter((goal) => goal !== 'flee' || !needsProvisioning(agent, species)
-      || canForageIndependently(agent, species) || percept.threat !== null || d.fear >= 0.5)
+      || !hider && (canForageIndependently(agent, species) || percept.threat !== null || d.fear >= 0.5))
     .filter((goal) => goal !== 'hunt' || canHuntIndependently(agent, species))
     .filter((goal) => goal !== 'scavenge' || !needsProvisioning(agent, species)
       || percept.carrion !== null);

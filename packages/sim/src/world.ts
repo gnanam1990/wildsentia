@@ -1028,7 +1028,8 @@ export class World {
       if ((agent.altitudeM ?? 0) > 0 && agent.locomotionMode === 'climb') {
         const patch = this.patches[agent.patchId]!;
         const canopyLost = treeAnchorForPatch(patch) === null;
-        const threatened = perceive(agent, cfg, view).threat !== null;
+        // Stays up while the threat frightens it (sim_0.34.0: a predator merely in sight no longer holds it there).
+        const threatened = (perceive(agent, cfg, view).threat?.fear ?? 0) >= 0.5;
         const urgentNeed = agent.drives.thirst >= 0.72 || agent.drives.hunger >= 0.8;
         if (canopyLost || !threatened || urgentNeed) {
           descendPerchedAnimal(agent, patch, this.#time, hours,
@@ -1088,11 +1089,16 @@ export class World {
       }
 
       const choice = selectGoal(agent, cfg, percept, this.#rng);
+      // sim_0.34.0: family and pack routines yield to fear, not to the mere detection of a
+      // predator. With prey now sensing predators hundreds of metres off, the old "no threat
+      // in view" gate stopped piglets regrouping with the sow and left whole litters to die
+      // of thirst within sight of a resting tiger. A frightened animal still breaks off.
+      const calm = agent.drives.fear < 0.5;
       const careTarget = careTargets.get(agent.id);
       const careStart = careTarget && (cfg.lifecycle.nursing ? careTarget.nursingSite : familyStarts.get(careTarget.id));
       // Hold only for an already loaded, route-reachable pack member, not for an empty promise.
       // A local mother may keep caring; a remote mother cannot walk away and receive at her old point.
-      if (packWaiters.has(agent.id) && percept.threat === null && agent.drives.thirst < 0.8
+      if (packWaiters.has(agent.id) && calm && agent.drives.thirst < 0.8
         && !(careTarget && availableForCare(agent, careTarget) && inCareContact(agent, careTarget, cfg))) {
         agent.currentGoal = 'wait_for_pack_food'; agent.state = 'resting'; agent.alternativeGoal = null;
         agent.goalScore = 1; agent.targetId = null; delete agent.journey; continue;
@@ -1107,7 +1113,7 @@ export class World {
         continue;
       }
       const packRecipient = packTargets.get(agent.id);
-      if (packRecipient?.alive && percept.threat === null && packDonorEligible(agent, cfg, nursingParents)) {
+      if (packRecipient?.alive && calm && packDonorEligible(agent, cfg, nursingParents)) {
         if (agent.packFood) {
           const delivery = beginPackDelivery(agent, packRecipient, familyStarts.get(packRecipient.id)!, cfg,
             this.patches, this.#time, hours, this.log);
@@ -1135,7 +1141,7 @@ export class World {
       // overrides regrouping and uses the ordinary finite resource action.
       const mobileDependent = cfg.id === 'boar' && !cfg.lifecycle.nursing && cfg.lifecycle.drinkFromDays !== undefined
         && needsProvisioning(agent, cfg) && canFollowParent(agent, cfg) && parent?.alive
-        && percept.threat === null;
+        && calm;
       const independentNeed = choice.goal === 'find_food' || choice.goal === 'find_water';
       const urgentNeed = choice.goal === 'find_water' && agent.drives.thirst >= DEPENDENT_URGENT_THIRST
         || choice.goal === 'find_food' && agent.drives.hunger >= DEPENDENT_URGENT_HUNGER;
@@ -1166,14 +1172,14 @@ export class World {
         }
       }
       if (parent?.alive && cfg.lifecycle.nursing && needsProvisioning(agent, cfg) && agent.nursingSite
-        && agent.ageDays >= cfg.lifecycle.nursing.locomotionFromDays && percept.threat === null
+        && agent.ageDays >= cfg.lifecycle.nursing.locomotionFromDays && calm
         && nursingEligible(agent, cfg, this.#time, this.#time + hours * 3600)) {
         nursingArrivals.set(agent.id, travelToFamily(agent, cfg, this.patches, agent.nursingSite,
           'seek_nursing', this.#time, hours, this.log));
         continue;
       }
       if (parent?.alive && parentStart && canFollowParent(agent, cfg)
-        && !careTargets.has(parent.id) && percept.threat === null && ['rest', 'wander'].includes(choice.goal)
+        && !careTargets.has(parent.id) && calm && ['rest', 'wander'].includes(choice.goal)
         && (needsProvisioning(agent, cfg) || agent.drives.fatigue < 0.6)
         && Math.hypot(agent.position!.x - parentStart.position.x, agent.position!.z - parentStart.position.z)
           <= Math.max(cfg.senses.sightRangeM, cfg.senses.hearingRangeM)) {
@@ -1181,14 +1187,14 @@ export class World {
         continue;
       }
       // A parent of young that cannot follow wanders only within reach of them (sim_0.32.0).
-      const tether = choice.goal === 'wander' && percept.threat === null
+      const tether = choice.goal === 'wander' && calm
         ? idleRangeAnchor(agent, cfg, childrenByParent.get(agent.id) ?? [], familyStarts, this.patches) : null;
       if (tether) {
         travelToFamily(agent, cfg, this.patches, tether, 'care_for_young', this.#time, hours, this.log);
         continue;
       }
       // A hunter stays with an unfinished kill instead of wandering off from it (sim_0.33.0).
-      const kill = choice.goal === 'wander' && percept.threat === null ? this.#unfinishedKill(agent, cfg) : null;
+      const kill = choice.goal === 'wander' && calm ? this.#unfinishedKill(agent, cfg) : null;
       if (kill) {
         executeGoal({ agent, species: cfg, patches: this.patches, view, percept: { ...percept, carrion: kill },
           choice: { goal: 'scavenge', score: choice.score, alternative: choice.goal }, hours, worldTime: this.#time,

@@ -65,17 +65,25 @@ export const HUNGER_DESPERATION = 0.8;
  *   stalking tiger (0.72) is noticed by chital at about 45 m and a dhole pack (0.35) at about
  *   100 m. Once noticed it is the strongest threat: fear 0.6-1.0 by closeness, so the animal
  *   flees that same hour. Ambush still works because concealment hides the approach.
- * - moving: a predator walking in the open is seen at full range, fear 0.35-0.65; it makes an
- *   animal flee only when close.
- * - settled (resting, feeding, drinking): fear 0.2-0.4, vigilance without flight; the animal
- *   keeps foraging but avoids that predator's patch (`dangerous`).
+ * - moving: a predator walking in the open is seen at full range. Within the species' escape
+ *   detection distance (chital 110 m, sambar 90 m, boar 70 m: the distance at which it reacts
+ *   to an approaching predator) it sets fear 0.5-0.7 and the animal moves off; farther, 0.3-0.45,
+ *   alert and keeping away.
+ * - settled (resting, feeding, drinking): within the flight-initiation distance (chital 55 m,
+ *   boar 25 m) fear 0.5, the animal steps away; farther, 0.2-0.4, vigilance without flight. The
+ *   animal keeps foraging but avoids that predator's patch (`dangerous`).
  *
- * Chital, sambar and langur give loud alarm calls at tigers and leopards and grazers keep a
+ * Chital, sambar and langur give loud alarm calls at tigers and leopards, and grazers keep a
  * flight-initiation distance (escape config); the numbers here are uncalibrated model policy.
+ * Smell alone (a boar scents 450 m) tells an animal where a predator is, not that it must run.
  */
-export function threatFear(posture: ThreatPosture, distanceM: number, rangeM: number): number {
-  const closeness = rangeM > 0 ? Math.max(0, Math.min(1, 1 - distanceM / rangeM)) : 1;
-  return posture === 'hunting' ? 0.6 + 0.4 * closeness : posture === 'moving' ? 0.35 + 0.3 * closeness : 0.2 + 0.2 * closeness;
+export function threatFear(posture: ThreatPosture, distanceM: number, rangeM: number,
+  escape: { detectionDistanceM: number; flightInitiationM: number } = { detectionDistanceM: 0, flightInitiationM: 0 }): number {
+  const closeness = (limit: number) => limit > 0 ? Math.max(0, Math.min(1, 1 - distanceM / limit)) : 1;
+  if (posture === 'hunting') return 0.6 + 0.4 * closeness(rangeM);
+  if (posture === 'moving') return distanceM <= escape.detectionDistanceM
+    ? 0.5 + 0.2 * closeness(escape.detectionDistanceM) : 0.3 + 0.15 * closeness(rangeM);
+  return distanceM <= escape.flightInitiationM ? 0.5 : 0.2 + 0.2 * closeness(rangeM);
 }
 
 export function threatPosture(predator: Agent): ThreatPosture {
@@ -172,7 +180,7 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
       const at = where(other), distanceM = Math.hypot(at.x - here.x, at.z - here.z);
       if (distanceM > rangeM) continue;
       dangerous.add(p.id);
-      const fear = threatFear(posture, distanceM, rangeM);
+      const fear = threatFear(posture, distanceM, rangeM, species.escape);
       if (threat === null || fear > threat.fear) threat = { agent: other, patchId: p.id, distanceM, posture, fear };
     }
   }
