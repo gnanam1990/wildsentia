@@ -16,8 +16,16 @@
  *   --container vana-e2e-server-1  --profiles DIR (agent HOME dirs, kept between runs)
  *   --register N (only register agents 0..N-1, pacing for the per-network limit, then exit)
  *   --workers 4  --ramp 50 (new spectator connections per second)  --out FILE.json
+ *   --client PATH (client.mjs)  --metrics-url URL (fetch metrics directly, e.g. http://server:9464/metrics
+ *   with VANA_METRICS_HOST=0.0.0.0)  --stats metrics (CPU and memory from the server's process
+ *   metrics instead of `docker stats`)  --docker-socket PATH (Engine API instead of the docker CLI)
+ *
+ * Hundreds of connections through a desktop VM's forwarded port can break the forwarding itself
+ * (Colima did, twice). Run the generator inside the VM instead, bundled with esbuild and started
+ * in the web container's network namespace; docs/2026-10-05-load-test.md has the commands.
  */
 import { execFile, fork, type ChildProcess } from 'node:child_process';
+import { request } from 'node:http';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { cpus, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -25,7 +33,6 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { WebSocket } from 'ws';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const clientScript = join(root, 'packages/server/agent-client/client.mjs');
 
 function option(name: string, fallback: string): string {
   const at = process.argv.indexOf(`--${name}`);
@@ -33,6 +40,14 @@ function option(name: string, fallback: string): string {
 }
 const base = option('base', 'http://localhost:28080').replace(/\/+$/, '');
 const profiles = resolve(option('profiles', join(tmpdir(), 'vana-load-agents')));
+const clientScript = resolve(option('client', join(root, 'packages/server/agent-client/client.mjs')));
+// Inside the Docker VM (see docs/2026-10-05-load-test.md): metrics straight from the server's
+// metrics port on the compose network, and container stats from the Engine API socket.
+const metricsUrl = option('metrics-url', '');
+const dockerSocket = option('docker-socket', '');
+/** `--stats metrics`: CPU and memory from the server's own process metrics, no Docker access at all. */
+const statsFromMetrics = option('stats', 'docker') === 'metrics';
+let lastCpu: { at: number; seconds: number } | null = null;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // ---------------------------------------------------------------------------------------------
@@ -190,7 +205,9 @@ async function ensureRegistered(index: number, api: ClientApi, dir: string): Pro
 
 async function agentWorker(from: number, to: number): Promise<void> {
   const agents: Array<{ api: ClientApi; species: string }> = [];
-  const species = ['chital', 'boar', 'hare', 'sambar', 'langur', 'gaur', 'squirrel'];
+  // Spread over species roughly as they can be taken (at most a fifth of each species), so the
+  // island's possession caps rather than one species' queue set how many agents are playing.
+  const species = ['chital', 'hare', 'chital', 'boar', 'sambar', 'chital', 'hare', 'langur', 'chital', 'gaur', 'hare', 'squirrel', 'chital', 'boar', 'sambar'];
   for (let i = from; i < to; i++) {
     const { api, dir } = await loadAgent(i);
     await ensureRegistered(i, api, dir);
@@ -262,11 +279,37 @@ const bytesOf = (s: string): number => {
 
 interface Sample { at: number; cpu: number; rssMB: number; netTx: number; metrics: Map<string, number>; healthMs: number | null; healthOk: boolean }
 
+/** GET on the Docker Engine API through its unix socket. */
+const engine = (path: string): Promise<Record<string, unknown>> => new Promise((resolve, reject) => {
+  const req = request({ socketPath: dockerSocket, path, timeout: 20_000 }, (res) => {
+    let body = ''; res.setEncoding('utf8'); res.on('data', (c: string) => { body += c; });
+    res.on('end', () => { try { resolve(JSON.parse(body) as Record<string, unknown>); } catch (e) { reject(e); } });
+  });
+  req.on('error', reject); req.end();
+});
+
+/** The same three figures `docker stats` shows: CPU %, memory in use, network bytes sent. */
+async function containerStats(container: string): Promise<{ cpu: number; memBytes: number; txBytes: number }> {
+  if (!dockerSocket) {
+    const o = JSON.parse(await run('docker', ['stats', '--no-stream', '--format', '{{json .}}', container])) as Record<string, string>;
+    return { cpu: parseFloat(o.CPUPerc ?? 'NaN'), memBytes: bytesOf((o.MemUsage ?? '').split('/')[0]!), txBytes: bytesOf((o.NetIO ?? '').split('/')[1] ?? '') };
+  }
+  type Cpu = { cpu_usage: { total_usage: number }; system_cpu_usage: number; online_cpus: number };
+  const s = await engine(`/containers/${container}/stats?stream=false`) as unknown as { cpu_stats: Cpu; precpu_stats: Cpu;
+    memory_stats: { usage: number; stats?: Record<string, number> }; networks?: Record<string, { tx_bytes: number }> };
+  const cpuDelta = s.cpu_stats.cpu_usage.total_usage - s.precpu_stats.cpu_usage.total_usage;
+  const systemDelta = s.cpu_stats.system_cpu_usage - s.precpu_stats.system_cpu_usage;
+  return { cpu: systemDelta > 0 ? cpuDelta / systemDelta * s.cpu_stats.online_cpus * 100 : NaN,
+    memBytes: s.memory_stats.usage - (s.memory_stats.stats?.inactive_file ?? 0),
+    txBytes: Object.values(s.networks ?? {}).reduce((n, i) => n + i.tx_bytes, 0) };
+}
+
 async function sample(container: string): Promise<Sample> {
   const at = Date.now();
   const [stats, text, health] = await Promise.all([
-    run('docker', ['stats', '--no-stream', '--format', '{{json .}}', container]).then((o) => JSON.parse(o) as Record<string, string>),
-    run('docker', ['exec', container, 'wget', '-qO-', 'http://127.0.0.1:9464/metrics']).catch(() => ''),
+    statsFromMetrics ? { cpu: NaN, memBytes: NaN, txBytes: NaN } : containerStats(container),
+    (metricsUrl ? fetch(metricsUrl, { signal: AbortSignal.timeout(10_000) }).then((r) => r.text())
+      : run('docker', ['exec', container, 'wget', '-qO-', 'http://127.0.0.1:9464/metrics'])).catch(() => ''),
     (async () => {
       const t = performance.now();
       try { const r = await fetch(`${base}/api/health`, { signal: AbortSignal.timeout(10_000) }); return { ms: performance.now() - t, ok: r.ok }; }
@@ -278,8 +321,13 @@ async function sample(container: string): Promise<Sample> {
     const m = /^([a-z_:][a-z0-9_:]*(?:\{[^}]*\})?) (\S+)$/.exec(line);
     if (m) metrics.set(m[1]!, Number(m[2]));
   }
-  return { at, cpu: parseFloat(stats.CPUPerc ?? 'NaN'), rssMB: bytesOf((stats.MemUsage ?? '').split('/')[0]!) / 1e6,
-    netTx: bytesOf((stats.NetIO ?? '').split('/')[1] ?? ''), metrics, healthMs: health.ms, healthOk: health.ok };
+  if (statsFromMetrics) {
+    const seconds = metrics.get('process_cpu_seconds_total') ?? NaN;
+    stats.cpu = lastCpu ? (seconds - lastCpu.seconds) / ((at - lastCpu.at) / 1000) * 100 : NaN;
+    lastCpu = { at, seconds };
+    stats.memBytes = metrics.get('process_resident_memory_bytes') ?? NaN;
+  }
+  return { at, cpu: stats.cpu, rssMB: stats.memBytes / 1e6, netTx: stats.txBytes, metrics, healthMs: health.ms, healthOk: health.ok };
 }
 
 function spawnWorker(args: string[]): ChildProcess {
@@ -294,10 +342,10 @@ async function step(spectators: number, agents: number, opts: { duration: number
   const children: ChildProcess[] = [];
   const split = (n: number, k: number) => Array.from({ length: Math.min(k, n) }, (_, i) => Math.floor(n / Math.min(k, n)) + (i < n % Math.min(k, n) ? 1 : 0));
   for (const n of split(spectators, opts.workers))
-    children.push(spawnWorker(['--worker', 'spectators', '--count', String(n), '--ramp', String(opts.ramp / Math.min(opts.workers, spectators)), '--base', base]));
+    children.push(spawnWorker(['--worker', 'spectators', '--count', String(n), '--ramp', String(opts.ramp / Math.min(opts.workers, spectators)), '--base', base, '--client', clientScript]));
   let from = 0;
   for (const n of split(agents, opts.workers)) {
-    children.push(spawnWorker(['--worker', 'agents', '--from', String(from), '--to', String(from + n), '--base', base, '--profiles', profiles]));
+    children.push(spawnWorker(['--worker', 'agents', '--from', String(from), '--to', String(from + n), '--base', base, '--profiles', profiles, '--client', clientScript]));
     from += n;
   }
   const rampStart = Date.now();
@@ -322,6 +370,7 @@ async function step(spectators: number, agents: number, opts: { duration: number
 function summarize(spectators: number, agents: number, rampSeconds: number, samples: Sample[], reports: WorkerReport[]) {
   const first = samples[0]!, last = samples.at(-1)!, seconds = (last.at - first.at) / 1000;
   const metric = (s: Sample, name: string) => s.metrics.get(name) ?? NaN;
+  const cpus = samples.map((s) => s.cpu).filter(Number.isFinite);
   const maxOf = (name: string) => Math.max(...samples.map((s) => metric(s, name)).filter(Number.isFinite));
   const delta = (name: string) => metric(last, name) - metric(first, name);
   const spect = reports.filter((r) => r.kind === 'spectators'), ag = reports.filter((r) => r.kind === 'agents');
@@ -350,8 +399,8 @@ function summarize(spectators: number, agents: number, rampSeconds: number, samp
     connected: spect.reduce((n, r) => n + (r.connected ?? 0), 0),
     refused: merge((r) => r.refused), closed: merge((r) => r.closed), wsErrors: spect.reduce((n, r) => n + (r.errors ?? 0), 0),
     possessing: ag.reduce((n, r) => n + (r.possessing ?? 0), 0), queued: ag.reduce((n, r) => n + (r.queued ?? 0), 0),
-    cpuPercent: { mean: round(samples.reduce((n, s) => n + s.cpu, 0) / samples.length), max: round(Math.max(...samples.map((s) => s.cpu))) },
-    rssMB: { max: round(Math.max(...samples.map((s) => s.rssMB))) },
+    cpuPercent: { mean: round(cpus.reduce((n, c) => n + c, 0) / cpus.length), max: round(Math.max(...cpus)) },
+    rssMB: { max: round(Math.max(...samples.map((s) => s.rssMB).filter(Number.isFinite))) },
     eventLoopP99Ms: round(maxOf('vana_event_loop_delay_seconds{quantile="0.99"}') * 1000, 1),
     eventLoopMaxMs: round(maxOf('vana_event_loop_delay_seconds{quantile="1"}') * 1000, 1),
     liveTickLagMaxMs: round(maxOf('vana_live_tick_lag_seconds_max') * 1000, 1),
@@ -398,7 +447,9 @@ async function main(): Promise<void> {
     container: option('container', 'vana-e2e-server-1') };
   const out = resolve(option('out', join(root, '.ci-artifacts', 'load', `load-${new Date().toISOString().replace(/[:.]/g, '-')}.json`)));
   mkdirSync(dirname(out), { recursive: true });
-  const hardware = { host: `${cpus()[0]?.model} x${cpus().length}`, docker: await run('docker', ['info', '--format', '{{.NCPU}} CPUs, {{.MemTotal}} bytes, {{.OperatingSystem}}']).then((s) => s.trim()).catch(() => 'unknown') };
+  const hardware = { host: `${cpus()[0]?.model} x${cpus().length}`, docker: await (dockerSocket
+    ? engine('/info').then((i) => `${String(i.NCPU)} CPUs, ${String(i.MemTotal)} bytes, ${String(i.OperatingSystem)}`)
+    : run('docker', ['info', '--format', '{{.NCPU}} CPUs, {{.MemTotal}} bytes, {{.OperatingSystem}}']).then((s) => s.trim())).catch(() => 'unknown') };
   const results: unknown[] = [];
   console.log(`load test against ${base}; ${JSON.stringify(hardware)}`);
   for (const [spectators, agents] of steps) {
