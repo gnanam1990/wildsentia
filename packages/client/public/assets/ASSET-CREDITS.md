@@ -66,7 +66,7 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
 
 ## VANA — generated island species (5 October 2026)
 - Used for: chital (Chital), sambar (Sambar), gaur (Gaur), dhole (Dhole), golden jackal (Jackal),
-  grey langur (GreyLangur), giant squirrel (GiantSquirrel), white-rumped vulture on the
+  chital hinds (ChitalHind), black-naped hare (Hare), grey langur (GreyLangur), giant squirrel (GiantSquirrel), white-rumped vulture on the
   ground (WhiteRumpedVulture; in the air the earlier Vulture rig is drawn, since the generated
   bird's wings are modelled folded).
 - Surfaces: generated for this project with Higgsfield under the owner's paid plan (Pro): GPT
@@ -77,7 +77,8 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
 - Rebuild: `ART=<dir of <species>-tripo.glb> tools/art/build_species.sh` (the species, rig, fit
   method and review clips are listed in the script). Tripo jobs: chital 318d3d7e, sambar
   c105333b, gaur e77817e4, dhole c2d53613, jackal a6b37f51, langur dfe4b295, squirrel
-  a781faf2, vulture 7fd1587a.
+  a781faf2, vulture 7fd1587a, chital hind a6059627, hare 5dbb6e14 (an earlier standing hare,
+  f8c08628, was rejected in review and not shipped).
 
 ## VANA — generated wild boar (WildBoar)
 - Used for: boar (WildBoar), from 5 October 2026.
@@ -151,6 +152,8 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
   - `animals/GreyLangur.glb`: sha256 `f1df7353db1c1aaf`
   - `animals/GiantSquirrel.glb`: sha256 `fbfc1d0906d87f8d`
   - `animals/WhiteRumpedVulture.glb`: sha256 `dcd2259e64a75b99`
+  - `animals/ChitalHind.glb`: sha256 `964cd399c9ba3459`
+  - `animals/Hare.glb`: sha256 `21c4e03805abedc2`
   - `animals/Tiger.glb`: sha256 `7d7c3d9546d1bbeb`
   - `animals/Elephant.glb`: sha256 `682e6b100ff1a6a23`
   - `animals/Rabbit.glb`: sha256 `763c19a2606208f05`

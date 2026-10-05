@@ -20,6 +20,7 @@ describe('generated species replacements', () => {
     ['WildBoar', [...quadruped, 'Idle_Headlow']], ['Chital', [...quadruped, 'Idle_Headlow']],
     ['Sambar', [...quadruped, 'Idle_Headlow']], ['Gaur', [...quadruped, 'Idle_Headlow']],
     ['Dhole', [...quadruped, 'Idle_2_HeadLow']], ['Jackal', [...quadruped, 'Idle_2_HeadLow']],
+    ['ChitalHind', [...quadruped, 'Idle_Headlow']], ['Hare', ['Idle', 'Gallop', 'Jump', 'Resting', 'Death']],
     ['GreyLangur', small], ['GiantSquirrel', small], ['WhiteRumpedVulture', ['Idle', 'Walk', 'Eating', 'Drinking', 'Death']],
   ] as const)('%s keeps the rig clips the observer plays and stays within its byte budget', (name, clips) => {
     const gltf = manifest(`${name}.glb`);
@@ -30,7 +31,7 @@ describe('generated species replacements', () => {
 });
 
 describe('free local character assets', () => {
-  it.each(['TigerRigged', 'ElephantWalking', 'Langur', 'Squirrel', 'Vulture', 'WildBoar', 'Chital', 'Sambar', 'Gaur', 'Dhole', 'Jackal', 'GreyLangur', 'GiantSquirrel', 'WhiteRumpedVulture'])('%s contains finite, normalized skin weights and actual changing motion', (name) => {
+  it.each(['TigerRigged', 'ElephantWalking', 'Langur', 'Squirrel', 'Vulture', 'WildBoar', 'Chital', 'Sambar', 'Gaur', 'Dhole', 'Jackal', 'GreyLangur', 'GiantSquirrel', 'WhiteRumpedVulture', 'ChitalHind', 'Hare'])('%s contains finite, normalized skin weights and actual changing motion', (name) => {
     const buffer = readFileSync(new URL(`../public/assets/animals/${name}.glb`, import.meta.url));
     const jsonLength = buffer.readUInt32LE(12);
     const gltf = JSON.parse(buffer.subarray(20, 20 + jsonLength).toString());
@@ -51,7 +52,10 @@ describe('free local character assets', () => {
         expect(weights.reduce((a, b) => a + b, 0)).toBeCloseTo(1, 4);
       }
     }
-    for (const clip of gltf.animations) {
+    // The rabbit rig also carries single-pose clips (Basic, Dead, ...) the observer never plays;
+    // for the hare, require motion in the clips it does play.
+    const played = name === 'Hare' ? ['Idle', 'Gallop', 'Jump', 'Resting', 'Death'] : null;
+    for (const clip of gltf.animations.filter((c: { name: string }) => played === null || played.includes(c.name))) {
       let changing = false;
       for (const sampler of clip.samplers) {
         const times = values(sampler.input).flat();

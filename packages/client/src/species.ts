@@ -33,7 +33,7 @@ export const SPECIES_VISUALS: Record<string, SpeciesVisual> = {
   // The arched tail rises above the head; scale by the body (front half) height.
   langur:   { heightM: 0.6,  model: { file: '/assets/animals/GreyLangur.glb', referenceHeightM: 0.699 }, colour: 0xb9b3a8 },
   squirrel: { heightM: 0.25, model: { file: '/assets/animals/GiantSquirrel.glb', referenceHeightM: 0.794 }, colour: 0x7a4a2a },
-  hare:     { heightM: 0.22, model: { file: '/assets/animals/Rabbit.glb' }, colour: 0x9c8466 },
+  hare:     { heightM: 0.22, model: { file: '/assets/animals/Hare.glb' }, colour: 0x9c8466 },
   vulture:  { heightM: 0.8,  model: { file: '/assets/animals/WhiteRumpedVulture.glb' }, colour: 0x3a3430 },
 };
 
@@ -49,6 +49,9 @@ export function visualForAnimal(animal: Pick<AnimalState, 'speciesId' | 'sex' | 
   // The realistic vulture is modelled with folded wings, so it cannot open them; in the air the
   // older rig, built with spreadable wings and Flap/Glide clips, stands in.
   if (animal.speciesId === 'vulture' && airborne) return { ...SPECIES_VISUALS.vulture!, model: { file: '/assets/animals/Vulture.glb' } };
+  // Chital hinds carry no antlers; the generated stag model stays for males and the young.
+  if (animal.speciesId === 'chital' && animal.sex === 'female' && animal.lifeStage !== 'newborn' && animal.lifeStage !== 'juvenile')
+    return { ...SPECIES_VISUALS.chital!, model: { file: '/assets/animals/ChitalHind.glb' } };
   if (animal.speciesId === 'elephant') {
     if (animal.lifeStage === 'newborn' || animal.lifeStage === 'juvenile')
       return { ...SPECIES_VISUALS.elephant!, model: { file: '/assets/animals/AsianElephantCalf.glb', yaw: Math.PI } };

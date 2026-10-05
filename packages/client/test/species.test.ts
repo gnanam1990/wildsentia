@@ -36,6 +36,11 @@ describe('species visuals', () => {
     expect(visualFor('langur').model?.referenceHeightM).toBe(0.699);
     expect(visualFor('squirrel').model?.referenceHeightM).toBe(0.794);
   });
+  it('draws adult chital hinds without antlers', () => {
+    expect(visualForAnimal({ speciesId: 'chital', sex: 'female', lifeStage: 'adult' }).model?.file).toBe('/assets/animals/ChitalHind.glb');
+    expect(visualForAnimal({ speciesId: 'chital', sex: 'male', lifeStage: 'adult' }).model?.file).toBe('/assets/animals/Chital.glb');
+    expect(existsSync(`${publicDir}/assets/animals/ChitalHind.glb`)).toBe(true);
+  });
   it('draws a vulture in the air with the rig that can spread its wings', () => {
     const vulture = { speciesId: 'vulture', sex: 'female', lifeStage: 'adult' } as const;
     expect(visualForAnimal(vulture).model?.file).toBe('/assets/animals/WhiteRumpedVulture.glb');

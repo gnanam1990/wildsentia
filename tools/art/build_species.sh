@@ -14,11 +14,12 @@ OUT="${OUT:-$RIGS}"
 table='
 boar     Bull     WildBoar      Tail4,Tail5,Tail6,Tail7  Idle,Walk,Eating,Gallop,Idle_Headlow,Death  bbox
 chital   Deer     Chital        -                        Idle,Walk,Eating,Gallop,Idle_Headlow,Death
+chitalhind Deer   ChitalHind    -                        Idle,Walk,Eating,Gallop,Idle_Headlow,Death
 sambar   Stag     Sambar        -                        Idle,Walk,Eating,Gallop,Idle_Headlow,Death
 gaur     Bull     Gaur          -                        Idle,Walk,Eating,Gallop,Idle_Headlow,Death
 dhole    Fox      Dhole         -                        Idle,Walk,Eating,Gallop,Idle_2_HeadLow,Death
 jackal   Fox      Jackal        -                        Idle,Walk,Eating,Gallop,Idle_2_HeadLow,Death
-hare     Rabbit   Hare          -                        Idle,Gallop,Jump,Resting,Death
+hare     Rabbit   Hare          -                        Idle,Gallop,Jump,Resting,Death  bbox
 langur   Langur   GreyLangur    -                        Idle,Walk,Run,Eating,Drinking,Death
 squirrel Squirrel GiantSquirrel -                        Idle,Walk,Run,Eating,Drinking,Death
 vulture  Vulture  WhiteRumpedVulture -                   Idle,Walk,Flap,Glide,Eating,Death
