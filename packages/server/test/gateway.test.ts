@@ -100,10 +100,25 @@ maybe('Gateway', () => {
 
     gateway.receive(b, { type: 'watch', actorId: id });
     expect(gateway.viewerCount(id)).toBe(2);
+    expect(b.lastOfType('viewers')).toMatchObject({ actorId: id, count: 2 });
+    gateway.broadcast(); // Other watchers hear the new count with the next broadcast.
     expect(a.lastOfType('viewers')).toMatchObject({ actorId: id, count: 2 });
 
     gateway.receive(b, { type: 'unwatch' });
     expect(gateway.viewerCount(id)).toBe(1);
+  });
+
+  it('does not let one viewer switching follows make the server write to every other watcher', () => {
+    // Security review 5 October 2026: each watch or unwatch sent the new count to all of an animal's watchers at once.
+    const isolated = new Gateway(host), [popular, other] = host.world.agents;
+    const watchers = Array.from({ length: 50 }, () => new FakeSocket());
+    for (const w of watchers) { isolated.handle(w); isolated.receive(w, { type: 'watch', actorId: popular!.id }); w.sent = []; }
+    const flipper = new FakeSocket(); isolated.handle(flipper);
+    for (let i = 0; i < 100; i++) isolated.receive(flipper, { type: 'watch', actorId: (i % 2 ? other : popular)!.id });
+    expect(watchers.reduce((n, w) => n + w.sent.length, 0)).toBe(0);
+    isolated.broadcast();
+    expect(watchers.every((w) => w.sent.filter((m) => m.type === 'viewers').length === 1)).toBe(true);
+    isolated.close();
   });
 
   it('drops a viewer count when the socket disconnects', () => {

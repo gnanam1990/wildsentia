@@ -83,7 +83,9 @@ export class Gateway {
       const set = this.#watchers.get(message.actorId) ?? new Set<GatewaySocket>();
       set.add(socket);
       this.#watchers.set(message.actorId, set);
-      this.#publishViewerCount(message.actorId);
+      // Only the new watcher hears the count now; the others get it with the next broadcast,
+      // so switching back and forth cannot make the server write to every watcher each time.
+      this.#send(socket, JSON.stringify({ type: 'viewers', actorId: message.actorId, count: set.size }));
       return;
     }
 
@@ -230,9 +232,7 @@ export class Gateway {
     const set = this.#watchers.get(session.watching);
     set?.delete(session.socket);
     if (set && set.size === 0) this.#watchers.delete(session.watching);
-    const actorId = session.watching;
-    session.watching = null;
-    this.#publishViewerCount(actorId);
+    session.watching = null; // The remaining watchers hear the new count with the next broadcast.
   }
 
   #publishViewerCount(actorId: string): void {
