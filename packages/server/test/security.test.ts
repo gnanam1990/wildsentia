@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
 import { buildApi } from '../src/api.js';
 import { networkKey } from '../src/network.js';
@@ -85,5 +87,19 @@ describe('error responses', () => {
     const res = await app.inject({ method: 'POST', url: '/rewards/session', headers: { 'content-type': 'application/json' }, payload: '{"x":' });
     expect(res.statusCode).toBe(400);
     expect(res.json()).toMatchObject({ statusCode: 400, error: 'Bad Request' });
+  });
+});
+
+describe('deploy/Caddyfile', () => {
+  const caddyfile = readFileSync(fileURLToPath(new URL('../../../deploy/Caddyfile', import.meta.url)), 'utf8');
+  const start = caddyfile.indexOf('  header {'), headers = caddyfile.slice(start, caddyfile.indexOf('\n  }', start));
+  it('tells browsers to keep to HTTPS and refuse framing, plugins and a foreign base URL', () => {
+    expect(headers).toMatch(/Strict-Transport-Security "max-age=\d{8,}"/);
+    for (const directive of ["frame-ancestors 'none'", "object-src 'none'", "base-uri 'self'"])
+      expect(headers).toMatch(new RegExp(`Content-Security-Policy "[^"]*${directive}`));
+    expect(headers).toMatch(/Permissions-Policy "[^"]*camera=\(\)/);
+    expect(headers).toContain('X-Content-Type-Options nosniff');
+    expect(headers).toContain('X-Frame-Options DENY');
+    expect(headers).toMatch(/^\s*-Server$/m);
   });
 });
