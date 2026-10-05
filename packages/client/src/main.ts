@@ -652,7 +652,7 @@ setInterval(() => {
 
 // Dev-only handle so the running world can be inspected from the console.
 if (import.meta.env.DEV) {
-  (window as unknown as Record<string, unknown>).__vana = { scene, camera, follow, animals, store };
+  (window as unknown as Record<string, unknown>).__vana = { scene, camera, follow, animals, store, liveEncounters };
 }
 
 const renderStats = document.querySelector<HTMLOutputElement>('#render-stats')!;
