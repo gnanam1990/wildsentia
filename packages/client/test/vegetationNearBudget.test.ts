@@ -28,9 +28,12 @@ describe('near vegetation work before terrain seating', () => {
     const before = legacyNear(shola, focus, () => { beforeSamples++; return 10; });
     const after = nearPlan(shola, focus, () => { afterSamples++; return 10; });
     expect(digest(after)).toBe(digest(before));
-    expect([...after.values()].reduce((count, items) => count + items.length, 0)).toBe(4211);
-    expect(beforeSamples).toBe(25104);
-    expect(afterSamples).toBe(11563);
+    // Clumped stands (forestStructure.ts) keep every patch's count but move plants between
+    // clumps and clearings, so the population inside this one 220 m circle changed
+    // (4211 -> 3932); island-wide means are recorded in docs/2026-10-05-environment-realism.md.
+    expect([...after.values()].reduce((count, items) => count + items.length, 0)).toBe(3932);
+    expect(beforeSamples).toBe(23475);
+    expect(afterSamples).toBe(8836);
     expect(afterSamples).toBeLessThan(beforeSamples * .5);
 
     shola[210]!.canopyCover = 0; // saved perch remnant is not dropped by an early patch cull.

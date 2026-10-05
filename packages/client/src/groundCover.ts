@@ -3,6 +3,7 @@ import { GRID_SIZE, PATCH_METRES, spatialHash } from '@vana/shared';
 import type { HeightSampler, PatchView } from './terrain.js';
 import { RENDER_BUDGETS, type RenderTier } from './renderQuality.js';
 import { islandPool } from './pools.js';
+import { standDensity } from './forestStructure.js';
 
 export const COVER_RADIUS_M = 144;
 export const DENSE_COVER_RADIUS_M = 64;
@@ -13,6 +14,14 @@ const FULL_FOREGROUND_M = 18;
 export const CURVED_BLADE_RADIUS_M = 32;
 const CAPACITY: Record<string, number> = { grassland: 9000, shola: 1200, riparian: 5000, marsh: 3500, rock: 300 };
 const DENSITY: Record<string, number> = { grassland: 1, shola: 0.72, riparian: 0.9, marsh: 1, rock: 0.18 };
+
+/** How much light reaches the floor here, as a grass multiplier: thin under the clumps a
+ * forest's trees gather into, fuller in its clearings. 1 where no stand pattern applies. */
+export function coverOpenness(habitat: string, x: number, z: number): number {
+  if (habitat === 'shola' || habitat === 'riparian') return 0.3 + 0.95 * (1 - standDensity(x, z));
+  if (habitat === 'grassland') return 1.05 - 0.3 * standDensity(x, z);
+  return 1;
+}
 
 export interface GrassTuft {
   x: number; y: number; z: number; rotation: number; height: number; width: number; tint: number;
@@ -66,13 +75,17 @@ function* visitGroundCover(
         const pool = pools.get(patch.id);
         if (pool ? Math.hypot(x - pool.x, z - pool.z) < pool.radius + 0.4 : patch.water > 20_000) continue;
         const vigour = Math.min(1, patch.grass / (CAPACITY[patch.habitat] ?? 9000));
-        if (random() > Math.sqrt(vigour) * (DENSITY[patch.habitat] ?? 0)) continue;
+        // Under a clump of trees the floor is shaded litter; grass crowds into the light gaps.
+        // Same stand pattern as the trees (forestStructure.ts); the patch biomass still caps it.
+        const open = coverOpenness(patch.habitat, x, z);
+        if (random() > Math.sqrt(vigour) * (DENSITY[patch.habitat] ?? 0) * open) continue;
         const rotation = random() * Math.PI * 2;
         // Broad, coherent patches break up the identical height/colour of a planted lawn.
         // This is visual variation only; the server's biomass remains authoritative.
         const meadow = (Math.sin(x * 0.17 + Math.sin(z * 0.09)) + Math.cos(z * 0.21 + x * 0.04) + 2) / 4;
         const habitatHeight = patch.habitat === 'shola' ? 0.95 : patch.habitat === 'rock' ? 0.65 : 1;
-        const height = (0.24 + random() * 0.44) * (0.55 + vigour * 0.45) * (0.8 + meadow * 0.2) * habitatHeight;
+        const height = (0.24 + random() * 0.44) * (0.55 + vigour * 0.45) * (0.8 + meadow * 0.2) * habitatHeight
+          * (0.8 + 0.25 * Math.min(1, open));
         // Never enlarge far blades into broad triangular leaves merely to fill screen area.
         const width = (0.75 + random() * 0.45) * (distant ? 1.15 : 1);
         const tint = random() * 0.35 + meadow * 0.65;
