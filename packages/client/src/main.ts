@@ -412,6 +412,22 @@ function refreshEncounterPicker(nowMs: number): void {
 
 /** Detailed plants around the camera, and the stand-in terrain they replace there. */
 let nature: NearVegetation | null = null;
+/** The detailed vegetation still downloading; it joins the scene whenever it arrives. */
+let natureLoading: NearVegetation | null = null;
+function loadNature(patches: ConstructorParameters<typeof NearVegetation>[0]): void {
+  const vegetation = new NearVegetation(patches, (x, z) => animals.groundHeightAt(x, z));
+  natureLoading = vegetation;
+  vegetation.load(renderer).then(() => {
+    if (natureLoading !== vegetation) return;
+    natureLoading = null;
+    nature = vegetation; nature.setQuality(quality.tier);
+    if (mapPatches.length) nature.setPatches(mapPatches);
+    observerVisibility.attach(nature.root); scene.add(nature.root);
+  }, () => {
+    // Retried on the next scene update; the fallback forest stays meanwhile.
+    vegetation.dispose(); if (natureLoading === vegetation) natureLoading = null;
+  });
+}
 let groundCover: GroundCover | null = null;
 let terrainRoot: THREE.Object3D | null = null;
 const graphics = document.querySelector<HTMLSelectElement>('#render-quality')!;
@@ -439,27 +455,26 @@ document.addEventListener('visibilitychange', () => {
 addEventListener('pagehide', (event) => {
   ambientAudio.stop(); setAmbientUi('Sound off.');
   // Preserve resources if the browser keeps this document alive in its back/forward cache.
-  if (!(event as PageTransitionEvent).persisted) { nature?.dispose(); groundCover?.dispose(); microEcology.dispose(); communityLayer.dispose(); terrainCheckpoints.dispose(); }
+  if (!(event as PageTransitionEvent).persisted) { nature?.dispose(); natureLoading?.dispose(); natureLoading = null; groundCover?.dispose(); microEcology.dispose(); communityLayer.dispose(); terrainCheckpoints.dispose(); }
 });
 const carcasses = new Map<string, AnimalState>();
 const sceneStatus = document.querySelector<HTMLElement>('#scene-status')!;
 const sceneUpdates = new SceneUpdates<{
   terrain: PreparedTerrain;
-  cover: GroundCover | null; vegetation: NearVegetation | null;
+  cover: GroundCover | null;
 }>({
   async prepare(environment) {
     const terrain = terrainCheckpoints.prepare(environment.patches);
-    let cover: GroundCover | null = null, vegetation: NearVegetation | null = null;
+    let cover: GroundCover | null = null;
     try {
       if (groundCover === null) cover = new GroundCover(environment.patches, (x, z) => animals.groundHeightAt(x, z));
-      if (nature === null) {
-        vegetation = new NearVegetation(environment.patches, (x, z) => animals.groundHeightAt(x, z));
-        await vegetation.load(renderer);
-      }
-      return { terrain, cover, vegetation };
-    } catch (error) { terrainCheckpoints.discard(terrain); cover?.dispose(); vegetation?.dispose(); throw error; }
+      // Detailed trees and rocks are most of a first visit's bytes. The terrain's fallback
+      // trunks and canopies show the forest meanwhile, so they load after the scene appears.
+      if (nature === null && natureLoading === null) loadNature(environment.patches);
+      return { terrain, cover };
+    } catch (error) { terrainCheckpoints.discard(terrain); cover?.dispose(); throw error; }
   },
-  discard(prepared) { terrainCheckpoints.discard(prepared.terrain); prepared.cover?.dispose(); prepared.vegetation?.dispose(); },
+  discard(prepared) { terrainCheckpoints.discard(prepared.terrain); prepared.cover?.dispose(); },
   commit(update, prepared) {
     // No await in this commit: terrain, resources, carcasses, route playback and HUD become
     // visible together before the next animation frame or subscriber notification.
@@ -476,11 +491,7 @@ const sceneUpdates = new SceneUpdates<{
       if (prepared.cover) { groundCover = prepared.cover; observerVisibility.attach(groundCover.root); scene.add(groundCover.root); }
       else groundCover?.setPatches(update.environment.patches);
       groundCover?.setQuality(quality.tier);
-      if (prepared.vegetation) {
-        nature = prepared.vegetation; nature.setQuality(quality.tier);
-        observerVisibility.attach(nature.root); scene.add(nature.root);
-      }
-      else nature?.setPatches(update.environment.patches);
+      nature?.setPatches(update.environment.patches);
       microEcology.sync(update.environment.microEcology, update.environment.patches, prepared.terrain.height);
       communityLayer.sync(update.environment.community, prepared.terrain.height);
       communityLayer.setReplay(replay !== null);
