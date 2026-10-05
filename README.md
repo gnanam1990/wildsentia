@@ -345,11 +345,15 @@ of the 63 starvation deaths.
 
 ### Running an existing world on new code
 
-The current runtime identifies as `sim_0.34.0`. Its rule change from `sim_0.33.0` is a landscape
+The current runtime identifies as `sim_0.35.0`. Its rule change from `sim_0.34.0` calibrates
+predator feeding to field intake: meat beyond the day's hunger fills a stomach (tiger 14%, dhole
+20% of body mass) digested at the daily rate, and a predator does not start a hunt while sated or
+below its hunting hunger, so a tiger kills about once a week, as at Nagarahole. A saved 0.34 world
+starts on this code only with `VANA_ALLOW_V34_UPGRADE=1`. `sim_0.34.0`'s change from `sim_0.33.0` was a landscape
 of fear: prey detect the predators that hunt them within their own senses (a stalker's
 concealment hides it until close), fear at once by distance and posture, flee a spotted hunter
 that hour, keep out of patches where one stands unless desperate, and chital and langur heed each
-other's alarms; young too small to follow lie still. A saved 0.33 world starts on this code only
+other's alarms; young too small to follow lie still. A saved 0.33 world starts on this code
 with `VANA_ALLOW_V33_UPGRADE=1`. `sim_0.33.0`'s changes from `sim_0.32.0` were on the
 closed island: a pack's range holds only the land inside it (so the island holds one pack of four
 adult dholes); new islands are founded at the forest's density per km² of land, with predators

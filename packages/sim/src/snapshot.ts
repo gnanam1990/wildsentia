@@ -154,6 +154,13 @@ export function restoreSnapshot(snapshot: Snapshot, options: WorldOptions): Worl
       throw new Error('invalid island arrival checkpoint');
     Object.assign(world.islandArrivals, snapshot.islandArrivals);
   }
+  for (const agent of world.agents) {
+    if (agent.gutKg === undefined) continue;
+    const cfg = world.species.get(agent.speciesId);
+    const capacity = cfg?.diet.gutCapacityBodyFraction ? agent.massKg * cfg.diet.gutCapacityBodyFraction : 0;
+    if (!Number.isFinite(agent.gutKg) || !(agent.gutKg > 0) || agent.gutKg > capacity + 1e-9)
+      throw new Error('invalid stomach checkpoint');
+  }
   world.ledger.imported = snapshot.ledger.imported;
   world.ledger.exported = snapshot.ledger.exported;
   world.__importState(
@@ -407,6 +414,19 @@ export function upgradeV27Snapshot(snapshot: Snapshot): Snapshot {
   if (snapshot.simVersion !== 'sim_0.27.0') throw new Error('only sim_0.27.0 snapshots can use this upgrade');
   const upgraded = structuredClone(snapshot);
   finishFloweringUpgrade(upgraded);
+  return upgraded;
+}
+
+/**
+ * v0.35 calibrates predator feeding to field intake: meat beyond the day's hunger fills a
+ * stomach (tiger 14%, dhole 20% of body mass) digested at the daily rate, and a predator with
+ * food in its stomach does not start a hunt. Future decisions only; every v0.34 state byte is
+ * kept (no saved animal has a stomach until it next eats).
+ */
+export function upgradeV34Snapshot(snapshot: Snapshot): Snapshot {
+  if (snapshot.simVersion !== 'sim_0.34.0') throw new Error('only sim_0.34.0 snapshots can use this upgrade');
+  const upgraded = structuredClone(snapshot);
+  upgraded.simVersion = SIM_VERSION;
   return upgraded;
 }
 

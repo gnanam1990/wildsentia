@@ -64,7 +64,10 @@ export function selectGoal(
     // while there is still meat on something already dead nearby. Without this a predator
     // abandoned a carcass it had barely touched and killed again, so the world lost five
     // animals for every one a predator actually ate.
-    hunt: carrionOpportunity > 0.3 ? 0 : d.hunger * preyOpportunity * stamina,
+    // A predator with meat still in its stomach is sated and does not start a hunt
+    // (sim_0.35.0): its attempt rate follows its intake, not an hourly retry on any hunger.
+    hunt: carrionOpportunity > 0.3 || (agent.gutKg ?? 0) > 0 || d.hunger < (species.hunting?.huntFromHunger ?? 0)
+      ? 0 : d.hunger * preyOpportunity * stamina,
     // Carrion is cheaper than a hunt, so a hungry scavenger prefers it strongly.
     scavenge: d.hunger * carrionOpportunity * 1.35,
     // Fear outranks ordinary needs but not desperate ones, and an exhausted animal cannot

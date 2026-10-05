@@ -14,8 +14,8 @@ import { heldByPredatorOf, type Percept, type WorldView } from './perception.js'
 import { locateAgent, locateCarcass } from './spatial.js';
 import { approachContact } from './movement.js';
 import { navigate } from './navigation.js';
-import { allowsDependentGoal, canEatMaternalCarcass, canHuntIndependently, locomotionFactor,
-  needsOf, needsProvisioning } from './needs.js';
+import { allowsDependentGoal, canEatMaternalCarcass, canHuntIndependently, creditMeal, gutCapacityKg, locomotionFactor,
+  mealRoom, needsOf, needsProvisioning } from './needs.js';
 import { exposeToCarrion } from './illness.js';
 import { exposeToContactWound } from './wound.js';
 import { advanceTreeVertical } from './arboreal.js';
@@ -439,9 +439,13 @@ function consume(ctx: BehaviourContext, carcass: Carcass, elapsedSeconds = 0, ca
   const hours = feedingSeconds / 3600;
   const dailyNeed = needsOf(ctx.agent, ctx.species).foodKg;
   const ration = (dailyNeed / FORAGING_HOURS_PER_DAY) * hours;
-  const wanted = appetite(ration, ctx.agent.drives.hunger, ctx.agent.massKg, hours);
+  // A predator with a stomach gorges at its gut's fill rate whatever its hunger, as a tiger eats
+  // 18-35 kg in a night, until the day's hunger and the stomach are full (sim_0.35.0).
+  const stores = gutCapacityKg(ctx.agent, ctx.species) > 0;
+  const wanted = stores ? ctx.agent.massKg * GUT_FRACTION_PER_HOUR * hours
+    : appetite(ration, ctx.agent.drives.hunger, ctx.agent.massKg, hours);
   const available = edibleMass(carcass.biomass);
-  const wantedHere = Math.min(wanted, available);
+  const wantedHere = Math.min(wanted, available, stores ? mealRoom(ctx.agent, ctx.species) : Infinity);
   if (wantedHere <= 0) return;
 
   // Same exact accounting as grazing: never take more from a tissue than it holds, and count
@@ -453,9 +457,8 @@ function consume(ctx: BehaviourContext, carcass: Carcass, elapsedSeconds = 0, ca
 
   // This is the completed aggregate meal, not a claim that it was all eaten on arrival.
   carcass.consumers.push({ agentId: ctx.agent.id, at: Math.floor(end), kg: eaten });
-  ctx.agent.drives.hunger = clamp01(
-    ctx.agent.drives.hunger - (eaten / dailyNeed) * HUNGER_PER_DAY,
-  );
+  if (stores) creditMeal(ctx.agent, ctx.species, eaten);
+  else ctx.agent.drives.hunger = clamp01(ctx.agent.drives.hunger - (eaten / dailyNeed) * HUNGER_PER_DAY);
 
   const meal = ctx.log.append({
     type: ctx.choice.goal === 'hunt' ? 'fed' : 'scavenged', worldTime: Math.floor(end), simVersion: '',

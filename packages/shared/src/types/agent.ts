@@ -118,6 +118,12 @@ export interface Agent {
   generation: number;
   /** Set while this animal still depends on its mother. */
   dependentOn: string | null;
+  /**
+   * sim_0.35.0: meat eaten beyond the day's hunger, held in the stomach and digested at the
+   * daily intake rate. A predator with food in its gut is sated and does not start a hunt.
+   * An energy-equivalent drive buffer; the meat's nutrients already went to soil when eaten.
+   */
+  gutKg?: number;
   /** Last completed boar maternal water transfer. Optional on old saves; birth time is the fresh-born baseline. */
   lastMaternalWaterAt?: WorldTime;
   /** Persistent rendezvous, never a position override. Established sites are not historical birth locations. */

@@ -22,7 +22,7 @@ import { controlledAction, controlledFeed, descendPerchedAnimal, executeGoal, ty
 import { foundingTraits } from './agents/genetics.js';
 import { Pedigree } from './agents/pedigree.js';
 import { mortalityFor, stageFor, targetMass } from './agents/lifecycle.js';
-import { needsProvisioning, canFollowParent, careRadius, inCareContact } from './agents/needs.js';
+import { needsProvisioning, canFollowParent, careRadius, digestGut, gutCapacityKg, inCareContact, mealRoom, needsOf } from './agents/needs.js';
 import { availableForCare, chooseCareTarget, finishCare, idleRangeAnchor, travelToFamily, type FamilyLocation, type CareVisit } from './agents/family.js';
 import { establishNursingSites, nursingEligible } from './agents/nursing.js';
 import { choosePackRecipient, packDonorEligible, canWaitForPackFood, beginPackCollection, finishPackCollection,
@@ -39,7 +39,7 @@ import {
   packAllowsBreeding,
 } from './agents/reproduction.js';
 
-export const SIM_VERSION = 'sim_0.34.0';
+export const SIM_VERSION = 'sim_0.35.0';
 
 /** Uncalibrated group-decision policy, not a claim of a species-specific thirst measurement.
  * An unweaned independent drinker need not leave a nearby caregiver every hour for a sip. */
@@ -946,6 +946,7 @@ export class World {
       const cfg = this.species.get(agent.speciesId)!;
 
       updateDrives(agent, cfg, hours);
+      digestGut(agent, cfg, hours);
       digestPackFood(agent, cfg, this.patches[agent.patchId]!, this.#time, this.log);
       decaySkills(agent, cfg, hours, this.#time);
       agent.stamina = Math.min(1, (agent.stamina ?? 1) + 0.04 * hours);
@@ -1194,7 +1195,10 @@ export class World {
         continue;
       }
       // A hunter stays with an unfinished kill instead of wandering off from it (sim_0.33.0).
-      const kill = choice.goal === 'wander' && calm ? this.#unfinishedKill(agent, cfg) : null;
+      // A predator with stomach room also feeds at its kill rather than resting away from it
+      // (sim_0.35.0); a full one rests where it is.
+      const kill = calm && (choice.goal === 'wander' || choice.goal === 'rest' && gutCapacityKg(agent, cfg) > 0
+        && mealRoom(agent, cfg) >= needsOf(agent, cfg).foodKg / 8) ? this.#unfinishedKill(agent, cfg) : null;
       if (kill) {
         executeGoal({ agent, species: cfg, patches: this.patches, view, percept: { ...percept, carrion: kill },
           choice: { goal: 'scavenge', score: choice.score, alternative: choice.goal }, hours, worldTime: this.#time,

@@ -49,6 +49,7 @@ export const SpeciesConfigSchema = z
         }))
         .min(1),
       dailyIntakeKg: z.number().positive(),
+      gutCapacityBodyFraction: z.number().gt(0).max(0.3).optional(),
       waterNeedLPerDay: z.number().positive(),
       canScavenge: z.boolean(),
       carrionTolerance: z.number().min(0).max(1),
@@ -60,6 +61,7 @@ export const SpeciesConfigSchema = z
         commitDistanceM: z.number().positive(),
         baseSuccess: z.number().min(0).max(1),
         staminaCostPerChase: z.number().min(0).max(1),
+        huntFromHunger: z.number().min(0).max(0.9).optional(),
       })
       .optional(),
     social: z.object({

@@ -41,6 +41,7 @@
       }
     ],
     "dailyIntakeKg": 2.2,
+    "gutCapacityBodyFraction": 0.2,
     "waterNeedLPerDay": 2,
     "canScavenge": true,
     "carrionTolerance": 0.55
@@ -58,7 +59,8 @@
     "stalkConcealment": 0.35,
     "commitDistanceM": 90,
     "baseSuccess": 0.34,
-    "staminaCostPerChase": 0.18
+    "staminaCostPerChase": 0.18,
+    "huntFromHunger": 0.25
   },
   "social": {
     "structure": "pack",

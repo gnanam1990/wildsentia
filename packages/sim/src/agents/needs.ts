@@ -11,6 +11,40 @@ export function needsOf(agent: Agent, species: SpeciesConfig): { foodKg: number;
   return { foodKg: species.diet.dailyIntakeKg * factor, waterL: species.diet.waterNeedLPerDay * factor };
 }
 
+/**
+ * sim_0.35.0 satiety. A tiger eats 18-35 kg at a sitting and then needs no kill for days; a model
+ * whose hunger stopped at zero threw the rest away, so a predator ate a day's food from each
+ * kill and killed again. Meat beyond the day's hunger now fills the stomach up to this capacity.
+ */
+export function gutCapacityKg(agent: Agent, species: SpeciesConfig): number {
+  const fraction = species.diet.gutCapacityBodyFraction;
+  return fraction ? agent.massKg * fraction : 0;
+}
+
+/** Digest stored meat at the daily intake rate, offsetting the hunger the hour adds. */
+export function digestGut(agent: Agent, species: SpeciesConfig, hours: number): void {
+  if (!(agent.gutKg! > 0)) { delete agent.gutKg; return; }
+  const daily = needsOf(agent, species).foodKg;
+  const kg = Math.min(agent.gutKg!, daily * hours / 24);
+  agent.drives.hunger = Math.max(0, agent.drives.hunger - kg / daily * HUNGER_PER_DAY);
+  agent.gutKg = agent.gutKg! - kg;
+  if (!(agent.gutKg > 1e-9)) delete agent.gutKg;
+}
+
+/** Credit a meal: first to hunger, then to the stomach up to capacity. Returns the kg it can take. */
+export function mealRoom(agent: Agent, species: SpeciesConfig): number {
+  const daily = needsOf(agent, species).foodKg;
+  return agent.drives.hunger / HUNGER_PER_DAY * daily + Math.max(0, gutCapacityKg(agent, species) - (agent.gutKg ?? 0));
+}
+
+export function creditMeal(agent: Agent, species: SpeciesConfig, eatenKg: number): void {
+  const daily = needsOf(agent, species).foodKg;
+  const toHunger = Math.min(eatenKg, agent.drives.hunger / HUNGER_PER_DAY * daily);
+  agent.drives.hunger = Math.max(0, agent.drives.hunger - toHunger / daily * HUNGER_PER_DAY);
+  const stored = Math.min(eatenKg - toHunger, Math.max(0, gutCapacityKg(agent, species) - (agent.gutKg ?? 0)));
+  if (stored > 0) agent.gutKg = (agent.gutKg ?? 0) + stored;
+}
+
 export function needsProvisioning(agent: Agent, species: SpeciesConfig): boolean {
   return agent.ageDays < species.lifecycle.weanDays;
 }

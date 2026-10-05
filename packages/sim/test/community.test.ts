@@ -15,7 +15,11 @@ describe('persistent autonomous household', () => {
     const w = createWorld({ ...options, seed: 2, initialCommunityRulesVersion: 8,
       initialAgents: ISLAND_POPULATION });
     const baseline = w.totalNutrients();
-    for (let h = 0; h < 96; h++) w.step(1);
+    // When the first catch lands depends on the whole world's history (hour 107 under the first
+    // sim_0.35.0 rules), so step until a catch has been cooked, within ten days.
+    const cooked = () => w.log.all().some(e => e.type === 'human_task_finished' && e.conditions.action === 'cook'
+      && e.outcome === 'success');
+    for (let h = 0; h < 240 && (h < 96 || !cooked()); h++) w.step(1);
     const c = w.community!, events = w.log.all();
     const deliveredTimber = events.filter(e => e.type === 'human_task_finished'
       && e.conditions.action === 'deliver').reduce((kg, e) => kg + (e.effects.timberKg ?? 0), 0);
