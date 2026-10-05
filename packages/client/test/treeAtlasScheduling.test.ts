@@ -117,6 +117,30 @@ describe('frame-sliced atlas baking', () => {
     atlas.target.dispose(); r.target?.dispose(); meshes[0]!.geometry.dispose(); (meshes[0]!.material as THREE.Material).dispose();
   });
 
+  it('leaves a scan\'s buried soil skirt out of the atlas only while baking', async () => {
+    class ClipRecorder extends RecordingRenderer {
+      localClippingEnabled = false;
+      clips: Array<{ local: boolean; constant: number | undefined }> = [];
+      override render(scene: THREE.Scene, camera: THREE.OrthographicCamera) {
+        const mesh = scene.children.find((o) => (o as THREE.Mesh).isMesh) as THREE.Mesh;
+        this.clips.push({ local: this.localClippingEnabled,
+          constant: (mesh.material as THREE.Material).clippingPlanes?.[0]?.constant });
+        super.render(scene, camera);
+      }
+    }
+    const r = new ClipRecorder(), meshes = source();
+    const atlas = await bakeTreeAtlas(renderer(r), meshes, { clipBelow: 0.3, nextFrame: async () => {
+      // Between views the live scene shares these materials: never clipped there.
+      expect((meshes[0]!.material as THREE.Material).clippingPlanes).toBeNull();
+      expect(r.localClippingEnabled).toBe(false);
+    } });
+    expect(r.clips).toHaveLength(TREE_ELEVATIONS * TREE_VIEWS);
+    expect(r.clips.every((clip) => clip.local && clip.constant === -0.3)).toBe(true);
+    expect((meshes[0]!.material as THREE.Material).clippingPlanes).toBeNull();
+    expect(r.localClippingEnabled).toBe(false);
+    atlas.target.dispose(); r.target?.dispose(); meshes[0]!.geometry.dispose(); (meshes[0]!.material as THREE.Material).dispose();
+  });
+
   it('restores state and releases only its target after a render failure or a failed frame wait', async () => {
     for (const failure of ['draw', 'wait']) {
       const r = new RecordingRenderer(), meshes = source(), before = r.state(); let frames = 0;

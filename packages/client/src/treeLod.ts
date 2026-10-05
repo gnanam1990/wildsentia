@@ -88,6 +88,10 @@ export interface AtlasBakeOptions {
   signal?: AbortSignal;
   /** Injectable frame boundary for deterministic, GPU-free scheduling tests. */
   nextFrame?: (signal?: AbortSignal) => Promise<void>;
+  /** Local height below which the source is left out of the atlas: a scan's soil skirt. The
+   * placed tree is sunk by this much, so a distant card showing it drew a pale ring at every
+   * trunk from above. Near geometry is unchanged. */
+  clipBelow?: number;
 }
 
 /** Bake identical local views, one view per animation-frame boundary. A single GPU draw or
@@ -105,6 +109,9 @@ export async function bakeTreeAtlas(renderer: THREE.WebGLRenderer, source: reado
   const sphere = bounds.getBoundingSphere(new THREE.Sphere());
   const radius = sphere.radius * 1.05;
   const camera = new THREE.OrthographicCamera(-radius, radius, radius, -radius, 0.01, radius * 8);
+  const clipped = options.clipBelow === undefined ? [] : [...new Set(source.flatMap((mesh) =>
+    Array.isArray(mesh.material) ? mesh.material : [mesh.material]))];
+  const clipPlanes = clipped.length ? [new THREE.Plane(new THREE.Vector3(0, 1, 0), -options.clipBelow!)] : null;
   const target = new THREE.WebGLRenderTarget(TILE * TREE_VIEWS, TILE * TREE_ELEVATIONS, {
     minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, generateMipmaps: false,
   });
@@ -125,6 +132,7 @@ export async function bakeTreeAtlas(renderer: THREE.WebGLRenderer, source: reado
           viewport: renderer.getViewport(new THREE.Vector4()), scissor: renderer.getScissor(new THREE.Vector4()),
           scissorTest: renderer.getScissorTest(), clear: renderer.getClearColor(new THREE.Color()),
           alpha: renderer.getClearAlpha(), autoClear: renderer.autoClear, tone: renderer.toneMapping,
+          localClipping: renderer.localClippingEnabled,
         };
         try {
           renderer.setRenderTarget(target);
@@ -132,6 +140,10 @@ export async function bakeTreeAtlas(renderer: THREE.WebGLRenderer, source: reado
             renderer.setScissorTest(false); renderer.setClearColor(0x000000, 0); renderer.clear();
           }
           renderer.autoClear = false; renderer.toneMapping = THREE.NoToneMapping;
+          if (clipPlanes) {
+            renderer.localClippingEnabled = true;
+            for (const material of clipped) material.clippingPlanes = clipPlanes;
+          }
           renderer.setScissorTest(true);
           renderer.setViewport(column * TILE, row * TILE, TILE, TILE);
           renderer.setScissor(column * TILE, row * TILE, TILE, TILE);
@@ -146,6 +158,9 @@ export async function bakeTreeAtlas(renderer: THREE.WebGLRenderer, source: reado
           renderer.setViewport(previous.viewport); renderer.setScissor(previous.scissor);
           renderer.setScissorTest(previous.scissorTest); renderer.setClearColor(previous.clear, previous.alpha);
           renderer.autoClear = previous.autoClear; renderer.toneMapping = previous.tone;
+          renderer.localClippingEnabled = previous.localClipping;
+          // The live scene shares these materials; never leave them clipped across a yield.
+          for (const material of clipped) material.clippingPlanes = null;
         }
       }
     }

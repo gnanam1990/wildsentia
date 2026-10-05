@@ -505,8 +505,9 @@ export class NearVegetation {
           const file = NATURE_KINDS[kind]!.file;
           let atlas = atlases.get(file);
           if (!atlas) {
+            const seating = TREE_ROOT_SEATING[file];
             atlas = await bakeTreeAtlas(renderer, meshes.filter(mesh => mesh.userData.leafLod !== 'middle'),
-              { signal: this.#lifetime.signal });
+              { signal: this.#lifetime.signal, ...(seating ? { clipBelow: seating.embed + 0.02 } : {}) });
             // If disposal happened in a promise continuation, this unowned result must not
             // be published or leak; established targets are released by dispose below.
             if (this.#lifetime.signal.aborted) { atlas.target.dispose(); this.#lifetime.signal.throwIfAborted(); }
