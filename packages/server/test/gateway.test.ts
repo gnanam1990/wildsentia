@@ -17,12 +17,12 @@ const speciesDir = fileURLToPath(new URL('../../../config/species', import.meta.
 
 class FakeSocket implements GatewaySocket {
   sent: Array<Record<string, unknown>> = [];
-  raw: string[] = [];
+  raw: Array<string | Buffer> = [];
   closed = false;
   closeCode: number | undefined;
   /** Bytes the viewer has not read yet; a test raises it to play a viewer that stopped reading. */
   bufferedAmount = 0;
-  send(data: string): void { this.raw.push(data); this.sent.push(JSON.parse(data) as Record<string, unknown>); }
+  send(data: string | Buffer): void { this.raw.push(data); this.sent.push(JSON.parse(String(data)) as Record<string, unknown>); }
   close(code?: number): void { this.closed = true; this.closeCode = code; }
   lastOfType(type: string): Record<string, unknown> | undefined {
     for (const m of [...this.sent].reverse()) {
@@ -180,6 +180,10 @@ maybe('Gateway', () => {
     expect(b.lastOfType('encounters')).toBeUndefined();
     await host.advance(1); gateway.broadcast();
     expect(a.sent.at(-1)).toHaveProperty('environment');
+    // Load test, 5 October 2026: building and converting a ~1.6 MB scene for each viewer took
+    // the event loop ~1.9 s at 500 viewers. Viewers due the same scene share one encoded copy.
+    expect(Buffer.isBuffer(a.raw.at(-1))).toBe(true);
+    expect(a.raw.at(-1)).toBe(b.raw.at(-1));
     const message = a.lastOfType('encounters');
     expect(message).toBeDefined(); expect(message).toEqual(b.lastOfType('encounters'));
     expect((message!.frame as { movements: unknown[] }).movements).toBeInstanceOf(Array);
@@ -361,7 +365,8 @@ maybe('live agents over the gateway', () => {
     const connect = (forwardedFor: string) => new Promise<'scene' | { code: number; reason: string }>((resolve) => {
       const ws = new WebSocket(`ws://127.0.0.1:${port}/live`, { headers: { 'x-forwarded-for': forwardedFor } });
       sockets.push(ws);
-      ws.once('message', (data) => resolve(JSON.parse(String(data)).type === 'scene' ? 'scene' : { code: -1, reason: String(data) }));
+      // A text frame: browsers hand binary frames over as Blobs, which the observer cannot parse.
+      ws.once('message', (data, binary) => resolve(!binary && JSON.parse(String(data)).type === 'scene' ? 'scene' : { code: -1, reason: String(data) }));
       ws.once('close', (code, reason) => resolve({ code, reason: String(reason) }));
     });
     try {

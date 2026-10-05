@@ -108,9 +108,10 @@ async function spectatorWorker(count: number, rampPerSecond: number): Promise<vo
           animals = scene.animals.map((a) => ({ id: a.id, x: a.position.x, z: a.position.z }));
         }
       } else if (type === 'scene') {
-        // A later scene is the checkpoint broadcast: how long it takes to reach every viewer.
+        // A later scene carrying the environment is a new checkpoint, sent to every viewer at
+        // once: how long it takes to reach them all. (Scenes after a `watch` are only for one.)
         const id = /"checkpointId":"([^"]+)"/.exec(head)?.[1];
-        if (id) {
+        if (id && data.includes('"environment":{')) {
           const now = Date.now(), a = sceneArrivals[id] ??= [now, now, 0];
           a[0] = Math.min(a[0], now); a[1] = Math.max(a[1], now); a[2]++;
         }
@@ -180,6 +181,8 @@ async function ensureRegistered(index: number, api: ClientApi, dir: string): Pro
       const err = e as { status?: number; message: string };
       // One registration every six seconds per network after a burst of ten (routes.ts).
       if (err.status === 429 && err.message === 'rate_limited') { await sleep(6_500); continue; }
+      // A restart or proxy hiccup: wait and try again rather than lose the whole run.
+      if (err.status === undefined || err.status >= 500) { await sleep(10_000); continue; }
       throw e;
     }
   }
@@ -304,11 +307,13 @@ async function step(spectators: number, agents: number, opts: { duration: number
   for (const c of children) c.send({ type: 'mark' });
   const samples: Sample[] = [];
   const end = Date.now() + opts.duration * 1000;
+  const take = async () => { try { samples.push(await sample(opts.container)); } catch (e) { console.error('sample failed:', String(e).slice(0, 200)); } };
   while (Date.now() < end) {
-    samples.push(await sample(opts.container));
-    await sleep(Math.max(0, 5_000 - (Date.now() - samples.at(-1)!.at)));
+    const at = Date.now();
+    await take();
+    await sleep(Math.max(0, 5_000 - (Date.now() - at)));
   }
-  samples.push(await sample(opts.container));
+  await take();
   const reports = await Promise.all(children.map(async (c) => { const p = once(c, 'report'); c.send({ type: 'report' }); return (await p).report as WorkerReport; }));
   await Promise.all(children.map((c) => new Promise<void>((resolve) => { c.once('exit', () => resolve()); c.send({ type: 'stop' }); })));
   return summarize(spectators, agents, rampSeconds, samples, reports);

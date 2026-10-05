@@ -8,7 +8,8 @@ import { forwardedClient, networkKey } from './network.js';
 import { WindowMax } from './metrics.js';
 
 export interface GatewaySocket {
-  send(data: string): void;
+  /** A string or an encoded Buffer, always sent as a text message. */
+  send(data: string | Buffer): void;
   close(code?: number, reason?: string): void;
   /** Bytes queued for this viewer and not yet taken by it (ws's bufferedAmount). */
   readonly bufferedAmount?: number;
@@ -194,11 +195,16 @@ export class Gateway {
     const scene = this.#scene(view);
     const frame = this.host.liveEncounterFrame();
     const frameId = frame?.id ?? null;
-    const recordings = new Map<string | null, { payload: string; id: string | null }>();
+    // One serialization per distinct recording, and one encoded copy per distinct message: every
+    // viewer due the same scene is handed the same Buffer. Building and converting a ~1.6 MB
+    // string per viewer held the event loop for ~1.9 s at 500 viewers (load test, 5 October).
+    type Recording = { payload: string; id: string | null; encoded: Map<boolean, Buffer> };
+    const recordings = new Map<string | null, Recording>();
+    let custom = 0;
     for (const session of this.#sessions.values()) {
       const { socket } = session;
-      const changed = session.checkpointId !== view.id || session.recordingDirty || session.recordedFrameId !== frameId;
-      if (!changed) {
+      const freshCheckpoint = session.checkpointId !== view.id;
+      if (!freshCheckpoint && !session.recordingDirty && session.recordedFrameId === frameId) {
         // A world hour takes five real minutes. Repeating the unchanged ~1 MB scene every
         // second wastes tens of GB per viewer/day without advancing the client playhead.
         if (Date.now() - session.lastHeartbeatAt >= 30_000) {
@@ -207,31 +213,31 @@ export class Gateway {
         }
         continue;
       }
-      let payload = scene.base;
-      if (session.checkpointId !== view.id) payload += `,"environment":${scene.environment}`;
-      // Immutable checkpoint geometry can exceed 1 MB. Existing viewers already have its
-      // rate/playhead: do not serialize or transmit it again on every status heartbeat.
-      if (session.checkpointId !== view.id || session.recordingDirty || session.recordedFrameId !== frameId) {
-        let recording = recordings.get(session.watching);
+      let recording = recordings.get(session.watching);
+      if (!recording) {
+        const selected = session.watching === null ? frame : this.host.liveEncounterFrame(session.watching);
+        // Most followed actors already fit the shared selection. Reuse its serialization;
+        // retain at most eight custom selections, not one megabyte per distinct viewer.
+        const shared = selected?.id === frame?.id && selected?.movements === frame?.movements;
+        recording = shared ? recordings.get(null) : undefined;
         if (!recording) {
-          const selected = session.watching === null ? frame : this.host.liveEncounterFrame(session.watching);
-          // Most followed actors already fit the shared selection. Reuse its serialization;
-          // retain at most eight custom selections, not one megabyte per distinct viewer.
-          const shared = selected?.id === frame?.id && selected?.movements === frame?.movements;
-          recording = shared ? recordings.get(null) : undefined;
-          if (!recording) {
-            const timed = selected && frame && selected.id === frame.id
-              ? { ...selected, elapsedWorldSeconds: frame.elapsedWorldSeconds } : selected;
-            recording = { payload: JSON.stringify(timed), id: timed?.id ?? null };
-            if (shared) recordings.set(null, recording);
-            else if (recordings.size < 8) recordings.set(session.watching, recording);
-          }
+          const timed = selected && frame && selected.id === frame.id
+            ? { ...selected, elapsedWorldSeconds: frame.elapsedWorldSeconds } : selected;
+          recording = { payload: JSON.stringify(timed), id: timed?.id ?? null, encoded: new Map() };
+          if (shared) recordings.set(null, recording);
+          else if (custom++ < 8) recordings.set(session.watching, recording);
         }
-        payload += `,"frame":${recording.payload}`;
-        session.recordedFrameId = recording.id;
-        session.recordingDirty = false;
+        if (shared) recordings.set(session.watching, recording);
       }
-      this.#send(socket, `${payload}}`);
+      // Immutable checkpoint geometry can exceed 1 MB: only a viewer new to this checkpoint gets it.
+      let message = recording.encoded.get(freshCheckpoint);
+      if (!message) {
+        message = Buffer.from(`${scene.base}${freshCheckpoint ? `,"environment":${scene.environment}` : ''},"frame":${recording.payload}}`);
+        recording.encoded.set(freshCheckpoint, message);
+      }
+      this.#send(socket, message);
+      session.recordedFrameId = recording.id;
+      session.recordingDirty = false;
       session.checkpointId = view.id;
       session.lastHeartbeatAt = Date.now();
     }
@@ -243,6 +249,9 @@ export class Gateway {
     // threshold. Bound zlib concurrency so a viewer surge cannot fork unlimited compressors.
     this.#wss = new WebSocketServer({ server, path: '/live', maxPayload: 1024, perMessageDeflate: {
       threshold: 64 * 1024, concurrencyLimit: 4, clientNoContextTakeover: true,
+      // Level 3 deflates a 1.6 MB scene in under half the time of the default 6, for ~10% more
+      // bytes on the wire; each viewer's copy is compressed separately (load test, 5 October).
+      zlibDeflateOptions: { level: 3 },
       serverNoContextTakeover: true,
     } });
     this.#wss.on('connection', (raw: WebSocket, request: IncomingMessage) => {
@@ -259,7 +268,8 @@ export class Gateway {
       this.stats.accepted++;
       raw.once('close', () => this.#caps.release(network));
       const socket: GatewaySocket = {
-        send: (data) => raw.send(data),
+        // Buffers are shared encoded scenes; they are still JSON text, never binary frames.
+        send: (data) => raw.send(data, { binary: false }),
         close: (code, reason) => raw.close(code, reason),
         get bufferedAmount() { return raw.bufferedAmount; },
         terminate: () => raw.terminate(),
@@ -295,10 +305,10 @@ export class Gateway {
   }
 
   /** Sends to a viewer that is keeping up; one that has stopped reading is cut off instead. */
-  #send(socket: GatewaySocket, data: string): void {
+  #send(socket: GatewaySocket, data: string | Buffer): void {
     if ((socket.bufferedAmount ?? 0) <= MAX_BUFFERED_BYTES) {
       socket.send(data);
-      this.stats.messages++; this.stats.bytes += Buffer.byteLength(data);
+      this.stats.messages++; this.stats.bytes += typeof data === 'string' ? Buffer.byteLength(data) : data.length;
       return;
     }
     this.stats.slowConsumerTerminations++;
