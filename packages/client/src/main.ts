@@ -748,8 +748,11 @@ function frame(): void {
         state: position.moving ? 'travelling' : 'resting', currentGoal: climb.trace.goal, drives }, position, seconds,
         recordedClimbPhase(climb.trace, seconds));
       observerSubjects = [observerSubject(life.speciesId, position)];
+      // An upright climber's body rises above its hind feet: aim at the body, not the bark below it.
+      const climbing = recordedClimbPhase(climb.trace, seconds) !== null;
       follow.follow({ ...position, moving: !playback.paused && position.moving,
-        y: renderBaseY(position, animals.groundHeightAt) }, playback.paused || reducedMotion.matches ? 1 : dt);
+        y: renderBaseY(position, animals.groundHeightAt), ...(climbing ? { focusHeight: visualFor(life.speciesId).heightM * 1.4 } : {}) },
+        playback.paused || reducedMotion.matches ? 1 : dt);
       const moment = climbMoment(climb, seconds);
       replayMoment.textContent = moment;
       replayWhen.textContent = `${life.id} · +${seconds.toFixed(1)}s`;

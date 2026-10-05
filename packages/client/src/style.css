@@ -265,7 +265,8 @@ button:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid
 
 /* Life replay: a recorded life played back, never the live world. The banner says which. */
 .replay {
-  position: fixed; left: 50%; top: 72px; transform: translateX(-50%); z-index: 25;
+  /* At the bottom: the replayed animal is drawn at the centre of the view, where a top panel sat. */
+  position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 25;
   width: min(560px, calc(100vw - 32px)); padding: 10px 16px; border-radius: 12px;
   background: rgba(20, 28, 18, 0.88); color: #f3efe2; font: 13px/1.4 system-ui, sans-serif; text-align: center;
 }
@@ -275,7 +276,7 @@ button:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid
 .replay .progress { height: 3px; background: rgba(243, 239, 226, 0.2); border-radius: 2px; overflow: hidden; }
 .replay .progress i { display: block; height: 100%; width: 0; background: #b9d98a; }
 .replay button { margin-top: 8px; }
-.replay { max-height: calc(100dvh - 100px); overflow: auto; font-size: 14px; background: rgba(20, 28, 18, 0.97); }
+.replay { max-height: 40dvh; overflow: auto; font-size: 14px; background: rgba(20, 28, 18, 0.97); }
 .replay label { display: block; margin: 8px 0; text-align: left; }
 .replay select { max-width: 100%; min-height: 36px; }
 #replay-recording, #replay-seek { display: block; width: 100%; }
@@ -286,7 +287,7 @@ button:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid
 .replay .replay-status { margin: 4px 0; }
 body.is-replaying #passport-panel, body.is-replaying #feed-panel { visibility: hidden; }
 @media (max-width: 600px) {
-  .replay { top: 12px; max-height: calc(100dvh - 24px); }
+  .replay { top: 12px; bottom: auto; max-height: calc(100dvh - 24px); }
   .replay-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
   .replay-controls button { padding: 8px; font-size: 12px; }
   .replay-controls label { margin: 0; text-align: center; }
