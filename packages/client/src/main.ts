@@ -566,6 +566,28 @@ function pickedAnimal(event: MouseEvent | PointerEvent): string | null {
 }
 
 // Explore lets go and rises to a wide view, so the button always shows the island around you.
+// On-screen camera pad. Holding a button keeps turning, tilting or zooming until released.
+const cameraActions: Record<string, () => void> = {
+  'rotate-left': () => follow.rotateBy(-0.05), 'rotate-right': () => follow.rotateBy(0.05),
+  'tilt-up': () => follow.tiltBy(0.035), 'tilt-down': () => follow.tiltBy(-0.035),
+  'zoom-in': () => follow.zoomBy(1 / 1.06), 'zoom-out': () => follow.zoomBy(1.06),
+};
+for (const button of document.querySelectorAll<HTMLButtonElement>('.camera-pad [data-camera]')) {
+  const action = button.dataset.camera!;
+  if (action === 'reset') { button.addEventListener('click', () => follow.resetView()); continue; }
+  let timer: number | null = null;
+  const stop = (): void => { if (timer !== null) { clearInterval(timer); timer = null; } };
+  button.addEventListener('pointerdown', (event) => {
+    event.preventDefault(); button.setPointerCapture(event.pointerId);
+    cameraActions[action]!(); stop(); timer = window.setInterval(cameraActions[action]!, 30);
+  });
+  for (const end of ['pointerup', 'pointercancel', 'lostpointercapture']) button.addEventListener(end, stop);
+  // Keyboard users: one step per Enter or Space.
+  button.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); for (let i = 0; i < 4; i++) cameraActions[action]!(); }
+  });
+}
+
 document.querySelector('#freecam')!.addEventListener('click', () => {
   watch(null);
   if (follow.distance < EXPLORE_DISTANCE_M) follow.flyToDistance(EXPLORE_DISTANCE_M);
