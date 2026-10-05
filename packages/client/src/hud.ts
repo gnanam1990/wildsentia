@@ -101,6 +101,8 @@ export function feedSentence(event: Record<string, unknown>): string {
       case 'rested': return actors.length > 1 && first === second ? `Two ${first === 'wild boar' ? 'wild boars' : `${first}s`} rested together` : `${an(first)} rested`;
       case 'moved': return failed ? `${an(first)} changed course` : `${an(first)} moved on`;
       case 'birth': case 'born': return `${an(first)} was born`;
+      case 'immigration': return (event.conditions as Record<string, unknown> | undefined)?.route === 'island_crossing'
+        ? `${an(first)} swam ashore onto the island` : `${an(first)} walked into the forest`;
       case 'death': return `${an(first)} died`;
       case 'died': {
         const cause = typeof (event.conditions as Record<string, unknown> | undefined)?.cause === 'string'

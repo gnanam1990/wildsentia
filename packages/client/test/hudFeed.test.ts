@@ -61,6 +61,9 @@ describe('factual live event feed', () => {
     expect(feedSentence({ type: 'rested', actors: ['squirrel_1', 'squirrel_2'] })).toBe('Two giant squirrels rested together');
     expect(feedSentence({ type: 'drank', actors: ['elephant_06fc'] })).toBe('An elephant drank water');
     expect(feedSentence({ type: 'birth', actors: ['boar_1'] })).toBe('A wild boar was born');
+    expect(feedSentence({ type: 'immigration', actors: ['tiger_0f00'], conditions: { route: 'island_crossing' } }))
+      .toBe('A tiger swam ashore onto the island');
+    expect(feedSentence({ type: 'immigration', actors: ['chital_0f00'], conditions: {} })).toBe('A chital walked into the forest');
     // Unknown actors or types keep the factual label.
     expect(feedSentence({ type: 'flowering_started', actors: [] })).toBe('Modelled flowering began');
     expect(feedSentence({ type: 'mystery', actors: ['chital_1'] })).toBe('Mystery');
