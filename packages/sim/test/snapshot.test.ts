@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { fileURLToPath } from 'node:url';
 import { SIM_VERSION, createWorld } from '../src/world.js';
-import { restoreSnapshot, takeSnapshot, upgradeV5Snapshot, upgradeV7Snapshot, upgradeV8Snapshot, upgradeV16Snapshot, upgradeV17Snapshot, upgradeV18Snapshot, upgradeV19Snapshot, upgradeV20Snapshot, upgradeV21Snapshot, upgradeV22Snapshot, upgradeV23Snapshot, upgradeV24Snapshot, upgradeV25Snapshot, upgradeV26Snapshot, upgradeV27Snapshot, upgradeV28Snapshot, upgradeV29Snapshot, upgradeV30Snapshot, type Snapshot } from '../src/snapshot.js';
+import { restoreSnapshot, takeSnapshot, upgradeV5Snapshot, upgradeV7Snapshot, upgradeV8Snapshot, upgradeV16Snapshot, upgradeV17Snapshot, upgradeV18Snapshot, upgradeV19Snapshot, upgradeV20Snapshot, upgradeV21Snapshot, upgradeV22Snapshot, upgradeV23Snapshot, upgradeV24Snapshot, upgradeV25Snapshot, upgradeV26Snapshot, upgradeV27Snapshot, upgradeV28Snapshot, upgradeV29Snapshot, upgradeV30Snapshot, upgradeV31Snapshot, type Snapshot } from '../src/snapshot.js';
 import { establishFloweringGuild } from '../src/fields/floweringGuild.js';
 import { asLegacySnapshot } from './legacySnapshot.js';
 import { navigate } from '../src/agents/navigation.js';
@@ -25,6 +25,18 @@ function expectFishMigration(upgraded: Snapshot, old: Snapshot): void {
 }
 
 describe('snapshots', () => {
+  it('opts a real v0.31 world into hydration-emergency care without rewriting its state', () => {
+    const current = takeSnapshot(createWorld({ ...options, initialAgents: { dhole: 3 }, minPopulation: {} }));
+    const old = structuredClone(current); old.simVersion = 'sim_0.31.0';
+    const before = structuredClone(old);
+    expect(() => restoreSnapshot(old, { ...options, initialAgents: { dhole: 3 }, minPopulation: {} })).toThrow(/version/);
+    const upgraded = upgradeV31Snapshot(old);
+    expect(upgraded).toEqual(current);
+    expect(old).toEqual(before);
+    expect(restoreSnapshot(upgraded, { ...options, initialAgents: { dhole: 3 }, minPopulation: {} }).agents)
+      .toEqual(current.agents);
+    expect(() => upgradeV31Snapshot(upgraded)).toThrow(/only sim_0.31.0/);
+  });
   it('opts a real v0.30 world into the held-kill rule and steerable animals without rewriting its state', () => {
     const current = takeSnapshot(createWorld({ ...options, initialAgents: { boar: 3 }, minPopulation: {} }));
     const old = structuredClone(current); old.simVersion = 'sim_0.30.0';

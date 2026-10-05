@@ -21,4 +21,4 @@ export * from './agents/genetics.js';
 export * from './agents/pedigree.js';
 export * from './forest.js';
 export * from './agents/learning.js';
-export { locomotionFactor } from './agents/needs.js';
+export { careRadius, locomotionFactor } from './agents/needs.js';

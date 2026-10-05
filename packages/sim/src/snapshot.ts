@@ -402,6 +402,21 @@ export function upgradeV27Snapshot(snapshot: Snapshot): Snapshot {
 }
 
 /**
+ * v0.32 changes three care decisions: hunger alone no longer stops a parent answering a
+ * dependent's hydration emergency (availableForCare); a predator sharing the parent's patch
+ * stops care only through the parent's fear, as it stops everything else; and a parent of
+ * young that cannot yet follow wanders only within perceiving range of them (idleRangeAnchor).
+ * Future decisions only; every v0.31 state byte is kept, and no care, water, movement or event
+ * is granted retroactively.
+ */
+export function upgradeV31Snapshot(snapshot: Snapshot): Snapshot {
+  if (snapshot.simVersion !== 'sim_0.31.0') throw new Error('only sim_0.31.0 snapshots can use this upgrade');
+  const upgraded = structuredClone(snapshot);
+  upgraded.simVersion = SIM_VERSION;
+  return upgraded;
+}
+
+/**
  * v0.31: nothing feeds at a carcass a predator of its kind fed from in the past hour, and
  * an outside agent may steer an animal (the optional `controller` field). Future decisions
  * only; every v0.30 state byte is kept.

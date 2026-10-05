@@ -1,5 +1,9 @@
 import { MAX_HUMAN_MOTION_SAMPLES, humanMotionAt, type CommunityState, type HumanMotionSample, type CommunityMotion, type Person } from '@vana/shared';
 
+/** Samples closer than this are one instant. It exceeds one bit of world time until 2^32 s
+ * (136 world-years; a bit there is 9.5e-7 s) and is far below any movement the observer shows. */
+const SAME_INSTANT_S = 1e-6;
+
 /** Observes executed changes only, retaining at most the last hour of a bulk step. */
 export class CommunityRecorder {
   readonly #start: number;
@@ -25,7 +29,12 @@ export class CommunityRecorder {
       samples.push({ seconds: 0, position: cut.position, alive: cut.alive, action: cut.action, phase: cut.phase, taskEventId: cut.taskEventId });
     }
     const previous = samples.at(-1);
-    if (previous && Math.abs(previous.seconds - sample.seconds) < 1e-8) samples[samples.length - 1] = sample;
+    // One instant reached by two arithmetic paths can differ in its last bit. Past 2^26 s of
+    // world time (day 777) one bit is 1.5e-8 s, beyond the old 1e-8 tolerance, so a travel-to-
+    // work transition could land just *before* the sample it follows and break the recording's
+    // time order. Merge anything within a microsecond, never stepping back in time.
+    if (previous && sample.seconds - previous.seconds < SAME_INSTANT_S)
+      samples[samples.length - 1] = { ...sample, seconds: Math.max(previous.seconds, sample.seconds) };
     else samples.push(sample);
     if (samples.length > MAX_HUMAN_MOTION_SAMPLES) { this.#overflow = true; this.#tracks.clear(); this.#before.clear(); }
   }

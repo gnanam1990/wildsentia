@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { collectLiveEncounters, indexLiveMovements, selectLiveMovements, encounterAppearance } from './liveEncounters.js';
 import {
   FOREST_FLOOR, FOREST_LANDSCAPE, FOREST_POPULATION, ISLAND_POPULATION, SIM_VERSION,
-  upgradeV16Snapshot, upgradeV17Snapshot, upgradeV18Snapshot, upgradeV19Snapshot, upgradeV20Snapshot, upgradeV21Snapshot, upgradeV22Snapshot, upgradeV23Snapshot, upgradeV24Snapshot, upgradeV25Snapshot, upgradeV26Snapshot, upgradeV27Snapshot, upgradeV28Snapshot, upgradeV29Snapshot, upgradeV30Snapshot,
+  upgradeV16Snapshot, upgradeV17Snapshot, upgradeV18Snapshot, upgradeV19Snapshot, upgradeV20Snapshot, upgradeV21Snapshot, upgradeV22Snapshot, upgradeV23Snapshot, upgradeV24Snapshot, upgradeV25Snapshot, upgradeV26Snapshot, upgradeV27Snapshot, upgradeV28Snapshot, upgradeV29Snapshot, upgradeV30Snapshot, upgradeV31Snapshot,
   createWorld, restoreSnapshot, takeSnapshot, totalNutrients, upgradeV5Snapshot, upgradeV6Snapshot, upgradeV7Snapshot, upgradeV8Snapshot, upgradeV9Snapshot, upgradeV10Snapshot, upgradeV11Snapshot, upgradeV12Snapshot, upgradeV13Snapshot, upgradeV14Snapshot, upgradeV15Snapshot, type Snapshot, type World, type WorldOptions,
 } from '@vana/sim';
 import type { Pool } from './db/pool.js';
@@ -48,6 +48,8 @@ export interface SimHostOptions {
   allowV29Upgrade?: boolean;
   /** v0.31 keeps prey off a predator's kill and allows agent-steered animals; see upgradeV30Snapshot. */
   allowV30Upgrade?: boolean;
+  /** v0.32 changes three parental-care decisions (hunger, predator presence, idle range); see upgradeV31Snapshot. */
+  allowV31Upgrade?: boolean;
   allowV15Upgrade?: boolean;
   allowV14Upgrade?: boolean;
   /** Explicit rules-change acknowledgement. Back up the database before enabling. Default false. */
@@ -255,6 +257,7 @@ export class SimHost {
       allowV28Upgrade: false,
       allowV29Upgrade: false,
       allowV30Upgrade: false,
+      allowV31Upgrade: false,
       allowV5Upgrade: false,
       allowV6Upgrade: false,
       allowV7Upgrade: false,
@@ -375,13 +378,13 @@ export class SimHost {
     if (snapshot.simVersion !== SIM_VERSION) {
       // Wounds first existed in v0.26. Pre-v0.26 direct jumps must not smuggle them in;
       // a genuine v0.26 checkpoint may preserve its active wound across this upgrade.
-      if (!['sim_0.26.0', 'sim_0.27.0', 'sim_0.28.0', 'sim_0.29.0', 'sim_0.30.0'].includes(snapshot.simVersion)
+      if (!['sim_0.26.0', 'sim_0.27.0', 'sim_0.28.0', 'sim_0.29.0', 'sim_0.30.0', 'sim_0.31.0'].includes(snapshot.simVersion)
         && snapshot.agents.some(agent => agent.wound !== undefined))
         throw new Error('refusing to upgrade: old snapshot contains future wound state');
-      if (!['sim_0.27.0', 'sim_0.28.0', 'sim_0.29.0', 'sim_0.30.0'].includes(snapshot.simVersion)
+      if (!['sim_0.27.0', 'sim_0.28.0', 'sim_0.29.0', 'sim_0.30.0', 'sim_0.31.0'].includes(snapshot.simVersion)
         && snapshot.microEcology?.patches.some(patch => patch.fishCohort !== undefined))
         throw new Error('refusing to upgrade: old snapshot contains future fish cohort state');
-      if (!['sim_0.28.0', 'sim_0.29.0', 'sim_0.30.0'].includes(snapshot.simVersion)
+      if (!['sim_0.28.0', 'sim_0.29.0', 'sim_0.30.0', 'sim_0.31.0'].includes(snapshot.simVersion)
         && snapshot.patches.some(patch => patch.floweringGuild !== undefined))
         throw new Error('refusing to upgrade: old snapshot contains future flowering guild state');
       if (this.#options.allowV5Upgrade && snapshot.simVersion === 'sim_0.5.0') {
@@ -462,6 +465,9 @@ export class SimHost {
       } else if (this.#options.allowV30Upgrade && snapshot.simVersion === 'sim_0.30.0') {
         upgradedFrom = snapshot.simVersion;
         snapshot = upgradeV30Snapshot(snapshot);
+      } else if (this.#options.allowV31Upgrade && snapshot.simVersion === 'sim_0.31.0') {
+        upgradedFrom = snapshot.simVersion;
+        snapshot = upgradeV31Snapshot(snapshot);
       } else throw new Error(
         `refusing to boot: snapshot ${snapshot.simVersion} predates runtime ${SIM_VERSION}`,
       );

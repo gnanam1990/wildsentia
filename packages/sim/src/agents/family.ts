@@ -1,6 +1,7 @@
 import { type Agent, type Patch, type SpeciesConfig, type WorldPosition } from '@vana/shared';
 import type { EventLog } from '../events/log.js';
-import { careRadius, inCareContact, needsOf, needsProvisioning, provisionYoung } from './needs.js';
+import { canFollowParent, careRadius, inCareContact, needsOf, needsProvisioning, provisionYoung } from './needs.js';
+import { perceptionRadius } from './perception.js';
 import { nursingBudget, nursingEligible, nursingWindow } from './nursing.js';
 import { locateAgent, placeBeside } from './spatial.js';
 import { navigate } from './navigation.js';
@@ -8,19 +9,59 @@ import { navigate } from './navigation.js';
 export interface FamilyLocation { patchId: number; position: WorldPosition }
 export interface CareVisit { parent: Agent; arrival: number; position: WorldPosition; routeId?: string }
 
-/** Explicit model policy: a caregiver must also eat/drink and respond to danger. */
-export function availableForCare(parent: Agent): boolean {
-  return parent.alive && parent.drives.hunger < 0.72 && parent.drives.thirst < 0.65 && parent.drives.fear < 0.5;
+/** A dependent this thirsty is in a hydration emergency: under three days' water deficit
+ * is fatal, and at the thirst rate this leaves a little over a day. Matches the urgent thirst
+ * at which a mobile dependent stops waiting for its parent (DEPENDENT_URGENT_THIRST). */
+export const HYDRATION_EMERGENCY_THIRST = 0.5;
+
+/**
+ * Explicit model policy: a caregiver must also eat/drink and respond to danger.
+ *
+ * sim_0.32.0: hunger alone no longer silences care for a dependent in a hydration
+ * emergency. Before, a mother past 0.72 hunger stopped all provisioning, water included,
+ * though she had drunk her fill: whole dhole litters and the gaur calves of a famine died of
+ * thirst beside a living, watered mother who was out hunting or grazing. A thirsty or
+ * frightened parent still cannot answer, and what she gives is still bounded by her own
+ * reserves in provisionYoung (no food past the 0.8 donor ceiling, no water past hers).
+ */
+export function availableForCare(parent: Agent, child?: Agent): boolean {
+  if (!parent.alive || parent.drives.thirst >= 0.65 || parent.drives.fear >= 0.5) return false;
+  return parent.drives.hunger < 0.72 || child !== undefined && child.drives.thirst >= HYDRATION_EMERGENCY_THIRST;
 }
 
 export function chooseCareTarget(parent: Agent, children: readonly Agent[], cfg: SpeciesConfig, start = 0, hours = 1): Agent | undefined {
-  if (!availableForCare(parent)) return;
-  return children.filter((child) => child.alive && child.dependentOn === parent.id
+  // A hungry parent is available only to a dependent in a hydration emergency.
+  return children.filter((child) => availableForCare(parent, child) && child.alive && child.dependentOn === parent.id
     && child.speciesId === parent.speciesId && needsProvisioning(child, cfg)
     && nursingEligible(child, cfg, start, start + hours * 3600)
     && Math.max(child.drives.hunger, child.drives.thirst) >= (cfg.lifecycle.nursing ? 1e-8 : 0.15))
     .sort((a, b) => Math.max(b.drives.hunger, b.drives.thirst) - Math.max(a.drives.hunger, a.drives.thirst)
       || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))[0];
+}
+
+/**
+ * sim_0.32.0: a parent of young that cannot yet follow it ranges idly only as far as it can
+ * perceive them (perceptionRadius patches). Before, an idle mother wandered patch to patch at
+ * random: a fed, watered hare was 2 km from her leverets when their nightly nursing window
+ * opened, and a whole litter died of thirst. Feeding, drinking, flight and every other need
+ * still go wherever they must; only aimless wandering is tethered. Returns where to go back to,
+ * or null when the parent is already within range (or has no such young).
+ */
+export function idleRangeAnchor(parent: Agent, cfg: SpeciesConfig, children: readonly Agent[],
+  starts: ReadonlyMap<string, FamilyLocation>, patches: readonly Patch[]): FamilyLocation | null {
+  const here = patches[parent.patchId];
+  if (!parent.alive || !here) return null;
+  let anchor: FamilyLocation | null = null, nearest = Infinity;
+  for (const child of [...children].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)) {
+    if (!child.alive || child.dependentOn !== parent.id || child.speciesId !== parent.speciesId
+      || !needsProvisioning(child, cfg) || canFollowParent(child, cfg)) continue;
+    const site = cfg.lifecycle.nursing && child.nursingSite ? child.nursingSite : starts.get(child.id);
+    const there = site && patches[site.patchId];
+    if (!site || !there) continue;
+    const steps = Math.abs(there.x - here.x) + Math.abs(there.y - here.y);
+    if (steps < nearest) { nearest = steps; anchor = { patchId: site.patchId, position: { ...site.position } }; }
+  }
+  return nearest > perceptionRadius(cfg) ? anchor : null;
 }
 
 /** Both family actions spend ordinary, age-scaled terrain travel time. A target is a detached

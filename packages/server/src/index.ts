@@ -54,6 +54,7 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
     allowV28Upgrade: process.env.VANA_ALLOW_V28_UPGRADE === '1',
     allowV29Upgrade: process.env.VANA_ALLOW_V29_UPGRADE === '1',
     allowV30Upgrade: process.env.VANA_ALLOW_V30_UPGRADE === '1',
+    allowV31Upgrade: process.env.VANA_ALLOW_V31_UPGRADE === '1',
     allowV5Upgrade: process.env.VANA_ALLOW_V5_UPGRADE === '1',
     allowV6Upgrade: process.env.VANA_ALLOW_V6_UPGRADE === '1',
     allowV7Upgrade: process.env.VANA_ALLOW_V7_UPGRADE === '1',

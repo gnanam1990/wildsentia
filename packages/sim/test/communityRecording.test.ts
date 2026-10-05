@@ -4,6 +4,7 @@ import { isCommunityState, humanMotionAt, MAX_HUMAN_MOTION_SAMPLES } from '@vana
 import { createWorld } from '../src/world.js';
 import { stepCommunity } from '../src/community.js';
 import { takeSnapshot, restoreSnapshot } from '../src/snapshot.js';
+import { CommunityRecorder } from '../src/communityRecording.js';
 
 const options = { seed: 1, speciesDir: fileURLToPath(new URL('../../../config/species', import.meta.url)),
   initialAgents: {}, minPopulation: {}, communityProfile: 'household_v1' as const };
@@ -32,6 +33,27 @@ describe('executed household journey recording', () => {
     stepCommunity(partial.community!, partial.patches, partial.waterBudget, 0, 1, partial.log, partial.microEcology);
     const samples = partial.community!.motion!.tracks[0]!.samples;
     expect(samples.every(s => s.position.x < corner.x)).toBe(true); expect(samples.at(-1)!.seconds).toBe(1);
+  });
+  it('keeps time order when one instant past day 777 arrives a float bit early', () => {
+    // Seed 3, day 810.375: a hunter's travel-to-work transition was captured 1.49e-8 s before
+    // the travel sample at the same instant (one bit of world time past 2^26 s). The recording
+    // stepped back in time and every later household checkpoint failed validation.
+    const w = world(), c = w.community!;
+    const start = 70_012_800, instant = start + 2024.2344066649675, early = instant - 1.4901161193847656e-8;
+    expect(early).toBeLessThan(instant);
+    const recorder = new CommunityRecorder(c, start, 3600), p = c.people[0]!;
+    p.task = { kind: 'rest', phase: 'travel', destination: { ...p.position }, remainingSeconds: 900, startedAt: start,
+      eventId: 'fixture_saved_attempt', journey: { destinationPatchId: p.patchId, waypoints: [{ ...p.position }] } };
+    recorder.capture(p, instant);
+    p.task = { ...p.task, phase: 'work', journey: { destinationPatchId: p.patchId, waypoints: [] } };
+    recorder.capture(p, early);
+    p.task = null; c.updatedAt = start + 3600;
+    const motion = recorder.finish(c)!, samples = motion.tracks[0]!.samples;
+    for (let i = 1; i < samples.length; i++) expect(samples[i]!.seconds).toBeGreaterThan(samples[i - 1]!.seconds);
+    // The merged instant keeps the later phase and never moves earlier than it was first seen.
+    const merged = samples.find(s => s.phase === 'work')!;
+    expect(merged.seconds).toBe(instant - start);
+    expect(samples.some(s => s.phase === 'travel' && s.seconds === instant - start)).toBe(false);
   });
   it('records death at its actual transition, not at the start of a recording or from the newer final state', () => {
     const w = world(), c = w.community!, p = c.people[0]!; p.ageDays = 91 * 360; p.health = .002;
