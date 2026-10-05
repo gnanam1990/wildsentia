@@ -12,7 +12,8 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { ISLAND_POPULATION, SIM_VERSION, createWorld, restoreSnapshot, upgradeV31Snapshot, type Snapshot } from '@vana/sim';
 import type { Agent } from '@vana/shared';
-import { availableForCare } from '../../packages/sim/src/agents/family.js';
+import { availableForCare, chooseCareTarget } from '../../packages/sim/src/agents/family.js';
+import { perceive } from '../../packages/sim/src/agents/perception.js';
 import { careRadius, needsOf, needsProvisioning } from '../../packages/sim/src/agents/needs.js';
 
 const arg = (name: string, fallback?: string): string | undefined => {
@@ -30,7 +31,7 @@ const saved = checkpoint ? JSON.parse(readFileSync(checkpoint, 'utf8')) as Snaps
 const world = saved ? restoreSnapshot(saved.simVersion === 'sim_0.31.0'
   ? upgradeV31Snapshot(saved) : saved, { ...options, seed: saved.seed }) : createWorld(options);
 
-type Snap = { t: number; cPatch: number; cGoal: string | null; cState: string; cHunger: number; cThirst: number;
+type Snap = { chosen: boolean; threat: string | null; perched: boolean; t: number; cPatch: number; cGoal: string | null; cState: string; cHunger: number; cThirst: number;
   pPatch: number; pGoal: string | null; pState: string; pHunger: number; pThirst: number; pFear: number;
   available: boolean; distM: number; cPatchWaterL: number; pPatchWaterL: number };
 const ring = new Map<string, Snap[]>();
@@ -41,20 +42,31 @@ const summary: Record<string, number> = {};
 const ages: Record<string, number[]> = {};
 const bump = (key: string): void => { summary[key] = (summary[key] ?? 0) + 1; };
 const byId = new Map<string, Agent>();
+// Detailed hourly rings cost a perception per dependent; start them a few days before a window.
+const fromDay = Number(arg('from-day', '0'));
+const view = () => (world as unknown as { __viewForTest(): Parameters<typeof perceive>[2] }).__viewForTest();
 
 for (let day = 0; day < days; day++) {
   for (let hour = 0; hour < 24; hour++) {
     byId.clear();
     for (const agent of world.agents) byId.set(agent.id, agent);
     const now = world.now();
-    for (const child of world.agents) {
+    const watching = now / 86400 >= fromDay - 3;
+    const families = new Map<string, Agent[]>();
+    if (watching) for (const a of world.agents) if (a.alive && a.dependentOn)
+      families.set(a.dependentOn, [...(families.get(a.dependentOn) ?? []), a]);
+    const decisionView = watching ? view() : null;
+    if (watching) for (const child of world.agents) {
       if (!child.alive || !child.dependentOn) continue;
       const cfg = world.species.get(child.speciesId)!;
       if (!needsProvisioning(child, cfg)) { ring.delete(child.id); continue; }
       const parent = byId.get(child.dependentOn);
       if (!parent?.alive || !parent.position || !child.position) continue;
       const list = ring.get(child.id) ?? [];
-      list.push({ t: now, cPatch: child.patchId, cGoal: child.currentGoal, cState: child.state,
+      const pCfg = world.species.get(parent.speciesId)!;
+      list.push({ chosen: chooseCareTarget(parent, families.get(parent.id) ?? [], pCfg, now, 1)?.id === child.id,
+        threat: perceive(parent, pCfg, decisionView!).threat?.agent.speciesId ?? null, perched: (parent.altitudeM ?? 0) > 0,
+        t: now, cPatch: child.patchId, cGoal: child.currentGoal, cState: child.state,
         cHunger: +child.drives.hunger.toFixed(3), cThirst: +child.drives.thirst.toFixed(3),
         pPatch: parent.patchId, pGoal: parent.currentGoal, pState: parent.state,
         pHunger: +parent.drives.hunger.toFixed(3), pThirst: +parent.drives.thirst.toFixed(3),
@@ -102,6 +114,8 @@ for (let day = 0; day < days; day++) {
       const record = { childId, species, cause, ageDays: event.conditions.ageDays, day: +(event.worldTime / 86400).toFixed(3),
         parentId: child?.dependentOn ?? null, parentAlive: !!parent?.alive, careRadiusM: radius,
         finalDistM: snaps.at(-1)?.distM ?? null, hoursAway48: away, hoursParentUnavailable48: unavailable.length,
+        hoursChosen48: snaps.filter(s => s.chosen).length, hoursThreat48: snaps.filter(s => s.threat).length,
+        hoursPerched48: snaps.filter(s => s.perched).length,
         blockedBy, parentGoals48: parentGoals, provisions48: recent.length,
         provided48: { foodKg: recent.reduce((s, p) => s + p.foodKg, 0), waterL: recent.reduce((s, p) => s + p.waterL, 0) },
         dailyNeed: need, littermates: child?.dependentOn ? world.agents.filter(a => a.alive && a.dependentOn === child.dependentOn).length : null,
