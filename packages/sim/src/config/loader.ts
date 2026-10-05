@@ -76,6 +76,11 @@ export const SpeciesConfigSchema = z
         floaterMortalityPerDay: z.number().min(0).max(1),
       }).optional(),
     }),
+    islandArrival: z.object({
+      whenLivingAtMost: z.number().int().nonnegative(),
+      dailyProbability: z.number().gt(0).max(1),
+      minDaysBetween: z.number().finite().nonnegative(),
+    }).optional(),
     learning: z.object({
       innate: z.record(
         z.enum(['forage_efficiency', 'water_locations', 'predator_avoidance', 'stalk_technique']),

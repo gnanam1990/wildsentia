@@ -1,4 +1,4 @@
-import { PATCH_METRES, type Agent, type Patch, type SpeciesConfig } from '@vana/shared';
+import { GRID_SIZE, PATCH_METRES, landWalkable, type Agent, type Patch, type SpeciesConfig } from '@vana/shared';
 
 const PATCH_KM2 = (PATCH_METRES / 1000) ** 2;
 
@@ -50,6 +50,39 @@ export function isFloater(
 }
 
 /**
+ * sim_0.33.0: the share of a pack's range that is land it can actually hold. A mainland forest
+ * is a window onto a larger landscape, so cells beyond the map count as range (the old rule,
+ * unchanged). On an island the sea does not: a 40 km² dhole range centred on 12.24 km² of land
+ * is mostly water. Cells are counted over the territory diamond around the pack's leader.
+ */
+export function packRangeLandFraction(config: SpeciesConfig, centre: Patch, patches: readonly Patch[]): number {
+  const territory = config.social.territory;
+  if (territory === undefined || centre.islandSeed === undefined) return 1;
+  const radius = territoryRadiusPatches(territory.femaleKm2);
+  let land = 0, cells = 0;
+  for (let dy = -radius; dy <= radius; dy++) {
+    for (let dx = -radius; dx <= radius; dx++) {
+      if (Math.abs(dx) + Math.abs(dy) > radius) continue;
+      cells++;
+      const x = centre.x + dx, y = centre.y + dy;
+      if (x >= 0 && y >= 0 && x < GRID_SIZE && y < GRID_SIZE && landWalkable(patches[y * GRID_SIZE + x])) land++;
+    }
+  }
+  return land / cells;
+}
+
+/**
+ * How many adults one pack's range holds: the configured maximum pack for a full range, scaled
+ * by the share of that range that is land, never below the smallest working pack (sim_0.33.0).
+ * On the 12.24 km² island this is four dholes (0.33 adults/km², within the 0.35-0.9/km² of
+ * Bandipur's core and above the 0.13 of Nagarahole); on the mainland it is unchanged.
+ */
+export function packCapacity(config: SpeciesConfig, centre: Patch, patches: readonly Patch[]): number {
+  const [min, max] = config.social.groupSize;
+  return Math.max(min, Math.round(max * packRangeLandFraction(config, centre, patches)));
+}
+
+/**
  * A pack holds its range together, against other packs. Two things make a pack animal a
  * floater: its own pack has grown past what one pack can be, and it is among the youngest; or
  * it stands in the range of a pack with an older leader. Without either, a pack only grew,
@@ -85,5 +118,5 @@ function isPackFloater(
     const there = patches[other.patchId]!;
     if (Math.abs(there.x - here.x) + Math.abs(there.y - here.y) <= radius) return true;
   }
-  return seniors >= config.social.groupSize[1];
+  return seniors >= packCapacity(config, patches[ours.patchId]!, patches);
 }

@@ -59,6 +59,18 @@ export interface SpeciesConfig {
     };
   };
   /**
+   * sim_0.33.0: rare arrival onto a closed island by swimming or crossing, for species that
+   * really do (see docs/2026-10-05-multi-year-ecology.md). Considered once per world day, only
+   * while no more than `whenLivingAtMost` of the species live on the island, at most once per
+   * `minDaysBetween`, and then with `dailyProbability` from a seed-derived draw. The arriving
+   * animal's body is recorded as imported in the nutrient ledger. Ignored on the mainland.
+   */
+  islandArrival?: {
+    whenLivingAtMost: number;
+    dailyProbability: number;
+    minDaysBetween: number;
+  };
+  /**
    * Innate floors for the skills this species uses (spec §8). A skill absent here is one the
    * species never uses; it reads as neutral. `learnRateFromParent` is the fraction of the gap
    * to its parent a young animal closes each time it watches her use a skill successfully.
