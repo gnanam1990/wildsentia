@@ -418,9 +418,13 @@ export class AnimalLayer {
         ...(pose?.partnerId ? { partnerId: pose.partnerId } : {}) });
     }
     if (bodies.length === 0) return;
+    const sizes = new Map(bodies.map((b) => [b.id, b.radius]));
     for (const [id, clear] of separateBodies(bodies, fixed, this.avoid)) {
       const position = positions.get(id)!;
-      if (clear.x !== position.x || clear.z !== position.z) positions.set(id, { ...position, ...clear });
+      if (clear.x === position.x && clear.z === position.z) continue;
+      // Making room for a neighbour must not step an animal back onto the water.
+      const shown = recorded.get(id)?.animal ?? animals.get(id)!;
+      positions.set(id, onShore({ ...position, ...clear }, this.pools, sizes.get(id)!, shown.state === 'drinking', idSeed(id)));
     }
   }
 

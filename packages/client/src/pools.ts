@@ -24,15 +24,19 @@ export interface Pool { x: number; z: number; radius: number }
 export function onShore<T extends { x: number; z: number; heading: number; moving?: boolean }>(
   position: T, pools: readonly Pool[], bodyRadiusM: number, drinking: boolean, seed: number,
 ): T {
-  for (const pool of pools) {
-    const dx = position.x - pool.x, dz = position.z - pool.z, d = Math.hypot(dx, dz);
-    const shore = pool.radius + bodyRadiusM * 0.6;
-    if (d >= shore) continue;
-    // Exactly at the centre: spread animals round the pool by a stable per-animal angle.
-    const angle = d > 1e-3 ? Math.atan2(dx, dz) : (seed % 360) * Math.PI / 180;
-    const x = pool.x + Math.sin(angle) * shore, z = pool.z + Math.cos(angle) * shore;
-    const heading = drinking && !position.moving ? Math.atan2(pool.x - x, pool.z - z) : position.heading;
-    return { ...position, x, z, heading };
+  const margin = bodyRadiusM * 0.6;
+  const wet = (x: number, z: number) => pools.find((p) => Math.hypot(x - p.x, z - p.z) < p.radius + margin);
+  const water = wet(position.x, position.z);
+  if (!water) return position;
+  const dx = position.x - water.x, dz = position.z - water.z, d = Math.hypot(dx, dz);
+  // Exactly at the centre: spread animals round the pool by a stable per-animal angle.
+  const angle = d > 1e-3 ? Math.atan2(dx, dz) : (seed % 360) * Math.PI / 180;
+  // Walk straight out from this pool's centre until clear of it and of any neighbour it overlaps.
+  let r = water.radius + margin + 0.05, x = 0, z = 0;
+  for (let step = 0; step < 400; step++, r += 0.25) {
+    x = water.x + Math.sin(angle) * r; z = water.z + Math.cos(angle) * r;
+    if (!wet(x, z)) break;
   }
-  return position;
+  const heading = drinking && !position.moving ? Math.atan2(water.x - x, water.z - z) : position.heading;
+  return { ...position, x, z, heading };
 }
