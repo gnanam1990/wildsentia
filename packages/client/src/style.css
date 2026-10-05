@@ -342,3 +342,10 @@ body.is-replaying #passport-panel, body.is-replaying #feed-panel { visibility: h
   .camera-pad button { width: 34px; height: 34px; }
   .camera-pad .camera-reset, .camera-pad [data-camera^="zoom"] { display: none; }
 }
+
+/* Clean view (H, or ?cinema=1): only the forest. Dialogs still open over it when asked for. */
+body.clean-view .bar, body.clean-view .panel, body.clean-view .footer, body.clean-view .camera-pad,
+body.clean-view #reward-badge, body.clean-view #reward-total, body.clean-view #reward-mine,
+body.clean-view #thought, body.clean-view .encounter-label, body.clean-view .agent-tag,
+body.clean-view #agents-list, body.clean-view #notice, body.clean-view #event-visit,
+body.clean-view .replay, body.clean-view #render-stats { display: none !important; }
