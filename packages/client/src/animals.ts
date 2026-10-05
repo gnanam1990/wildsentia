@@ -48,8 +48,8 @@ interface Rig {
   materials: Array<{ material: THREE.MeshStandardMaterial; base: THREE.Color }>;
 }
 
-function variantKey(animal: AnimalState): string {
-  return `${animal.speciesId}|${visualForAnimal(animal).model?.file ?? 'stand-in'}`;
+function variantKey(animal: AnimalState, airborne = false): string {
+  return `${animal.speciesId}|${visualForAnimal(animal, airborne).model?.file ?? 'stand-in'}`;
 }
 
 function markerTexture(): THREE.Texture {
@@ -89,6 +89,8 @@ export class AnimalLayer {
   readonly #markerTexture: THREE.Texture;
   #wanted = new Set<string>();
   #wantedVariants = new Map<string, string>();
+  /** Vultures in the air this frame: they are drawn with the rig that can spread its wings. */
+  #airborne = new Set<string>();
 
   /** Read-only loading count for observer diagnostics and bounded render-lifecycle checks. */
   get pendingModelCount(): number { return this.#pending.size; }
@@ -118,8 +120,9 @@ export class AnimalLayer {
   }
 
   async #template(animal: AnimalState): Promise<THREE.Group> {
-    const visual = visualForAnimal(animal);
-    const key = variantKey(animal);
+    const airborne = this.#airborne.has(animal.id);
+    const visual = visualForAnimal(animal, airborne);
+    const key = variantKey(animal, airborne);
     let pending = this.#templates.get(key);
     if (pending === undefined) {
       const loaded: Promise<{ root: THREE.Group; clips: THREE.AnimationClip[] }> = visual.model === null
@@ -163,7 +166,7 @@ export class AnimalLayer {
   }
 
   async #ensureRig(animal: AnimalState): Promise<void> {
-    const key = variantKey(animal);
+    const key = variantKey(animal, this.#airborne.has(animal.id));
     const existing = this.#rigs.get(animal.id);
     if (existing?.variantKey === key) return;
     if (existing) this.#release(animal.id, existing);
@@ -288,7 +291,9 @@ export class AnimalLayer {
     const partner = followedId === null ? undefined : recorded.get(followedId)?.partnerId;
     if (partner && positions.has(partner)) visible.add(partner);
     this.#wanted = visible;
-    this.#wantedVariants = new Map([...visible].map(id => [id, variantKey(animals.get(id)!)]));
+    this.#airborne = new Set([...visible].filter((id) => animals.get(id)!.speciesId === 'vulture'
+      && ((positions.get(id)!.altitudeM ?? 0) > 0.5 || recorded.get(id)?.flightVisualPhase !== undefined)));
+    this.#wantedVariants = new Map([...visible].map(id => [id, variantKey(animals.get(id)!, this.#airborne.has(id))]));
     this.#renderPositions = positions;
     this.#prepareRigs([followedId, partner]);
 

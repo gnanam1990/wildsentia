@@ -12,18 +12,25 @@ function manifest(file: string) {
 }
 
 describe('generated species replacements', () => {
-  // Generated from photoreal reference views and bound to the Quaternius quadruped rig by
-  // tools/art/bind_to_rig.py; see docs/art-review/boar-2026-10-05.
-  it('the wild boar keeps the rig clips the observer plays and stays within its byte budget', () => {
-    const gltf = manifest('WildBoar.glb');
+  // Generated from photoreal reference views and bound to existing rigs by
+  // tools/art/build_species.sh; reviews in docs/art-review/species-2026-10-05.
+  const quadruped = ['Idle', 'Walk', 'Gallop', 'Eating', 'Death'];
+  const small = ['Idle', 'Walk', 'Run', 'Eating', 'Drinking', 'Death'];
+  it.each([
+    ['WildBoar', [...quadruped, 'Idle_Headlow']], ['Chital', [...quadruped, 'Idle_Headlow']],
+    ['Sambar', [...quadruped, 'Idle_Headlow']], ['Gaur', [...quadruped, 'Idle_Headlow']],
+    ['Dhole', [...quadruped, 'Idle_2_HeadLow']], ['Jackal', [...quadruped, 'Idle_2_HeadLow']],
+    ['GreyLangur', small], ['GiantSquirrel', small], ['WhiteRumpedVulture', ['Idle', 'Walk', 'Eating', 'Drinking', 'Death']],
+  ] as const)('%s keeps the rig clips the observer plays and stays within its byte budget', (name, clips) => {
+    const gltf = manifest(`${name}.glb`);
     expect(gltf.skins).toHaveLength(1);
-    expect(gltf.animations!.map((a) => a.name)).toEqual(expect.arrayContaining(['Idle', 'Walk', 'Gallop', 'Eating', 'Idle_Headlow', 'Death']));
-    expect(readFileSync(new URL('../public/assets/animals/WildBoar.glb', import.meta.url)).length).toBeLessThan(2_000_000);
+    expect(gltf.animations!.map((a) => a.name)).toEqual(expect.arrayContaining([...clips]));
+    expect(readFileSync(new URL(`../public/assets/animals/${name}.glb`, import.meta.url)).length).toBeLessThan(2_000_000);
   });
 });
 
 describe('free local character assets', () => {
-  it.each(['TigerRigged', 'ElephantWalking', 'Langur', 'Squirrel', 'Vulture', 'WildBoar'])('%s contains finite, normalized skin weights and actual changing motion', (name) => {
+  it.each(['TigerRigged', 'ElephantWalking', 'Langur', 'Squirrel', 'Vulture', 'WildBoar', 'Chital', 'Sambar', 'Gaur', 'Dhole', 'Jackal', 'GreyLangur', 'GiantSquirrel', 'WhiteRumpedVulture'])('%s contains finite, normalized skin weights and actual changing motion', (name) => {
     const buffer = readFileSync(new URL(`../public/assets/animals/${name}.glb`, import.meta.url));
     const jsonLength = buffer.readUInt32LE(12);
     const gltf = JSON.parse(buffer.subarray(20, 20 + jsonLength).toString());

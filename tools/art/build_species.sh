@@ -10,9 +10,9 @@ RIGS=packages/client/public/assets/animals
 OUT="${OUT:-$RIGS}"
 
 # Tripo meshes face +X (head first); FORWARD overrides.
-# species  rig       output         bones that must not deform  clips to review
+# species  rig       output         bones that must not deform  clips to review  [fit]
 table='
-boar     Bull     WildBoar      Tail4,Tail5,Tail6,Tail7  Idle,Walk,Eating,Gallop,Idle_Headlow,Death
+boar     Bull     WildBoar      Tail4,Tail5,Tail6,Tail7  Idle,Walk,Eating,Gallop,Idle_Headlow,Death  bbox
 chital   Deer     Chital        -                        Idle,Walk,Eating,Gallop,Idle_Headlow,Death
 sambar   Stag     Sambar        -                        Idle,Walk,Eating,Gallop,Idle_Headlow,Death
 gaur     Bull     Gaur          -                        Idle,Walk,Eating,Gallop,Idle_Headlow,Death
@@ -24,13 +24,13 @@ squirrel Squirrel GiantSquirrel -                        Idle,Walk,Run,Eating,Dr
 vulture  Vulture  WhiteRumpedVulture -                   Idle,Walk,Flap,Glide,Eating,Death
 '
 wanted="$*"
-echo "$table" | while read -r species rig out nodeform clips; do
+echo "$table" | while read -r species rig out nodeform clips fit; do
   [ -n "$species" ] || continue
   if [ -n "$wanted" ]; then case " $wanted " in *" $species "*) ;; *) continue ;; esac; fi
   [ "$nodeform" = "-" ] && nodeform=""
   mkdir -p "$ART/review/$species"
   "$BLENDER" -b --python tools/art/bind_to_rig.py -- --mesh "$ART/$species-tripo.glb" --rig "$RIGS/$rig.glb" \
-    --mesh-forward "${FORWARD:-X}" --out "$ART/review/$species/$out.glb" --no-deform "$nodeform" --review-clips "$clips" 2>&1 \
+    --mesh-forward "${FORWARD:-X}" --out "$ART/review/$species/$out.glb" --no-deform "$nodeform" --review-clips "$clips" --fit "${fit:-feet}" 2>&1 \
     | grep -E "FIT|SKIN|WROTE|Traceback|Error" | sed "s/^/$species: /"
   cp "$ART/review/$species/$out.glb" "$OUT/$out.glb"
 done

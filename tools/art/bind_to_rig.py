@@ -32,6 +32,12 @@ parser.add_argument("--review-clips", default="Idle,Walk")
 # Bones of the old body that lie outside the new one (a cow's long tail on a boar) must not
 # pull skin, or the surface stretches toward them when they swing.
 parser.add_argument("--no-deform", default="")
+# Re-lay the rig's tail chain along the new body's own tail (a hanging tail on a rig whose tail
+# sticks out), so tail swings move the tail rather than dragging the thighs.
+parser.add_argument("--fit-tail", action="store_true")
+# feet: align front and hind feet with the rig's (right when tails differ, e.g. canids).
+# bbox: match nose-to-tail length (right when the rig's legs are much longer, e.g. boar on bull).
+parser.add_argument("--fit", choices=["feet", "bbox"], default="feet")
 args = parser.parse_args(argv)
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -129,13 +135,51 @@ lo, hi = world_bbox([body])
 body.location = Vector((-(lo.x + hi.x) / 2, -(lo.y + hi.y) / 2, -lo.z))
 apply_transforms(body)
 
-# Same nose-to-tail length as the rig's old body, so clip root motion keeps its scale.
-lo, hi = world_bbox([body])
-uniform = (rig_hi.y - rig_lo.y) / (hi.y - lo.y)
-body.scale = (uniform, uniform, uniform)
-apply_transforms(body)
-lo, hi = world_bbox([body])
-body.location = Vector((0, (rig_lo.y + rig_hi.y) / 2 - (lo.y + hi.y) / 2, rig_lo.z - lo.z))
+# Align by anatomy, not by bounding box: tails differ (a fox's sticks out, a dhole's hangs), so
+# nose-to-tail length would misplace the hips. Scale and slide the new body so its front and
+# hind feet stand where the rig's front and hind feet are.
+def mesh_feet_y(obj):
+    verts = [obj.matrix_world @ v.co for v in obj.data.vertices]
+    floor, top = min(v.z for v in verts), max(v.z for v in verts)
+    low = [v for v in verts if v.z < floor + (top - floor) * 0.12]
+    mid = (min(v.y for v in low) + max(v.y for v in low)) / 2
+    front = sorted(v.y for v in low if v.y < mid) or [mid]
+    back = sorted(v.y for v in low if v.y >= mid) or [mid]
+    return front[len(front) // 2], back[len(back) // 2]
+
+
+def rig_feet_y(arm):
+    bones = list(arm.data.bones)
+    deform = [b for b in bones if b.use_deform and not b.name.startswith(("IK", "Pole"))]
+    leaves = [b for b in deform if not any(c.use_deform for c in b.children)]
+    floor = min(b.tail_local.z for b in leaves)
+    top = max(max(b.head_local.z, b.tail_local.z) for b in deform)
+    feet = [b for b in leaves if b.tail_local.z < floor + (top - floor) * 0.2]
+    ys = sorted(b.tail_local.y for b in feet)
+    mid = (ys[0] + ys[-1]) / 2
+    front = [y for y in ys if y < mid] or ys
+    back = [y for y in ys if y >= mid] or ys
+    return sum(front) / len(front), sum(back) / len(back)
+
+
+rig_front, rig_back = rig_feet_y(armature)
+mesh_front, mesh_back = mesh_feet_y(body)
+if args.fit == "bbox" or abs(rig_back - rig_front) < (rig_hi.y - rig_lo.y) * 0.2 or abs(mesh_back - mesh_front) < (hi.y - lo.y) * 0.2:
+    # A biped (a bird on two close feet) has no front and hind pair: match body length instead.
+    uniform = (rig_hi.y - rig_lo.y) / (hi.y - lo.y)
+    body.scale = (uniform, uniform, uniform)
+    apply_transforms(body)
+    lo, hi = world_bbox([body])
+    body.location = Vector((0, (rig_lo.y + rig_hi.y) / 2 - (lo.y + hi.y) / 2, rig_lo.z - lo.z))
+    print(f"FIT body length (bbox), scaled x{uniform:.4f}")
+else:
+    uniform = (rig_back - rig_front) / (mesh_back - mesh_front)
+    body.scale = (uniform, uniform, uniform)
+    apply_transforms(body)
+    mesh_front, mesh_back = mesh_feet_y(body)
+    lo, hi = world_bbox([body])
+    body.location = Vector((0, rig_front - mesh_front, rig_lo.z - lo.z))
+    print(f"FEET rig {rig_front:.3f}..{rig_back:.3f} mesh scaled x{uniform:.4f}")
 apply_transforms(body)
 lo, hi = world_bbox([body])
 
@@ -151,6 +195,32 @@ for bone in armature.data.edit_bones:
     for attr in ("head", "tail"):
         p = getattr(bone, attr)
         setattr(bone, attr, Vector((p.x * fit.x, p.y, ground + (p.z - ground) * fit.z)))
+if args.fit_tail:
+    chain = []
+    bone = next((b for b in armature.data.edit_bones if b.name.lower().startswith("tail")
+                 and not (b.parent and b.parent.name.lower().startswith("tail"))), None)
+    while bone:
+        chain.append(bone)
+        bone = next((c for c in bone.children if c.name.lower().startswith("tail")), None)
+    if chain:
+        verts = [body.matrix_world @ v.co for v in body.data.vertices]
+        width = hi.x - lo.x
+        _, hind = mesh_feet_y(body)
+        base = chain[0].head.copy()
+        behind = [v for v in verts if v.y > hind + (hi.y - lo.y) * 0.08 and abs(v.x) < width * 0.2]
+        behind.sort(key=lambda v: (v - base).length)
+        if len(behind) >= len(chain) * 4:
+            per = len(behind) // len(chain)
+            joints = []
+            for i in range(len(chain)):
+                group = behind[i * per:(i + 1) * per] if i < len(chain) - 1 else behind[i * per:]
+                joints.append(sum(group, Vector()) / len(group))
+            start = base
+            for bone, end in zip(chain, joints):
+                bone.use_connect = False
+                bone.head, bone.tail = start, end
+                start = end
+            print(f"TAIL refitted {len(chain)} bones along {len(behind)} tail vertices")
 bpy.ops.object.mode_set(mode="OBJECT")
 mean = (fit.x + fit.z) / 2
 for action in bpy.data.actions:
