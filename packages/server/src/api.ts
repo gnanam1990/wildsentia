@@ -19,6 +19,7 @@ import { installLiveAgents, type LiveRouteDeps } from './live/routes.js';
 import type { PlaceDropLedger } from './live/liveStore.js';
 import { GENERAL_LIMIT_DEFAULTS, NetworkRateLimit, type GeneralLimits } from './limits.js';
 import { networkKey } from './network.js';
+import { countResponse, type HttpStats } from './metrics.js';
 
 export interface ApiDeps {
   host: SimHost;
@@ -41,6 +42,8 @@ export interface ApiDeps {
   trustedProxyHops?: number;
   /** Per-visitor limit on public reads (VANA_PUBLIC_READS_PER_MINUTE); generous by default. */
   limits?: Partial<Pick<GeneralLimits, 'publicReadsPerMinute'>>;
+  /** Response counts by status class, for /metrics. */
+  httpStats?: HttpStats;
 }
 
 /**
@@ -61,9 +64,10 @@ export function trustedProxyHops(env: NodeJS.ProcessEnv): number {
  * World routes are read-only. The optional reward ledger has independent write routes and
  * receives only a read-only subject visibility adapter, never a simulation mutation capability.
  */
-export function buildApi({ host, pool, narrator, insights: insightDeps, live, rewards, receiptRpc, social, holder, holderChain, trustedProxyHops: hops = 0, limits }: ApiDeps): FastifyInstance {
+export function buildApi({ host, pool, narrator, insights: insightDeps, live, rewards, receiptRpc, social, holder, holderChain, trustedProxyHops: hops = 0, limits, httpStats }: ApiDeps): FastifyInstance {
   // Without this, behind Caddy every visitor has the proxy's address and shares one rate limit.
   const app = Fastify({ logger: false, trustProxy: hops > 0 ? (_address: string, hop: number) => hop < hops : false });
+  if (httpStats) app.addHook('onResponse', async (_req, reply) => { countResponse(httpStats, reply.statusCode); });
   // History routes read the database on every request; one visitor network gets a generous
   // share. Counted on the dispatched route (not the raw URL), and unknown paths count too.
   const perMinute = limits?.publicReadsPerMinute ?? GENERAL_LIMIT_DEFAULTS.publicReadsPerMinute;

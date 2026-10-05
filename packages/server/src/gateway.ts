@@ -5,6 +5,7 @@ import type { CheckpointObservation, SimHost } from './simHost.js';
 import { floweringGuildSummary } from './floweringObservation.js';
 import { ConnectionCaps, GENERAL_LIMIT_DEFAULTS } from './limits.js';
 import { forwardedClient, networkKey } from './network.js';
+import { WindowMax } from './metrics.js';
 
 export interface GatewaySocket {
   send(data: string): void;
@@ -82,17 +83,23 @@ export class Gateway {
     this.#hops = options.trustedProxyHops ?? 0;
   }
 
+  /** Counted since start, for /metrics (metrics.ts). */
+  readonly stats = {
+    accepted: 0, refused: { busy: 0, busy_network: 0, world_unavailable: 0 }, messages: 0, bytes: 0, slowConsumerTerminations: 0,
+    broadcastSeconds: { scene: new WindowMax(), live: new WindowMax(), roster: new WindowMax() },
+  };
+
   /** Open /live connections that were admitted under the caps. */
   get connectionCount(): number { return this.#caps.total; }
 
   handle(socket: GatewaySocket): void {
     const view = this.host.observation();
-    if (!view) { socket.close(LIVE_BUSY_CLOSE_CODE, 'world_unavailable'); return; }
+    if (!view) { this.stats.refused.world_unavailable++; socket.close(LIVE_BUSY_CLOSE_CODE, 'world_unavailable'); return; }
     const frame = this.host.liveEncounterFrame();
     this.#sessions.set(socket, { socket, watching: null, recordedFrameId: frame?.id ?? null,
       recordingDirty: false, checkpointId: view.id, lastHeartbeatAt: Date.now(), view: null, liveEmpty: true });
     const scene = this.#scene(view);
-    socket.send(`${scene.base},"environment":${scene.environment},"frame":${JSON.stringify(frame)}}`);
+    this.#send(socket, `${scene.base},"environment":${scene.environment},"frame":${JSON.stringify(frame)}}`);
   }
 
   receive(socket: GatewaySocket, message: ClientMessage): void {
@@ -147,6 +154,7 @@ export class Gateway {
    * where it looks gets none; the roster (below) still tells it who is playing.
    */
   broadcastLive(state: LiveBroadcast, at: number): void {
+    const started = performance.now();
     for (const session of this.#sessions.values()) {
       const view = session.view;
       const avatars = state.avatars.filter((a) => a.animalId === session.watching
@@ -158,17 +166,25 @@ export class Gateway {
       session.liveEmpty = empty;
       this.#send(session.socket, JSON.stringify({ type: 'live', at, avatars, drops: state.drops, wild }));
     }
+    this.stats.broadcastSeconds.live.record((performance.now() - started) / 1000);
   }
 
   /** Who is playing, everywhere, in brief: for the agents list, every couple of seconds. */
   broadcastRoster(state: LiveBroadcast): void {
+    const started = performance.now();
     const payload = JSON.stringify({ type: 'live-roster', agents: state.avatars.map((a) => ({ agentId: a.agentId, name: a.name,
       animalId: a.animalId, speciesId: a.speciesId, x: Math.round(a.x), z: Math.round(a.z),
       activity: a.action === 'hunt' || a.action === 'feed' ? a.action : (a.altitude as number) >= 20 ? 'fly' : a.moving ? `${a.gait}` : a.action })) });
     for (const { socket } of this.#sessions.values()) this.#send(socket, payload);
+    this.stats.broadcastSeconds.roster.record((performance.now() - started) / 1000);
   }
 
   broadcast(): void {
+    const started = performance.now();
+    try { this.#broadcast(); } finally { this.stats.broadcastSeconds.scene.record((performance.now() - started) / 1000); }
+  }
+
+  #broadcast(): void {
     const view = this.host.observation();
     if (!view) {
       for (const { socket } of this.#sessions.values()) socket.close(LIVE_BUSY_CLOSE_CODE, 'world_unavailable');
@@ -234,7 +250,13 @@ export class Gateway {
       // visitor network. A refused one is told to try later rather than simply dropped.
       const network = networkKey(forwardedClient(request.socket.remoteAddress ?? '', request.headers['x-forwarded-for'], this.#hops));
       const admitted = this.#caps.admit(network);
-      if (admitted !== 'ok') { raw.close(LIVE_BUSY_CLOSE_CODE, admitted === 'total' ? 'busy' : 'busy_network'); return; }
+      if (admitted !== 'ok') {
+        const reason = admitted === 'total' ? 'busy' : 'busy_network';
+        this.stats.refused[reason]++;
+        raw.close(LIVE_BUSY_CLOSE_CODE, reason);
+        return;
+      }
+      this.stats.accepted++;
       raw.once('close', () => this.#caps.release(network));
       const socket: GatewaySocket = {
         send: (data) => raw.send(data),
@@ -274,7 +296,12 @@ export class Gateway {
 
   /** Sends to a viewer that is keeping up; one that has stopped reading is cut off instead. */
   #send(socket: GatewaySocket, data: string): void {
-    if ((socket.bufferedAmount ?? 0) <= MAX_BUFFERED_BYTES) { socket.send(data); return; }
+    if ((socket.bufferedAmount ?? 0) <= MAX_BUFFERED_BYTES) {
+      socket.send(data);
+      this.stats.messages++; this.stats.bytes += Buffer.byteLength(data);
+      return;
+    }
+    this.stats.slowConsumerTerminations++;
     this.disconnect(socket);
     if (socket.terminate) socket.terminate(); else socket.close();
   }

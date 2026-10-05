@@ -17,11 +17,12 @@ const speciesDir = fileURLToPath(new URL('../../../config/species', import.meta.
 
 class FakeSocket implements GatewaySocket {
   sent: Array<Record<string, unknown>> = [];
+  raw: string[] = [];
   closed = false;
   closeCode: number | undefined;
   /** Bytes the viewer has not read yet; a test raises it to play a viewer that stopped reading. */
   bufferedAmount = 0;
-  send(data: string): void { this.sent.push(JSON.parse(data) as Record<string, unknown>); }
+  send(data: string): void { this.raw.push(data); this.sent.push(JSON.parse(data) as Record<string, unknown>); }
   close(code?: number): void { this.closed = true; this.closeCode = code; }
   lastOfType(type: string): Record<string, unknown> | undefined {
     for (const m of [...this.sent].reverse()) {
@@ -321,6 +322,7 @@ maybe('live agents over the gateway', () => {
     isolated.receive(slow, { type: 'watch', actorId: 'chital_1' });
     expect(slow.closed).toBe(true);
     expect(slow.sent).toHaveLength(before);
+    expect(isolated.stats.slowConsumerTerminations).toBe(1);
     expect(isolated.viewerCount('chital_0') + isolated.viewerCount('chital_1')).toBe(0);
     expect(reader.lastOfType('live-roster')).toBeDefined();
     isolated.close();
@@ -371,14 +373,30 @@ maybe('live agents over the gateway', () => {
       expect(await connect('198.51.100.2')).toBe('scene');
       expect(await connect('198.51.100.3')).toEqual({ code: LIVE_BUSY_CLOSE_CODE, reason: 'busy' });
       expect(capped.connectionCount).toBe(3);
+      expect(capped.stats.refused).toEqual({ busy: 1, busy_network: 2, world_unavailable: 0 });
       // A place freed is a place offered again.
       sockets[0]!.close();
       await vi.waitFor(() => expect(capped.connectionCount).toBe(2));
       expect(await connect('198.51.100.3')).toBe('scene');
+      expect(capped.stats.accepted).toBe(4);
     } finally {
       for (const ws of sockets) ws.terminate();
       capped.close(); await new Promise((r) => server.close(r));
     }
+  });
+
+  it('counts the messages and bytes it sends, and how long each broadcast takes', () => {
+    const counted = new Gateway(host), a = new FakeSocket(), b = new FakeSocket();
+    counted.handle(a); counted.handle(b);
+    counted.receive(a, { type: 'view', x: 0, z: 0, radius: 100 });
+    counted.broadcastLive(state([10]) as never, 1);
+    counted.broadcastRoster(state([10]) as never);
+    const all = [...a.raw, ...b.raw];
+    expect(counted.stats.messages).toBe(all.length);
+    expect(counted.stats.bytes).toBe(all.reduce((n, m) => n + Buffer.byteLength(m), 0));
+    expect(counted.stats.broadcastSeconds.live.max).toBeGreaterThanOrEqual(0);
+    expect(counted.stats.broadcastSeconds.roster.max).toBeGreaterThanOrEqual(0);
+    counted.close();
   });
 
   it('tells every viewer who is playing, in brief', () => {

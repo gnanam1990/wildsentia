@@ -41,6 +41,9 @@ services:
       VANA_PUBLIC_READS_PER_MINUTE: ${VANA_PUBLIC_READS_PER_MINUTE:-}
       VANA_LIVE_MAX_CONNECTIONS: ${VANA_LIVE_MAX_CONNECTIONS:-}
       VANA_LIVE_MAX_CONNECTIONS_PER_NETWORK: ${VANA_LIVE_MAX_CONNECTIONS_PER_NETWORK:-}
+      # Prometheus metrics on an internal port that is never published or proxied (README).
+      VANA_METRICS_PORT: ${VANA_METRICS_PORT:-}
+      VANA_METRICS_HOST: ${VANA_METRICS_HOST:-}
       # Observer rewards: off unless all three are set in deploy/.env.
       VANA_REWARD_NETWORK: ${VANA_REWARD_NETWORK:-}
       VANA_REWARD_POLICY: ${VANA_REWARD_POLICY:-}

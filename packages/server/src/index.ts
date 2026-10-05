@@ -13,6 +13,7 @@ import { rewardConfig } from './rewards.js';
 import { socialConfig } from './socialOutbox.js';
 import { holderConfig } from './holder.js';
 import { generalLimits } from './limits.js';
+import { newHttpStats, renderMetrics, serveMetrics } from './metrics.js';
 
 export async function startServer(): Promise<{ close(): Promise<void> }> {
   const databaseUrl = process.env.DATABASE_URL;
@@ -21,6 +22,8 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
   const holder = holderConfig(process.env);
   trustedProxyHops(process.env); // Fail at startup, not at the first request.
   const limits = generalLimits(process.env);
+  const metricsPort = metricsListen(process.env);
+  if (metricsPort && metricsPort.port === Number(process.env.PORT ?? 8080)) throw new Error('VANA_METRICS_PORT must differ from PORT');
   if (!databaseUrl) throw new Error('DATABASE_URL is required');
 
   const port = Number(process.env.PORT ?? 8080);
@@ -68,6 +71,7 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
   let api: ReturnType<typeof buildApi> | undefined;
   let server: ReturnType<typeof createServer> | undefined;
   let gateway: Gateway | undefined;
+  let metricsServer: ReturnType<typeof serveMetrics> | undefined;
   let broadcastTimer: NodeJS.Timeout | undefined;
   let watchdogTimer: NodeJS.Timeout | undefined;
   let live: LiveRuntime | null = null;
@@ -78,6 +82,7 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
     if (watchdogTimer) clearInterval(watchdogTimer);
     for (const signal of ['SIGINT', 'SIGTERM'] as const) process.removeListener(signal, onSignal);
     gateway?.close();
+    metricsServer?.close();
     await live?.stop();
     try {
       if (checkpoint) await host.stop(); else await host.abort();
@@ -111,7 +116,8 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
     // Outside agents steering animals: off unless VANA_LIVE_AGENTS=1.
     live = liveRuntime(host, pool, rewards, process.env);
 
-    api = buildApi({ host, pool, narrator, insights, rewards, social, holder, trustedProxyHops: trustedProxyHops(process.env), limits,
+    const httpStats = newHttpStats();
+    api = buildApi({ host, pool, narrator, insights, rewards, social, holder, trustedProxyHops: trustedProxyHops(process.env), limits, httpStats,
       ...(live ? { live: { ...live.routes, spot: live.spot } } : {}) });
     await api.ready();
 
@@ -142,6 +148,15 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
       void close().then(() => process.exit(1), () => process.exit(1));
     }, 60_000);
     console.log(`vana listening on :${port}`);
+    if (metricsPort) {
+      // Operator metrics on their own internal port; never published and never behind Caddy.
+      const runtime = live;
+      metricsServer = serveMetrics(() => renderMetrics({ host, gateway, pool, http: httpStats,
+        live: runtime ? { avatars: () => runtime.routes.live.avatars.size, registered: () => runtime.routes.store.count(), tickLag: runtime.tickLag } : undefined }));
+      metricsServer.on('error', (e) => console.error('[metrics] listener failed', e));
+      metricsServer.listen(metricsPort.port, metricsPort.host);
+      console.log(`metrics on ${metricsPort.host}:${metricsPort.port}/metrics`);
+    }
 
     for (const signal of ['SIGINT', 'SIGTERM'] as const) {
       process.once(signal, onSignal);
@@ -152,6 +167,19 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
     await cleanup(false);
     throw error;
   }
+}
+
+/**
+ * VANA_METRICS_PORT (default 9464; 0 turns metrics off) and VANA_METRICS_HOST (default 127.0.0.1:
+ * reachable only from inside the container; set 0.0.0.0 for a scraper on the compose network).
+ */
+export function metricsListen(env: NodeJS.ProcessEnv): { port: number; host: string } | null {
+  const raw = env.VANA_METRICS_PORT?.trim() || '9464';
+  if (!/^[0-9]{1,5}$/.test(raw) || Number(raw) > 65535) throw new Error('Invalid VANA_METRICS_PORT');
+  if (raw === '0') return null;
+  const host = env.VANA_METRICS_HOST?.trim() || '127.0.0.1';
+  if (!/^[0-9a-fA-F.:]+$/.test(host)) throw new Error('Invalid VANA_METRICS_HOST');
+  return { port: Number(raw), host };
 }
 
 if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
