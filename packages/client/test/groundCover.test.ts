@@ -4,6 +4,7 @@ import { COVER_RADIUS_M, CURVED_BLADE_RADIUS_M, DENSE_COVER_RADIUS_M, GroundCove
 import { countDrawCalls, type PatchView } from '../src/terrain.js';
 import { ObserverVisibility } from '../src/observerVisibility.js';
 import { islandPool } from '../src/pools.js';
+import { wind } from '../src/wind.js';
 
 const patch: PatchView = { id: 0, x: 0, y: 0, habitat: 'grassland', grass: 6000, browse: 10, water: 200 };
 const focus = { x: 0, z: 0 };
@@ -163,7 +164,6 @@ describe('dense ground cover', () => {
         else expect(distance).toBeGreaterThan(CURVED_BLADE_RADIUS_M - 0.001);
       }
     });
-    cover.animate(3, true);
     cover.setPatches([{ ...patch, grass: 0 }]);
     expect(cover.update(focus)).toBe(true);
     expect(meshes.every((mesh) => mesh.count === 0)).toBe(true);
@@ -204,13 +204,15 @@ describe('dense ground cover', () => {
     const shader = { uniforms: {} as Record<string, { value: number }>, vertexShader: '#include <begin_vertex>',
       fragmentShader: '#include <alphatest_fragment>' };
     material.onBeforeCompile(shader as never, {} as THREE.WebGLRenderer);
-    expect(shader.vertexShader).toContain('coverMotion');
+    expect(shader.vertexShader).toContain('windStrength');
     expect(shader.fragmentShader).toContain('gl_FragCoord.z < subject.w');
-    cover.animate(12, true);
-    expect(shader.uniforms.coverMotion!.value).toBe(0);
-    cover.animate(13, false);
-    expect(shader.uniforms.coverMotion!.value).toBe(1);
-    expect(shader.uniforms.coverTime!.value).toBe(13);
+    // Blades share the observer's one wind; reduced motion stills them.
+    wind.update(14 * 3600, 'monsoon', 12, true);
+    expect(shader.uniforms.windStrength!.value).toBe(0);
+    wind.update(14 * 3600, 'monsoon', 13, false);
+    expect(shader.uniforms.windStrength!.value).toBeGreaterThan(0);
+    expect(shader.uniforms.windTime!.value).toBe(13);
+    expect(shader.uniforms.windSwayHeight!.value).toBe(1);
     const materialDisposed = vi.fn(); material.addEventListener('dispose', materialDisposed);
     const geometryDisposed = meshes.map((mesh) => {
       const callback = vi.fn(); mesh.geometry.addEventListener('dispose', callback); return callback;

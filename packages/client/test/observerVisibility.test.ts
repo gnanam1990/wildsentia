@@ -108,7 +108,7 @@ describe('observer-only occlusion reveal', () => {
     const material = treeImpostorMaterial({ target, centre: new THREE.Vector3(), diameter: 12 });
     new ObserverVisibility().patch(material);
     const shader = compile(material);
-    expect(shader.vertexShader).toContain('viewMatrix * treeWorld');
+    expect(shader.vertexShader).toContain('viewMatrix * vec4(treeWorld.xyz + windLean, 1.0)');
     expect(shader.fragmentShader).toContain('screenNoise < detail');
     expect(shader.fragmentShader).toContain('gl_FragCoord.z < subject.w');
     target.dispose(); material.dispose();

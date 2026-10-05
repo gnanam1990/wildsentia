@@ -21,6 +21,7 @@ import { encounterAt, isRecordedEncounter, ReplayClock, type RecordedEncounter }
 import { SPECIES_VISUALS, visualFor } from './species.js';
 import { Atmosphere, atmosphereAt, observerExposure } from './environment.js';
 import { groundTint } from './groundTint.js';
+import { wind } from './wind.js';
 import { characterScale, markerSize } from './appearance.js';
 import { LiveEncounterPlayer, recordedClimbPhase, withRecordedVisualIdentity } from './liveEncounters.js';
 import { ObserverVisibility, type ObserverSubject } from './observerVisibility.js';
@@ -36,7 +37,7 @@ import { MicroEcologyLayer } from './microEcologyLayer.js';
 import { animalFromHash, initialFollowId } from './animalLink.js';
 import { LazyDialog } from './lazyDialog.js';
 import { renderBaseY } from './space.js';
-import { AmbientAudio } from './ambientAudio.js';
+import { AmbientAudio, cueFor, type AudioAnimal } from './ambientAudio.js';
 
 
 /** Where the thought floats: just above the marker over this species' head. */
@@ -64,7 +65,7 @@ ambientToggle.addEventListener('click', async () => {
   const started = await ambientAudio.start();
   if (document.hidden && started) ambientAudio.stop();
   ambientToggle.disabled = false;
-  setAmbientUi(ambientAudio.enabled ? 'Sound on. Only current seasonal rain and nearby visible water.'
+  setAmbientUi(ambientAudio.enabled ? 'Sound on: current rain, wind and nearby visible water; calls only from visible animals recorded fleeing or hunting.'
     : 'Sound unavailable or tab hidden. It remains off; try again after returning.');
 });
 
@@ -437,7 +438,7 @@ try { savedQuality = storage?.getItem('vana.graphics'); } catch { /* optional pr
 const quality = new AdaptiveQuality(qualityMode(savedQuality));
 graphics.value = quality.mode;
 function applyQuality(): void {
-  setQuality(quality.tier); animals.quality = quality.tier;
+  setQuality(quality.tier); animals.quality = quality.tier; wind.setTier(quality.tier);
   groundCover?.setQuality(quality.tier); nature?.setQuality(quality.tier);
   graphicsStatus.textContent = `${quality.mode === 'auto' ? 'Auto · ' : ''}${quality.tier} graphics`;
 }
@@ -651,7 +652,7 @@ setInterval(() => {
 
 // Dev-only handle so the running world can be inspected from the console.
 if (import.meta.env.DEV) {
-  (window as unknown as Record<string, unknown>).__vana = { scene, camera, follow, animals, store };
+  (window as unknown as Record<string, unknown>).__vana = { scene, camera, follow, animals, store, liveEncounters };
 }
 
 const renderStats = document.querySelector<HTMLOutputElement>('#render-stats')!;
@@ -664,8 +665,25 @@ function observerSubject(speciesId: string, position: { x: number; z: number; al
   return { x: position.x, y: renderBaseY(position, animals.groundHeightAt) + height * 0.5,
     z: position.z, radius: Math.max(0.35, height * 1.25) };
 }
+/** The live scene's animals for the ambient audio this frame; none during a replay. */
+let audioSubjects: ReadonlyMap<string, AnimalState> | null = null;
+/** Drawn animals whose saved or recorded state has a call (ambientAudio.ts), with positions.
+ * Agent-steered animals are left out: only the simulation's own recorded states may call. */
+function audibleAnimals(): AudioAnimal[] {
+  const result: AudioAnimal[] = [];
+  if (!audioSubjects) return result;
+  const now = performance.now();
+  for (const [id, animal] of audioSubjects) {
+    if (!cueFor(animal.speciesId, animal.state) || liveAgents.avatarForAnimal(id)) continue;
+    const position = animals.positionOf(id, now);
+    if (!position) continue;
+    result.push({ id, speciesId: animal.speciesId, state: animal.state, x: position.x,
+      y: renderBaseY(position, animals.groundHeightAt) + visualFor(animal.speciesId).heightM * 0.5, z: position.z });
+  }
+  return result;
+}
 function renderFrame(dt: number, now: number): void {
-  if (store.world) ambientAudio.sample(store.world.season, mapPatches, camera, animals.groundHeightAt, now);
+  if (store.world) ambientAudio.sample(store.world.season, mapPatches, camera, animals.groundHeightAt, now, wind.state, audibleAnimals);
   // A season can turn without a patch change; the update is a cheap no-op otherwise.
   if (store.world && store.world.season !== tintSeason) { tintSeason = store.world.season; groundTint.update(mapPatches, tintSeason); }
   // Use the settled camera, not the followed animal or the previous frame's target.
@@ -709,10 +727,12 @@ function frame(): void {
     renderer.toneMappingExposure = observerExposure(atmosphereAt(shownTime, store.world.season).daylight, follow.distance);
   }
 
-  groundCover?.animate(now / 1000, reducedMotion.matches);
+  // Grass, leaves, branches and the wind channel share one presentation-only wind (wind.ts).
+  if (store.world !== null) wind.update(liveWorldTime(now)!, store.world.season, now / 1000, reducedMotion.matches);
 
   communityLayer.setReplay(replay !== null);
   if (replay !== null) {
+    audioSubjects = null; // Replayed actions are the past: no calls for them.
     rewards.position(0, 0, false);
     encounterNotice.hidden = true;
     for (const label of liveLabels) label.hidden = true;
@@ -780,6 +800,7 @@ function frame(): void {
   }
 
   const visibleAnimals = new Map([...carcasses, ...store.animals]);
+  audioSubjects = visibleAnimals;
   const poses = liveEncounters.poses(now, reducedMotion.matches);
   // An agent's animal moves where its agent steers it, live; that wins over any recording.
   for (const [id, pose] of liveAgents.poses(now, new Map([...carcasses, ...store.animals]))) poses.set(id, pose);

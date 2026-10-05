@@ -8,6 +8,8 @@ import { addCameraInteriorFade } from './observerVisibility.js';
 import { ForestBatches } from './forestBatches.js';
 import { addLeafLodFade, alternateLeafCards, LEAF_LOD_START_M, LEAF_LOD_END_M } from './leafLod.js';
 import type { RenderTier } from './renderQuality.js';
+import { preferenceFor, standSpot, treeAgeScale } from './forestStructure.js';
+import { SWAY, swayFor, wind, type SwayProfile } from './wind.js';
 
 /**
  * Poly Haven textured broadleaf trees/rocks plus Quaternius understory (CC0). Tree sources
@@ -22,9 +24,9 @@ export const NATURE_KINDS: Record<string, { file: string; scale: [number, number
   TwistedTree_1:      { file: 'NaturalBroadleafSpreading.glb', scale: [1.35, 2.5] },
   TwistedTree_3:      { file: 'NaturalBroadleafUpright.glb', scale: [1.5, 2.7] },
   DeadTree_2:         { file: 'DeadTree_2.glb', scale: [0.8, 1.1] },
-  Bush_Common:        { file: 'Bush_Common.glb', scale: [0.7, 1.2] },
+  Bush_Common:        { file: 'Bush_Common.glb', scale: [0.6, 1.7] },
   Bush_Common_Flowers:{ file: 'Bush_Common_Flowers.glb', scale: [0.7, 1.1] },
-  Fern_1:             { file: 'Fern_1.glb', scale: [0.3, 0.45] },
+  Fern_1:             { file: 'Fern_1.glb', scale: [0.3, 0.6] },
   Plant_1_Big:        { file: 'Plant_1_Big.glb', scale: [0.25, 0.4] },
   Plant_7_Big:        { file: 'Plant_7_Big.glb', scale: [0.4, 0.7] },
   Grass_Common_Tall:  { file: 'Grass_Common_Tall.glb', scale: [0.35, 0.55] },
@@ -138,13 +140,13 @@ const HABITAT_MIX: Record<string, Array<[kind: string, perPatch: number, driver:
   ],
   shola: [
     ['CommonTree_1', 360, 'canopy'], ['CommonTree_2', 340, 'canopy'], ['CommonTree_4', 300, 'canopy'],
-    ['Fern_1', 1200, 'fixed'], ['Bush_Common', 360, 'fixed'], ['Plant_1_Big', 400, 'fixed'],
+    ['Fern_1', 1200, 'fixed'], ['Bush_Common', 480, 'fixed'], ['Plant_1_Big', 400, 'fixed'],
     ['Mushroom_Common', 12, 'fixed'], ['Grass_Common_Short', 60, 'grass'],
     ['Stone_Small', 180, 'fixed'], ['Rock_Medium_2', 75, 'fixed'], ['Boulder_Large', 24, 'fixed'],
   ],
   riparian: [
     ['TwistedTree_1', 100, 'canopy'], ['TwistedTree_3', 100, 'canopy'], ['CommonTree_2', 280, 'canopy'],
-    ['Bush_Common_Flowers', 140, 'fixed'], ['Fern_1', 250, 'fixed'],
+    ['Bush_Common_Flowers', 180, 'fixed'], ['Fern_1', 250, 'fixed'],
     ['Grass_Wispy_Tall', 140, 'grass'], ['Plant_7_Big', 30, 'fixed'],
     ['Stone_Small', 180, 'fixed'], ['Rock_Medium_3', 60, 'fixed'], ['Boulder_Large', 18, 'fixed'],
   ],
@@ -237,11 +239,16 @@ export function planVegetation(
       };
       const [lo, hi] = NATURE_KINDS[kind]!.scale;
       const list = plan.get(kind) ?? [];
+      // Clumps and clearings from the fixed stand pattern (forestStructure.ts): the patch keeps
+      // its simulated count, only where each plant stands and how old a tree looks change.
+      const preference = preferenceFor(kind, patch.habitat);
       for (let i = 0; i < count; i++) {
-        const plannedX = centre.x + (random() - 0.5) * PATCH_METRES;
-        const plannedZ = centre.z + (random() - 0.5) * PATCH_METRES;
+        const spot = standSpot(random, centre, PATCH_METRES, preference);
+        const plannedX = spot.x;
+        const plannedZ = spot.z;
         const rotY = random() * Math.PI * 2;
-        const plannedScale = lo + (hi - lo) * random();
+        const plannedScale = preference === 'canopy' || preference === 'grove'
+          ? treeAgeScale(lo, hi, random(), spot.stand).scale : lo + (hi - lo) * random();
         // Reuse one of the already-budgeted visible instances; no extra draw call or tree.
         const placedAnchor = i === 0 && anchor?.visualKind === kind;
         const x = placedAnchor ? anchor.x : plannedX;
@@ -343,6 +350,35 @@ export function nearPlan(patches: readonly PatchView[], focus: { x: number; z: n
 
 const REPLAN_STEP_M = 20;
 
+/** The densest even forest the planner ever made: a full-canopy shola patch's trees per m². */
+export const TREE_DETAIL_DENSITY_CAP = HABITAT_MIX.shola!.filter(([kind]) => isTree(kind))
+  .reduce((sum, [, perPatch]) => sum + perPatch, 0) * 1.3 / PATCH_METRES ** 2;
+/** Never pull detailed trees in closer than this share of the tier's fade distances. */
+export const MIN_CLUMP_DETAIL_SCALE = 0.6;
+
+/**
+ * How far to shrink the detailed-tree radius around `focus` so standing inside a dense clump
+ * costs no more full tree geometry than the densest evenly spread forest did. Clumping keeps
+ * every patch's tree count but packs them closer; the extra trees beyond the shrunken radius
+ * are drawn by their matching atlas cards instead. 1 everywhere else.
+ */
+export function clumpDetailScale(plan: ReadonlyMap<string, readonly PlacedPlant[]>, focus: { x: number; z: number },
+  endM: number): number {
+  const distances: number[] = [];
+  for (const [kind, items] of plan) {
+    if (!isTree(kind)) continue;
+    for (const item of items) {
+      const distance = Math.hypot(item.x - focus.x, item.z - focus.z);
+      if (distance <= endM) distances.push(distance);
+    }
+  }
+  const allowed = Math.floor(Math.PI * endM * endM * TREE_DETAIL_DENSITY_CAP);
+  if (distances.length <= allowed) return 1;
+  // The radius holding exactly the allowed number of nearest trees.
+  distances.sort((a, b) => a - b);
+  return Math.max(MIN_CLUMP_DETAIL_SCALE, distances[allowed]! / endM);
+}
+
 
 interface KindMeshes { meshes: THREE.InstancedMesh[]; bounds: THREE.Sphere }
 interface DistantTrees { batches: ForestBatches; atlas: TreeAtlas }
@@ -359,6 +395,8 @@ export class NearVegetation {
   readonly #distant = new Map<string, DistantTrees>();
   readonly #observer = { value: new THREE.Vector3() };
   readonly #treeFade = { value: treeFadeRangeFor('high') };
+  /** The tier's fade range before any dense-clump shrink (clumpDetailScale). */
+  readonly #tierFade = treeFadeRangeFor('high');
   #quality: RenderTier = 'high';
   readonly #treeCache = new TreePlacementCache();
   #nearPlan: Map<string, PlacedPlant[]> | null = null;
@@ -451,6 +489,16 @@ export class NearVegetation {
       });
       const box = new THREE.Box3();
       for (const mesh of meshes) { mesh.geometry.computeBoundingBox(); box.union(mesh.geometry.boundingBox!); }
+      // Grass, leaves and branches lean with the observer's wind; bases and rocks stay put.
+      const swayed = new Set<THREE.Material>();
+      for (const mesh of meshes) {
+        for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+          const sway = swayFor(kind, material.name);
+          if (!sway || swayed.has(material)) continue;
+          swayed.add(material);
+          wind.apply(material, { height: Math.max(0.1, box.max.y), ...SWAY[sway] });
+        }
+      }
       this.#kinds.set(kind, { meshes, bounds: box.getBoundingSphere(new THREE.Sphere()) });
     }));
     const failures = loaded.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
@@ -468,8 +516,9 @@ export class NearVegetation {
           const file = NATURE_KINDS[kind]!.file;
           let atlas = atlases.get(file);
           if (!atlas) {
+            const seating = TREE_ROOT_SEATING[file];
             atlas = await bakeTreeAtlas(renderer, meshes.filter(mesh => mesh.userData.leafLod !== 'middle'),
-              { signal: this.#lifetime.signal });
+              { signal: this.#lifetime.signal, ...(seating ? { clipBelow: seating.embed + 0.02 } : {}) });
             // If disposal happened in a promise continuation, this unowned result must not
             // be published or leak; established targets are released by dispose below.
             if (this.#lifetime.signal.aborted) { atlas.target.dispose(); this.#lifetime.signal.throwIfAborted(); }
@@ -492,6 +541,8 @@ export class NearVegetation {
             const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking,
               map: source.map, alphaMap: source.alphaMap, alphaTest: source.alphaTest,
               side: source.shadowSide ?? source.side });
+            const sway = source.userData.windSway as SwayProfile | undefined;
+            if (sway) wind.apply(depth, sway);
             addTreeDetailFade(depth, this.#observer, this.#treeFade);
             if (near.userData.leafLod === 'full' || near.userData.leafLod === 'middle')
               addLeafLodFade(depth, near.userData.leafLod);
@@ -523,7 +574,8 @@ export class NearVegetation {
   setQuality(tier: RenderTier): void {
     if (this.#quality === tier) return;
     this.#quality = tier;
-    this.#treeFade.value.copy(treeFadeRangeFor(tier));
+    this.#tierFade.copy(treeFadeRangeFor(tier));
+    this.#treeFade.value.copy(this.#tierFade);
     // A stationary camera must refill near instances when the fade endpoint changes.
     this.#lastFocus = null;
   }
@@ -588,7 +640,9 @@ export class NearVegetation {
     } else if (!moved) return false;
     if (moved || !this.#nearPlan) {
       this.#lastFocus = { x: focus.x, y, z: focus.z };
-      this.#nearPlan = nearPlan(this.patches, focus, this.groundAt, this.#treeFade.value.y + TREE_PLAN_MARGIN_M);
+      this.#nearPlan = nearPlan(this.patches, focus, this.groundAt, this.#tierFade.y + TREE_PLAN_MARGIN_M);
+      // Near and far trees share this range, so a shrink inside a clump only swaps geometry for cards.
+      this.#treeFade.value.copy(this.#tierFade).multiplyScalar(clumpDetailScale(this.#nearPlan, focus, this.#tierFade.y));
       this.obstacles = new ObstacleField(obstaclesFrom(this.#nearPlan));
     }
     const plan = this.#nearPlan;
