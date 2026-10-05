@@ -194,6 +194,6 @@ log "DRILL PASSED"
 if [[ $keep -eq 0 ]]; then
   [[ "$project" == vana-drill ]] && compose down -v --remove-orphans > /dev/null 2>&1
   docker image rm vana-drill-server:old vana-drill-server:new vana-drill-web:old vana-drill-web:new > /dev/null
-  rm -f "$dir"/*.tar "$dir/drill.env"
+  rm -f "${dir:?}"/*.tar "${dir:?}/drill.env"
   log "drill project, volumes and images removed; evidence kept in $evidence"
 fi
