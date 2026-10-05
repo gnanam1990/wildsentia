@@ -1,0 +1,190 @@
+/**
+ * Smooth trailer footage. The page's clock (performance.now and animation-frame time) runs at
+ * TIME_SCALE of real time while filming, so the GPU has 1/TIME_SCALE times longer per game frame
+ * and never drops one. The camera follows a path computed inside the page on every frame
+ * (no stepped mouse input). Each captured frame keeps its timestamp, converted to game time,
+ * and the edit (edit.py) places it exactly on a 60 fps timeline.
+ *
+ * Needs the dev observer (it exposes window.__vana): run
+ *   (cd packages/client && npx vite --config vite.e2e.config.ts)
+ * against the local stack, then
+ *   npx tsx tools/video/film.ts <out-dir> [shot ...]
+ */
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { chromium, type Page } from 'playwright';
+
+const viewer = process.env.VANA_FILM_ORIGIN ?? 'http://localhost:5299';
+const api = process.env.VANA_E2E_ORIGIN ?? 'http://localhost:28080';
+const TIME_SCALE = Number(process.env.VANA_FILM_TIME_SCALE ?? 0.25);
+const out = process.argv[2];
+if (!out) throw new Error('usage: film.ts <out-dir> [shot ...]');
+
+/** Camera path, eased from start to end: orbit angle (radians), height angle, distance (m). */
+/** distance null: the replay's own "keep both animals framed" owns the zoom, so two writers never fight. */
+interface Path { theta: [number, number] | 'behind' | 'side'; phi: [number, number]; distance: [number, number] | null }
+interface Shot {
+  name: string; seconds: number; path: Path;
+  species?: string;
+  /** A recorded hunt replayed from just before its chase. */
+  hunt?: { predator?: string; prey?: string[]; lead: number };
+}
+
+const shots: Shot[] = [
+  { name: 'a-canopy', species: 'gaur', seconds: 9, path: { theta: [0.4, 1.4], phi: [1.05, 1.25], distance: [70, 190] } },
+  { name: 'b-elephant', species: 'elephant', seconds: 7, path: { theta: [2.2, 3.1], phi: [0.22, 0.3], distance: [16, 12] } },
+  { name: 'c-chital', species: 'chital', seconds: 6, path: { theta: [0.3, 1.0], phi: [0.18, 0.24], distance: [6.5, 5] } },
+  { name: 'd-langur', species: 'langur', seconds: 6, path: { theta: [4.0, 4.7], phi: [0.2, 0.26], distance: [5, 4] } },
+  { name: 'e-gaur', species: 'gaur', seconds: 6, path: { theta: [1.2, 1.8], phi: [0.16, 0.2], distance: [13, 11] } },
+  { name: 'f-hunt-tiger', seconds: 12, hunt: { predator: 'tiger', lead: 5 }, path: { theta: 'side', phi: [0.3, 0.34], distance: null } },
+  { name: 'g-hunt-dhole', seconds: 10, hunt: { predator: 'dhole', lead: 4 }, path: { theta: 'side', phi: [0.3, 0.34], distance: null } },
+  { name: 'h-boar', species: 'boar', seconds: 5, path: { theta: [5.0, 5.6], phi: [0.18, 0.22], distance: [5, 4] } },
+  { name: 'i-squirrel', species: 'squirrel', seconds: 5, path: { theta: [2.0, 2.6], phi: [0.2, 0.24], distance: [3.2, 2.6] } },
+  { name: 'j-sambar', species: 'sambar', seconds: 6, path: { theta: [3.0, 3.6], phi: [0.16, 0.2], distance: [11, 9] } },
+  { name: 'k-rise', species: 'elephant', seconds: 10, path: { theta: [0.0, 0.9], phi: [0.3, 1.15], distance: [14, 160] } },
+];
+
+interface Patch { id: number; canopyCover: number }
+interface Animal { id: string; speciesId: string; patchId: number; state: string; dependent?: boolean }
+async function pickAnimal(species: string): Promise<string> {
+  const [{ animals }, patchBody] = await Promise.all([
+    fetch(`${api}/api/animals`).then((r) => r.json()) as Promise<{ animals: Animal[] }>,
+    fetch(`${api}/api/patches`).then((r) => r.json()) as Promise<Patch[] | { patches: Patch[] }>,
+  ]);
+  const patches = new Map((Array.isArray(patchBody) ? patchBody : patchBody.patches).map((p) => [p.id, p]));
+  const score = (a: Animal) => (a.state === 'resting' ? -2 : 0) + (a.dependent ? -1 : 0) - Math.abs((patches.get(a.patchId)?.canopyCover ?? 0) - 0.5) * 3;
+  const pool = animals.filter((a) => a.speciesId === species).sort((a, b) => score(b) - score(a));
+  if (!pool.length) throw new Error(`no living ${species}`);
+  return pool[0]!.id;
+}
+
+interface Marker { id: string; type: string; actorId?: string; actors?: string[]; outcome?: string; worldTime: number }
+interface Sample { seconds: number; phase: string }
+/** A successful recorded hunt by the species, newest first, with its chase window. */
+async function pickHunt(species: string, used: Set<string>): Promise<{ predator: string; prey: string; eventId: string; from: number; total: number }> {
+  const { markers } = await fetch(`${api}/api/event-map`).then((r) => r.json()) as { markers: Marker[] };
+  const hunts = markers.filter((m) => m.type === 'hunt' && m.outcome === 'success' && m.actorId?.startsWith(`${species}_`) && !used.has(m.id))
+    .sort((a, b) => b.worldTime - a.worldTime);
+  for (const m of hunts) {
+    const body = await fetch(`${api}/api/animals/${m.actorId}/encounters/${m.id}`).then((r) => r.ok ? r.json() : null) as { encounter?: { trace?: { samples: Sample[] } } } | null;
+    const samples = body?.encounter?.trace?.samples;
+    const chase = samples?.find((s) => s.phase === 'chase');
+    if (!samples || !chase) continue;
+    used.add(m.id);
+    const prey = (m.actors ?? []).find((id) => id !== m.actorId) ?? '';
+    return { predator: m.actorId!, prey, eventId: m.id, from: chase.seconds, total: samples.at(-1)!.seconds };
+  }
+  throw new Error(`no recorded ${species} hunt with a chase`);
+}
+
+/** Slows the page's clock before any of its code runs. */
+function timeScaleScript(scale: number): string {
+  return `(() => {
+    const realNow = performance.now.bind(performance), t0 = realNow();
+    const scaled = (t) => t0 + (t - t0) * ${scale};
+    performance.now = () => scaled(realNow());
+    const raf = window.requestAnimationFrame.bind(window);
+    window.requestAnimationFrame = (cb) => raf((t) => cb(scaled(t)));
+  })();`;
+}
+
+async function waitReady(page: Page): Promise<void> {
+  await page.waitForFunction(() => (window as any).__vana && document.querySelector('#view')?.getAttribute('aria-busy') === 'false',
+    null, { timeout: 120_000 });
+  await page.evaluate(() => {
+    const select = document.querySelector<HTMLSelectElement>('#render-quality')!;
+    select.value = 'high'; select.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+}
+
+/** Drives the camera along the path on every animation frame, eased, from now for `seconds` of game time. */
+/** For 'side': the two animals the camera keeps side-on to (predator, prey). */
+async function startPath(page: Page, path: Path, seconds: number, pair: [string, string] | null = null): Promise<void> {
+  // A string, so the bundler cannot add helpers (__name) the page does not have.
+  await page.evaluate(`(() => {
+    const path = ${JSON.stringify(path)}, seconds = ${seconds}, pair = ${JSON.stringify(pair)};
+    const v = window.__vana, follow = v.follow, start = performance.now();
+    const theta0 = Array.isArray(path.theta) ? path.theta[0] : follow.theta;
+    const theta1 = Array.isArray(path.theta) ? path.theta[1] : path.theta === 'behind' ? follow.theta + 0.5 : follow.theta;
+    // Side-on to the chase: the camera sits perpendicular to the line from hunter to quarry, and
+    // turns toward that only gently, so a swerve never whips the view round.
+    let side = follow.theta;
+    const sideOn = () => {
+      const a = v.animals.root.getObjectByName(pair[0]), b = v.animals.root.getObjectByName(pair[1]);
+      if (!a || !b) return side;
+      const dx = b.position.x - a.position.x, dz = b.position.z - a.position.z;
+      if (Math.hypot(dx, dz) < 0.5) return side;
+      const want = Math.atan2(dx, dz) + Math.PI / 2;
+      const diff = ((want - side + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+      // Of the two side-on views, keep to the one nearer where the camera already is.
+      const turn = Math.abs(diff) > Math.PI / 2 ? diff - Math.sign(diff) * Math.PI : diff;
+      side += turn * 0.02;
+      return side;
+    };
+    const ease = (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    const step = () => {
+      const t = Math.min(1, (performance.now() - start) / (seconds * 1000)), e = ease(t);
+      follow.theta = path.theta === 'side' && pair ? sideOn() : theta0 + (theta1 - theta0) * e;
+      follow.phi = path.phi[0] + (path.phi[1] - path.phi[0]) * e;
+      if (path.distance) follow.distance = path.distance[0] + (path.distance[1] - path.distance[0]) * e;
+      follow.rotateBy(0); // holds the viewer's angle: no drift back behind the animal
+      if (t < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  })()`);
+}
+
+const wantedShots = new Set(process.argv.slice(3));
+const browser = await chromium.launch({ args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] });
+const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+await context.addInitScript(timeScaleScript(TIME_SCALE));
+const page = await context.newPage();
+const cdp = await context.newCDPSession(page);
+const usedHunts = new Set<string>();
+for (const shot of shots) {
+  if (wantedShots.size && !wantedShots.has(shot.name)) continue;
+  const dir = join(out, shot.name); mkdirSync(dir, { recursive: true });
+  let subject: string, pair: [string, string] | null = null;
+  if (shot.hunt) {
+    const hunt = await pickHunt(shot.hunt.predator ?? 'tiger', usedHunts);
+    subject = `${hunt.predator} ${hunt.eventId}`; pair = [hunt.predator, hunt.prey];
+    await page.goto(`${viewer}/?cinema=1&maxfps=240#animal=${hunt.predator}`, { waitUntil: 'domcontentloaded' });
+    await waitReady(page);
+    await page.evaluate(([id, eventId]) => (window as any).__vana.startReplay(id, eventId), [hunt.predator, hunt.eventId]);
+    await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>('#replay-play')!.disabled, null, { timeout: 60_000 });
+    await page.waitForTimeout(6000); // the two models load
+    const seek = Math.max(0, hunt.from - shot.hunt.lead) / hunt.total;
+    await page.evaluate((s) => {
+      const seekBar = document.querySelector<HTMLInputElement>('#replay-seek')!;
+      seekBar.value = String(Math.round(s * 1000)); seekBar.dispatchEvent(new Event('input', { bubbles: true }));
+    }, seek);
+    await page.waitForTimeout(1500);
+    await page.evaluate(() => document.querySelector<HTMLButtonElement>('#replay-play')!.click());
+  } else {
+    const animal = await pickAnimal(shot.species!);
+    subject = animal;
+    await page.goto(`${viewer}/?cinema=1&maxfps=240#animal=${animal}`, { waitUntil: 'domcontentloaded' });
+    await waitReady(page);
+    await page.waitForTimeout(8000); // models, vegetation and the follow flight settle (real time)
+  }
+  await startPath(page, shot.path, shot.seconds + 1, pair);
+  const stamps: number[] = [];
+  let n = 0;
+  const onFrame = (f: { data: string; sessionId: number; metadata: { timestamp?: number } }) => {
+    stamps.push(f.metadata.timestamp ?? 0);
+    writeFileSync(join(dir, `f${String(n++).padStart(5, '0')}.jpg`), Buffer.from(f.data, 'base64'));
+    void cdp.send('Page.screencastFrameAck', { sessionId: f.sessionId }).catch(() => undefined);
+  };
+  cdp.on('Page.screencastFrame', onFrame);
+  await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 95, maxWidth: 1920, maxHeight: 1080 });
+  await page.waitForTimeout(((shot.seconds + 0.5) / TIME_SCALE) * 1000);
+  await cdp.send('Page.stopScreencast');
+  cdp.off('Page.screencastFrame', onFrame);
+  // Frame times in game seconds from the first frame: what edit.py lays on its 60 fps timeline.
+  const game = stamps.map((t) => (t - stamps[0]!) * TIME_SCALE);
+  const gaps = game.slice(1).map((t, i) => t - game[i]!);
+  writeFileSync(join(dir, 'meta.json'), JSON.stringify({ subject, frames: n, timeScale: TIME_SCALE, gameSeconds: game.at(-1),
+    gameFps: n / (game.at(-1) || 1), worstGapMs: Math.max(...gaps) * 1000, times: game }, null, 1));
+  console.log(`${shot.name} (${subject}): ${n} frames over ${game.at(-1)!.toFixed(1)} game s, ${(n / game.at(-1)!).toFixed(0)} fps, worst gap ${(Math.max(...gaps) * 1000).toFixed(1)} ms`);
+}
+await browser.close();

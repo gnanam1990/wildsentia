@@ -458,7 +458,7 @@ graphics.addEventListener('change', () => {
   quality.select(qualityMode(graphics.value)); applyQuality();
   try { storage?.setItem('vana.graphics', quality.mode); } catch { /* optional preference */ }
 });
-const pacer = new RenderPacer();
+const pacer = new RenderPacer(Number(new URLSearchParams(location.search).get('maxfps') ?? 60));
 const terrainCheckpoints = new TerrainCheckpoints();
 document.addEventListener('visibilitychange', () => {
   pacer.reset(); quality.resetTiming();
@@ -699,7 +699,7 @@ setInterval(() => {
 
 // Dev-only handle so the running world can be inspected from the console.
 if (import.meta.env.DEV) {
-  (window as unknown as Record<string, unknown>).__vana = { scene, camera, follow, animals, store, liveEncounters };
+  (window as unknown as Record<string, unknown>).__vana = { scene, camera, follow, animals, store, liveEncounters, startReplay };
 }
 
 const renderStats = document.querySelector<HTMLOutputElement>('#render-stats')!;

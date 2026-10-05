@@ -2,8 +2,12 @@
 
     python3 tools/video/edit.py <raw-dir> <out.mp4>
 
-1920x1080 H.264 (yuv420p, +faststart), 30 fps, a 2.39:1 letterbox, a light warm grade and
+1920x1080 H.264 (yuv420p, +faststart), 60 fps, a 2.39:1 letterbox, a light warm grade and
 vignette, crossfades between shots, and a title, captions and an end card drawn here.
+
+Shots filmed by film.ts carry each frame's game-time stamp: frames are laid on those exact times,
+resampled to 240 fps, and pairs of 240 fps sub-frames averaged before stepping to 60 fps — a
+180-degree shutter's motion blur, with no judder from uneven capture.
 """
 import json
 import subprocess
@@ -15,7 +19,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 RAW, OUT = Path(sys.argv[1]), Path(sys.argv[2])
 WORK = OUT.parent / "edit-work"
 WORK.mkdir(parents=True, exist_ok=True)
-W, H, FPS, FADE = 1920, 1080, 30, 0.6
+W, H, FPS, FADE = 1920, 1080, 60, 0.6
 BAR = round((H - W / 2.39) / 2)  # letterbox bar height
 
 AVENIR = "/System/Library/Fonts/Avenir Next.ttc"
@@ -26,16 +30,17 @@ BOLD, DEMI, MEDIUM = 0, 2, 5
 
 # (shot, seconds used, caption)
 CUT = [
-    ("02-elephant", 7.0, None),  # aerial over the canopy: title
-    ("03-tiger", 6.0, "Every hunt is real. Nothing is scripted."),
-    ("04-chital", 5.5, "1,800 animals. Each with a life of its own."),
-    ("06-langur", 6.0, "They graze, drink, rest and raise their young."),
-    ("07-dhole", 6.0, "Predators hunt. Prey runs."),
-    ("05-gaur", 5.2, None),
-    ("08-boar", 5.0, None),
-    ("09-squirrel", 5.2, "Follow any animal. Watch its whole life."),
-    ("10-sambar", 5.6, "AI agents can step into the wild."),
-    ("01-canopy", 9.0, None),  # rising over the forest: end card
+    ("a-canopy", 7.0, None),  # over the forest: title
+    ("b-elephant", 6.0, "An island that lives on its own."),
+    ("c-chital", 5.5, "Hundreds of animals. Each with a life of its own."),
+    ("d-langur", 5.5, "They graze, drink, rest and raise their young."),
+    ("e-gaur", 5.0, None),
+    ("f-hunt-tiger", 9.5, "Every hunt is real. Nothing is scripted."),
+    ("g-hunt-dhole", 8.0, "Predators hunt. Prey runs."),
+    ("h-boar", 4.5, None),
+    ("i-squirrel", 4.5, "Follow any animal. Watch its whole life."),
+    ("j-sambar", 5.5, "AI agents can step into the wild."),
+    ("k-rise", 9.5, None),  # rising over the forest: end card
 ]
 CUT = [row for row in CUT if (RAW / row[0] / "meta.json").exists()]
 
@@ -99,14 +104,27 @@ GRADE = ("eq=contrast=1.07:saturation=1.18:brightness=0.005:gamma=0.97,"
 
 def clip(i, shot, seconds, text):
     meta = json.loads((RAW / shot / "meta.json").read_text())
-    frames = meta["frames"]
-    fps = meta["fps"]
-    available = frames / fps
-    # Use the calm middle of each move: start a little in, so the shot opens already moving.
-    start = max(0.0, min(available - seconds, available * 0.18))
     out = WORK / f"clip{i:02d}.mp4"
-    inputs = ["-framerate", f"{fps:.4f}", "-i", str(RAW / shot / "f%05d.jpg"), "-loop", "1", "-i", str(bars)]
-    chain = (f"[0:v]trim=start={start:.3f}:duration={seconds:.3f},setpts=PTS-STARTPTS,fps={FPS},"
+    if "times" in meta:
+        # Exact frame times (game seconds): a concat list with per-frame durations.
+        times = meta["times"]
+        listing = WORK / f"frames{i:02d}.txt"
+        lines = []
+        for k, t in enumerate(times):
+            duration = (times[k + 1] - t) if k + 1 < len(times) else 1 / 240
+            lines += [f"file '{(RAW / shot / f'f{k:05d}.jpg').as_posix()}'", f"duration {duration:.6f}"]
+        listing.write_text("\n".join(lines) + "\n")
+        available = times[-1]
+        inputs = ["-f", "concat", "-safe", "0", "-i", str(listing), "-loop", "1", "-i", str(bars)]
+        timing = "fps=240,tmix=frames=2,framestep=4,"
+    else:
+        fps = meta["fps"]
+        available = meta["frames"] / fps
+        inputs = ["-framerate", f"{fps:.4f}", "-i", str(RAW / shot / "f%05d.jpg"), "-loop", "1", "-i", str(bars)]
+        timing = f"fps={FPS},"
+    # Use the calm middle of each move: start a little in, so the shot opens already moving.
+    start = max(0.0, min(available - seconds, available * 0.08))
+    chain = (f"[0:v]{timing}trim=start={start:.3f}:duration={seconds:.3f},setpts=PTS-STARTPTS,"
              f"scale={W}:{H}:flags=lanczos,{GRADE}[v];[v][1:v]overlay=0:0:shortest=1[b]")
     last = "b"
     extra = []

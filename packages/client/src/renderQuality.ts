@@ -64,8 +64,11 @@ export class AdaptiveQuality {
   }
 }
 
-/** RAF-driven 60 Hz ceiling; no hidden-tab rendering or giant resume delta. */
+/** RAF-driven frame ceiling (60 Hz unless asked otherwise); no hidden-tab rendering or giant resume delta. */
 export class RenderPacer {
+  readonly #period: number;
+  /** `maxFps` above 60 is for filming with a slowed clock (tools/video/film.ts); clamped to 30–240. */
+  constructor(maxFps = 60) { this.#period = 1000 / Math.min(240, Math.max(30, Number.isFinite(maxFps) ? maxFps : 60)); }
   #scheduled: number | null = null;
   #rendered: number | null = null;
   reset(): void { this.#scheduled = null; this.#rendered = null; }
@@ -74,7 +77,7 @@ export class RenderPacer {
     if (this.#scheduled === null || this.#rendered === null || now < this.#rendered) {
       this.#scheduled = now; this.#rendered = now; return 0;
     }
-    const period = 1000 / 60, elapsed = now - this.#scheduled;
+    const period = this.#period, elapsed = now - this.#scheduled;
     if (elapsed < period - 0.1) return null;
     this.#scheduled += Math.max(1, Math.floor((elapsed + 0.1) / period)) * period;
     const delta = now - this.#rendered; this.#rendered = now; return delta;
