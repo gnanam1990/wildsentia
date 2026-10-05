@@ -1,5 +1,5 @@
 import { claimRecovery } from './rewardClaimRecovery.js';
-import { rewardTotalsLine, type RewardSummary } from './rewardTotals.js';
+import { rewardTotalsLine, visitorAmount, type RewardSummary } from './rewardTotals.js';
 import { browserClaimStore as storage, describeClaimStatus, forgetClaim, loadClaims, rememberClaim, type StoredClaim } from './rewardReceipts.js';
 
 interface Drop { id: string; actorId: string; amount: string; network: string; status: string; revealWhen: string }
@@ -63,13 +63,13 @@ export class RewardObserver {
         this.#panel.replaceChildren(); this.#badge.hidden = !this.#drops.length;
         if (this.#drops.length) {
           const drop = this.#drops[0]!;
-          const button = document.createElement('button'); button.textContent = `Claim ${drop.amount} USDC · ${drop.network}`;
+          const button = document.createElement('button'); button.textContent = `Claim ${visitorAmount(drop.amount)} USDC · ${drop.network}`;
           button.onclick = () => this.openClaim(); this.#panel.append(button);
           const note = document.createElement('p'); note.className = 'hint';
           note.textContent = drop.revealWhen === 'carcass' ? 'Reward on checkpointed remains. Recorded animation may show an earlier living animal.'
             : 'This reward is for the animal as it is now.';
           this.#panel.append(note);
-          this.#badge.textContent = `${drop.amount} USDC · Claim reward`;
+          this.#badge.textContent = `${visitorAmount(drop.amount)} USDC · Claim reward`;
         }
       } catch { if (version === this.#version) { this.#drops = []; this.#badge.hidden = true; this.#panel.textContent = 'Reward discovery unavailable; try following again.'; } }
     });
@@ -93,7 +93,7 @@ export class RewardObserver {
     const form = document.createElement('form');
     const choiceLabel = document.createElement('label'); choiceLabel.textContent = 'Reward amount and network';
     const choice = document.createElement('select');
-    for (const d of drops) choice.add(new Option(`${d.amount} USDC · ${d.network} · ${d.actorId}`, d.id));
+    for (const d of drops) choice.add(new Option(`${visitorAmount(d.amount)} USDC · ${d.network} · ${d.actorId}`, d.id));
     choiceLabel.append(choice);
     const label = document.createElement('label'); label.textContent = 'Receiving wallet address';
     const wallet = document.createElement('input'); wallet.required = true; wallet.maxLength = 100;
@@ -122,7 +122,7 @@ export class RewardObserver {
       try {
         const raw = await this.#post('/rewards/claims', { dropId: selectedDrop, wallet: selectedWallet });
         const result = raw as { claimId: string; amount: string; network: string; status: string; receipt?: string };
-        status.textContent = `${result.status}: ${result.amount} USDC on ${result.network}. Claim ${result.claimId}`
+        status.textContent = `${result.status}: ${visitorAmount(result.amount)} USDC on ${result.network}. Claim ${result.claimId}`
           + (result.receipt ? `, receipt ${result.receipt}. This browser keeps it under "My reward claims"; save it to check the claim elsewhere.` : '.')
           + ' Payment is not guaranteed or automatic.';
         if (result.receipt) {
@@ -191,7 +191,7 @@ export class RewardObserver {
       if (!claims.length) { const empty = document.createElement('li'); empty.textContent = 'No claims saved in this browser.'; list.append(empty); }
       for (const claim of claims) {
         const item = document.createElement('li');
-        const head = document.createElement('strong'); head.textContent = `${claim.amount} USDC · ${claim.network} · ${claim.animalId}`;
+        const head = document.createElement('strong'); head.textContent = `${visitorAmount(claim.amount)} USDC · ${claim.network} · ${claim.animalId}`;
         const state = document.createElement('p'); state.setAttribute('role', 'status'); state.textContent = 'Checking…';
         const ids = document.createElement('p'); ids.className = 'hint';
         ids.textContent = `Claim ${claim.claimId} · receipt ${claim.receipt}`;
@@ -220,7 +220,7 @@ export class RewardObserver {
     const eligible = this.#drops.find((drop) => drop.revealWhen !== 'carcass' || renderedDead);
     this.#badge.hidden = !visible || !eligible;
     if (!this.#badge.hidden && eligible) {
-      this.#badge.textContent = `${eligible.amount} USDC · Claim reward`;
+      this.#badge.textContent = `${visitorAmount(eligible.amount)} USDC · Claim reward`;
       this.#badge.style.left = `${x}px`; this.#badge.style.top = `${y}px`;
     }
   }

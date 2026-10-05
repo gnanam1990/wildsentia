@@ -10,6 +10,9 @@ const display = (value: bigint): string => {
   return fraction ? `${whole}.${fraction}` : whole.toString();
 };
 
+/** A six-decimal server amount as visitors read it: "1.000000" → "1", "0.250000" → "0.25". Unparsable input is shown as given. */
+export const visitorAmount = (amount: string): string => /^[0-9]+\.[0-9]{6}$/.test(amount) ? display(micro(amount)) : amount;
+
 /**
  * What visitors see: unclaimed drops waiting in the forest, drops claimed and awaiting the
  * administrator's manual payment, and drops paid (reported or verified on-chain).
