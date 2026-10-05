@@ -17,6 +17,8 @@ import { installHolder, type HolderChain, type HolderConfig } from './holder.js'
 import { Insights } from './insights/insights.js';
 import { installLiveAgents, type LiveRouteDeps } from './live/routes.js';
 import type { PlaceDropLedger } from './live/liveStore.js';
+import { GENERAL_LIMIT_DEFAULTS, NetworkRateLimit, type GeneralLimits } from './limits.js';
+import { networkKey } from './network.js';
 
 export interface ApiDeps {
   host: SimHost;
@@ -37,7 +39,15 @@ export interface ApiDeps {
    * per-visitor limits see the visitor rather than the proxy. 0 (default) trusts none.
    */
   trustedProxyHops?: number;
+  /** Per-visitor limit on public reads (VANA_PUBLIC_READS_PER_MINUTE); generous by default. */
+  limits?: Partial<Pick<GeneralLimits, 'publicReadsPerMinute'>>;
 }
+
+/**
+ * Routes outside the general public-read limit: health checks (monitors poll them), and routes
+ * with limits of their own (rewards, admin and holder per network; signed agent calls per agent).
+ */
+const OWN_LIMITS = /^\/(health|rewards|admin|holder|agents\/me)(\/|$)/;
 
 /** VANA_TRUSTED_PROXY_HOPS: how many proxies (e.g. 1 for Caddy in deploy/) to trust. */
 export function trustedProxyHops(env: NodeJS.ProcessEnv): number {
@@ -51,9 +61,21 @@ export function trustedProxyHops(env: NodeJS.ProcessEnv): number {
  * World routes are read-only. The optional reward ledger has independent write routes and
  * receives only a read-only subject visibility adapter, never a simulation mutation capability.
  */
-export function buildApi({ host, pool, narrator, insights: insightDeps, live, rewards, receiptRpc, social, holder, holderChain, trustedProxyHops: hops = 0 }: ApiDeps): FastifyInstance {
+export function buildApi({ host, pool, narrator, insights: insightDeps, live, rewards, receiptRpc, social, holder, holderChain, trustedProxyHops: hops = 0, limits }: ApiDeps): FastifyInstance {
   // Without this, behind Caddy every visitor has the proxy's address and shares one rate limit.
   const app = Fastify({ logger: false, trustProxy: hops > 0 ? (_address: string, hop: number) => hop < hops : false });
+  // History routes read the database on every request; one visitor network gets a generous
+  // share. Counted on the dispatched route (not the raw URL), and unknown paths count too.
+  const perMinute = limits?.publicReadsPerMinute ?? GENERAL_LIMIT_DEFAULTS.publicReadsPerMinute;
+  if (perMinute > 0) {
+    const reads = new NetworkRateLimit(perMinute);
+    app.addHook('onRequest', async (req, reply) => {
+      if (req.method !== 'GET' && req.method !== 'HEAD') return;
+      if (OWN_LIMITS.test(req.routeOptions.url ?? '')) return;
+      const taken = reads.take(networkKey(req.ip));
+      if (!taken.ok) return reply.code(429).header('Retry-After', String(taken.retryAfterSeconds)).send({ error: 'rate_limited' });
+    });
+  }
   // An unexpected failure's message can name database hosts, tables and constraints: log it
   // here and send a plain error. Client mistakes (bad JSON, too large) keep Fastify's reply.
   app.setErrorHandler<FastifyError>((error, _request, reply) => {

@@ -12,6 +12,7 @@ import { Gateway } from './gateway.js';
 import { rewardConfig } from './rewards.js';
 import { socialConfig } from './socialOutbox.js';
 import { holderConfig } from './holder.js';
+import { generalLimits } from './limits.js';
 
 export async function startServer(): Promise<{ close(): Promise<void> }> {
   const databaseUrl = process.env.DATABASE_URL;
@@ -19,6 +20,7 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
   const social = socialConfig(process.env);
   const holder = holderConfig(process.env);
   trustedProxyHops(process.env); // Fail at startup, not at the first request.
+  const limits = generalLimits(process.env);
   if (!databaseUrl) throw new Error('DATABASE_URL is required');
 
   const port = Number(process.env.PORT ?? 8080);
@@ -109,12 +111,13 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
     // Outside agents steering animals: off unless VANA_LIVE_AGENTS=1.
     live = liveRuntime(host, pool, rewards, process.env);
 
-    api = buildApi({ host, pool, narrator, insights, rewards, social, holder, trustedProxyHops: trustedProxyHops(process.env),
+    api = buildApi({ host, pool, narrator, insights, rewards, social, holder, trustedProxyHops: trustedProxyHops(process.env), limits,
       ...(live ? { live: { ...live.routes, spot: live.spot } } : {}) });
     await api.ready();
 
     server = createServer((req, res) => { api!.server.emit('request', req, res); });
-    gateway = new Gateway(host);
+    gateway = new Gateway(host, { maxConnections: limits.liveMaxConnections, maxPerNetwork: limits.liveMaxPerNetwork,
+      trustedProxyHops: trustedProxyHops(process.env) });
 
     await new Promise<void>((resolve, reject) => {
       server!.once('error', reject);

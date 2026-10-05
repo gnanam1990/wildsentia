@@ -1,12 +1,14 @@
-import type { Server } from 'node:http';
+import type { IncomingMessage, Server } from 'node:http';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { formatWorldTime, seasonAt } from '@vana/shared';
 import type { CheckpointObservation, SimHost } from './simHost.js';
 import { floweringGuildSummary } from './floweringObservation.js';
+import { ConnectionCaps, GENERAL_LIMIT_DEFAULTS } from './limits.js';
+import { forwardedClient, networkKey } from './network.js';
 
 export interface GatewaySocket {
   send(data: string): void;
-  close(): void;
+  close(code?: number, reason?: string): void;
   /** Bytes queued for this viewer and not yet taken by it (ws's bufferedAmount). */
   readonly bufferedAmount?: number;
   /** Drops the connection at once, discarding whatever is still queued. */
@@ -19,6 +21,21 @@ export interface GatewaySocket {
  * A whole scene is about a megabyte, so a slow but working connection stays well below it.
  */
 export const MAX_BUFFERED_BYTES = 16 * 1024 * 1024;
+
+/**
+ * WebSocket close code 1013, "Try Again Later": the server is full or has no saved world to show.
+ * The observer waits longer, with jitter, after this code than after an ordinary drop.
+ */
+export const LIVE_BUSY_CLOSE_CODE = 1013;
+
+export interface GatewayOptions {
+  /** Concurrent /live connections in total; 0 is no cap. */
+  maxConnections?: number;
+  /** Concurrent /live connections from one visitor network; 0 is no cap. */
+  maxPerNetwork?: number;
+  /** Proxies whose X-Forwarded-For entry is trusted, as for the HTTP API (VANA_TRUSTED_PROXY_HOPS). */
+  trustedProxyHops?: number;
+}
 
 export type ClientMessage =
   | { type: 'watch'; actorId: string }
@@ -56,12 +73,21 @@ export class Gateway {
   readonly #watchers = new Map<string, Set<GatewaySocket>>();
   #wss: WebSocketServer | null = null;
   #cachedScene: { id: string; base: string; environment: string } | null = null;
+  readonly #caps: ConnectionCaps;
+  readonly #hops: number;
 
-  constructor(private readonly host: SimHost) {}
+  constructor(private readonly host: SimHost, options: GatewayOptions = {}) {
+    this.#caps = new ConnectionCaps(options.maxConnections ?? GENERAL_LIMIT_DEFAULTS.liveMaxConnections,
+      options.maxPerNetwork ?? GENERAL_LIMIT_DEFAULTS.liveMaxPerNetwork);
+    this.#hops = options.trustedProxyHops ?? 0;
+  }
+
+  /** Open /live connections that were admitted under the caps. */
+  get connectionCount(): number { return this.#caps.total; }
 
   handle(socket: GatewaySocket): void {
     const view = this.host.observation();
-    if (!view) { socket.close(); return; }
+    if (!view) { socket.close(LIVE_BUSY_CLOSE_CODE, 'world_unavailable'); return; }
     const frame = this.host.liveEncounterFrame();
     this.#sessions.set(socket, { socket, watching: null, recordedFrameId: frame?.id ?? null,
       recordingDirty: false, checkpointId: view.id, lastHeartbeatAt: Date.now(), view: null, liveEmpty: true });
@@ -145,7 +171,7 @@ export class Gateway {
   broadcast(): void {
     const view = this.host.observation();
     if (!view) {
-      for (const { socket } of this.#sessions.values()) socket.close();
+      for (const { socket } of this.#sessions.values()) socket.close(LIVE_BUSY_CLOSE_CODE, 'world_unavailable');
       this.#sessions.clear(); this.#watchers.clear();
       return;
     }
@@ -203,10 +229,16 @@ export class Gateway {
       threshold: 64 * 1024, concurrencyLimit: 4, clientNoContextTakeover: true,
       serverNoContextTakeover: true,
     } });
-    this.#wss.on('connection', (raw: WebSocket) => {
+    this.#wss.on('connection', (raw: WebSocket, request: IncomingMessage) => {
+      // Every new viewer is sent the whole scene, so connections are capped in total and per
+      // visitor network. A refused one is told to try later rather than simply dropped.
+      const network = networkKey(forwardedClient(request.socket.remoteAddress ?? '', request.headers['x-forwarded-for'], this.#hops));
+      const admitted = this.#caps.admit(network);
+      if (admitted !== 'ok') { raw.close(LIVE_BUSY_CLOSE_CODE, admitted === 'total' ? 'busy' : 'busy_network'); return; }
+      raw.once('close', () => this.#caps.release(network));
       const socket: GatewaySocket = {
         send: (data) => raw.send(data),
-        close: () => raw.close(),
+        close: (code, reason) => raw.close(code, reason),
         get bufferedAmount() { return raw.bufferedAmount; },
         terminate: () => raw.terminate(),
       };

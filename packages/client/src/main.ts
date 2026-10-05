@@ -27,6 +27,7 @@ import { ObserverVisibility, type ObserverSubject } from './observerVisibility.j
 import { refreshSpeciesOptions } from './speciesPicker.js';
 import { stackLabels } from './labelLayout.js';
 import { restoreFollowOnOpen } from './followSubscription.js';
+import { LIVE_BUSY_CLOSE_CODE, ReconnectBackoff } from './reconnect.js';
 import type { EventMap } from './eventMap.js';
 import { EventVisit } from './eventVisit.js';
 import { RewardObserver } from './rewards.js';
@@ -221,6 +222,7 @@ function connect(): void {
       if (typeof message === 'object' && message !== null && 'type' in message) {
         if (message.type === 'scene') {
           if (!sceneUpdates.receive(message, performance.now())) connection.close();
+          else reconnect.succeeded();
         } else if (message.type === 'viewers' || message.type === 'error') store.apply(message);
         else if (message.type === 'live') { if (isLiveMessage(message)) liveAgents.apply(message, performance.now()); }
         else if (message.type === 'live-roster') { if (isRosterMessage(message)) liveAgents.applyRoster(message); }
@@ -231,11 +233,19 @@ function connect(): void {
       // A malformed frame must not take down the render loop.
     }
   });
-  connection.addEventListener('close', () => {
+  connection.addEventListener('close', (event) => {
     if (socket !== connection) return;
-    sceneUpdates.reset(); liveEncounters.clear(); liveAgents.clear(); setTimeout(connect, 2000);
+    sceneUpdates.reset(); liveEncounters.clear(); liveAgents.clear();
+    // Back off rather than hammer: longer after each failure, much longer when the server is full.
+    const wait = reconnect.next(event.code);
+    if (event.code === LIVE_BUSY_CLOSE_CODE && event.reason.startsWith('busy')) {
+      sceneStatus.textContent = `The forest has as many viewers as it can take right now. Trying again in about ${Math.ceil(wait / 1000)} s.`;
+      sceneStatus.hidden = false;
+    }
+    setTimeout(connect, wait);
   });
 }
+const reconnect = new ReconnectBackoff();
 
 /** A life being replayed (spec §11): the record, when playback began, and how long it runs. */
 let replay: { life: Life; records: RecordedEncounter[]; climbs: RecordedClimb[];

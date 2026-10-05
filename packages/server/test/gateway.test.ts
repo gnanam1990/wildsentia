@@ -7,7 +7,7 @@ import { WebSocket } from 'ws';
 import { createPool } from '../src/db/pool.js';
 import { migrate } from '../src/db/migrate.js';
 import { SimHost } from '../src/simHost.js';
-import { Gateway, MAX_BUFFERED_BYTES, type GatewaySocket } from '../src/gateway.js';
+import { Gateway, LIVE_BUSY_CLOSE_CODE, MAX_BUFFERED_BYTES, type GatewaySocket } from '../src/gateway.js';
 import { testDatabaseUrl } from './testDatabase.js';
 
 const url = testDatabaseUrl();
@@ -18,10 +18,11 @@ const speciesDir = fileURLToPath(new URL('../../../config/species', import.meta.
 class FakeSocket implements GatewaySocket {
   sent: Array<Record<string, unknown>> = [];
   closed = false;
+  closeCode: number | undefined;
   /** Bytes the viewer has not read yet; a test raises it to play a viewer that stopped reading. */
   bufferedAmount = 0;
   send(data: string): void { this.sent.push(JSON.parse(data) as Record<string, unknown>); }
-  close(): void { this.closed = true; }
+  close(code?: number): void { this.closed = true; this.closeCode = code; }
   lastOfType(type: string): Record<string, unknown> | undefined {
     for (const m of [...this.sent].reverse()) {
       if (m.type === type) return m;
@@ -224,6 +225,9 @@ maybe('Gateway', () => {
       isolated.handle(newcomer);
       expect(newcomer.closed).toBe(true);
       expect(newcomer.sent).toEqual([]);
+      // "Try again later": the observer backs off instead of reconnecting every two seconds.
+      expect(existing.closeCode).toBe(LIVE_BUSY_CLOSE_CODE);
+      expect(newcomer.closeCode).toBe(LIVE_BUSY_CLOSE_CODE);
     } finally { clock.mockRestore(); isolated.close(); }
   });
 
@@ -343,6 +347,38 @@ maybe('live agents over the gateway', () => {
       expect(await closed).toBe(true);
       expect(live).toBeLessThan(60);
     } finally { client.terminate(); isolated.close(); await new Promise((r) => server.close(r)); }
+  });
+
+  it('refuses /live connections past the per-network and total caps with "try again later"', async () => {
+    // Workstream D: nothing capped connections, and each new one is sent the whole ~1 MB scene.
+    const server = createServer(), capped = new Gateway(host, { maxConnections: 3, maxPerNetwork: 2, trustedProxyHops: 1 });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    capped.attach(server);
+    const port = (server.address() as AddressInfo).port, sockets: WebSocket[] = [];
+    // Each client says which visitor it is the way Caddy would, by appending to X-Forwarded-For.
+    const connect = (forwardedFor: string) => new Promise<'scene' | { code: number; reason: string }>((resolve) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/live`, { headers: { 'x-forwarded-for': forwardedFor } });
+      sockets.push(ws);
+      ws.once('message', (data) => resolve(JSON.parse(String(data)).type === 'scene' ? 'scene' : { code: -1, reason: String(data) }));
+      ws.once('close', (code, reason) => resolve({ code, reason: String(reason) }));
+    });
+    try {
+      expect(await connect('198.51.100.1')).toBe('scene');
+      expect(await connect('198.51.100.1')).toBe('scene');
+      expect(await connect('198.51.100.1')).toEqual({ code: LIVE_BUSY_CLOSE_CODE, reason: 'busy_network' });
+      // A forged leftmost entry does not make a visitor someone else.
+      expect(await connect('203.0.113.50, 198.51.100.1')).toEqual({ code: LIVE_BUSY_CLOSE_CODE, reason: 'busy_network' });
+      expect(await connect('198.51.100.2')).toBe('scene');
+      expect(await connect('198.51.100.3')).toEqual({ code: LIVE_BUSY_CLOSE_CODE, reason: 'busy' });
+      expect(capped.connectionCount).toBe(3);
+      // A place freed is a place offered again.
+      sockets[0]!.close();
+      await vi.waitFor(() => expect(capped.connectionCount).toBe(2));
+      expect(await connect('198.51.100.3')).toBe('scene');
+    } finally {
+      for (const ws of sockets) ws.terminate();
+      capped.close(); await new Promise((r) => server.close(r));
+    }
   });
 
   it('tells every viewer who is playing, in brief', () => {
