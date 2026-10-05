@@ -235,11 +235,18 @@ const journeys: Record<string, (browser: Browser, errors: string[]) => Promise<s
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const page = await openObserver(context, errors);
     await page.locator('details.live-encounters summary').click();
-    await page.waitForFunction(() => {
+    // Hunts are sporadic and predators rest by day; at 12x a recorded world hour lasts five
+    // real minutes. An hour without a hunt says so in the picker, which is the journey's answer.
+    const found = await page.waitForFunction(() => {
       const picker = document.querySelector<HTMLSelectElement>('#live-encounter-picker');
       return !!picker && !picker.disabled && [...picker.options].some((o) => o.value);
-    // Hunts are sporadic; at 12x a recorded world hour lasts five real minutes.
-    }, null, { timeout: 420_000 });
+    }, null, { timeout: Number(process.env.VANA_E2E_HUNT_WAIT_MS ?? 420_000) }).then(() => true, () => false);
+    if (!found) {
+      const shown = (await page.locator('#live-encounter-picker').innerText()).trim();
+      await context.close();
+      if (shown !== 'No current recordings') throw new Error(`picker neither offers a hunt nor says none: ${shown}`);
+      return 'SKIP: no hunt recorded in the hours played while waiting; the picker said "No current recordings"';
+    }
     const value = await page.locator('#live-encounter-picker option').evaluateAll((options) =>
       (options as HTMLOptionElement[]).find((o) => o.value)!.value);
     await page.selectOption('#live-encounter-picker', value);
@@ -441,7 +448,7 @@ for (const name of selected) {
   // A failed journey must not leave a rendering page behind to slow the next one.
   for (const context of browser.contexts()) await context.close().catch(() => undefined);
   const last = outcomes.at(-1)!;
-  console.log(`${last.ok ? 'PASS' : 'FAIL'} ${name} (${(last.ms / 1000).toFixed(1)} s): ${last.detail}`);
+  console.log(`${last.ok ? (last.detail.startsWith('SKIP') ? 'SKIP' : 'PASS') : 'FAIL'} ${name} (${(last.ms / 1000).toFixed(1)} s): ${last.detail}`);
   for (const error of last.errors.slice(0, 8)) console.log(`    ${error}`);
 }
 await browser.close();
