@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { feedEventSummary, feedSentence, friendlyWorldTime, happenedBy, Hud, type HudElements } from '../src/hud.js';
+import { collapseFeed, feedEventSummary, feedSentence, friendlyWorldTime, happenedBy, Hud, type HudElements } from '../src/hud.js';
 import { WorldStore } from '../src/protocol.js';
 
 const elements = (): HudElements => ({
@@ -76,5 +76,19 @@ describe('factual live event feed', () => {
     const events = [{ id: 'later', worldTime: 9000 }, { id: 'now', worldTime: 7300 }, { id: 'undated' }];
     expect(happenedBy(events, 7300).map((e) => e.id)).toEqual(['now', 'undated']);
     expect(happenedBy(events, null).map((e) => e.id)).toEqual(['later', 'now', 'undated']);
+  });
+});
+
+describe('collapsed feed', () => {
+  it('shows neighbouring identical sentences once with a count and keeps other events in view', () => {
+    const rested = (id: number) => ({ id: `r${id}`, type: 'rested', actors: ['squirrel_1', 'squirrel_2'] });
+    const rows = collapseFeed([rested(1), rested(2), rested(3), { id: 'h', type: 'hunt', actors: ['dhole_01', 'hare_02'], outcome: 'success' }, rested(4)], 6);
+    expect(rows.map((r) => [r.sentence, r.count])).toEqual([
+      ['Two giant squirrels rested together', 3], ['A dhole caught a hare', 1], ['Two giant squirrels rested together', 1]]);
+    expect(rows[0]!.event.id).toBe('r1');
+  });
+  it('stops at the row limit', () => {
+    const events = Array.from({ length: 10 }, (_, i) => ({ id: `${i}`, type: 'born', actors: [i % 2 ? 'hare_1' : 'chital_1'], outcome: 'success' }));
+    expect(collapseFeed(events, 6)).toHaveLength(6);
   });
 });

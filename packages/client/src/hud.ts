@@ -134,6 +134,21 @@ export function happenedBy<T extends Record<string, unknown>>(events: readonly T
   return time === null ? [...events] : events.filter((e) => typeof e.worldTime !== 'number' || e.worldTime <= time);
 }
 
+/**
+ * Neighbouring events that read the same are shown once with a count, so one busy hour of
+ * routine resting does not push every other event out of the feed.
+ */
+export function collapseFeed<T extends Record<string, unknown>>(events: readonly T[], limit: number): Array<{ event: T; sentence: string; count: number }> {
+  const rows: Array<{ event: T; sentence: string; count: number }> = [];
+  for (const event of events) {
+    const sentence = feedSentence(event), last = rows.at(-1);
+    if (last && last.sentence === sentence) { last.count++; continue; }
+    if (rows.length === limit) break;
+    rows.push({ event, sentence, count: 1 });
+  }
+  return rows;
+}
+
 /** Short, factual labels for the live feed. Event IDs remain available on disclosure. */
 export function feedEventSummary(event: Record<string, unknown>): { title: string; meta: string; id: string } {
   const type = typeof event.type === 'string' ? event.type : 'event';
@@ -365,18 +380,18 @@ export class Hud {
   async refreshFeed(): Promise<void> {
     try {
       const time = this.clockTime();
-      const response = await fetch(`/api/events?limit=12${time === null ? '' : `&until=${Math.floor(time)}`}`);
+      const response = await fetch(`/api/events?limit=40${time === null ? '' : `&until=${Math.floor(time)}`}`);
       if (!response.ok) throw new Error('Event feed unavailable');
       const body = (await response.json()) as { events: Array<Record<string, unknown>> };
       if (!Array.isArray(body.events)) throw new Error('Invalid event feed');
       // Newest few that have happened by the played clock, in plain words; the factual
       // label and record ID stay one tap away. Later ones appear as the hour plays on.
-      this.elements.feed.innerHTML = happenedBy(body.events, time).slice(0, 6)
-        .map((event) => {
+      this.elements.feed.innerHTML = collapseFeed(happenedBy(body.events, time), 6)
+        .map(({ event, sentence, count }) => {
           const item = feedEventSummary(event);
           const when = typeof event.worldTime === 'number' ? friendlyWorldTime(event.worldTime).replace(/^Year \d+ · /, '') : '';
           return `<div class="event feed-entry"><div>
-            <div class="etype">${escape(feedSentence(event))}</div>
+            <div class="etype">${escape(sentence)}${count > 1 ? ` <span class="feed-count">×${count}</span>` : ''}</div>
             <div class="feed-meta">${escape(when)}
               <details class="feed-provenance"><summary>Record ID</summary>${escape(item.title)} · ${escape(item.meta)} · <code>${escape(item.id)}</code></details>
             </div>
