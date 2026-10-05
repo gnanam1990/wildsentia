@@ -122,10 +122,11 @@ def clip(i, shot, seconds, text):
         available = meta["frames"] / fps
         inputs = ["-framerate", f"{fps:.4f}", "-i", str(RAW / shot / "f%05d.jpg"), "-loop", "1", "-i", str(bars)]
         timing = f"fps={FPS},"
+    # The page's focus ring draws a thin line round the canvas edge; crop it off before scaling.
     # Use the calm middle of each move: start a little in, so the shot opens already moving.
     start = max(0.0, min(available - seconds, available * 0.08))
     chain = (f"[0:v]{timing}trim=start={start:.3f}:duration={seconds:.3f},setpts=PTS-STARTPTS,"
-             f"scale={W}:{H}:flags=lanczos,{GRADE}[v];[v][1:v]overlay=0:0:shortest=1[b]")
+             f"crop=iw-8:ih-8:4:4,scale={W}:{H}:flags=lanczos,{GRADE}[v];[v][1:v]overlay=0:0:shortest=1[b]")
     last = "b"
     extra = []
     if text or i == 0 or i == len(CUT) - 1:
