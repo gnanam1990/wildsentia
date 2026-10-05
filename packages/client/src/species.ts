@@ -25,7 +25,7 @@ export const SPECIES_VISUALS: Record<string, SpeciesVisual> = {
   dhole:    { heightM: 0.5,  model: { file: '/assets/animals/ShibaInu.glb', tint: 0xd0703a }, colour: 0xb4552a },
   jackal:   { heightM: 0.45, model: { file: '/assets/animals/Fox.glb', tint: 0xc9a67a }, colour: 0xa98a5f },
   // Gobkit Free Animal Pack B (CC0).
-  boar:     { heightM: 0.85, model: { file: '/assets/animals/Boar.glb', tint: 0x5f5650 }, colour: 0x4b3f37 },
+  boar:     { heightM: 0.85, model: { file: '/assets/animals/WildBoar.glb' }, colour: 0x4b3f37 },
   // Existing project-owned geometry, rigged locally. Not the blocked Sketchfab download.
   tiger:    { heightM: 1.0,  model: { file: '/assets/animals/TigerRigged.glb' }, colour: 0xd9822b },
   // OpenGameArt CC0 rigs. See credits: generic elephant; rabbit is a hare approximation.

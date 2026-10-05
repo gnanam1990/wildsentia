@@ -11,8 +11,19 @@ function manifest(file: string) {
   };
 }
 
+describe('generated species replacements', () => {
+  // Generated from photoreal reference views and bound to the Quaternius quadruped rig by
+  // tools/art/bind_to_rig.py; see docs/art-review/boar-2026-10-05.
+  it('the wild boar keeps the rig clips the observer plays and stays within its byte budget', () => {
+    const gltf = manifest('WildBoar.glb');
+    expect(gltf.skins).toHaveLength(1);
+    expect(gltf.animations!.map((a) => a.name)).toEqual(expect.arrayContaining(['Idle', 'Walk', 'Gallop', 'Eating', 'Idle_Headlow', 'Death']));
+    expect(readFileSync(new URL('../public/assets/animals/WildBoar.glb', import.meta.url)).length).toBeLessThan(2_000_000);
+  });
+});
+
 describe('free local character assets', () => {
-  it.each(['TigerRigged', 'ElephantWalking', 'Langur', 'Squirrel', 'Vulture'])('%s contains finite, normalized skin weights and actual changing motion', (name) => {
+  it.each(['TigerRigged', 'ElephantWalking', 'Langur', 'Squirrel', 'Vulture', 'WildBoar'])('%s contains finite, normalized skin weights and actual changing motion', (name) => {
     const buffer = readFileSync(new URL(`../public/assets/animals/${name}.glb`, import.meta.url));
     const jsonLength = buffer.readUInt32LE(12);
     const gltf = JSON.parse(buffer.subarray(20, 20 + jsonLength).toString());

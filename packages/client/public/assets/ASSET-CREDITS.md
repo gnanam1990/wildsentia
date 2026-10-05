@@ -64,10 +64,22 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
   `@gltf-transform/cli copy` (no geometry, material or animation changes). Sambar, gaur, dhole
   and jackal are tinted in the client at load time (`packages/client/src/species.ts`).
 
+## VANA — generated wild boar (WildBoar)
+- Used for: boar (WildBoar), from 5 October 2026.
+- Surface: generated for this project with Higgsfield under the owner's paid plan (Pro). Three
+  reference views (front, side, back) from GPT Image 2.5 (jobs 83c21a4e, 8dc52123, 4705dfa7),
+  lifted to a textured mesh with Tripo H3.1 multiview (job fa976329). Reference views are kept in
+  `docs/art-review/boar-2026-10-05/`.
+- Skeleton and clips: the Quaternius Bull rig and its clips above (CC0), rest pose refitted to the
+  boar's body; the bull's surface is not used.
+- Built with `tools/art/bind_to_rig.py` (voxel-proxy bone-heat weights, texture 1024 px WebP):
+  `Blender -b --python tools/art/bind_to_rig.py -- --mesh boar-tripo.glb --rig animals/Bull.glb
+  --out WildBoar.glb --no-deform Tail4,Tail5,Tail6,Tail7`.
+
 ## Gobkit — Free Animal Pack B
 - Source: https://gobkit.itch.io/gobkit-free-animal-pack-vol-2 (file from https://gobkit.com/api/free)
 - Licence stated by the creator: CC0 1.0 (public domain). No attribution required.
-- Used for: boar (Boar)
+- Used for: nothing at runtime since 5 October 2026 (formerly boar); kept for provenance.
 - Animation clips: idle, walk, attack, dead
 - Modifications: none.
 
@@ -115,6 +127,7 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
   - `animals/ShibaInu.glb`: sha256 `c92467b05e0e9491`
   - `animals/Fox.glb`: sha256 `71e28dc471e8d001`
   - `animals/Boar.glb`: sha256 `e6ce64f0e4ac3646`
+  - `animals/WildBoar.glb`: sha256 `4a04b5f961aaf403`
   - `animals/Tiger.glb`: sha256 `7d7c3d9546d1bbeb`
   - `animals/Elephant.glb`: sha256 `682e6b100ff1a6a23`
   - `animals/Rabbit.glb`: sha256 `763c19a2606208f05`
