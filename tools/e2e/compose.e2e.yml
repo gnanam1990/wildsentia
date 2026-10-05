@@ -8,6 +8,8 @@ services:
       VANA_REWARD_MIN_WATCH_SECONDS: ${VANA_REWARD_MIN_WATCH_SECONDS:-8}
       # Every test agent registers from this machine's one address.
       VANA_AGENT_REGISTRATIONS_PER_NETWORK: ${VANA_AGENT_REGISTRATIONS_PER_NETWORK:-1000}
+      # The test world was founded on sim_0.31.0; it moves to newer rules on rebuild.
+      VANA_ALLOW_V31_UPGRADE: "1"
   web:
     ports: !override
       - "127.0.0.1:${VANA_E2E_PORT:-28080}:80"
