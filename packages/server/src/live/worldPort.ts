@@ -82,7 +82,10 @@ export function worldPort(world: () => World, worldId: () => string | null, play
     nearby: (x, z, radius, limit) => {
       // Only the patches the circle touches, from an index rebuilt at most twice a second.
       const byPatch = patchIndex(world());
-      const found: Agent[] = [];
+      // Each distance is worked out once, squared. Recomputing two hypotenuses per comparison
+      // while sorting took half the server's time at 500 agents (load test, 5 October 2026):
+      // the live layer asks this for every agent every second, and every observe asks again.
+      const found: Array<{ d: number; a: Agent }> = [], r2 = radius * radius;
       const span = Math.ceil(radius / PATCH_METRES) + 1, centre = inWorld(x, z) ? patchAtPosition({ x, z, heading: 0 }) : -1;
       if (centre < 0) return [];
       const cx = centre % GRID_SIZE, cy = Math.floor(centre / GRID_SIZE);
@@ -90,11 +93,12 @@ export function worldPort(world: () => World, worldId: () => string | null, play
         const px = cx + dx, py = cy + dy;
         if (px < 0 || py < 0 || px >= GRID_SIZE || py >= GRID_SIZE) continue;
         for (const a of byPatch.get(py * GRID_SIZE + px) ?? []) {
-          if (a.alive && a.position && Math.hypot(a.position.x - x, a.position.z - z) <= radius) found.push(a);
+          if (!a.alive || !a.position) continue;
+          const ox = a.position.x - x, oz = a.position.z - z, d = ox * ox + oz * oz;
+          if (d <= r2) found.push({ d, a });
         }
       }
-      return found.sort((a, b) => Math.hypot(a.position!.x - x, a.position!.z - z) - Math.hypot(b.position!.x - x, b.position!.z - z))
-        .slice(0, limit).map(view);
+      return found.sort((p, q) => p.d - q.d).slice(0, limit).map((p) => view(p.a));
     },
     waterPoints: (x, z, radius) => world().patches
       .filter((p) => landWalkable(p) && p.waterVolume > 0)

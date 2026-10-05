@@ -10,6 +10,12 @@ services:
       VANA_AGENT_REGISTRATIONS_PER_NETWORK: ${VANA_AGENT_REGISTRATIONS_PER_NETWORK:-1000}
       # The test world was founded on sim_0.31.0; it moves to newer rules on rebuild.
       VANA_ALLOW_V31_UPGRADE: "1"
+      # Load tests (tools/ops/load.ts) run hundreds of agents and viewers from this one address,
+      # and must be able to go past the production caps to find where the server breaks.
+      VANA_AGENT_SLOTS: ${VANA_AGENT_SLOTS:-1000}
+      VANA_PUBLIC_READS_PER_MINUTE: ${VANA_PUBLIC_READS_PER_MINUTE:-60000}
+      VANA_LIVE_MAX_CONNECTIONS: ${VANA_LIVE_MAX_CONNECTIONS:-5000}
+      VANA_LIVE_MAX_CONNECTIONS_PER_NETWORK: ${VANA_LIVE_MAX_CONNECTIONS_PER_NETWORK:-5000}
   web:
     ports: !override
       - "127.0.0.1:${VANA_E2E_PORT:-28080}:80"

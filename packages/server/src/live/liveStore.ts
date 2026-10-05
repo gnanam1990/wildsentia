@@ -22,6 +22,8 @@ export interface RegistrationLimits { slots: number; perNetworkPerDay: number }
 
 export class AgentStore {
   readonly #byKey = new Map<string, AgentRecord>();
+  /** When this process last wrote each agent's last_seen_at. */
+  readonly #touched = new Map<string, number>();
   constructor(private readonly pool: Pool) {}
 
   async byKey(publicKey: string): Promise<AgentRecord | null> {
@@ -82,8 +84,19 @@ export class AgentStore {
     return changed ? 'ok' : 'wallet_taken';
   }
 
-  async touch(agentId: string): Promise<void> {
-    await this.pool.query("update live_agents set last_seen_at=now() where id=$1 and last_seen_at < now() - interval '1 minute'", [agentId]);
+  /**
+   * Marks an agent seen, for the 14-day reaping. Called on every signed request, so the write is
+   * skipped when this process wrote it in the last minute: a query per call kept the pool full
+   * at 250 agents (load test, 5 October 2026). A failed write is retried on the next call.
+   */
+  async touch(agentId: string, now = Date.now()): Promise<void> {
+    const last = this.#touched.get(agentId);
+    if (last !== undefined && now - last < 60_000) return;
+    if (this.#touched.size > 20_000) this.#touched.clear();
+    this.#touched.set(agentId, now);
+    try {
+      await this.pool.query("update live_agents set last_seen_at=now() where id=$1 and last_seen_at < now() - interval '1 minute'", [agentId]);
+    } catch (error) { this.#touched.delete(agentId); throw error; }
   }
 
   async list(): Promise<Array<{ id: string; name: string; bio: string }>> {

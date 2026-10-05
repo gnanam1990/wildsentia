@@ -8,6 +8,7 @@ import { LiveLayer, TICK_HZ } from './liveLayer.js';
 import { AgentStore, PlaceDropLedger } from './liveStore.js';
 import type { HoldingGate, LiveRouteDeps } from './routes.js';
 import { randomLandSpot, worldPort } from './worldPort.js';
+import { WindowMax } from '../metrics.js';
 
 /**
  * Starts and stops the live layer beside the SimHost (docs/2026-09-26-live-agents-design.md).
@@ -20,6 +21,8 @@ export interface LiveRuntime {
   start(broadcast: { live(state: ReturnType<LiveLayer['publicState']>, at: number): void; roster(state: ReturnType<LiveLayer['publicState']>): void }): Promise<void>;
   stop(): Promise<void>;
   spot(): { x: number; z: number } | null;
+  /** How late the 10 Hz tick runs, for /metrics: a loaded server shows it here first. */
+  tickLag: WindowMax;
 }
 
 /** A positive whole number from the environment; empty (as compose passes an unset one) means the default. */
@@ -63,6 +66,7 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
   const live = new LiveLayer(port, ledger);
   live.onEnded = (life) => { void store.recordLife(life).catch((e) => console.error('[live] life record failed', e)); };
   const timers: NodeJS.Timeout[] = [];
+  const tickLag = new WindowMax();
   const save = async () => { const id = host.worldId; if (id) await store.savePossessions(id, live.avatars.values()); };
   const holding = holdingGate(env);
   const routes: LiveRouteDeps = {
@@ -72,7 +76,7 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
     clientScriptPath: fileURLToPath(new URL('../../agent-client/client.mjs', import.meta.url)),
   };
   return {
-    routes, ledger,
+    routes, ledger, tickLag,
     spot: () => randomLandSpot(host.world),
     async start(broadcast) {
       const id = host.worldId;
@@ -84,6 +88,7 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
       let last = performance.now();
       timers.push(setInterval(() => {
         const now = performance.now();
+        tickLag.record(Math.max(0, (now - last) / 1000 - 1 / TICK_HZ));
         try { live.tick((now - last) / 1000); } catch (e) { console.error('[live] tick failed', e); }
         last = now;
       }, 1000 / TICK_HZ));

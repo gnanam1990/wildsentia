@@ -154,8 +154,24 @@ export class SimHost {
   #checkpointCommunity: CommunityState | null = null;
   #checkpointRevision = 0;
   #lastCheckpointWallMs = 0;
+  /** Where the clock stood when start() began scheduling hours, for vana_world_clock_lag_seconds. */
+  #schedule: { wallMs: number; worldTime: number } | null = null;
+  /** Figures for /metrics (metrics.ts); counted since this process started. */
+  readonly stats = { tickFailures: 0, ticksSkipped: 0, lastTickSeconds: 0, maxTickSeconds: 0 };
+  readonly simVersion = SIM_VERSION;
 
   get checkpointTime(): number | null { return this.#checkpointTime; }
+  /** Wall-clock milliseconds of the last durable checkpoint; 0 before the first. */
+  get lastCheckpointAt(): number { return this.#lastCheckpointWallMs; }
+  /**
+   * World seconds the clock is behind the hours it should have stepped since start(): 0 while
+   * every scheduled hour has run, an hour while one is in flight, more once hours fail or pile up.
+   */
+  clockLagSeconds(now = Date.now()): number {
+    if (!this.#schedule) return 0;
+    const due = Math.floor((now - this.#schedule.wallMs) * this.#options.worldHoursPerRealHour / 3_600_000);
+    return Math.max(0, this.#schedule.worldTime + due * 3600 - this.world.now());
+  }
   get checkpointEventSequence(): number { return this.#checkpointEventSequence; }
   /** A healthy HTTP listener is not proof that the autonomous clock is still advancing. */
   get hasFreshCheckpoint(): boolean {
@@ -632,12 +648,20 @@ export class SimHost {
     this.#writer.assertActive();
     if (this.#timer !== null) return;
     const realMsPerWorldHour = 3_600_000 / this.#options.worldHoursPerRealHour;
+    this.#schedule = { wallMs: Date.now(), worldTime: this.world.now() };
     const tick = (): void => {
-      if (this.#ticking) return;
+      if (this.#ticking) { this.stats.ticksSkipped++; return; }
       this.#ticking = true;
+      const startedAt = performance.now();
       void this.advance(1)
-        .then(() => { this.#consecutiveTickFailures = 0; if (this.isWriterActive) this.lastError = null; })
+        .then(() => {
+          this.#consecutiveTickFailures = 0; if (this.isWriterActive) this.lastError = null;
+          const seconds = (performance.now() - startedAt) / 1000;
+          this.stats.lastTickSeconds = seconds;
+          this.stats.maxTickSeconds = Math.max(this.stats.maxTickSeconds, seconds);
+        })
         .catch((error: unknown) => {
+          this.stats.tickFailures++;
           this.#consecutiveTickFailures++;
           this.lastError = error instanceof Error ? error.message : String(error);
         })
@@ -646,7 +670,7 @@ export class SimHost {
     this.#timer = setInterval(tick, realMsPerWorldHour);
     // A restored world has no recorded hour to play, so without this every wild animal would
     // stand still until the first interval ends (an hour, in the real-time world).
-    if (this.#encounterFrame === null) tick();
+    if (this.#encounterFrame === null) { this.#schedule.worldTime += 3600; tick(); }
   }
 
   async stop(): Promise<void> {

@@ -7,7 +7,7 @@ import { WebSocket } from 'ws';
 import { createPool } from '../src/db/pool.js';
 import { migrate } from '../src/db/migrate.js';
 import { SimHost } from '../src/simHost.js';
-import { Gateway, MAX_BUFFERED_BYTES, type GatewaySocket } from '../src/gateway.js';
+import { Gateway, LIVE_BUSY_CLOSE_CODE, MAX_BUFFERED_BYTES, type GatewaySocket } from '../src/gateway.js';
 import { testDatabaseUrl } from './testDatabase.js';
 
 const url = testDatabaseUrl();
@@ -17,11 +17,13 @@ const speciesDir = fileURLToPath(new URL('../../../config/species', import.meta.
 
 class FakeSocket implements GatewaySocket {
   sent: Array<Record<string, unknown>> = [];
+  raw: Array<string | Buffer> = [];
   closed = false;
+  closeCode: number | undefined;
   /** Bytes the viewer has not read yet; a test raises it to play a viewer that stopped reading. */
   bufferedAmount = 0;
-  send(data: string): void { this.sent.push(JSON.parse(data) as Record<string, unknown>); }
-  close(): void { this.closed = true; }
+  send(data: string | Buffer): void { this.raw.push(data); this.sent.push(JSON.parse(String(data)) as Record<string, unknown>); }
+  close(code?: number): void { this.closed = true; this.closeCode = code; }
   lastOfType(type: string): Record<string, unknown> | undefined {
     for (const m of [...this.sent].reverse()) {
       if (m.type === type) return m;
@@ -178,6 +180,10 @@ maybe('Gateway', () => {
     expect(b.lastOfType('encounters')).toBeUndefined();
     await host.advance(1); gateway.broadcast();
     expect(a.sent.at(-1)).toHaveProperty('environment');
+    // Load test, 5 October 2026: building and converting a ~1.6 MB scene for each viewer took
+    // the event loop ~1.9 s at 500 viewers. Viewers due the same scene share one encoded copy.
+    expect(Buffer.isBuffer(a.raw.at(-1))).toBe(true);
+    expect(a.raw.at(-1)).toBe(b.raw.at(-1));
     const message = a.lastOfType('encounters');
     expect(message).toBeDefined(); expect(message).toEqual(b.lastOfType('encounters'));
     expect((message!.frame as { movements: unknown[] }).movements).toBeInstanceOf(Array);
@@ -224,6 +230,9 @@ maybe('Gateway', () => {
       isolated.handle(newcomer);
       expect(newcomer.closed).toBe(true);
       expect(newcomer.sent).toEqual([]);
+      // "Try again later": the observer backs off instead of reconnecting every two seconds.
+      expect(existing.closeCode).toBe(LIVE_BUSY_CLOSE_CODE);
+      expect(newcomer.closeCode).toBe(LIVE_BUSY_CLOSE_CODE);
     } finally { clock.mockRestore(); isolated.close(); }
   });
 
@@ -298,6 +307,20 @@ maybe('live agents over the gateway', () => {
     expect(near.lastOfType('error')).toBeUndefined();
   });
 
+  it('serializes each agent once per live broadcast, not once per viewer', () => {
+    // Load test, 5 October 2026: 500 viewers and 250 agents at 4 Hz made one JSON.stringify of
+    // the visible agents per viewer, saturated the event loop and ran the heap out of memory.
+    const shared = new Gateway(host), viewers = Array.from({ length: 20 }, () => new FakeSocket());
+    for (const v of viewers) { shared.handle(v); shared.receive(v, { type: 'view', x: 0, z: 0, radius: 1500 }); }
+    const live = state([10, 20, 30]);
+    let serialized = 0; // Each time an agent is turned into JSON.
+    const counted = { ...live, avatars: live.avatars.map((a) => ({ ...a, toJSON() { serialized++; const { toJSON: _, ...rest } = this; return rest; } })) };
+    shared.broadcastLive(counted as never, 7);
+    expect(serialized).toBe(live.avatars.length);
+    for (const v of viewers) expect(v.lastOfType('live')).toEqual({ type: 'live', at: 7, avatars: live.avatars, drops: live.drops, wild: [] });
+    shared.close();
+  });
+
   it('sends nothing to a viewer with nothing live, once it has said so', () => {
     const idle = new FakeSocket();
     gateway.handle(idle);
@@ -317,6 +340,7 @@ maybe('live agents over the gateway', () => {
     isolated.receive(slow, { type: 'watch', actorId: 'chital_1' });
     expect(slow.closed).toBe(true);
     expect(slow.sent).toHaveLength(before);
+    expect(isolated.stats.slowConsumerTerminations).toBe(1);
     expect(isolated.viewerCount('chital_0') + isolated.viewerCount('chital_1')).toBe(0);
     expect(reader.lastOfType('live-roster')).toBeDefined();
     isolated.close();
@@ -343,6 +367,55 @@ maybe('live agents over the gateway', () => {
       expect(await closed).toBe(true);
       expect(live).toBeLessThan(60);
     } finally { client.terminate(); isolated.close(); await new Promise((r) => server.close(r)); }
+  });
+
+  it('refuses /live connections past the per-network and total caps with "try again later"', async () => {
+    // Workstream D: nothing capped connections, and each new one is sent the whole ~1 MB scene.
+    const server = createServer(), capped = new Gateway(host, { maxConnections: 3, maxPerNetwork: 2, trustedProxyHops: 1 });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    capped.attach(server);
+    const port = (server.address() as AddressInfo).port, sockets: WebSocket[] = [];
+    // Each client says which visitor it is the way Caddy would, by appending to X-Forwarded-For.
+    const connect = (forwardedFor: string) => new Promise<'scene' | { code: number; reason: string }>((resolve) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/live`, { headers: { 'x-forwarded-for': forwardedFor } });
+      sockets.push(ws);
+      // A text frame: browsers hand binary frames over as Blobs, which the observer cannot parse.
+      ws.once('message', (data, binary) => resolve(!binary && JSON.parse(String(data)).type === 'scene' ? 'scene' : { code: -1, reason: String(data) }));
+      ws.once('close', (code, reason) => resolve({ code, reason: String(reason) }));
+    });
+    try {
+      expect(await connect('198.51.100.1')).toBe('scene');
+      expect(await connect('198.51.100.1')).toBe('scene');
+      expect(await connect('198.51.100.1')).toEqual({ code: LIVE_BUSY_CLOSE_CODE, reason: 'busy_network' });
+      // A forged leftmost entry does not make a visitor someone else.
+      expect(await connect('203.0.113.50, 198.51.100.1')).toEqual({ code: LIVE_BUSY_CLOSE_CODE, reason: 'busy_network' });
+      expect(await connect('198.51.100.2')).toBe('scene');
+      expect(await connect('198.51.100.3')).toEqual({ code: LIVE_BUSY_CLOSE_CODE, reason: 'busy' });
+      expect(capped.connectionCount).toBe(3);
+      expect(capped.stats.refused).toEqual({ busy: 1, busy_network: 2, world_unavailable: 0 });
+      // A place freed is a place offered again.
+      sockets[0]!.close();
+      await vi.waitFor(() => expect(capped.connectionCount).toBe(2));
+      expect(await connect('198.51.100.3')).toBe('scene');
+      expect(capped.stats.accepted).toBe(4);
+    } finally {
+      for (const ws of sockets) ws.terminate();
+      capped.close(); await new Promise((r) => server.close(r));
+    }
+  });
+
+  it('counts the messages and bytes it sends, and how long each broadcast takes', () => {
+    const counted = new Gateway(host), a = new FakeSocket(), b = new FakeSocket();
+    counted.handle(a); counted.handle(b);
+    counted.receive(a, { type: 'view', x: 0, z: 0, radius: 100 });
+    counted.broadcastLive(state([10]) as never, 1);
+    counted.broadcastRoster(state([10]) as never);
+    const all = [...a.raw, ...b.raw];
+    expect(counted.stats.messages).toBe(all.length);
+    expect(counted.stats.bytes).toBe(all.reduce((n, m) => n + Buffer.byteLength(m), 0));
+    expect(counted.stats.broadcastSeconds.live.max).toBeGreaterThanOrEqual(0);
+    expect(counted.stats.broadcastSeconds.roster.max).toBeGreaterThanOrEqual(0);
+    counted.close();
   });
 
   it('tells every viewer who is playing, in brief', () => {

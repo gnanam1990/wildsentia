@@ -16,3 +16,16 @@ export function networkKey(ip: string): string {
   const full = tail === undefined ? before : [...before, ...Array<string>(8 - before.length - after.length).fill('0'), ...after];
   return `${full.slice(0, 4).map((g) => parseInt(g, 16).toString(16)).join(':')}::/64`;
 }
+
+/**
+ * The visitor's address as Fastify's `trustProxy: (_, hop) => hop < hops` reports it, for
+ * connections that never pass through Fastify (the /live upgrade). The socket's peer is hop 0;
+ * X-Forwarded-For entries are read from the right, one per trusted proxy, and a client-supplied
+ * leftmost entry is never reached unless every hop before it is trusted.
+ */
+export function forwardedClient(remote: string, forwardedFor: string | string[] | undefined, hops: number): string {
+  if (hops <= 0 || forwardedFor === undefined) return remote;
+  const header = Array.isArray(forwardedFor) ? forwardedFor.join(',') : forwardedFor;
+  const chain = [remote, ...header.split(',').map((s) => s.trim()).filter((s) => s !== '').reverse()];
+  return chain[Math.min(hops, chain.length - 1)]!;
+}

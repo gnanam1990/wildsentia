@@ -32,6 +32,7 @@ async function verify(): Promise<void> {
 
   run(['run', 'typecheck']);
   run(['exec', '--', 'tsc', '--project', 'tools/ci/tsconfig.json']);
+  run(['exec', '--', 'tsc', '--project', 'tools/ops/tsconfig.json']);
   const artifacts = join(root, '.ci-artifacts');
   mkdirSync(artifacts, { recursive: true });
   // Each invocation gets a fresh report, so stale green output cannot satisfy this gate.

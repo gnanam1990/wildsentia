@@ -216,6 +216,10 @@ describe('indexed lookups', () => {
       expect(port.nearby(x, z, r, 1000).map((a) => a.id)).toEqual(brute);
     }
     expect(port.nearby(-5000, 0, 150, 10)).toEqual([]);
+    // The wild-hunter scan's shape: wide, cut to the nearest sixty.
+    const brute = world.agents.filter((a) => a.alive && a.position && Math.hypot(a.position.x - 3000, a.position.z - 3000) <= 1200)
+      .sort((a, b) => Math.hypot(a.position!.x - 3000, a.position!.z - 3000) - Math.hypot(b.position!.x - 3000, b.position!.z - 3000)).map((a) => a.id);
+    expect(port.nearby(3000, 3000, 1200, 60).map((a) => a.id)).toEqual(brute.slice(0, 60));
   });
 
   it('lists free animals in one pass, never one that is held or raising young', () => {
