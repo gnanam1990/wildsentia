@@ -80,13 +80,44 @@ def gait(t,fast=False):
             a.pose(f'{which}.{s}',(1,0,0),v*amp)
             a.pose(f'{which}.{s}.lower',(1,0,0),-max(0,v)*amp)
             a.pose(f'{which}.{s}.foot',(1,0,0),-v*amp*0.3)
+def gallop(t):
+    # A rotary gallop, the big cats' fast gait: hind left, hind right, fore right, fore left,
+    # with the legs gathered under a flexed spine in the airborne phase. One cycle per clip;
+    # the client plays it at the stride rate the animal's ground speed needs.
+    flex = math.cos(2*PI*(t-0.9))  # +1 gathered (back arched), -1 stretched out
+    a.root_offset(z=0.035*math.cos(2*PI*(t-0.95)))
+    a.pose('root',(1,0,0),0.05*math.sin(2*PI*(t-0.05)))
+    a.pose('hips',(1,0,0),-0.10*flex)
+    a.pose('spine',(1,0,0),0.20*flex)
+    a.pose('neck',(1,0,0),-0.09*flex-0.04*math.sin(2*PI*(t-0.05)))
+    a.pose('head',(1,0,0),-0.05*flex)
+    a.pose('tail0',(1,0,0),0.55+0.12*math.sin(2*PI*(t-0.2)))
+    a.pose('tail1',(1,0,0),0.2+0.18*math.sin(2*PI*(t-0.35)))
+    duty, stance, reach = 0.36, 0.42, 0.18
+    for which,side,touchdown in [('back',-1,0.0),('back',1,0.1),('front',1,0.42),('front',-1,0.52)]:
+        u = (t-touchdown) % 1
+        bone = f'{which}.{side}'
+        if u < duty:  # on the ground: the leg sweeps back at a steady rate, paw flat
+            k = u/duty
+            angle = -stance+2*stance*k
+            give = 0.12*math.sin(PI*k)
+            a.pose(bone,(1,0,0),angle)
+            a.pose(bone+'.lower',(1,0,0),give if which=='front' else -give)
+            a.pose(bone+'.foot',(1,0,0),-angle*0.8)
+        else:  # in the air: folds and swings forward to reach for the next stride
+            k = (u-duty)/(1-duty)
+            angle = stance*math.cos(PI*k)+reach*math.sin(2*PI*k)
+            fold = math.sin(PI*k)**1.5
+            a.pose(bone,(1,0,0),angle)
+            a.pose(bone+'.lower',(1,0,0),1.05*fold if which=='front' else -0.9*fold)
+            a.pose(bone+'.foot',(1,0,0),(0.7 if which=='front' else 0.5)*fold-angle*0.3)
 def feed(t):
     idle(t); a.pose('neck',(1,0,0),0.35); a.pose('head',(1,0,0),0.2+math.sin(t*4*PI)*0.025)
 def death(t):
     v=min(1,t*1.5);v=v*v*(3-2*v)
     a.pose('root',(0,1,0),v*1.48)
     a.root_offset(z=0.30*v)
-for name,seconds,fn in [('Idle',3,idle),('Walk',1.6,gait),('Run',0.8,lambda t:gait(t,True)),
+for name,seconds,fn in [('Idle',3,idle),('Walk',1.6,gait),('Run',0.8,lambda t:gait(t,True)),('Gallop',1.0,gallop),
                         ('Sneak',2.2,gait),('Eating',2,feed),('Drinking',2,feed),('Resting',4,idle),('Death',2,death)]:
     a.animate(name,seconds,fn)
 a.export()

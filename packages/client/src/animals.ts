@@ -13,6 +13,7 @@ import { separateBodies, type Body, type Obstacle, type ObstacleField } from './
 import type { LivePose } from './liveEncounters.js';
 import { AnimalDots } from './animalDots.js';
 import { elephantSurface } from './elephantSurface.js';
+import { clipForGait, GaitClock, hipHeightM, isStrideClip, strideCycles, strideRate } from './gait.js';
 
 /**
  * A plain stand-in for a species with no rigged model yet: a body and a head in the species'
@@ -49,8 +50,20 @@ interface Rig {
   /** The model's own pose before a climb stood it upright; null when not climbing. */
   climbRest: { rotationX: number; z: number; y: number } | null;
   needsCorpseGrounding: boolean;
+  /** Shown ground speed and stride clock, so legs keep pace with the ground. */
+  gait: GaitClock;
+  /** Hip height of the drawn animal, in metres, for its stride length. */
+  hipM: number;
   appearanceKey: string;
   materials: Array<{ material: THREE.MeshStandardMaterial; base: THREE.Color }>;
+}
+
+/** Stride cycles per clip, read once from the clip's own motion. */
+const CYCLES = new WeakMap<THREE.AnimationClip, number>();
+function cyclesOf(clip: THREE.AnimationClip): number {
+  let cycles = CYCLES.get(clip);
+  if (cycles === undefined) { cycles = strideCycles(clip); CYCLES.set(clip, cycles); }
+  return cycles;
 }
 
 /** A stable small number per animal, to spread drinkers round a pool. */
@@ -276,7 +289,8 @@ export class AnimalLayer {
     const bodyLengthM = new THREE.Box3().setFromObject(visual).getSize(new THREE.Vector3()).z;
     const rig: Rig = { variantKey: key, group, mixer, actions, clipNames: clips.map((c) => c.name), playing: null, marker,
       visual, footY: visual.position.y, restRotationZ: visual.rotation.z, bodyLengthM, climbRest: null,
-      needsCorpseGrounding: false, appearanceKey: '', materials };
+      needsCorpseGrounding: false, gait: new GaitClock(), hipM: hipHeightM(height * characterScale(animal)),
+      appearanceKey: '', materials };
     this.#pending.delete(animal.id);
     this.#rigs.set(animal.id, rig);
   }
@@ -323,6 +337,7 @@ export class AnimalLayer {
       if (!rig) continue;
       const position = positions.get(id)!;
       this.#place(rig, position);
+      rig.gait.observe(position.x, position.z, nowMs / 1000, rig.hipM);
       const pose = recorded.get(id);
       // A delayed route must not borrow a later checkpoint's feeding/death appearance or clip.
       this.#appearance(rig, pose?.animal ?? animal);
@@ -383,6 +398,7 @@ export class AnimalLayer {
       const rig = this.#rigs.get(animal.id);
       if (!rig) continue;
       this.#place(rig, position);
+      rig.gait.observe(position.x, position.z, seconds, rig.hipM);
       rig.group.rotation.y = position.heading;
       this.#appearance(rig, animal);
       const phase = arboreal(animal.speciesId) ? climbPhase : null;
@@ -430,7 +446,9 @@ export class AnimalLayer {
 
   #poseAt(rig: Rig, state: string, seconds: number, flightPhase: FlightVisualPhase | null = null,
     unknownAirborne = false, climbPhase: ClimbVisualPhase | null = null): void {
-    const clip = clipForObservedMotion(state, rig.clipNames, flightPhase, unknownAirborne, climbPhase);
+    const grounded = flightPhase === null && climbPhase === null && !unknownAirborne;
+    const clip = (grounded ? clipForGait(state, rig.gait.gait, rig.clipNames) : null)
+      ?? clipForObservedMotion(state, rig.clipNames, flightPhase, unknownAirborne, climbPhase);
     rig.mixer?.stopAllAction();
     // No crossfade or wall-clock advance during a seek. Poses are illustrative, but stable.
     rig.playing = null;
@@ -438,7 +456,11 @@ export class AnimalLayer {
     if (action) {
       action.reset().setEffectiveWeight(1).setLoop(THREE.LoopOnce, 1).play();
       action.clampWhenFinished = true;
-      action.time = replayClipTime(state, action.getClip().duration, seconds);
+      const source = action.getClip();
+      // A stride is sampled from a clock run at the pace of the ground covered, not the playhead.
+      action.time = grounded && isStrideClip(source.name) && rig.gait.speedMs > 0
+        ? rig.gait.advance(strideRate(source, cyclesOf(source), rig.gait.speedMs, rig.hipM), source.duration)
+        : replayClipTime(state, source.duration, seconds);
       action.paused = true;
       rig.mixer?.update(0);
     }
@@ -484,14 +506,16 @@ export class AnimalLayer {
   #animate(rig: Rig, state: string, climbPhase: ClimbVisualPhase | null = null,
     unknownAirborne = false): void {
     if (rig.mixer === null) return;
-    const wanted = clipForObservedMotion(state, rig.clipNames, null, unknownAirborne, climbPhase);
+    const grounded = climbPhase === null && !unknownAirborne;
+    const wanted = (grounded ? clipForGait(state, rig.gait.gait, rig.clipNames) : null)
+      ?? clipForObservedMotion(state, rig.clipNames, null, unknownAirborne, climbPhase);
     // Never keep walking/eating after a state changes to one without a supported clip.
     if (wanted === null) {
       rig.mixer.stopAllAction(); rig.playing = null;
       if (rig.needsCorpseGrounding) this.#groundCorpse(rig);
       return;
     }
-    if (wanted === rig.playing) return;
+    if (wanted === rig.playing) { this.#pace(rig, wanted, grounded); return; }
 
     const next = rig.actions.get(wanted);
     if (next === undefined) return;
@@ -502,6 +526,18 @@ export class AnimalLayer {
     next.reset().play();
     if (previous !== null) previous.crossFadeTo(next, 0.35, false);
     rig.playing = wanted;
+    this.#pace(rig, wanted, grounded);
+  }
+
+  /** A stride clip turns over at the rate the animal's shown speed needs; anything else at its own. */
+  #pace(rig: Rig, clip: string, grounded: boolean): void {
+    const action = rig.actions.get(clip);
+    if (!action) return;
+    const source = action.getClip();
+    const wanted = grounded && isStrideClip(clip) && rig.gait.speedMs > 0
+      ? strideRate(source, cyclesOf(source), rig.gait.speedMs, rig.hipM) : 1;
+    // Eased, so a change of pace is not a visible jolt in the legs.
+    action.timeScale += (wanted - action.timeScale) * 0.15;
   }
 
   #appearance(rig: Rig, animal: AnimalState): void {
@@ -509,6 +545,7 @@ export class AnimalLayer {
     if (rig.appearanceKey === key) return;
     rig.appearanceKey = key;
     rig.group.scale.setScalar(characterScale(animal));
+    rig.hipM = hipHeightM(visualFor(animal.speciesId).heightM * characterScale(animal));
     const decay = animal.decayStage ?? 0;
     for (const { material, base } of rig.materials) {
       material.color.copy(base).multiplyScalar(coatMultiplier(animal.coatVariant));

@@ -175,7 +175,12 @@ class Animal:
             for p in self.rig.pose.bones:
                 p.keyframe_insert('rotation_quaternion', frame=frame)
                 p.keyframe_insert('location', frame=frame)
-        for f in action.fcurves:
+        # Blender 5 keeps curves in layered actions' channel bags; Blender 4 on the action.
+        curves = getattr(action, 'fcurves', None)
+        if curves is None:
+            curves = [c for layer in action.layers for strip in layer.strips
+                      for bag in strip.channelbags for c in bag.fcurves]
+        for f in curves:
             for k in f.keyframe_points:
                 k.interpolation = 'LINEAR'
 
