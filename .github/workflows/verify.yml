@@ -57,10 +57,10 @@ jobs:
   ecology:
     if: github.event_name == 'workflow_dispatch' && inputs.ecology
     runs-on: ubuntu-latest
-    # The 360-day mainland gate takes roughly a quarter of an hour. Each three-year island seed
-    # took 32-36 minutes on a loaded 10-core development Mac (2026-10-05), and the three seeds run
-    # side by side, so on a 2-4 vCPU runner the island gate alone can approach an hour. 120
-    # minutes leaves room for both without letting a hung run hold a runner indefinitely.
+    # Measured 2026-10-05 on a 10-core development Mac at load 17-27: the 360-day mainland gate
+    # 54.5 minutes, each three-year island seed 26-37 minutes (the three run side by side). An
+    # unloaded runner is faster per core but has 2-4 vCPUs, so the old 60 minutes is too tight
+    # for both steps; 120 leaves room without letting a hung run hold a runner indefinitely.
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
