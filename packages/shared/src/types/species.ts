@@ -44,6 +44,8 @@ export interface SpeciesConfig {
     structure: 'solitary' | 'pair' | 'herd' | 'troop' | 'pack' | 'family';
     groupSize: [min: number, max: number];
     alarmSharing: boolean;
+    /** sim_0.34.0: other species whose alarm calls this one takes up when standing with them. */
+    heedsAlarmOf?: string[];
     /** Source-informed food-carrying policy; capacities/rates are model parameters, not field calibration. */
     cooperativeCare?: { donorFromDays: number; recipientFromDays: number; capacityBodyFraction: number;
       collectionBodyFractionPerHour: number; deliveryBodyFractionPerHour: number; retentionHours: number;

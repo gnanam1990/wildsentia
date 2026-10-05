@@ -39,7 +39,7 @@ import {
   packAllowsBreeding,
 } from './agents/reproduction.js';
 
-export const SIM_VERSION = 'sim_0.33.0';
+export const SIM_VERSION = 'sim_0.34.0';
 
 /** Uncalibrated group-decision policy, not a claim of a species-specific thirst measurement.
  * An unweaned independent drinker need not leave a nearby caregiver every hour for a sip. */
@@ -825,6 +825,8 @@ export class World {
 
   /** @internal — lets the breed helper share the world view type. */
   __viewForTest(): WorldView { return this.#view(); }
+  /** @internal Tests that move animals between steps rebuild the per-patch index. */
+  __reindexForTest(): void { this.#reindex(); }
 
   #retireCarcass(carcass: Carcass): void {
     const index = this.carcasses.indexOf(carcass);
@@ -1068,15 +1070,19 @@ export class World {
 
       const percept = perceive(agent, cfg, view);
 
-      // An animal that can see a predator hunting it becomes afraid, and where the species
-      // shares alarm, so does everything else of its kind standing with it.
+      // An animal that detects a predator that hunts it is afraid at once, by how close the
+      // predator is and what it is visibly doing (perceive, sim_0.34.0); fear no longer creeps
+      // up 0.3 an hour against its own decay. Where the species shares alarm, so does every
+      // other of its kind standing with it, and species that heed its alarm call (chital and
+      // langur heed each other's, Newton 1989) take it up too.
       if (percept.threat !== null) {
-        agent.drives.fear = Math.min(1, agent.drives.fear + 0.3 * hours);
+        agent.drives.fear = Math.min(1, Math.max(agent.drives.fear, percept.threat.fear));
         if (cfg.social.alarmSharing) {
           for (const other of view.agentsInPatch(agent.patchId)) {
-            if (other.alive && other.speciesId === agent.speciesId && other.id !== agent.id) {
-              other.drives.fear = Math.min(1, Math.max(other.drives.fear, agent.drives.fear * 0.7));
-            }
+            if (!other.alive || other.id === agent.id) continue;
+            const heeds = other.speciesId === agent.speciesId
+              || (this.species.get(other.speciesId)?.social.heedsAlarmOf ?? []).includes(agent.speciesId);
+            if (heeds) other.drives.fear = Math.min(1, Math.max(other.drives.fear, agent.drives.fear * 0.7));
           }
         }
       }

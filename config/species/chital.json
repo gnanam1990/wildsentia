@@ -55,7 +55,8 @@
       6,
       25
     ],
-    "alarmSharing": true
+    "alarmSharing": true,
+    "heedsAlarmOf": ["langur"]
   },
   "learning": {
     "innate": {
