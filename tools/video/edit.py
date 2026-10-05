@@ -35,8 +35,8 @@ CUT = [
     ("c-chital", 5.5, "Hundreds of animals. Each with a life of its own."),
     ("d-langur", 5.5, "They graze, drink, rest and raise their young."),
     ("e-gaur", 5.0, None),
-    ("f-hunt-tiger", 9.5, "Every hunt is real. Nothing is scripted."),
-    ("g-hunt-dhole", 8.0, "Predators hunt. Prey runs."),
+    ("f-hunt-tiger", 7.5, "Every hunt is real. Nothing is scripted."),
+    ("g-hunt-sambar", 6.0, "Predators hunt. Prey runs."),
     ("h-boar", 4.5, None),
     ("i-squirrel", 4.5, "Follow any animal. Watch its whole life."),
     ("j-sambar", 5.5, "AI agents can step into the wild."),
@@ -97,7 +97,7 @@ bars = overlay("letterbox", letterbox)
 title_png = overlay("title", title)
 end_png = overlay("end", end_card)
 
-GRADE = ("eq=contrast=1.07:saturation=1.18:brightness=0.005:gamma=0.97,"
+GRADE = ("eq=contrast=1.06:saturation=1.16:brightness=0.03:gamma=1.12,"
          "colorbalance=rs=0.03:gs=0.01:bs=-0.04:rm=0.02:bm=-0.03,"
          "vignette=angle=PI/5:mode=forward,unsharp=5:5:0.4")
 

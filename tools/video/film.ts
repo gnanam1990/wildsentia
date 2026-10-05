@@ -22,12 +22,15 @@ if (!out) throw new Error('usage: film.ts <out-dir> [shot ...]');
 
 /** Camera path, eased from start to end: orbit angle (radians), height angle, distance (m). */
 /** distance null: the replay's own "keep both animals framed" owns the zoom, so two writers never fight. */
-interface Path { theta: [number, number] | 'behind' | 'side'; phi: [number, number]; distance: [number, number] | null }
+interface Path { theta: [number, number] | 'behind' | 'side'; phi: [number, number]; distance: [number, number] | null;
+  /** Hunts. predator: hold on the hunter. pair: the replay's midpoint, zoomed so both stay in frame. */
+  track?: 'predator' | 'pair' }
 interface Shot {
   name: string; seconds: number; path: Path;
   species?: string;
   /** A recorded hunt replayed from just before its chase. */
-  hunt?: { predator?: string; prey?: string[]; lead: number };
+  /** at 'contact': start just before the catch (the kill cut) instead of before the chase. */
+  hunt?: { predator?: string; prey?: string[]; lead: number; eventId?: string; at?: 'chase' | 'contact' };
 }
 
 const shots: Shot[] = [
@@ -36,8 +39,13 @@ const shots: Shot[] = [
   { name: 'c-chital', species: 'chital', seconds: 6, path: { theta: [0.3, 1.0], phi: [0.18, 0.24], distance: [6.5, 5] } },
   { name: 'd-langur', species: 'langur', seconds: 6, path: { theta: [4.0, 4.7], phi: [0.2, 0.26], distance: [5, 4] } },
   { name: 'e-gaur', species: 'gaur', seconds: 6, path: { theta: [1.2, 1.8], phi: [0.16, 0.2], distance: [13, 11] } },
-  { name: 'f-hunt-tiger', seconds: 12, hunt: { predator: 'tiger', lead: 5 }, path: { theta: 'side', phi: [0.3, 0.34], distance: null } },
-  { name: 'g-hunt-dhole', seconds: 10, hunt: { predator: 'dhole', lead: 4 }, path: { theta: 'side', phi: [0.3, 0.34], distance: null } },
+  // Tigers ambush, so their chases start close. A shot that keeps hunter and quarry both in frame
+  // over a 25 m chase leaves them as dots, so each hunt is held on the tiger from the final
+  // sprint, through the catch, to the kill.
+  { name: 'f-hunt-tiger', seconds: 8, hunt: { predator: 'tiger', lead: 3.5, at: 'contact', eventId: 'hunt_000000010000000000020bc8' },
+    path: { theta: [0, 0.5], phi: [0.16, 0.2], distance: [7.5, 5.5], track: 'predator' } },
+  { name: 'g-hunt-sambar', seconds: 6.5, hunt: { predator: 'tiger', lead: 3, at: 'contact', eventId: 'hunt_000000010000000000002d87' },
+    path: { theta: [2.0, 2.5], phi: [0.16, 0.2], distance: [8, 6], track: 'predator' } },
   { name: 'h-boar', species: 'boar', seconds: 5, path: { theta: [5.0, 5.6], phi: [0.18, 0.22], distance: [5, 4] } },
   { name: 'i-squirrel', species: 'squirrel', seconds: 5, path: { theta: [2.0, 2.6], phi: [0.2, 0.24], distance: [3.2, 2.6] } },
   { name: 'j-sambar', species: 'sambar', seconds: 6, path: { theta: [3.0, 3.6], phi: [0.16, 0.2], distance: [11, 9] } },
@@ -59,21 +67,25 @@ async function pickAnimal(species: string): Promise<string> {
 }
 
 interface Marker { id: string; type: string; actorId?: string; actors?: string[]; outcome?: string; worldTime: number }
-interface Sample { seconds: number; phase: string }
+interface Sample { seconds: number; phase: string; predator: { x: number; z: number }; prey: { x: number; z: number } }
 /** A successful recorded hunt by the species, newest first, with its chase window. */
-async function pickHunt(species: string, used: Set<string>): Promise<{ predator: string; prey: string; eventId: string; from: number; total: number }> {
+async function pickHunt(species: string, used: Set<string>, eventId?: string): Promise<{ predator: string; prey: string; eventId: string; from: number; contact: number; total: number }> {
   const { markers } = await fetch(`${api}/api/event-map`).then((r) => r.json()) as { markers: Marker[] };
-  const hunts = markers.filter((m) => m.type === 'hunt' && m.outcome === 'success' && m.actorId?.startsWith(`${species}_`) && !used.has(m.id))
+  const hunts = markers.filter((m) => m.type === 'hunt' && (eventId ? m.id === eventId : m.outcome === 'success') && m.actorId?.startsWith(`${species}_`) && !used.has(m.id))
     .sort((a, b) => b.worldTime - a.worldTime);
-  for (const m of hunts) {
+  // The chase that starts closest makes the best shot: both animals share the frame from the start.
+  let best: { predator: string; prey: string; eventId: string; from: number; contact: number; total: number; gap: number } | null = null;
+  for (const m of hunts.slice(0, 25)) {
     const body = await fetch(`${api}/api/animals/${m.actorId}/encounters/${m.id}`).then((r) => r.ok ? r.json() : null) as { encounter?: { trace?: { samples: Sample[] } } } | null;
     const samples = body?.encounter?.trace?.samples;
     const chase = samples?.find((s) => s.phase === 'chase');
     if (!samples || !chase) continue;
-    used.add(m.id);
+    const gap = Math.hypot(chase.predator.x - chase.prey.x, chase.predator.z - chase.prey.z);
     const prey = (m.actors ?? []).find((id) => id !== m.actorId) ?? '';
-    return { predator: m.actorId!, prey, eventId: m.id, from: chase.seconds, total: samples.at(-1)!.seconds };
+    const contact = (samples.find((s) => s.phase === 'contact') ?? samples.at(-1)!).seconds;
+    if (!best || gap < best.gap) best = { predator: m.actorId!, prey, eventId: m.id, from: chase.seconds, contact, total: samples.at(-1)!.seconds, gap };
   }
+  if (best) { if (!eventId) used.add(best.eventId); console.log(`  ${species} hunt ${best.eventId}: chase starts ${best.gap.toFixed(0)} m apart`); return best; }
   throw new Error(`no recorded ${species} hunt with a chase`);
 }
 
@@ -94,6 +106,10 @@ async function waitReady(page: Page): Promise<void> {
   await page.evaluate(() => {
     const select = document.querySelector<HTMLSelectElement>('#render-quality')!;
     select.value = 'high'; select.dispatchEvent(new Event('change', { bubbles: true }));
+    // The observer cutaway fades trunks and branches between camera and animal: right for a
+    // viewer, but on film the faded geometry reads as ghostly bands. Film real occlusion instead.
+    const cutaway = document.querySelector<HTMLInputElement>('#observer-cutaway')!;
+    if (cutaway.checked) { cutaway.checked = false; cutaway.dispatchEvent(new Event('change', { bubbles: true })); }
   });
 }
 
@@ -127,7 +143,20 @@ async function startPath(page: Page, path: Path, seconds: number, pair: [string,
       const t = Math.min(1, (performance.now() - start) / (seconds * 1000)), e = ease(t);
       follow.theta = path.theta === 'side' && pair ? sideOn() : theta0 + (theta1 - theta0) * e;
       follow.phi = path.phi[0] + (path.phi[1] - path.phi[0]) * e;
+      follow.zoomBy(1); // drops any eased zoom goal (the replay sets one) so this path owns the distance
       if (path.distance) follow.distance = path.distance[0] + (path.distance[1] - path.distance[0]) * e;
+      if (path.track === 'pair' && pair) {
+        const a = v.animals.root.getObjectByName(pair[0]), b = v.animals.root.getObjectByName(pair[1]);
+        if (a && b) {
+          const gap = Math.hypot(a.position.x - b.position.x, a.position.z - b.position.z);
+          const want = Math.min(34, Math.max(9, gap * 0.85 + 7));
+          follow.distance += (want - follow.distance) * 0.04;
+        }
+      }
+      if (path.track === 'predator' && pair) {
+        const hunter = v.animals.root.getObjectByName(pair[0]);
+        if (hunter) { follow.target.x = hunter.position.x; follow.target.z = hunter.position.z; }
+      }
       follow.rotateBy(0); // holds the viewer's angle: no drift back behind the animal
       if (t < 1) requestAnimationFrame(step);
     };
@@ -150,19 +179,20 @@ for (const shot of shots) {
   if (freeGb < 5) throw new Error(`only ${freeGb.toFixed(1)} GB free; stopping before ${shot.name}`);
   let subject: string, pair: [string, string] | null = null;
   if (shot.hunt) {
-    const hunt = await pickHunt(shot.hunt.predator ?? 'tiger', usedHunts);
+    const hunt = await pickHunt(shot.hunt.predator ?? 'tiger', usedHunts, shot.hunt.eventId);
     subject = `${hunt.predator} ${hunt.eventId}`; pair = [hunt.predator, hunt.prey];
     await page.goto(`${viewer}/?cinema=1&maxfps=240#animal=${hunt.predator}`, { waitUntil: 'domcontentloaded' });
     await waitReady(page);
     await page.evaluate(([id, eventId]) => (window as any).__vana.startReplay(id, eventId), [hunt.predator, hunt.eventId]);
     await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>('#replay-play')!.disabled, null, { timeout: 60_000 });
     await page.waitForTimeout(6000); // the two models load
-    const seek = Math.max(0, hunt.from - shot.hunt.lead) / hunt.total;
+    const seek = Math.max(0, (shot.hunt.at === 'contact' ? hunt.contact : hunt.from) - shot.hunt.lead) / hunt.total;
     await page.evaluate((s) => {
       const seekBar = document.querySelector<HTMLInputElement>('#replay-seek')!;
       seekBar.value = String(Math.round(s * 1000)); seekBar.dispatchEvent(new Event('input', { bubbles: true }));
     }, seek);
     await page.waitForTimeout(1500);
+    if (shot.path.track) await page.evaluate(() => { document.querySelector<HTMLInputElement>('#replay-autoframe')!.checked = false; });
     await page.evaluate(() => document.querySelector<HTMLButtonElement>('#replay-play')!.click());
   } else {
     const animal = await pickAnimal(shot.species!);
