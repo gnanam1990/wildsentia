@@ -72,6 +72,11 @@
       "floaterMortalityPerDay": 0.004
     }
   },
+  "islandArrival": {
+    "whenLivingAtMost": 1,
+    "dailyProbability": 0.005555555555555556,
+    "minDaysBetween": 180
+  },
   "learning": {
     "innate": {
       "stalk_technique": 0.25,

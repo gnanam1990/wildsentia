@@ -4,7 +4,7 @@ import { islandHeightAt, islandVertexHeight, islandPatchSurface, ISLAND_SEGMENTS
 import { buildGrid, islandFreshwaterBasinIds, ISLAND_BASIN_SEPARATION_PATCHES,
   ISLAND_INITIAL_LAKE_WATER_L } from '../src/grid.js';
 import { createWorld } from '../src/world.js';
-import { ISLAND_POPULATION } from '../src/forest.js';
+import { FOREST_POPULATION, ISLAND_POPULATION } from '../src/forest.js';
 import { takeSnapshot, restoreSnapshot, upgradeV14Snapshot } from '../src/snapshot.js';
 import { newWaterBudget, updateDrainage, waterBudgetResidual } from '../src/fields/drainage.js';
 import { navigate, planRoute } from '../src/agents/navigation.js';
@@ -25,7 +25,11 @@ describe('authoritative island geography', () => {
       expect(founders.every(agent => agent.motherId === null && agent.fatherId === null && agent.generation === 0)).toBe(true);
       if (seed === 3) {
         // The v0.21 baseline had two males. The correction changes only the second sex;
-        // both original IDs, placement and the first founder are preserved.
+        // both original IDs, placement and the first founder are preserved. Pinned to the
+        // pre-v0.33 founding cohort (0.45 of the forest), whose draws those IDs come from.
+        const legacy = createWorld({ seed, speciesDir: SPECIES_DIR, minPopulation: {}, terrainProfile: 'island_v1',
+          initialAgents: Object.fromEntries(Object.entries(FOREST_POPULATION).map(([id, n]) => [id, Math.max(2, Math.round(n * 0.45))])) });
+        const founders = legacy.agents.filter(agent => agent.speciesId === 'tiger');
         expect(founders.map(agent => agent.id)).toEqual(['tiger_06ff', 'tiger_0700']);
         expect(founders.map(agent => agent.patchId)).toEqual([267, 151]);
         expect(founders.map(agent => agent.sex)).toEqual(['male', 'female']);

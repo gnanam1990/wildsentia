@@ -17,6 +17,13 @@ describe('event map provenance', () => {
     expect(eventMarker({ ...base, type: 'fed' })).toBeNull();
     expect(eventMarker({ ...base, patchId: -1 })).toBeNull();
   });
+  it('maps a recorded island arrival at its shore position, labelled as a crossing (sim_0.33.0)', () => {
+    const event: WorldEvent = { ...base, type: 'immigration', actors: ['tiger_0f00'],
+      position: { x: 317.125, z: -10.5, heading: 0 }, conditions: { species: 'tiger', route: 'island_crossing', trigger: 'small_population' } };
+    expect(eventMarker(event)).toMatchObject({ type: 'immigration', actorId: 'tiger_0f00', label: 'Arrived across the water',
+      precision: 'recorded', position: { x: 317.125, z: -10.5 } });
+    expect(eventMarker({ ...event, conditions: { species: 'chital' } })?.label).toBe('Arrival');
+  });
   it('points a recorded human birth marker at the persistent child person, not a parent or an animal', () => {
     const event: WorldEvent = { ...base, type: 'human_born', actors: ['person_0005', 'person_0001', 'person_0002', 'village_0001'],
       position: { x: 317.125, z: -10.5, heading: 1.2 }, conditions: { childId: 'person_0005' } };

@@ -1,6 +1,6 @@
 import {
   NUTRIENT_PER_KG_BIOMASS, PATCH_COUNT, WORLD_SECONDS_PER_DAY, WORLD_SECONDS_PER_HOUR,
-  createRng, seasonAt, carcassMass, landWalkable, treeAnchorForPatch, patchAtPosition, positionInPatch, type TerrainProfile,
+  createRng, seasonAt, carcassMass, edibleMass, landWalkable, spatialHash, treeAnchorForPatch, patchAtPosition, positionInPatch, type TerrainProfile,
   type WorldPosition,
   type Agent, type Carcass, type DeathCause, type Patch, type Rng, type SkillId,
   type RngState, type SpeciesConfig, type WorldTime, type WaterBudget, type MicroEcologyState, type CommunityState, type CommunityProfile,
@@ -16,7 +16,7 @@ import { establishFloweringGuild, stepFloweringGuild } from './fields/floweringG
 import { EventLog } from './events/log.js';
 import { foundCommunity, stepCommunity } from './community.js';
 import { updateDrives } from './agents/drives.js';
-import { perceive, type WorldView } from './agents/perception.js';
+import { perceive, perceptionRadius, type WorldView } from './agents/perception.js';
 import { selectGoal } from './agents/goals.js';
 import { controlledAction, controlledFeed, descendPerchedAnimal, executeGoal, type ControlledAction, type WorldServices } from './agents/behaviours.js';
 import { foundingTraits } from './agents/genetics.js';
@@ -39,7 +39,7 @@ import {
   packAllowsBreeding,
 } from './agents/reproduction.js';
 
-export const SIM_VERSION = 'sim_0.32.0';
+export const SIM_VERSION = 'sim_0.33.0';
 
 /** Uncalibrated group-decision policy, not a claim of a species-specific thirst measurement.
  * An unweaned independent drinker need not leave a nearby caregiver every hour for a sip. */
@@ -75,6 +75,8 @@ export class World {
   readonly carcasses: Carcass[] = [];
   readonly log: EventLog;
   readonly ledger: NutrientLedger = { imported: 0, exported: 0 };
+  /** Island only (sim_0.33.0): when each species last arrived from outside, for rate limiting. */
+  readonly islandArrivals: Record<string, WorldTime> = {};
   /** Population-level organisms; notable animals remain individual agents. */
   microEcology: MicroEcologyState;
   waterBudget: WaterBudget;
@@ -315,13 +317,14 @@ export class World {
     }
   }
 
-  #spawn(speciesId: string, immigrant: boolean, atEdge = false): Agent {
+  #spawn(speciesId: string, immigrant: boolean, atEdge = false,
+    arrival?: { patchId: number; at: WorldTime; conditions: Record<string, string | number> }): Agent {
     const cfg = this.species.get(speciesId);
     if (!cfg) throw new Error(`unknown species: ${speciesId}`);
 
-    const eligibleLand = this.terrainProfile === 'island_v1' ? this.patches.filter(landWalkable) : null;
+    const eligibleLand = this.terrainProfile === 'island_v1' && !arrival ? this.patches.filter(landWalkable) : null;
     if (eligibleLand && !eligibleLand.length) throw new Error('island has no founding habitat');
-    const patchId = eligibleLand ? eligibleLand[this.#rng.int(eligibleLand.length)]!.id : atEdge
+    const patchId = arrival ? arrival.patchId : eligibleLand ? eligibleLand[this.#rng.int(eligibleLand.length)]!.id : atEdge
       ? EDGE_PATCH_IDS[this.#rng.int(EDGE_PATCH_IDS.length)]!
       : this.#rng.int(PATCH_COUNT);
     // Founders and immigrants arrive as adults of a spread of ages, so a population does not
@@ -330,7 +333,7 @@ export class World {
       + this.#rng.range(0, cfg.lifecycle.maxAgeDays * 0.35);
     const agent: Agent = {
       id: `${speciesId}_${(this.#agentSeq++).toString(16).padStart(4, '0')}`,
-      speciesId, bornAt: this.#time, massKg: cfg.body.adultMassKg, patchId,
+      speciesId, bornAt: arrival?.at ?? this.#time, massKg: cfg.body.adultMassKg, patchId,
       state: 'resting', currentGoal: 'wander', alternativeGoal: null, goalScore: 0,
       targetId: null, stamina: 1,
       sex: this.#rng.bool(0.5) ? 'female' : 'male',
@@ -351,17 +354,82 @@ export class World {
     this.#livingBySpecies.set(speciesId, (this.#livingBySpecies.get(speciesId) ?? 0) + 1);
     this.pedigree.record(agent.id, null, null);
     this.#assignGroup(agent, cfg);
+    // A swimmer comes ashore where it lands; it joins its kind's group by walking, not by a jump.
+    if (arrival) agent.patchId = arrival.patchId;
     locateAgent(agent);
     if (immigrant) this.ledger.imported += agent.massKg * NUTRIENT_PER_KG_BIOMASS;
 
     this.log.append({
       type: immigrant ? 'immigration' : 'agent_spawned',
-      worldTime: this.#time, simVersion: SIM_VERSION, patchId,
-      actors: [agent.id], conditions: { species: speciesId },
+      worldTime: arrival?.at ?? this.#time, simVersion: SIM_VERSION, patchId,
+      actors: [agent.id], conditions: { species: speciesId, ...arrival?.conditions },
       outcome: 'success', effects: { massKg: agent.massKg },
       causalParents: [], confidence: 'authoritative',
+      ...(arrival ? { position: { ...locateAgent(agent) } } : {}),
     });
     return agent;
+  }
+
+  /**
+   * sim_0.33.0: the unfinished predation carcass this hunter has already fed from, within the
+   * patches it perceives, that still holds meat it will eat. Island probes found tigers eating
+   * 8% of a 127 kg kill and dholes 4% (12% with packmates) before wandering off and killing
+   * again a day or three later, leaving three quarters to decay: three times the kills their
+   * food needs. Tigers stay with a large kill for days, feeding repeatedly, and a dhole pack
+   * finishes its kill where it falls, so an idle hunter now stays and feeds from what it killed.
+   * Hunger, thirst, fear and every other goal still win; only aimless wandering is replaced.
+   */
+  #unfinishedKill(agent: Agent, cfg: SpeciesConfig): { carcass: Carcass; patchId: number } | null {
+    if (!cfg.hunting || !cfg.diet.canScavenge || needsProvisioning(agent, cfg)) return null;
+    const here = this.patches[agent.patchId]!, reach = perceptionRadius(cfg);
+    let best: Carcass | null = null;
+    for (const carcass of this.carcasses) {
+      const there = this.patches[carcass.patchId]!;
+      if (carcass.cause !== 'predation' || Math.abs(there.x - here.x) + Math.abs(there.y - here.y) > reach
+        || carcass.pathogenLoad > cfg.diet.carrionTolerance || !(edibleMass(carcass.biomass) > 0)
+        || !carcass.consumers.some(c => c.agentId === agent.id)) continue;
+      if (!best || edibleMass(carcass.biomass) > edibleMass(best.biomass)) best = carcass;
+    }
+    return best ? { carcass: best, patchId: best.patchId } : null;
+  }
+
+  #shore: number[] | null = null;
+  /** Island land touching the sea, where a swimmer comes ashore. */
+  #shorePatches(): number[] {
+    this.#shore ??= this.patches.filter(p => landWalkable(p) && p.neighbours.some(id =>
+      this.patches[id]?.surface === 'ocean' || this.patches[id]?.surface === 'coast')).map(p => p.id);
+    return this.#shore;
+  }
+
+  /**
+   * sim_0.33.0: rare arrivals onto the closed island, for species configured with
+   * `islandArrival` (tiger, elephant and jackal swim channels; see the ecology doc). Once per
+   * world day, and only while no more than `whenLivingAtMost` of the species live here and the
+   * last arrival is at least `minDaysBetween` old, a draw derived from the seed, species and day
+   * (not the world's random stream, which an arrival never perturbs unless one happens) admits
+   * one adult on a shore patch. Its body is recorded as imported nutrient, the arrival is an
+   * authoritative `immigration` event with its trigger and draw, and nothing else changes.
+   */
+  #islandArrival(at: WorldTime): void {
+    if (this.terrainProfile !== 'island_v1') return;
+    const day = Math.floor(at / WORLD_SECONDS_PER_DAY);
+    for (const [speciesId, cfg] of [...this.species].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) {
+      const policy = cfg.islandArrival;
+      if (!policy) continue;
+      const living = this.livingCount(speciesId);
+      if (living > policy.whenLivingAtMost) continue;
+      const last = this.islandArrivals[speciesId];
+      if (last !== undefined && at - last < policy.minDaysBetween * WORLD_SECONDS_PER_DAY) continue;
+      const draw = spatialHash(`island-arrival:${this.#options.seed}:${speciesId}:${day}`) / 2 ** 32;
+      if (draw >= policy.dailyProbability) continue;
+      const shore = this.#shorePatches();
+      if (!shore.length) return;
+      const patchId = shore[spatialHash(`island-arrival-shore:${this.#options.seed}:${speciesId}:${day}`) % shore.length]!;
+      this.islandArrivals[speciesId] = at;
+      this.#spawn(speciesId, true, false, { patchId, at, conditions: {
+        route: 'island_crossing', trigger: living === 0 ? 'locally_extinct' : 'small_population',
+        livingBefore: living, whenLivingAtMost: policy.whenLivingAtMost, dailyProbability: policy.dailyProbability, draw } });
+    }
   }
 
   /** Death creates a carcass. The animal record is never deleted; it becomes history. */
@@ -1113,6 +1181,14 @@ export class World {
         travelToFamily(agent, cfg, this.patches, tether, 'care_for_young', this.#time, hours, this.log);
         continue;
       }
+      // A hunter stays with an unfinished kill instead of wandering off from it (sim_0.33.0).
+      const kill = choice.goal === 'wander' && percept.threat === null ? this.#unfinishedKill(agent, cfg) : null;
+      if (kill) {
+        executeGoal({ agent, species: cfg, patches: this.patches, view, percept: { ...percept, carrion: kill },
+          choice: { goal: 'scavenge', score: choice.score, alternative: choice.goal }, hours, worldTime: this.#time,
+          log: this.log, rng: this.#rng, services });
+        continue;
+      }
       executeGoal({
         agent, species: cfg, patches: this.patches, view, percept, choice,
         hours, worldTime: this.#time, log: this.log, rng: this.#rng, services,
@@ -1217,6 +1293,8 @@ export class World {
         causalParents: [], confidence: 'authoritative',
       });
     }
+    if (Math.floor(decisionEnd / WORLD_SECONDS_PER_DAY) > Math.floor(this.#time / WORLD_SECONDS_PER_DAY))
+      this.#islandArrival(decisionEnd);
     this.#time += hours * WORLD_SECONDS_PER_HOUR;
   }
 }

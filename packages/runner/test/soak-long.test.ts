@@ -2,7 +2,8 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { CommunityProfile, TerrainProfile } from '@vana/shared';
+import { NUTRIENT_PER_KG_BIOMASS, type CommunityProfile, type TerrainProfile } from '@vana/shared';
+import { ISLAND_POPULATION, loadSpeciesDir } from '@vana/sim';
 import { SOAK_FLOOR, SOAK_POPULATION, runSoak, type SoakResult } from '../src/soak.js';
 
 const speciesDir = fileURLToPath(new URL('../../../config/species', import.meta.url));
@@ -28,6 +29,13 @@ const DAYS = Number(env.VANA_LONG_SOAK_DAYS ?? 1800);
 const SEEDS = (env.VANA_LONG_SOAK_SEEDS ?? '1').split(',').map(Number);
 const OUTPUT = env.VANA_LONG_SOAK_OUTPUT;
 const PREY = ['chital', 'sambar', 'gaur', 'langur', 'boar', 'hare', 'squirrel'];
+/**
+ * Island prey floor: no prey species ends any world-year below a quarter of its founding count.
+ * A fall of more than three quarters in three years is a collapse, not a fluctuation. This is a
+ * stated acceptance line, not a calibrated carrying capacity.
+ */
+const ISLAND_PREY_FLOOR = 0.25;
+const ARRIVING = new Set([...loadSpeciesDir(speciesDir).values()].filter(cfg => cfg.islandArrival).map(cfg => cfg.id));
 
 describe.skipIf(env.VANA_LONG_SOAK !== '1')(`long soak gate (${TERRAIN}, ${DAYS} days)`, () => {
   const results: SoakResult[] = [];
@@ -63,7 +71,32 @@ describe.skipIf(env.VANA_LONG_SOAK !== '1')(`long soak gate (${TERRAIN}, ${DAYS}
   it('is sustained by births, not by what walks in from outside', () => {
     for (const result of results) {
       expect(result.births, `seed ${result.seed}`).toBeGreaterThan(result.immigrationEvents * 3);
-      if (ISLAND) expect(result.immigrationEvents, `seed ${result.seed}`).toBe(0);
+    }
+  });
+
+  // sim_0.33.0: a closed island admits only recorded crossings by species that swim to islands,
+  // each a positioned event whose body the nutrient ledger imports. Nothing else walks in.
+  it.skipIf(!ISLAND)('admits only recorded island crossings, each accounted for in the ledgers', () => {
+    for (const result of results) {
+      const label = `seed ${result.seed}`;
+      expect(Object.keys(result.immigrationByRoute).filter(route => route !== 'island_crossing'), label).toEqual([]);
+      expect(result.islandArrivals.length, label).toBe(result.immigrationEvents);
+      for (const arrival of result.islandArrivals) {
+        expect(ARRIVING.has(arrival.species), `${label} ${arrival.species}`).toBe(true);
+        expect(arrival.positioned, `${label} ${arrival.actorId}`).toBe(true);
+      }
+      const imported = result.islandArrivals.reduce((kg, a) => kg + a.massKg, 0) * NUTRIENT_PER_KG_BIOMASS;
+      expect(result.importedNutrient, label).toBeCloseTo(imported, 6);
+      for (const year of result.years)
+        expect(Object.values(year.arrivals).reduce((n, v) => n + v, 0), `${label} year ${year.year}`)
+          .toBe(result.islandArrivals.filter(a => a.worldTime > year.startDay * 86400 && a.worldTime <= year.endDay * 86400).length);
+    }
+  });
+
+  it.skipIf(!ISLAND)(`keeps every prey species at ${ISLAND_PREY_FLOOR * 100}% or more of its founding count at every year end`, () => {
+    for (const result of results) for (const year of result.years) for (const speciesId of PREY) {
+      expect(year.population[speciesId], `seed ${result.seed} year ${year.year} ${speciesId}`)
+        .toBeGreaterThanOrEqual(ISLAND_POPULATION[speciesId]! * ISLAND_PREY_FLOOR);
     }
   });
 

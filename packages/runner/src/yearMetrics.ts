@@ -15,7 +15,12 @@ export interface SoakYear {
   year: number; startDay: number; endDay: number;
   /** Living count per species at the end of the window. */
   population: Record<string, number>;
+  /** Living count per species at the start of the window. */
+  populationStart: Record<string, number>;
   births: Record<string, number>;
+  /** Recorded arrivals from outside (`immigration` events), and departures (`emigration`). */
+  arrivals: Record<string, number>;
+  emigrations: Record<string, number>;
   /** `species/cause` and `species` totals. */
   deaths: Record<string, number>;
   deathsByCause: Record<string, number>;
@@ -32,7 +37,7 @@ export interface SoakYear {
 }
 
 export function emptySoakYear(year: number, startDay: number): SoakYear {
-  return { year, startDay, endDay: startDay, population: {}, births: {}, deaths: {}, deathsByCause: {},
+  return { year, startDay, endDay: startDay, population: {}, populationStart: {}, births: {}, arrivals: {}, emigrations: {}, deaths: {}, deathsByCause: {},
     deprivation: {}, youngDeprivationWithParent: { near: 0, remote: 0, unknown: 0 },
     weanedYoungDeprivation: 0, extinct: [], nutrientDrift: 0, forage: { endPct: NaN, minPct: Infinity, minDay: startDay } };
 }
@@ -51,8 +56,9 @@ const YOUNG_STAGES = new Set(['newborn', 'juvenile', 'subadult']);
 
 /** Fold one event into the current year. Returns a with-parent record when the event is one. */
 export function recordYearEvent(year: SoakYear, event: WorldEvent, parents: ParentLookup): YoungDeprivationRecord | null {
-  if (event.type === 'born') {
-    bump(year.births, String(event.conditions.species ?? '?'));
+  if (event.type === 'born' || event.type === 'immigration' || event.type === 'emigration') {
+    bump(event.type === 'born' ? year.births : event.type === 'immigration' ? year.arrivals : year.emigrations,
+      String(event.conditions.species ?? event.actors[0]?.split('_')[0] ?? '?'));
     return null;
   }
   if (event.type !== 'died') return null;
@@ -89,4 +95,11 @@ export function foragePercent(patches: ReadonlyArray<{ plant: { grass: number; b
 /** Fold one daily forage sample into the year's low. */
 export function sampleYearForage(year: SoakYear, day: number, percent: number): void {
   if (percent < year.forage.minPct) year.forage = { ...year.forage, minPct: percent, minDay: day };
+}
+
+/** Species whose living count is not start + births + arrivals - deaths - departures. */
+export function unreconciledPopulations(year: SoakYear): string[] {
+  const species = new Set([...Object.keys(year.population), ...Object.keys(year.populationStart)]);
+  return [...species].filter(id => (year.populationStart[id] ?? 0) + (year.births[id] ?? 0) + (year.arrivals[id] ?? 0)
+    - (year.deaths[id] ?? 0) - (year.emigrations[id] ?? 0) !== (year.population[id] ?? 0)).sort();
 }

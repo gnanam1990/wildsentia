@@ -345,13 +345,20 @@ of the 63 starvation deaths.
 
 ### Running an existing world on new code
 
-The current runtime identifies as `sim_0.32.0`. Its rule changes from `sim_0.31.0` are three
-parental-care decisions: hunger alone no longer stops a parent answering a dependent young
+The current runtime identifies as `sim_0.33.0`. Its rule changes from `sim_0.32.0` are on the
+closed island: a pack's range holds only the land inside it (so the island holds one pack of four
+adult dholes); new islands are founded at the forest's density per km² of land, with predators
+at field densities (2 tigers, 4 dholes, 14 jackals); an idle hunter stays and feeds from an
+unfinished kill instead of wandering off; and tigers, elephants and jackals can rarely swim
+ashore while scarce, each arrival a recorded, positioned `immigration` event whose body the
+nutrient ledger imports. A saved 0.32
+world starts on this code only with `VANA_ALLOW_V32_UPGRADE=1`; it keeps every animal it has.
+`sim_0.32.0`'s changes from `sim_0.31.0` were three parental-care decisions: hunger alone no longer stops a parent answering a dependent young
 animal's hydration emergency (thirst 0.5 or more); a predator sharing the parent's patch stops
 care only through the parent's fear, as it stops everything else; and a parent of young that
 cannot yet follow it wanders only within perceiving range of them. What a parent gives is still
 bounded by her own reserves (see `docs/2026-10-05-multi-year-ecology.md`). A saved
-0.31 world starts on this code only with `VANA_ALLOW_V31_UPGRADE=1`, and each older version
+0.31 world starts on this code with `VANA_ALLOW_V31_UPGRADE=1`, and each older version
 has its own flag (`sim_0.31.0` held kills: `VANA_ALLOW_V30_UPGRADE`; `sim_0.30.0` off-centre
 water access points: `VANA_ALLOW_V29_UPGRADE`). The 26 September staging world was upgraded this way after a backup.
 Do not upgrade a

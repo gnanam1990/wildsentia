@@ -32,6 +32,8 @@ export interface Snapshot {
   groupSeq: number;
   groups: Array<[string, { speciesId: string; memberIds: string[] }]>;
   pedigree: Array<[string, { mother: string | null; father: string | null }]>;
+  /** sim_0.33.0 island only: last arrival time per species, present once any has arrived. */
+  islandArrivals?: Record<string, WorldTime>;
 }
 
 export function takeSnapshot(world: World): Snapshot {
@@ -56,6 +58,7 @@ export function takeSnapshot(world: World): Snapshot {
     groupSeq: state.groupSeq,
     groups: structuredClone(state.groups),
     pedigree: structuredClone(state.pedigree),
+    ...(Object.keys(world.islandArrivals).length ? { islandArrivals: { ...world.islandArrivals } } : {}),
   };
 }
 
@@ -144,6 +147,12 @@ export function restoreSnapshot(snapshot: Snapshot, options: WorldOptions): Worl
     const candidate = ancestors.get(mother.targetId ?? '');
     mother.pregnancyFatherId = candidate?.sex === 'male' && candidate.speciesId === mother.speciesId
       ? candidate.id : null;
+  }
+  if (snapshot.islandArrivals !== undefined) {
+    if (world.terrainProfile !== 'island_v1' || Object.entries(snapshot.islandArrivals).some(([speciesId, at]) =>
+      !world.species.get(speciesId)?.islandArrival || !Number.isFinite(at) || at < 0 || at > snapshot.worldTime))
+      throw new Error('invalid island arrival checkpoint');
+    Object.assign(world.islandArrivals, snapshot.islandArrivals);
   }
   world.ledger.imported = snapshot.ledger.imported;
   world.ledger.exported = snapshot.ledger.exported;
@@ -398,6 +407,20 @@ export function upgradeV27Snapshot(snapshot: Snapshot): Snapshot {
   if (snapshot.simVersion !== 'sim_0.27.0') throw new Error('only sim_0.27.0 snapshots can use this upgrade');
   const upgraded = structuredClone(snapshot);
   finishFloweringUpgrade(upgraded);
+  return upgraded;
+}
+
+/**
+ * v0.33 calibrates the island's predators and admits rare recorded arrivals: a pack's range
+ * holds only the land inside it (packCapacity), and tigers, elephants and jackals may swim ashore
+ * when locally scarce (World islandArrival). The founding cohort change applies to new worlds
+ * only; a saved world keeps every animal it has. Future decisions only; every v0.32 state byte
+ * is kept, and no animal, arrival or event is granted retroactively.
+ */
+export function upgradeV32Snapshot(snapshot: Snapshot): Snapshot {
+  if (snapshot.simVersion !== 'sim_0.32.0') throw new Error('only sim_0.32.0 snapshots can use this upgrade');
+  const upgraded = structuredClone(snapshot);
+  upgraded.simVersion = SIM_VERSION;
   return upgraded;
 }
 

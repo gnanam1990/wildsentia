@@ -38,6 +38,8 @@ describe('event map projection', () => {
     expect(mapMarkerGlyph('human_died')).toBe('X');
     expect(mapMarkerSubject({ ...marker, type: 'died', actorId: 'hare_1' })).toEqual({ kind: 'animal', id: 'hare_1' });
     expect(mapMarkerGlyph('died')).toBe('D');
+    expect(mapMarkerSubject({ ...marker, type: 'immigration', actorId: 'tiger_0f00' })).toEqual({ kind: 'animal', id: 'tiger_0f00' });
+    expect(mapMarkerGlyph('immigration')).toBe('A');
     expect(mapMarkerSubject({ ...marker, type: 'human_hunt', actorId: 'hare_1' })).toEqual({ kind: 'animal', id: 'hare_1' });
     expect(mapMarkerPersonHistory({ ...marker, type: 'human_hunt', actorId: 'hare_1' })).toBeNull();
     expect(mapMarkerPersonHistory({ ...marker, type: 'born', actorId: 'hare_1' })).toBeNull();

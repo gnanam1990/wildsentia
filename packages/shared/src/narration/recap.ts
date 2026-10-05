@@ -115,7 +115,8 @@ export function recapLine(event: WorldEvent, subjectId: string): RecapLine | nul
     case 'emigration':
       return subjectId === first ? line('Walked out of the forest') : null;
     case 'immigration':
-      return subjectId === first ? line('Walked into the forest') : null;
+      return subjectId === first ? line(event.conditions.route === 'island_crossing'
+        ? 'Swam ashore onto the island' : 'Walked into the forest') : null;
     default:
       return null;
   }

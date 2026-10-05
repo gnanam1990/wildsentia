@@ -150,7 +150,7 @@ export class EventStore {
 
   async mapEvents(until: number, nextSequence?: number): Promise<WorldEvent[]> {
     const { rows } = await this.pool.query<Row>(
-      `select * from events where type in ('hunt', 'human_hunt', 'born', 'human_born', 'died', 'human_died')
+      `select * from events where type in ('hunt', 'human_hunt', 'born', 'human_born', 'died', 'human_died', 'immigration')
        and world_time <= $1 and ($2::bigint is null or world_time < $1 or event_sequence < $2)
        order by world_time desc, id desc limit 100`, [until, nextSequence ?? null],
     );
