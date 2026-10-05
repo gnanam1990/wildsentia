@@ -313,6 +313,21 @@ maybe('live agent API', () => {
     } finally { blocker.mockRestore(); }
   });
 
+  it('reports a wallet taken by a concurrent change as taken, not as a server error', async () => {
+    const [first, second] = (await pool!.query<{ id: string }>('select id from live_agents where wallet is null order by id limit 2')).rows;
+    const wallet = `0x${'6'.repeat(40)}`;
+    const held = await pool!.connect();
+    try {
+      await held.query('begin');
+      await held.query('update live_agents set wallet=$2, wallet_proven=true where id=$1', [first!.id, wallet]);
+      // Sees no owner yet, so it goes on to wait at the unique index until the first change commits.
+      const racing = deps.store.setWallet(second!.id, wallet);
+      await new Promise((r) => setTimeout(r, 100));
+      await held.query('commit');
+      await expect(racing).resolves.toBe('wallet_taken');
+    } finally { held.release(); }
+  });
+
   it('counts registrations from one IPv6 /64 against one network', async () => {
     // Security review 5 October 2026: each address of a /64 used to be a network of its own.
     const limited = buildApi({ host, pool: pool!, rewards, live: { ...deps, limits: { slots: 50, perNetworkPerDay: 2 }, spot: () => randomLandSpot(host.world) } });
