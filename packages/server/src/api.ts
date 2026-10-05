@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
+import Fastify, { type FastifyError, type FastifyInstance, type FastifyRequest } from 'fastify';
 import { RECAP_EVENT_TYPES, SKILL_IDS, formatWorldTime, seasonAt, thoughtFor, type Agent } from '@vana/shared';
 import { confidenceOf } from '@vana/sim';
 import type { Pool } from './db/pool.js';
@@ -54,6 +54,13 @@ export function trustedProxyHops(env: NodeJS.ProcessEnv): number {
 export function buildApi({ host, pool, narrator, insights: insightDeps, live, rewards, receiptRpc, social, holder, holderChain, trustedProxyHops: hops = 0 }: ApiDeps): FastifyInstance {
   // Without this, behind Caddy every visitor has the proxy's address and shares one rate limit.
   const app = Fastify({ logger: false, trustProxy: hops > 0 ? (_address: string, hop: number) => hop < hops : false });
+  // An unexpected failure's message can name database hosts, tables and constraints: log it
+  // here and send a plain error. Client mistakes (bad JSON, too large) keep Fastify's reply.
+  app.setErrorHandler<FastifyError>((error, _request, reply) => {
+    if ((error.statusCode ?? 500) < 500) return reply.send(error);
+    console.error('[api] request failed', error);
+    return reply.code(500).send({ error: 'internal_error' });
+  });
   const events = new EventStore(pool);
   const life = new LifeStore(pool);
   const humanMotion = new HumanMotionStore(pool);

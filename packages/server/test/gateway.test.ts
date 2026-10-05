@@ -1,9 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { randomBytes } from 'node:crypto';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
+import { WebSocket } from 'ws';
 import { createPool } from '../src/db/pool.js';
 import { migrate } from '../src/db/migrate.js';
 import { SimHost } from '../src/simHost.js';
-import { Gateway, type GatewaySocket } from '../src/gateway.js';
+import { Gateway, MAX_BUFFERED_BYTES, type GatewaySocket } from '../src/gateway.js';
 import { testDatabaseUrl } from './testDatabase.js';
 
 const url = testDatabaseUrl();
@@ -14,6 +18,8 @@ const speciesDir = fileURLToPath(new URL('../../../config/species', import.meta.
 class FakeSocket implements GatewaySocket {
   sent: Array<Record<string, unknown>> = [];
   closed = false;
+  /** Bytes the viewer has not read yet; a test raises it to play a viewer that stopped reading. */
+  bufferedAmount = 0;
   send(data: string): void { this.sent.push(JSON.parse(data) as Record<string, unknown>); }
   close(): void { this.closed = true; }
   lastOfType(type: string): Record<string, unknown> | undefined {
@@ -94,10 +100,25 @@ maybe('Gateway', () => {
 
     gateway.receive(b, { type: 'watch', actorId: id });
     expect(gateway.viewerCount(id)).toBe(2);
+    expect(b.lastOfType('viewers')).toMatchObject({ actorId: id, count: 2 });
+    gateway.broadcast(); // Other watchers hear the new count with the next broadcast.
     expect(a.lastOfType('viewers')).toMatchObject({ actorId: id, count: 2 });
 
     gateway.receive(b, { type: 'unwatch' });
     expect(gateway.viewerCount(id)).toBe(1);
+  });
+
+  it('does not let one viewer switching follows make the server write to every other watcher', () => {
+    // Security review 5 October 2026: each watch or unwatch sent the new count to all of an animal's watchers at once.
+    const isolated = new Gateway(host), [popular, other] = host.world.agents;
+    const watchers = Array.from({ length: 50 }, () => new FakeSocket());
+    for (const w of watchers) { isolated.handle(w); isolated.receive(w, { type: 'watch', actorId: popular!.id }); w.sent = []; }
+    const flipper = new FakeSocket(); isolated.handle(flipper);
+    for (let i = 0; i < 100; i++) isolated.receive(flipper, { type: 'watch', actorId: (i % 2 ? other : popular)!.id });
+    expect(watchers.reduce((n, w) => n + w.sent.length, 0)).toBe(0);
+    isolated.broadcast();
+    expect(watchers.every((w) => w.sent.filter((m) => m.type === 'viewers').length === 1)).toBe(true);
+    isolated.close();
   });
 
   it('drops a viewer count when the socket disconnects', () => {
@@ -282,6 +303,46 @@ maybe('live agents over the gateway', () => {
     gateway.handle(idle);
     gateway.broadcastLive({ avatars: [], drops: [] }, 1);
     expect(idle.lastOfType('live')).toBeUndefined();
+  });
+
+  it('cuts off a viewer that stops reading instead of queueing for it without limit', () => {
+    // Security review 5 October 2026: nothing bounded what the server held for a viewer that never read.
+    const isolated = new Gateway(host), slow = new FakeSocket(), reader = new FakeSocket();
+    isolated.handle(slow); isolated.handle(reader);
+    isolated.receive(slow, { type: 'watch', actorId: 'chital_0' });
+    const before = slow.sent.length;
+    slow.bufferedAmount = MAX_BUFFERED_BYTES + 1;
+    isolated.broadcastLive(state([10]) as never, 1);
+    isolated.broadcastRoster(state([10]) as never);
+    isolated.receive(slow, { type: 'watch', actorId: 'chital_1' });
+    expect(slow.closed).toBe(true);
+    expect(slow.sent).toHaveLength(before);
+    expect(isolated.viewerCount('chital_0') + isolated.viewerCount('chital_1')).toBe(0);
+    expect(reader.lastOfType('live-roster')).toBeDefined();
+    isolated.close();
+  });
+
+  it('cuts off a real connection whose reader has stopped, once its queue passes the limit', async () => {
+    const server = createServer(), isolated = new Gateway(host);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    isolated.attach(server);
+    const client = new WebSocket(`ws://127.0.0.1:${(server.address() as AddressInfo).port}/live`);
+    try {
+      await new Promise<void>((resolve) => client.once('message', () => resolve()));
+      let live = 0;
+      client.on('message', () => { live++; });
+      const closed = new Promise<boolean>((resolve) => { client.once('close', () => resolve(true)); setTimeout(() => resolve(false), 10_000); });
+      const socket = (client as unknown as { _socket: { pause(): void; resume(): void } })._socket;
+      socket.pause(); // The viewer stops reading.
+      const noise = randomBytes(768 * 1024).toString('base64'); // About 1 MB that does not compress away.
+      for (let i = 0; i < 60; i++) {
+        isolated.broadcastLive({ avatars: [], drops: [{ id: `d${i}`, noise }] }, i);
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      socket.resume(); // Reading again: a viewer that was kept gets all sixty, one that was cut off does not.
+      expect(await closed).toBe(true);
+      expect(live).toBeLessThan(60);
+    } finally { client.terminate(); isolated.close(); await new Promise((r) => server.close(r)); }
   });
 
   it('tells every viewer who is playing, in brief', () => {

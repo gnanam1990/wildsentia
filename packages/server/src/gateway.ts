@@ -7,7 +7,18 @@ import { floweringGuildSummary } from './floweringObservation.js';
 export interface GatewaySocket {
   send(data: string): void;
   close(): void;
+  /** Bytes queued for this viewer and not yet taken by it (ws's bufferedAmount). */
+  readonly bufferedAmount?: number;
+  /** Drops the connection at once, discarding whatever is still queued. */
+  terminate?(): void;
 }
+
+/**
+ * A viewer this far behind on reading is cut off rather than queued for without limit: a
+ * client that never reads would otherwise hold every scene and live update in server memory.
+ * A whole scene is about a megabyte, so a slow but working connection stays well below it.
+ */
+export const MAX_BUFFERED_BYTES = 16 * 1024 * 1024;
 
 export type ClientMessage =
   | { type: 'watch'; actorId: string }
@@ -72,7 +83,9 @@ export class Gateway {
       const set = this.#watchers.get(message.actorId) ?? new Set<GatewaySocket>();
       set.add(socket);
       this.#watchers.set(message.actorId, set);
-      this.#publishViewerCount(message.actorId);
+      // Only the new watcher hears the count now; the others get it with the next broadcast,
+      // so switching back and forth cannot make the server write to every watcher each time.
+      this.#send(socket, JSON.stringify({ type: 'viewers', actorId: message.actorId, count: set.size }));
       return;
     }
 
@@ -89,7 +102,7 @@ export class Gateway {
       return;
     }
 
-    socket.send(JSON.stringify({ type: 'error', message: 'unsupported message type' }));
+    this.#send(socket, JSON.stringify({ type: 'error', message: 'unsupported message type' }));
   }
 
   disconnect(socket: GatewaySocket): void {
@@ -117,7 +130,7 @@ export class Gateway {
       const empty = avatars.length === 0 && state.drops.length === 0 && wild.length === 0;
       if (empty && session.liveEmpty) continue;
       session.liveEmpty = empty;
-      session.socket.send(JSON.stringify({ type: 'live', at, avatars, drops: state.drops, wild }));
+      this.#send(session.socket, JSON.stringify({ type: 'live', at, avatars, drops: state.drops, wild }));
     }
   }
 
@@ -126,7 +139,7 @@ export class Gateway {
     const payload = JSON.stringify({ type: 'live-roster', agents: state.avatars.map((a) => ({ agentId: a.agentId, name: a.name,
       animalId: a.animalId, speciesId: a.speciesId, x: Math.round(a.x), z: Math.round(a.z),
       activity: a.action === 'hunt' || a.action === 'feed' ? a.action : (a.altitude as number) >= 20 ? 'fly' : a.moving ? `${a.gait}` : a.action })) });
-    for (const { socket } of this.#sessions.values()) socket.send(payload);
+    for (const { socket } of this.#sessions.values()) this.#send(socket, payload);
   }
 
   broadcast(): void {
@@ -147,7 +160,7 @@ export class Gateway {
         // A world hour takes five real minutes. Repeating the unchanged ~1 MB scene every
         // second wastes tens of GB per viewer/day without advancing the client playhead.
         if (Date.now() - session.lastHeartbeatAt >= 30_000) {
-          socket.send(JSON.stringify({ type: 'heartbeat', checkpointId: view.id }));
+          this.#send(socket, JSON.stringify({ type: 'heartbeat', checkpointId: view.id }));
           session.lastHeartbeatAt = Date.now();
         }
         continue;
@@ -176,7 +189,7 @@ export class Gateway {
         session.recordedFrameId = recording.id;
         session.recordingDirty = false;
       }
-      socket.send(`${payload}}`);
+      this.#send(socket, `${payload}}`);
       session.checkpointId = view.id;
       session.lastHeartbeatAt = Date.now();
     }
@@ -194,13 +207,15 @@ export class Gateway {
       const socket: GatewaySocket = {
         send: (data) => raw.send(data),
         close: () => raw.close(),
+        get bufferedAmount() { return raw.bufferedAmount; },
+        terminate: () => raw.terminate(),
       };
       this.handle(socket);
       raw.on('message', (data) => {
         try {
           this.receive(socket, JSON.parse(String(data)) as ClientMessage);
         } catch {
-          socket.send(JSON.stringify({ type: 'error', message: 'unsupported message type' }));
+          this.#send(socket, JSON.stringify({ type: 'error', message: 'unsupported message type' }));
         }
       });
       raw.on('close', () => this.disconnect(socket));
@@ -217,14 +232,19 @@ export class Gateway {
     const set = this.#watchers.get(session.watching);
     set?.delete(session.socket);
     if (set && set.size === 0) this.#watchers.delete(session.watching);
-    const actorId = session.watching;
-    session.watching = null;
-    this.#publishViewerCount(actorId);
+    session.watching = null; // The remaining watchers hear the new count with the next broadcast.
   }
 
   #publishViewerCount(actorId: string): void {
     const payload = JSON.stringify({ type: 'viewers', actorId, count: this.viewerCount(actorId) });
-    for (const socket of this.#watchers.get(actorId) ?? []) socket.send(payload);
+    for (const socket of this.#watchers.get(actorId) ?? []) this.#send(socket, payload);
+  }
+
+  /** Sends to a viewer that is keeping up; one that has stopped reading is cut off instead. */
+  #send(socket: GatewaySocket, data: string): void {
+    if ((socket.bufferedAmount ?? 0) <= MAX_BUFFERED_BYTES) { socket.send(data); return; }
+    this.disconnect(socket);
+    if (socket.terminate) socket.terminate(); else socket.close();
   }
 
   #worldMessage(view: CheckpointObservation): Record<string, unknown> {

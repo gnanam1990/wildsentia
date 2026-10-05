@@ -69,10 +69,17 @@ export class AgentStore {
 
   /** Sets a proven payout wallet. One agent per wallet, checked on every change. */
   async setWallet(agentId: string, wallet: string): Promise<'ok' | 'wallet_taken'> {
-    const result = await this.pool.query(`update live_agents set wallet=$2, wallet_proven=true where id=$1
-      and not exists (select 1 from live_agents where wallet=$2 and id<>$1)`, [agentId, wallet]);
+    let changed: boolean;
+    try {
+      changed = !!(await this.pool.query(`update live_agents set wallet=$2, wallet_proven=true where id=$1
+        and not exists (select 1 from live_agents where wallet=$2 and id<>$1)`, [agentId, wallet])).rowCount;
+    } catch (error) {
+      // Two agents claiming one wallet at the same moment: the unique index picks the first.
+      if ((error as { code?: string }).code !== '23505') throw error;
+      changed = false;
+    }
     for (const [key, agent] of this.#byKey) if (agent.id === agentId) this.#byKey.delete(key);
-    return result.rowCount ? 'ok' : 'wallet_taken';
+    return changed ? 'ok' : 'wallet_taken';
   }
 
   async touch(agentId: string): Promise<void> {

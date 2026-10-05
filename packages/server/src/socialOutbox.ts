@@ -4,6 +4,7 @@ import type { Pool } from './db/pool.js';
 import type { EventBoundary } from './db/eventStore.js';
 import { xPublishPlan } from './xPublishPlan.js';
 import { createXPublisher, type XPublisher } from './xPublisher.js';
+import { networkKey } from './network.js';
 
 export interface SocialConfig { adminToken: string; xPublisher?: XPublisher }
 export function socialConfig(env: NodeJS.ProcessEnv): SocialConfig | undefined {
@@ -100,11 +101,12 @@ export function installSocialOutbox(app: FastifyInstance, deps: {
   const { pool, config, boundary } = deps;
   const limits = new Map<string, { count: number; until: number }>();
   app.addHook('onRequest', async (request, reply) => {
-    if (!/^\/admin\/social(?:[/?]|$)/.test(request.url)) return;
+    // Matched on the dispatched route: the router decodes "/%61dmin/social" to /admin/social.
+    if (!/^\/admin\/social(?:\/|$)/.test(request.routeOptions.url ?? '')) return;
     reply.header('Cache-Control', 'no-store'); reply.header('Referrer-Policy', 'no-referrer');
     if (!config) return reply.code(503).send({ error: 'social_outbox_not_configured' });
     if (request.headers['sec-fetch-site'] === 'cross-site') return reply.code(403).send({ error: 'same_origin_required' });
-    const now = Date.now(), key = request.ip;
+    const now = Date.now(), key = networkKey(request.ip);
     for (const [ip, window] of limits) if (window.until <= now) limits.delete(ip);
     const window = limits.get(key) ?? { count: 0, until: now + 60_000 };
     if ((!limits.has(key) && limits.size >= 5000) || ++window.count > 120)
