@@ -323,7 +323,7 @@ function selectRecording(): void {
     : `Paused · ${replay.records.length} recent paired encounters available`;
   banner.querySelector('.precision')!.textContent = e
     ? `Event ${e.eventId}. Both actors share recorded timestamps. Paths are linearly interpolated; poses/body variants are illustrative. Terrain and weather are current, not historical.`
-    : climb ? `Event ${climb.eventId}. Position, altitude and timing come from one retained route; no height is inferred from sparse life samples. ${climb.verticalDistanceM > 0 ? 'Climb pose is illustrative; local rigs have no climbing clip.' : 'No vertical climb was recorded.'} Terrain and weather are current, not historical.`
+    : climb ? `Event ${climb.eventId}. Position, altitude and timing come from one retained route; no height is inferred from sparse life samples. ${climb.verticalDistanceM > 0 ? 'Climb pose is illustrative: the body is stood upright on the trunk and its walk cycle stands in for gripping.' : 'No vertical climb was recorded.'} Terrain and weather are current, not historical.`
     : `${trackPrecision(replay.life.track)} All retained summary pages loaded. Picker shows recent paired recordings; Browse retained history can open older recorded encounters and tree routes.`;
   if (e) {
     const s = e.trace.samples[0]!;
