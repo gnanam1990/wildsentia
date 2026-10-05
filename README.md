@@ -345,14 +345,19 @@ of the 63 starvation deaths.
 
 ### Running an existing world on new code
 
-The current runtime identifies as `sim_0.33.0`. Its rule changes from `sim_0.32.0` are on the
+The current runtime identifies as `sim_0.34.0`. Its rule change from `sim_0.33.0` is a landscape
+of fear: prey detect the predators that hunt them within their own senses (a stalker's
+concealment hides it until close), fear at once by distance and posture, flee a spotted hunter
+that hour, keep out of patches where one stands unless desperate, and chital and langur heed each
+other's alarms; young too small to follow lie still. A saved 0.33 world starts on this code only
+with `VANA_ALLOW_V33_UPGRADE=1`. `sim_0.33.0`'s changes from `sim_0.32.0` were on the
 closed island: a pack's range holds only the land inside it (so the island holds one pack of four
 adult dholes); new islands are founded at the forest's density per km² of land, with predators
 at field densities (2 tigers, 4 dholes, 14 jackals); an idle hunter stays and feeds from an
 unfinished kill instead of wandering off; and tigers, elephants and jackals can rarely swim
 ashore while scarce, each arrival a recorded, positioned `immigration` event whose body the
 nutrient ledger imports. A saved 0.32
-world starts on this code only with `VANA_ALLOW_V32_UPGRADE=1`; it keeps every animal it has.
+world starts on this code with `VANA_ALLOW_V32_UPGRADE=1`; it keeps every animal it has.
 `sim_0.32.0`'s changes from `sim_0.31.0` were three parental-care decisions: hunger alone no longer stops a parent answering a dependent young
 animal's hydration emergency (thirst 0.5 or more); a predator sharing the parent's patch stops
 care only through the parent's fear, as it stops everything else; and a parent of young that

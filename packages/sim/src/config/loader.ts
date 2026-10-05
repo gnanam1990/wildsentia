@@ -66,6 +66,7 @@ export const SpeciesConfigSchema = z
       structure: z.enum(['solitary', 'pair', 'herd', 'troop', 'pack', 'family']),
       groupSize: z.tuple([z.number().int().positive(), z.number().int().positive()]),
       alarmSharing: z.boolean(),
+      heedsAlarmOf: z.array(z.string().min(1)).optional(),
       cooperativeCare: z.object({ donorFromDays: z.number().finite().nonnegative(), recipientFromDays: z.number().finite().nonnegative(),
         capacityBodyFraction: z.number().positive().max(0.2), collectionBodyFractionPerHour: z.number().positive().max(0.2),
         deliveryBodyFractionPerHour: z.number().positive().max(0.2), retentionHours: z.number().positive().max(24),

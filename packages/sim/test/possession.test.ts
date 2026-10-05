@@ -94,8 +94,11 @@ describe('agent-steered animals', () => {
   it('is not hunted or courted by the hourly plans of wild animals', () => {
     const world = island({ sambar: 10, tiger: 1 });
     const animal = adults(world, 'sambar')[0]!, tiger = world.agents.find((a) => a.speciesId === 'tiger')!;
+    world.step(1);
+    // Place the tiger beside it after the step: since sim_0.34.0 a sambar that sees a tiger
+    // beside it runs, so a tiger placed before the step would no longer have it in view.
     tiger.patchId = animal.patchId; tiger.position = { ...animal.position!, x: animal.position!.x + 3 };
-    world.step(1); // Reindex with the tiger beside it.
+    world.__reindexForTest();
     const cfg = world.species.get('tiger')!;
     expect(perceive(tiger, cfg, world.__viewForTest()).prey.some((p) => p.agent.id === animal.id)).toBe(true);
     world.possess(animal.id, 'agent_a');

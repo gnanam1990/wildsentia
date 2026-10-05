@@ -130,8 +130,9 @@ function feed(ctx: BehaviourContext, mayMove = true): void {
   const available = patch.plant.grass + patch.plant.browse
     + (patch.floweringGuild?.vegetativeKg ?? 0);
 
-  // Move only if this patch cannot feed the animal now. Otherwise eat where it stands.
-  if (mayMove && available < wanted && target !== null && target.patchId !== patch.id) {
+  // Move only if this patch cannot feed the animal now, or a predator that hunts it stands
+  // here (sim_0.34.0). Otherwise eat where it stands.
+  if (mayMove && (available < wanted || ctx.percept.dangerous.has(patch.id)) && target !== null && target.patchId !== patch.id) {
     const travel = moveTo(ctx, target.patchId);
     if (travel.trace.completed && travel.seconds < ctx.hours * 3600) feed(afterTravel(ctx, travel.seconds), false);
     return;
@@ -186,7 +187,7 @@ function drink(ctx: BehaviourContext, mayMove = true, causalParents: string[] = 
   if (wanted <= 0) return;
 
   // Same rule as feeding: drink what is here unless there is not enough of it.
-  if (mayMove && patch.waterVolume < wanted && target !== null && target.patchId !== patch.id) {
+  if (mayMove && (patch.waterVolume < wanted || ctx.percept.dangerous.has(patch.id)) && target !== null && target.patchId !== patch.id) {
     const travel = moveTo(ctx, target.patchId, false, waterContactPosition(ctx.agent.id, target.patchId));
     if (travel.trace.completed && travel.seconds < ctx.hours * 3600) drink(afterTravel(ctx, travel.seconds), false, [travel.eventId]);
     return;
@@ -509,12 +510,17 @@ function flee(ctx: BehaviourContext): void {
 
   ctx.agent.state = 'fleeing';
   if (options.length === 0) return;
-  // Run anywhere the threat is not.
+  // Run anywhere the threat is not; from a seen predator, to the neighbour farthest from it
+  // (sim_0.34.0), not a random one that may lie beside it.
   const away = options.filter((id) => id !== threat?.patchId);
   const pool = away.length > 0 ? away : options;
   const saved = ctx.agent.journey;
+  const farthest = threat ? [...pool].sort((a, b) => {
+    const pa = ctx.patches[a]!, pb = ctx.patches[b]!, t = ctx.patches[threat!.patchId]!;
+    return (Math.abs(pb.x - t.x) + Math.abs(pb.y - t.y)) - (Math.abs(pa.x - t.x) + Math.abs(pa.y - t.y)) || a - b;
+  })[0]! : null;
   const destination = saved?.goal === 'flee' && saved.destinationPatchId !== threat?.patchId
-    ? saved.destinationPatchId : pool[ctx.rng.int(pool.length)]!;
+    ? saved.destinationPatchId : farthest ?? pool[ctx.rng.int(pool.length)]!;
   const travel = moveTo(ctx, destination, true);
   // Stamina is the remaining fraction of the configured sprint duration; spending only a
   // small arbitrary fraction here would grant a fresh sprint after every partial decision.

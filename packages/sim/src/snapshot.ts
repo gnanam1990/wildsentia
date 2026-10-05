@@ -411,6 +411,19 @@ export function upgradeV27Snapshot(snapshot: Snapshot): Snapshot {
 }
 
 /**
+ * v0.34 gives prey a landscape of fear: they detect predators that hunt them within their own
+ * senses (concealment hides a stalker), fear at once by distance and posture, flee from the
+ * seen predator, keep out of patches where one stands unless desperate, and chital and langur
+ * heed each other's alarms. Future decisions only; every v0.33 state byte is kept.
+ */
+export function upgradeV33Snapshot(snapshot: Snapshot): Snapshot {
+  if (snapshot.simVersion !== 'sim_0.33.0') throw new Error('only sim_0.33.0 snapshots can use this upgrade');
+  const upgraded = structuredClone(snapshot);
+  upgraded.simVersion = SIM_VERSION;
+  return upgraded;
+}
+
+/**
  * v0.33 calibrates the island's predators and admits rare recorded arrivals: a pack's range
  * holds only the land inside it (packCapacity), and tigers, elephants and jackals may swim ashore
  * when locally scarce (World islandArrival). The founding cohort change applies to new worlds

@@ -1,4 +1,4 @@
-import { GRID_SIZE, PATCH_METRES, edibleMass, landWalkable, type Agent, type Carcass, type Patch, type SpeciesConfig } from '@vana/shared';
+import { GRID_SIZE, PATCH_METRES, edibleMass, landWalkable, patchCentre, positionInPatch, type Agent, type Carcass, type Patch, type SpeciesConfig } from '@vana/shared';
 import { confidenceOf } from './learning.js';
 import { canEatMaternalCarcass, needsOf, needsProvisioning } from './needs.js';
 
@@ -24,8 +24,13 @@ export interface Percept {
   /** Prey this predator would actually pursue, in the patch it can reach. */
   prey: Array<{ agent: Agent; patchId: number; herdSize: number }>;
   carrion: { carcass: Carcass; patchId: number } | null;
-  /** A predator close enough to matter. Drives fear and flight. */
-  threat: { agent: Agent; patchId: number } | null;
+  /**
+   * The most frightening predator of this species the animal detects (sim_0.34.0), with how far
+   * off it is, what it is visibly doing and the fear it evokes now. Null when none is detected.
+   */
+  threat: { agent: Agent; patchId: number; distanceM: number; posture: ThreatPosture; fear: number } | null;
+  /** Patches where a detected predator of this species stands: avoided unless desperate. */
+  dangerous: ReadonlySet<number>;
   herdSize: number;
 }
 
@@ -41,6 +46,52 @@ const edibleKg = (patch: Patch, species: SpeciesConfig): number => {
 
 const isPredator = (config: SpeciesConfig): boolean =>
   config.archetype === 'apex_predator' || config.archetype === 'pack_predator';
+
+/** What a predator is visibly doing, as prey can read it. */
+export type ThreatPosture = 'hunting' | 'moving' | 'settled';
+
+/** Past these the need outranks fear (selectGoal's desperation thresholds): a parched animal
+ * drinks at a pool a predator stands by, as real ones do at shared waterholes. */
+export const THIRST_DESPERATION = 0.72;
+export const HUNGER_DESPERATION = 0.8;
+
+/**
+ * sim_0.34.0 landscape of fear. Before, prey registered only a predator in their own 300 m patch
+ * and then gained 0.3 fear an hour against a 0.42/h decay, so they never fled before an attack
+ * and grazed and drank beside resting tigers. Now prey detect predators that hunt them within
+ * their own senses (the larger of sight and smell), across the patches they perceive:
+ *
+ * - hunting (its goal is to hunt): seen only within (1 - stalkConcealment) of that range, so a
+ *   stalking tiger (0.72) is noticed by chital at about 45 m and a dhole pack (0.35) at about
+ *   100 m. Once noticed it is the strongest threat: fear 0.6-1.0 by closeness, so the animal
+ *   flees that same hour. Ambush still works because concealment hides the approach.
+ * - moving: a predator walking in the open is seen at full range. Within the species' escape
+ *   detection distance (chital 110 m, sambar 90 m, boar 70 m: the distance at which it reacts
+ *   to an approaching predator) it sets fear 0.5-0.7 and the animal moves off; farther, 0.3-0.45,
+ *   alert and keeping away.
+ * - settled (resting, feeding, drinking): within the flight-initiation distance (chital 55 m,
+ *   boar 25 m) fear 0.5, the animal steps away; farther, 0.2-0.4, vigilance without flight. The
+ *   animal keeps foraging but avoids that predator's patch (`dangerous`).
+ *
+ * Chital, sambar and langur give loud alarm calls at tigers and leopards, and grazers keep a
+ * flight-initiation distance (escape config); the numbers here are uncalibrated model policy.
+ * Smell alone (a boar scents 450 m) tells an animal where a predator is, not that it must run.
+ */
+export function threatFear(posture: ThreatPosture, distanceM: number, rangeM: number,
+  escape: { detectionDistanceM: number; flightInitiationM: number } = { detectionDistanceM: 0, flightInitiationM: 0 }): number {
+  const closeness = (limit: number) => limit > 0 ? Math.max(0, Math.min(1, 1 - distanceM / limit)) : 1;
+  if (posture === 'hunting') return 0.6 + 0.4 * closeness(rangeM);
+  if (posture === 'moving') return distanceM <= escape.detectionDistanceM
+    ? 0.5 + 0.2 * closeness(escape.detectionDistanceM) : 0.3 + 0.15 * closeness(rangeM);
+  return distanceM <= escape.flightInitiationM ? 0.5 : 0.2 + 0.2 * closeness(rangeM);
+}
+
+export function threatPosture(predator: Agent): ThreatPosture {
+  if (predator.currentGoal === 'hunt' || predator.state === 'stalking') return 'hunting';
+  return predator.state === 'travelling' || predator.state === 'fleeing' ? 'moving' : 'settled';
+}
+
+const where = (agent: Agent) => positionInPatch(agent.position, agent.patchId) ? agent.position! : patchCentre(agent.patchId);
 
 export const MAX_PERCEPTION_RADIUS = 8;
 
@@ -110,19 +161,37 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
   let bestWater: Percept['bestWater'] = null;
   let carrion: Percept['carrion'] = null;
   let threat: Percept['threat'] = null;
+  const dangerous = new Set<number>();
   const prey: Percept['prey'] = [];
 
   const wantsMeat = species.hunting !== undefined;
   const preferred = new Set(species.hunting?.preferredPrey ?? []);
 
+  // Detect first, so food and water choices can keep away from what was detected.
+  const here = where(agent);
+  const senseM = Math.max(species.senses.sightRangeM, species.senses.smellRangeM);
+  for (const p of visible) {
+    for (const other of view.agentsInPatch(p.id)) {
+      if (!other.alive || other.id === agent.id) continue;
+      const otherSpecies = view.speciesOf(other.speciesId);
+      if (!isPredator(otherSpecies) || !(otherSpecies.hunting?.preferredPrey ?? []).includes(agent.speciesId)) continue;
+      const posture = threatPosture(other);
+      const rangeM = posture === 'hunting' ? senseM * (1 - (otherSpecies.hunting?.stalkConcealment ?? 0)) : senseM;
+      const at = where(other), distanceM = Math.hypot(at.x - here.x, at.z - here.z);
+      if (distanceM > rangeM) continue;
+      dangerous.add(p.id);
+      const fear = threatFear(posture, distanceM, rangeM, species.escape);
+      if (threat === null || fear > threat.fear) threat = { agent: other, patchId: p.id, distanceM, posture, fear };
+    }
+  }
+  const thirsty = agent.drives.thirst >= THIRST_DESPERATION, starving = agent.drives.hunger >= HUNGER_DESPERATION;
+
   for (const p of visible) {
     const kg = edibleKg(p, species);
-    if (kg > 0 && (bestFood === null || kg > bestFood.kg)) bestFood = { patchId: p.id, kg };
-    if (p.waterVolume > 0 && (bestWater === null || p.waterVolume > bestWater.litres)) {
+    if (kg > 0 && (starving || !dangerous.has(p.id)) && (bestFood === null || kg > bestFood.kg)) bestFood = { patchId: p.id, kg };
+    if (p.waterVolume > 0 && (thirsty || !dangerous.has(p.id)) && (bestWater === null || p.waterVolume > bestWater.litres)) {
       bestWater = { patchId: p.id, litres: p.waterVolume };
     }
-
-
 
     const occupants = view.agentsInPatch(p.id);
 
@@ -144,16 +213,6 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
       }
     }
 
-    if (threat === null && p.id === agent.patchId) {
-      for (const other of occupants) {
-        if (!other.alive || other.id === agent.id) continue;
-        const otherSpecies = view.speciesOf(other.speciesId);
-        if (!isPredator(otherSpecies)) continue;
-        if (!(otherSpecies.hunting?.preferredPrey ?? []).includes(agent.speciesId)) continue;
-        threat = { agent: other, patchId: p.id };
-        break;
-      }
-    }
   }
 
   // Range memory. Gaur see three hundred metres; in the dry season they grazed their
@@ -174,6 +233,7 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
       Math.round(2 + 12 * confidenceOf(agent, species, 'water_locations'))));
     const reach = needFood ? RANGE_MEMORY_RADIUS : waterReach;
     for (const p of patchesWithin(patch, reach, view.patches)) {
+      if (dangerous.has(p.id) && !(needFood ? starving : thirsty)) continue;
       if (needFood) {
         const kg = edibleKg(p, species);
         if (kg > (bestFood?.kg ?? 0)) bestFood = { patchId: p.id, kg };
@@ -232,5 +292,5 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
     .agentsInPatch(agent.patchId)
     .reduce((n, other) => n + (other.alive && other.speciesId === agent.speciesId ? 1 : 0), 0);
 
-  return { patch, neighbours, bestFood, bestWater, prey, carrion, threat, herdSize };
+  return { patch, neighbours, bestFood, bestWater, prey, carrion, threat, dangerous, herdSize };
 }
