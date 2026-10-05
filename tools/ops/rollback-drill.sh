@@ -72,10 +72,11 @@ services:
 YML
 compose() { COMPOSE_PROJECT_NAME="$project" docker compose --env-file "$dir/drill.env" -f "$root/deploy/compose.yml" -f "$dir/compose.drill.yml" "$@"; }
 use() { export VANA_DRILL_SERVER_IMAGE="vana-drill-server:$1" VANA_DRILL_WEB_IMAGE="vana-drill-web:$1"; }
+# Caddy serves the site under its configured name (VANA_DOMAIN=http://localhost), not 127.0.0.1.
 sql() { compose exec -T db psql -U vana -d vana -v ON_ERROR_STOP=1 -Atc "$1"; }
-api() { curl -fsS --max-time 10 "http://127.0.0.1:$port/api$1"; }
+api() { curl -fsS --max-time 10 "http://localhost:$port/api$1"; }
 admin() { curl -fsS --max-time 10 -H "authorization: Bearer $(sed -n 's/^VANA_REWARD_ADMIN_TOKEN=//p' "$dir/drill.env")" \
-  -H 'content-type: application/json' --data "$2" "http://127.0.0.1:$port/api$1"; }
+  -H 'content-type: application/json' --data "$2" "http://localhost:$port/api$1"; }
 started() { docker inspect -f '{{.State.StartedAt}}' "$1"; }
 
 log "drill directory $dir"
@@ -139,7 +140,7 @@ state copy
 agents="$dir/agents"; mkdir -p "$agents"
 for name in drill-a drill-b drill-c; do
   mkdir -p "$agents/$name"
-  HOME="$agents/$name" VANA_URL="http://127.0.0.1:$port/api" VANA_PROFILE=drill node --input-type=module -e "
+  HOME="$agents/$name" VANA_URL="http://localhost:$port/api" VANA_PROFILE=drill node --input-type=module -e "
     const { api } = await import('$root/packages/server/agent-client/client.mjs');
     await api.register('$name', 'Rollback drill agent.');
     const p = await api.possess('chital');
@@ -166,7 +167,7 @@ sleep 12
 state upgraded
 for item in identity reward_drops reward_claims reward_audit live_agents live_possessions; do same before-upgrade upgraded "$item"; done
 log "new image metrics: $(compose exec -T server wget -qO- http://127.0.0.1:9464/metrics | grep -E '^vana_(world_info|live_avatars|ws_connections) ' | tr '\n' ' ' || echo 'none')"
-log "new image /api/metrics through Caddy: HTTP $(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port/api/metrics")"
+log "new image /api/metrics through Caddy: HTTP $(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$port/api/metrics")"
 # A write made after the backup: a rollback to the backup is expected to lose it.
 admin /admin/rewards/place-drops "{\"batchId\":\"$(node -e 'console.log(crypto.randomUUID())')\",\"amount\":\"1.00\",\"count\":1,\"spacingMinutes\":0,\"lifetimeMinutes\":60}" > /dev/null
 log "after-backup write on the new image: reward_drops now $(sql 'select count(*) from reward_drops')"
