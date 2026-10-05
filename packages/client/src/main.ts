@@ -25,6 +25,7 @@ import { characterScale, markerSize } from './appearance.js';
 import { LiveEncounterPlayer, withRecordedVisualIdentity } from './liveEncounters.js';
 import { ObserverVisibility, type ObserverSubject } from './observerVisibility.js';
 import { refreshSpeciesOptions } from './speciesPicker.js';
+import { stackLabels } from './labelLayout.js';
 import { restoreFollowOnOpen } from './followSubscription.js';
 import type { EventMap } from './eventMap.js';
 import { EventVisit } from './eventVisit.js';
@@ -850,8 +851,14 @@ function frame(): void {
     const avatar = liveAgents.avatarForAnimal(pose.animal.id);
     const text = avatar ? `${avatar.name} · ${species} · ${activityOf(avatar)}` : `${species} · ${ACTIVITY_LABEL[pose.animal.state] ?? pose.animal.state}`;
     if (label.textContent !== text) label.textContent = text;
-    label.style.left = `${Math.max(82, Math.min(innerWidth - 82, (p.x + 1) / 2 * innerWidth))}px`;
-    label.style.top = `${Math.max(30, (1 - p.y) / 2 * innerHeight)}px`;
+    let x = Math.max(82, Math.min(innerWidth - 82, (p.x + 1) / 2 * innerWidth)), y = Math.max(30, (1 - p.y) / 2 * innerHeight);
+    const first = liveLabels[0]!;
+    if (index === 1 && !first.hidden && !label.hidden) {
+      ({ x, y } = stackLabels({ x: parseFloat(first.style.left), y: parseFloat(first.style.top), width: first.offsetWidth, height: first.offsetHeight },
+        { x, y, width: label.offsetWidth, height: label.offsetHeight }));
+    }
+    label.style.left = `${x}px`;
+    label.style.top = `${y}px`;
   });
 
   drawAgentTags(now);
