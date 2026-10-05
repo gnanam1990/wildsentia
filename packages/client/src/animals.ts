@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { clipForObservedMotion, elephantTrunkReach, renderStateFor, replayClipTime,
-  type ClimbVisualPhase, type FlightVisualPhase } from './animation.js';
+  type ClimbVisualPhase, type FlightVisualPhase, climbPose } from './animation.js';
 import { PositionTracker, renderBaseY, type RenderPosition } from './space.js';
 import type { AnimalState } from './protocol.js';
 import { chooseVisible } from './lod.js';
@@ -43,6 +43,8 @@ interface Rig {
   visual: THREE.Object3D;
   footY: number;
   restRotationZ: number;
+  /** Nose-to-tail length of the placed model, in metres, for standing it upright on a trunk. */
+  bodyLengthM: number;
   needsCorpseGrounding: boolean;
   appearanceKey: string;
   materials: Array<{ material: THREE.MeshStandardMaterial; base: THREE.Color }>;
@@ -257,8 +259,9 @@ export class AnimalLayer {
     marker.visible = false;
     group.add(marker);
 
+    const bodyLengthM = new THREE.Box3().setFromObject(visual).getSize(new THREE.Vector3()).z;
     const rig: Rig = { variantKey: key, group, mixer, actions, clipNames: clips.map((c) => c.name), playing: null, marker,
-      visual, footY: visual.position.y, restRotationZ: visual.rotation.z,
+      visual, footY: visual.position.y, restRotationZ: visual.rotation.z, bodyLengthM,
       needsCorpseGrounding: false, appearanceKey: '', materials };
     this.#pending.delete(animal.id);
     this.#rigs.set(animal.id, rig);
@@ -317,6 +320,7 @@ export class AnimalLayer {
           && (animal.speciesId === 'vulture' && flightPhase === null
             || arboreal(animal.speciesId) && position.moving && climbPhase === null);
         const shown = renderStateFor(pose.animal.state, position.moving);
+        this.#climb(rig, animal.speciesId, climbPhase);
         this.#poseAt(rig, pose.hurried && shown === 'travelling' ? 'fleeing' : shown, pose.clipSeconds ?? pose.seconds,
           flightPhase, unknownAirborne, climbPhase);
       } else {
@@ -325,6 +329,7 @@ export class AnimalLayer {
         const elevated = climbing && (position.altitudeM ?? 0) > 0;
         const state = elevated && !position.moving && animal.state === 'travelling'
           ? 'resting' : renderStateFor(animal.state, position.moving);
+        this.#climb(rig, animal.speciesId, phase);
         this.#animate(rig, state, phase, elevated && position.moving && phase === null);
       }
       rig.marker.visible = id === followedId || id === partner;
@@ -423,6 +428,16 @@ export class AnimalLayer {
 
   update(deltaSeconds: number): void {
     for (const rig of this.#rigs.values()) rig?.mixer?.update(deltaSeconds);
+  }
+
+  /** Upright against the trunk while a recorded climb plays; back on its feet otherwise. */
+  #climb(rig: Rig, speciesId: string, phase: ClimbVisualPhase | null): void {
+    // Only a climb (or the frame after one) touches the pose, so corpse grounding keeps its own.
+    if (phase === null && rig.visual.rotation.x === 0 && rig.visual.position.z === 0) return;
+    const { pitch, back, lift } = climbPose(speciesId, phase, rig.bodyLengthM);
+    rig.visual.rotation.x = pitch;
+    rig.visual.position.z = back;
+    rig.visual.position.y = rig.footY + lift;
   }
 
   #place(rig: Rig, position: RenderPosition): void {

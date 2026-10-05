@@ -56,10 +56,13 @@ export function clipForFlightPhase(phase: FlightVisualPhase, availableClips: rea
   return availableClips.find(clip => clip.toLowerCase() === wanted.toLowerCase()) ?? null;
 }
 
-/** A real climbing clip is preferred; current local rigs have none, so hold neutral Idle. */
+/**
+ * A real climbing clip is preferred. The local rigs have none, so the walk cycle, played with the
+ * body turned upright against the trunk (see climbPose), stands in for hand-over-hand gripping.
+ */
 export function clipForClimbPhase(phase: ClimbVisualPhase, availableClips: readonly string[]): string | null {
-  const choices = phase === 'ascending' ? ['ClimbUp', 'Climb_Up', 'Climb', 'Idle']
-    : ['ClimbDown', 'Climb_Down', 'Climb', 'Idle'];
+  const choices = phase === 'ascending' ? ['ClimbUp', 'Climb_Up', 'Climb', 'Walk', 'Idle']
+    : ['ClimbDown', 'Climb_Down', 'Climb', 'Walk', 'Idle'];
   for (const wanted of choices) {
     const found = availableClips.find((clip) => clip.toLowerCase() === wanted.toLowerCase());
     if (found) return found;
@@ -98,4 +101,23 @@ export function clipForState(state: string, availableClips: readonly string[]): 
     if (match !== undefined) return match;
   }
   return null;
+}
+
+/** Trunk radius the climber is held clear of; drawn anchor trees are broadleaf trunks of about this size. */
+export const CLIMB_TRUNK_CLEARANCE_M = 0.32;
+
+/**
+ * How a climbing langur or squirrel is turned on its trunk. The model faces +Z (its belly -Y);
+ * pitched upright, the belly faces the trunk ahead, the body is lifted so its hind feet are at the
+ * recorded altitude, and it is held one trunk radius out from the trunk's centre. Langurs come
+ * down tail first (head still up); squirrels come down head first.
+ */
+export function climbPose(speciesId: string, phase: ClimbVisualPhase | null, bodyLengthM: number):
+  { pitch: number; back: number; lift: number } {
+  if (phase === null) return { pitch: 0, back: 0, lift: 0 };
+  const headFirstDown = phase === 'descending' && speciesId === 'squirrel';
+  return headFirstDown
+    // Head down turns the belly backwards, so the body is held out on the other side.
+    ? { pitch: Math.PI / 2, back: CLIMB_TRUNK_CLEARANCE_M, lift: bodyLengthM / 2 }
+    : { pitch: -Math.PI / 2, back: -CLIMB_TRUNK_CLEARANCE_M, lift: bodyLengthM / 2 };
 }

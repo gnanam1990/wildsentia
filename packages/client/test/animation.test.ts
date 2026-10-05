@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { clipForClimbPhase, clipForObservedMotion, clipForState, elephantTrunkReach, renderStateFor } from '../src/animation.js';
+import { climbPose, CLIMB_TRUNK_CLEARANCE_M, clipForClimbPhase, clipForObservedMotion, clipForState, elephantTrunkReach, renderStateFor } from '../src/animation.js';
 
 const DEER_CLIPS = [
   'Attack_Headbutt', 'Attack_Kick', 'Death', 'Eating', 'Gallop', 'Gallop_Jump',
@@ -17,11 +17,13 @@ describe('clipForState', () => {
     expect(clipForObservedMotion('travelling', clips, null, true)).toBeNull();
     expect(clipForObservedMotion('travelling', ['Idle', 'Walk'], 'ascending')).toBeNull();
   });
-  it('uses a real climb clip if present or neutral idle, never a walking gait in the trunk', () => {
+  it('uses a real climb clip if present, else the walk cycle as gripping on the upright body, else idle', () => {
     expect(clipForClimbPhase('ascending', ['Walk', 'Idle', 'ClimbUp'])).toBe('ClimbUp');
     expect(clipForClimbPhase('descending', ['Walk', 'Idle', 'ClimbDown'])).toBe('ClimbDown');
-    expect(clipForObservedMotion('travelling', ['Idle', 'Walk'], null, false, 'ascending')).toBe('Idle');
-    expect(clipForObservedMotion('fleeing', ['Walk', 'Run'], null, false, 'descending')).toBeNull();
+    expect(clipForObservedMotion('travelling', ['Idle', 'Walk'], null, false, 'ascending')).toBe('Walk');
+    expect(clipForObservedMotion('travelling', ['Idle'], null, false, 'descending')).toBe('Idle');
+    expect(clipForObservedMotion('fleeing', ['Walk', 'Run'], null, false, 'descending')).toBe('Walk');
+    expect(clipForObservedMotion('fleeing', ['Run'], null, false, 'descending')).toBeNull();
     expect(clipForObservedMotion('travelling', ['Idle', 'Walk'], null, true)).toBeNull();
     expect(clipForObservedMotion('travelling', ['Idle', 'Walk'])).toBe('Walk');
   });
@@ -106,5 +108,15 @@ describe('clipForState', () => {
   it('matches clip names whatever their case, as packs name them differently', () => {
     expect(clipForState('travelling', ['idle', 'walk', 'dead'])).toBe('walk');
     expect(clipForState('dead', ['idle', 'walk', 'dead'])).toBe('dead');
+  });
+});
+
+describe('climbPose', () => {
+  it('stands a climber upright against its trunk, belly to the bark, hind feet at the recorded height', () => {
+    expect(climbPose('langur', null, 0.8)).toEqual({ pitch: 0, back: 0, lift: 0 });
+    expect(climbPose('langur', 'ascending', 0.8)).toEqual({ pitch: -Math.PI / 2, back: -CLIMB_TRUNK_CLEARANCE_M, lift: 0.4 });
+    // Langurs come down tail first, head still up; squirrels come down head first.
+    expect(climbPose('langur', 'descending', 0.8).pitch).toBe(-Math.PI / 2);
+    expect(climbPose('squirrel', 'descending', 0.4)).toEqual({ pitch: Math.PI / 2, back: CLIMB_TRUNK_CLEARANCE_M, lift: 0.2 });
   });
 });
