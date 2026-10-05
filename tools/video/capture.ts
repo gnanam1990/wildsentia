@@ -16,22 +16,48 @@ const out = process.argv[2];
 if (!out) throw new Error('usage: capture.ts <out-dir> [shot ...]');
 
 interface Move { seconds: number; orbitPx?: number; tiltPx?: number; zoom?: number; panPx?: [number, number] }
-interface Shot { name: string; animal?: string; aerial?: { zoomOut: number }; settle?: number; move: Move }
+interface Shot {
+  name: string;
+  /** A specific animal, or a species to pick one of (an adult at a forest edge, awake). */
+  animal?: string; species?: string;
+  aerial?: { zoomOut: number };
+  /** Before rolling: wheel steps in (negative) or out, and how far to lower the camera (px of drag). */
+  frame?: { zoom?: number; lower?: number };
+  settle?: number; move: Move;
+}
 
 const shots: Shot[] = [
-  { name: '01-aerial', aerial: { zoomOut: 6 }, move: { seconds: 9, panPx: [-420, 160], orbitPx: 0 } },
-  { name: '02-elephant', animal: 'elephant_06fc', settle: 14, move: { seconds: 8, orbitPx: 220, tiltPx: -20, zoom: -0.6 } },
-  { name: '03-tiger', animal: 'tiger_06ff', move: { seconds: 8, orbitPx: -200, zoom: -0.9 } },
-  { name: '04-chital', animal: 'chital_0001', move: { seconds: 7, orbitPx: 180, zoom: -0.5 } },
-  { name: '05-gaur', animal: 'gaur_06a2', move: { seconds: 7, orbitPx: -180, tiltPx: -15 } },
-  { name: '06-langur', animal: 'langur_04d6', move: { seconds: 6, orbitPx: 160, zoom: -0.5 } },
-  { name: '07-dhole', animal: 'dhole_0704', move: { seconds: 7, orbitPx: -170, zoom: -0.6 } },
-  { name: '08-boar', animal: 'boar_05c0', move: { seconds: 6, orbitPx: 150, zoom: -0.4 } },
-  { name: '09-squirrel', animal: 'squirrel_055f', move: { seconds: 6, orbitPx: -150, zoom: -0.4 } },
-  { name: '10-sambar', animal: 'sambar_0276', move: { seconds: 6, orbitPx: 160 } },
-  { name: '11-vulture', animal: 'vulture_0718', move: { seconds: 7, orbitPx: -160 } },
-  { name: '12-pullback', animal: 'elephant_06fb', settle: 14, move: { seconds: 9, orbitPx: 120, tiltPx: -60, zoom: 2.4 } },
+  { name: '01-canopy', species: 'elephant', settle: 14, frame: { lower: -120 }, move: { seconds: 9, orbitPx: 160, zoom: 3.2 } },
+  { name: '02-elephant', species: 'elephant', settle: 14, frame: { zoom: -3, lower: 70 }, move: { seconds: 8, orbitPx: 220, zoom: -0.5 } },
+  { name: '03-tiger', species: 'tiger', frame: { zoom: -4, lower: 80 }, move: { seconds: 8, orbitPx: -200, zoom: -0.5 } },
+  { name: '04-chital', species: 'chital', frame: { zoom: -7, lower: 80 }, move: { seconds: 7, orbitPx: 180, zoom: -0.4 } },
+  { name: '05-gaur', species: 'gaur', frame: { zoom: -3, lower: 80 }, move: { seconds: 7, orbitPx: -180 } },
+  { name: '06-langur', species: 'langur', frame: { zoom: -7, lower: 70 }, move: { seconds: 6, orbitPx: 160, zoom: -0.3 } },
+  { name: '07-dhole', species: 'dhole', frame: { zoom: -7, lower: 80 }, move: { seconds: 7, orbitPx: -170, zoom: -0.4 } },
+  { name: '08-boar', species: 'boar', frame: { zoom: -7, lower: 80 }, move: { seconds: 6, orbitPx: 150, zoom: -0.3 } },
+  { name: '09-squirrel', species: 'squirrel', frame: { zoom: -7, lower: 70 }, move: { seconds: 6, orbitPx: -150 } },
+  { name: '10-sambar', species: 'sambar', frame: { zoom: -3, lower: 80 }, move: { seconds: 6, orbitPx: 160 } },
+  { name: '11-vulture', species: 'vulture', frame: { zoom: -3, lower: 60 }, move: { seconds: 7, orbitPx: -160 } },
+  { name: '12-pullback', species: 'gaur', frame: { lower: 40 }, move: { seconds: 10, orbitPx: 120, tiltPx: -80, zoom: 3.4 } },
 ];
+
+interface Patch { id: number; canopyCover: number; surface?: string }
+interface Animal { id: string; speciesId: string; patchId: number; state: string; lifeStage?: string; dependent?: boolean }
+/** An awake adult of the species standing where forest meets open ground, for a good backdrop. */
+async function pick(species: string): Promise<string> {
+  const [{ animals }, patchBody] = await Promise.all([
+    fetch(`${origin}/api/animals`).then((r) => r.json()) as Promise<{ animals: Animal[] }>,
+    fetch(`${origin}/api/patches`).then((r) => r.json()) as Promise<Patch[] | { patches: Patch[] }>,
+  ]);
+  const patches = new Map((Array.isArray(patchBody) ? patchBody : patchBody.patches).map((p) => [p.id, p]));
+  const score = (a: Animal) => {
+    const canopy = patches.get(a.patchId)?.canopyCover ?? 0;
+    return (a.state === 'resting' ? -2 : 0) + (a.dependent ? -1 : 0) - Math.abs(canopy - 0.5) * 3;
+  };
+  const candidates = animals.filter((a) => a.speciesId === species).sort((a, b) => score(b) - score(a));
+  if (!candidates.length) throw new Error(`no living ${species}`);
+  return candidates[0]!.id;
+}
 
 async function open(page: Page, hash: string): Promise<void> {
   await page.goto(`${origin}/?cinema=1${hash}`, { waitUntil: 'domcontentloaded' });
@@ -67,14 +93,22 @@ const cdp = await page.context().newCDPSession(page);
 for (const shot of shots) {
   if (wanted.size && !wanted.has(shot.name)) continue;
   const dir = join(out, shot.name); mkdirSync(dir, { recursive: true });
-  await open(page, shot.animal ? `#animal=${shot.animal}` : '');
+  const animal = shot.animal ?? (shot.species ? await pick(shot.species) : undefined);
+  await open(page, animal ? `#animal=${animal}` : '');
   if (shot.aerial) {
     await page.evaluate(() => document.querySelector<HTMLButtonElement>('#freecam')!.click());
     await page.mouse.move(960, 540);
     for (let i = 0; i < shot.aerial.zoomOut; i++) { await page.mouse.wheel(0, 400); await page.waitForTimeout(60); }
   }
-  // Let models, near vegetation and the follow flight settle before rolling.
+  // Let models, near vegetation and the follow flight settle, then frame the shot.
   await page.waitForTimeout((shot.settle ?? 6) * 1000);
+  if (shot.frame?.lower) {
+    await page.mouse.move(960, 540); await page.mouse.down();
+    for (let i = 1; i <= 20; i++) await page.mouse.move(960, 540 + shot.frame.lower * i / 20);
+    await page.mouse.up();
+  }
+  for (let i = 0; i < Math.abs(shot.frame?.zoom ?? 0); i++) { await page.mouse.wheel(0, Math.sign(shot.frame!.zoom!) * 120); await page.waitForTimeout(50); }
+  await page.waitForTimeout(1500);
   let n = 0, first = 0, last = 0;
   const onFrame = (f: { data: string; sessionId: number; metadata: { timestamp?: number } }) => {
     const ts = f.metadata.timestamp ?? 0; if (!first) first = ts; last = ts;
@@ -90,6 +124,6 @@ for (const shot of shots) {
   cdp.off('Page.screencastFrame', onFrame);
   const fps = n > 1 ? (n - 1) / (last - first) : 30;
   writeFileSync(join(dir, 'meta.json'), JSON.stringify({ frames: n, seconds: last - first, fps }, null, 2));
-  console.log(`${shot.name}: ${n} frames, ${(last - first).toFixed(1)} s, ${fps.toFixed(1)} fps`);
+  console.log(`${shot.name} (${animal ?? 'aerial'}): ${n} frames, ${(last - first).toFixed(1)} s, ${fps.toFixed(1)} fps`);
 }
 await browser.close();
