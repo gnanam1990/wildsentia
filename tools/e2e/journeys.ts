@@ -193,9 +193,13 @@ const journeys: Record<string, (browser: Browser, errors: string[]) => Promise<s
     await page.waitForTimeout(1500);
     await page.screenshot({ path: join(out, 'reward-admin.png'), fullPage: true });
     const totals = (await page.locator('#admin-totals').innerText()).replace(/\s+/g, ' ');
+    const rowText = (await page.locator('#admin-claims section', { hasText: lastClaimId }).innerText()).replace(/\s+/g, ' ');
+    const stillPayable = await page.locator('#admin-claims section', { hasText: lastClaimId })
+      .locator('button', { hasText: 'Record payment without chain verification' }).count();
     const statusText = (await page.locator('#admin-status').innerText()).replace(/\s+/g, ' ');
     await context.close();
-    if (!/[1-9][0-9.]* payment reported/.test(totals.replace(/0\.000000 payment reported/, ''))) throw new Error(`payment not recorded: ${totals}`);
+    // This claim's own row now records the payment and no longer offers to record one.
+    if (stillPayable || !/paid/i.test(rowText)) throw new Error(`claim ${lastClaimId} not recorded as paid: ${rowText}`);
     return `totals: ${totals} | status: ${statusText}`;
   },
 
