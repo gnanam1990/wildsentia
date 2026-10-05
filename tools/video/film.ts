@@ -10,7 +10,7 @@
  * against the local stack, then
  *   npx tsx tools/video/film.ts <out-dir> [shot ...]
  */
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, statfsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium, type Page } from 'playwright';
 
@@ -145,6 +145,9 @@ const usedHunts = new Set<string>();
 for (const shot of shots) {
   if (wantedShots.size && !wantedShots.has(shot.name)) continue;
   const dir = join(out, shot.name); mkdirSync(dir, { recursive: true });
+  // A shot is up to ~3,000 full-HD frames; never fill the disk the rest of the machine needs.
+  const free = statfsSync(dir); const freeGb = free.bavail * free.bsize / 1e9;
+  if (freeGb < 5) throw new Error(`only ${freeGb.toFixed(1)} GB free; stopping before ${shot.name}`);
   let subject: string, pair: [string, string] | null = null;
   if (shot.hunt) {
     const hunt = await pickHunt(shot.hunt.predator ?? 'tiger', usedHunts);
@@ -177,7 +180,7 @@ for (const shot of shots) {
     void cdp.send('Page.screencastFrameAck', { sessionId: f.sessionId }).catch(() => undefined);
   };
   cdp.on('Page.screencastFrame', onFrame);
-  await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 95, maxWidth: 1920, maxHeight: 1080 });
+  await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 88, maxWidth: 1920, maxHeight: 1080 });
   await page.waitForTimeout(((shot.seconds + 0.5) / TIME_SCALE) * 1000);
   await cdp.send('Page.stopScreencast');
   cdp.off('Page.screencastFrame', onFrame);
