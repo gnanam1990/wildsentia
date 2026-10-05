@@ -285,6 +285,7 @@ export function runSoak({ seed, days, speciesDir, terrainProfile = 'mainland', c
   const failures: string[] = [];
   const warnings: string[] = [];
   const warned = new Set<string>();
+  const extinct = new Set<string>();
   const peakPopulation: Record<string, number> = {};
   let completedDays = 0;
   const samplePeaks = (): void => recordPopulationPeaks(peakPopulation, world.species.keys(), (id) => world.livingCount(id));
@@ -331,7 +332,9 @@ export function runSoak({ seed, days, speciesDir, terrainProfile = 'mainland', c
     }
     for (const speciesId of world.species.keys()) {
       const living = world.livingCount(speciesId);
-      if (living === 0) failures.push(`day ${day}: ${speciesId} extinct`);
+      // Once per species: a closed island cannot recover a lost species, and repeating the
+      // same failure every ten days would exhaust the failure cap and end a multi-year run early.
+      if (living === 0 && !extinct.has(speciesId)) { extinct.add(speciesId); failures.push(`day ${day}: ${speciesId} extinct`); }
       const ceiling = SOAK_CEILING[speciesId];
       if (ceiling !== undefined && peakPopulation[speciesId]! > ceiling && !warned.has(speciesId)) {
         warned.add(speciesId);
