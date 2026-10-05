@@ -1,6 +1,7 @@
 import { type Agent, type Patch, type SpeciesConfig, type WorldPosition } from '@vana/shared';
 import type { EventLog } from '../events/log.js';
-import { careRadius, inCareContact, needsOf, needsProvisioning, provisionYoung } from './needs.js';
+import { canFollowParent, careRadius, inCareContact, needsOf, needsProvisioning, provisionYoung } from './needs.js';
+import { perceptionRadius } from './perception.js';
 import { nursingBudget, nursingEligible, nursingWindow } from './nursing.js';
 import { locateAgent, placeBeside } from './spatial.js';
 import { navigate } from './navigation.js';
@@ -36,6 +37,31 @@ export function chooseCareTarget(parent: Agent, children: readonly Agent[], cfg:
     && Math.max(child.drives.hunger, child.drives.thirst) >= (cfg.lifecycle.nursing ? 1e-8 : 0.15))
     .sort((a, b) => Math.max(b.drives.hunger, b.drives.thirst) - Math.max(a.drives.hunger, a.drives.thirst)
       || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))[0];
+}
+
+/**
+ * sim_0.32.0: a parent of young that cannot yet follow it ranges idly only as far as it can
+ * perceive them (perceptionRadius patches). Before, an idle mother wandered patch to patch at
+ * random: a fed, watered hare was 2 km from her leverets when their nightly nursing window
+ * opened, and a whole litter died of thirst. Feeding, drinking, flight and every other need
+ * still go wherever they must; only aimless wandering is tethered. Returns where to go back to,
+ * or null when the parent is already within range (or has no such young).
+ */
+export function idleRangeAnchor(parent: Agent, cfg: SpeciesConfig, children: readonly Agent[],
+  starts: ReadonlyMap<string, FamilyLocation>, patches: readonly Patch[]): FamilyLocation | null {
+  const here = patches[parent.patchId];
+  if (!parent.alive || !here) return null;
+  let anchor: FamilyLocation | null = null, nearest = Infinity;
+  for (const child of [...children].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)) {
+    if (!child.alive || child.dependentOn !== parent.id || child.speciesId !== parent.speciesId
+      || !needsProvisioning(child, cfg) || canFollowParent(child, cfg)) continue;
+    const site = cfg.lifecycle.nursing && child.nursingSite ? child.nursingSite : starts.get(child.id);
+    const there = site && patches[site.patchId];
+    if (!site || !there) continue;
+    const steps = Math.abs(there.x - here.x) + Math.abs(there.y - here.y);
+    if (steps < nearest) { nearest = steps; anchor = { patchId: site.patchId, position: { ...site.position } }; }
+  }
+  return nearest > perceptionRadius(cfg) ? anchor : null;
 }
 
 /** Both family actions spend ordinary, age-scaled terrain travel time. A target is a detached

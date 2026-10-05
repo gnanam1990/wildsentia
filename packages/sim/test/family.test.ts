@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { isMovementTrace } from '@vana/shared';
 import { EventLog } from '../src/events/log.js';
 import { buildGrid } from '../src/grid.js';
-import { HYDRATION_EMERGENCY_THIRST, availableForCare, chooseCareTarget, finishCare, travelToFamily } from '../src/agents/family.js';
+import { HYDRATION_EMERGENCY_THIRST, availableForCare, chooseCareTarget, finishCare, idleRangeAnchor, travelToFamily } from '../src/agents/family.js';
+import { perceptionRadius } from '../src/agents/perception.js';
+import { landWalkable, patchCentre } from '@vana/shared';
 import { canFollowParent, careRadius, needsOf, provisionYoung } from '../src/agents/needs.js';
 import { createWorld, SIM_VERSION } from '../src/world.js';
 import { takeSnapshot, restoreSnapshot, upgradeV10Snapshot } from '../src/snapshot.js';
@@ -179,6 +181,55 @@ describe('world family coordination', () => {
       const cfg = s.world.species.get('dhole')!;
       const drunk = Number(given[0]!.effects.waterEquivalentL) / needsOf(s.parent, cfg).waterL * 0.4;
       expect(s.parent.drives.thirst).toBeCloseTo(0.1 + 0.4 / 24 + drunk, 10);
+    }
+  });
+  function chitalPair(motherPatch: number, calfPatch: number, extra: Record<string, number> = {}) {
+    const world = createWorld({ ...options, initialAgents: { chital: 2, ...extra } });
+    const [mother, calf] = world.agents.filter(a => a.speciesId === 'chital');
+    for (const id of [motherPatch, calfPatch]) expect(landWalkable(world.patches[id]!)).toBe(true);
+    Object.assign(mother!, { sex: 'female', pregnantSince: null, patchId: motherPatch, offspringIds: [calf!.id],
+      position: { ...patchCentre(motherPatch), heading: 0 }, drives: { hunger: 0, thirst: 0, fatigue: 0, fear: 0 } });
+    Object.assign(calf!, { dependentOn: mother!.id, motherId: mother!.id, ageDays: 20, lifeStage: 'newborn', massKg: 8,
+      patchId: calfPatch, position: { ...patchCentre(calfPatch), heading: 0 }, drives: { hunger: 0, thirst: 0, fatigue: 0, fear: 0 } });
+    return { world, mother: mother!, calf: calf!, cfg: world.species.get('chital')! };
+  }
+  it('tethers only idle wandering to young that cannot follow, within perceiving range (sim_0.32.0)', () => {
+    const { world, mother, calf, cfg } = chitalPair(0, 3);
+    expect(perceptionRadius(cfg)).toBe(1);
+    const at = (c: typeof calf) => new Map([[c.id, { patchId: c.patchId, position: { ...c.position! } }]]);
+    expect(idleRangeAnchor(mother, cfg, [calf], at(calf), world.patches)).toMatchObject({ patchId: 3 });
+    // Within one patch the mother ranges freely; a weaned calf, or one that can follow, never tethers.
+    expect(idleRangeAnchor({ ...mother, patchId: 2 }, cfg, [calf], at(calf), world.patches)).toBeNull();
+    expect(idleRangeAnchor(mother, cfg, [{ ...calf, ageDays: cfg.lifecycle.weanDays }], at(calf), world.patches)).toBeNull();
+    const elephant = speciesOf('elephant');
+    expect(idleRangeAnchor({ ...mother, speciesId: 'elephant' }, elephant, [{ ...calf, speciesId: 'elephant' }], at(calf), world.patches)).toBeNull();
+    // A fed, watered, unafraid mother would wander; instead she heads back towards the calf, and
+    // the trip provisions nothing because the calf needs nothing yet.
+    world.step(1);
+    const trip = world.log.all().find(e => e.type === 'moved' && e.actors[0] === mother.id)!;
+    expect(trip.goal).toBe('care_for_young');
+    expect(trip.conditions.destination).toBe(3);
+    expect(world.log.all().some(e => e.type === 'provisioned')).toBe(false);
+    expect(Math.abs(world.patches[mother.patchId]!.x - world.patches[3]!.x)).toBeLessThan(3);
+  });
+  it('lets an idle mother within range wander as before (sim_0.32.0)', () => {
+    const { world, mother } = chitalPair(0, 1);
+    world.step(1);
+    expect(world.log.all().find(e => e.type === 'moved' && e.actors[0] === mother.id)?.goal).toBe('wander');
+  });
+  it('stops care through fear, not because a predator merely shares the patch (sim_0.32.0)', () => {
+    for (const fear of [0, 0.9]) {
+      const { world, mother, calf } = chitalPair(0, 0, { tiger: 1 });
+      calf.position = { ...mother.position!, x: mother.position!.x + 20 };
+      calf.drives.thirst = 0.6;
+      const tiger = world.agents.find(a => a.speciesId === 'tiger')!;
+      Object.assign(tiger, { patchId: 0, position: { ...mother.position!, x: mother.position!.x - 60 },
+        drives: { hunger: 0, thirst: 0, fatigue: 0, fear: 0 } });
+      mother.drives.fear = fear;
+      world.step(1);
+      const given = world.log.all().filter(e => e.type === 'provisioned' && e.actors[1] === mother.id);
+      // Fear decays 0.42 an hour, and seeing the tiger adds 0.3: 0.3 still cares, 0.78 does not.
+      expect(given.length, `fear ${fear}`).toBe(fear === 0 ? 1 : 0);
     }
   });
   it('does not provision or jump when the parent cannot arrive in time', () => {

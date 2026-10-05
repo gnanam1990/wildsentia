@@ -48,7 +48,7 @@ export interface SimHostOptions {
   allowV29Upgrade?: boolean;
   /** v0.31 keeps prey off a predator's kill and allows agent-steered animals; see upgradeV30Snapshot. */
   allowV30Upgrade?: boolean;
-  /** v0.32 lets a hungry parent answer a dependent's hydration emergency; see upgradeV31Snapshot. */
+  /** v0.32 changes three parental-care decisions (hunger, predator presence, idle range); see upgradeV31Snapshot. */
   allowV31Upgrade?: boolean;
   allowV15Upgrade?: boolean;
   allowV14Upgrade?: boolean;

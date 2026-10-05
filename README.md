@@ -345,10 +345,12 @@ of the 63 starvation deaths.
 
 ### Running an existing world on new code
 
-The current runtime identifies as `sim_0.32.0`. Its only rule change from `sim_0.31.0` is that
-hunger alone no longer stops a parent answering a dependent young animal's hydration
-emergency (thirst 0.5 or more); a thirsty or frightened parent still cannot, and what she gives
-is still bounded by her own reserves (see `docs/2026-10-05-multi-year-ecology.md`). A saved
+The current runtime identifies as `sim_0.32.0`. Its rule changes from `sim_0.31.0` are three
+parental-care decisions: hunger alone no longer stops a parent answering a dependent young
+animal's hydration emergency (thirst 0.5 or more); a predator sharing the parent's patch stops
+care only through the parent's fear, as it stops everything else; and a parent of young that
+cannot yet follow it wanders only within perceiving range of them. What a parent gives is still
+bounded by her own reserves (see `docs/2026-10-05-multi-year-ecology.md`). A saved
 0.31 world starts on this code only with `VANA_ALLOW_V31_UPGRADE=1`, and each older version
 has its own flag (`sim_0.31.0` held kills: `VANA_ALLOW_V30_UPGRADE`; `sim_0.30.0` off-centre
 water access points: `VANA_ALLOW_V29_UPGRADE`). The 26 September staging world was upgraded this way after a backup.

@@ -23,7 +23,7 @@ import { foundingTraits } from './agents/genetics.js';
 import { Pedigree } from './agents/pedigree.js';
 import { mortalityFor, stageFor, targetMass } from './agents/lifecycle.js';
 import { needsProvisioning, canFollowParent, careRadius, inCareContact } from './agents/needs.js';
-import { availableForCare, chooseCareTarget, finishCare, travelToFamily, type FamilyLocation, type CareVisit } from './agents/family.js';
+import { availableForCare, chooseCareTarget, finishCare, idleRangeAnchor, travelToFamily, type FamilyLocation, type CareVisit } from './agents/family.js';
 import { establishNursingSites, nursingEligible } from './agents/nursing.js';
 import { choosePackRecipient, packDonorEligible, canWaitForPackFood, beginPackCollection, finishPackCollection,
   beginPackDelivery, finishPackDelivery, digestPackFood, type PackCollection, type PackDelivery } from './agents/packCare.js';
@@ -1023,7 +1023,12 @@ export class World {
         agent.currentGoal = 'wait_for_pack_food'; agent.state = 'resting'; agent.alternativeGoal = null;
         agent.goalScore = 1; agent.targetId = null; delete agent.journey; continue;
       }
-      if (careStart && careTarget?.alive && availableForCare(agent, careTarget) && percept.threat === null) {
+      // sim_0.32.0: danger stops care through fear (availableForCare), as it stops everything
+      // else. A predator merely sharing the parent's 300 m patch no longer vetoes care while the
+      // same parent goes on grazing and wandering beside it: with dholes and tigers in a third of
+      // the island's patches, chital and squirrel mothers were blocked from 31-36 hours in 48
+      // and their young died of thirst a day short of weaning.
+      if (careStart && careTarget?.alive && availableForCare(agent, careTarget)) {
         careVisits.push(travelToFamily(agent, cfg, this.patches, careStart, 'care_for_young', this.#time, hours, this.log));
         continue;
       }
@@ -1099,6 +1104,13 @@ export class World {
         && Math.hypot(agent.position!.x - parentStart.position.x, agent.position!.z - parentStart.position.z)
           <= Math.max(cfg.senses.sightRangeM, cfg.senses.hearingRangeM)) {
         travelToFamily(agent, cfg, this.patches, parentStart, 'follow_parent', this.#time, hours, this.log);
+        continue;
+      }
+      // A parent of young that cannot follow wanders only within reach of them (sim_0.32.0).
+      const tether = choice.goal === 'wander' && percept.threat === null
+        ? idleRangeAnchor(agent, cfg, childrenByParent.get(agent.id) ?? [], familyStarts, this.patches) : null;
+      if (tether) {
+        travelToFamily(agent, cfg, this.patches, tether, 'care_for_young', this.#time, hours, this.log);
         continue;
       }
       executeGoal({
