@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { isMovementTrace } from '@vana/shared';
 import { EventLog } from '../src/events/log.js';
 import { buildGrid } from '../src/grid.js';
-import { chooseCareTarget, finishCare, travelToFamily } from '../src/agents/family.js';
+import { HYDRATION_EMERGENCY_THIRST, availableForCare, chooseCareTarget, finishCare, travelToFamily } from '../src/agents/family.js';
 import { canFollowParent, careRadius, needsOf, provisionYoung } from '../src/agents/needs.js';
 import { createWorld, SIM_VERSION } from '../src/world.js';
 import { takeSnapshot, restoreSnapshot, upgradeV10Snapshot } from '../src/snapshot.js';
@@ -89,6 +89,25 @@ describe('contact-based family care', () => {
     s.parent.drives.thirst = 0.9;
     expect(chooseCareTarget(s.parent, [s.child], s.cfg)).toBeUndefined();
   });
+  it('lets hunger yield only to a dependent in a hydration emergency (sim_0.32.0)', () => {
+    const s = fixture(), calm = { ...structuredClone(s.child), id: 'calm' };
+    s.parent.drives.hunger = 0.85;
+    s.child.drives.thirst = HYDRATION_EMERGENCY_THIRST; calm.drives.thirst = 0.45; calm.drives.hunger = 0.9;
+    expect(availableForCare(s.parent)).toBe(false);
+    expect(availableForCare(s.parent, calm)).toBe(false);
+    expect(availableForCare(s.parent, s.child)).toBe(true);
+    // The hungrier sibling is not chosen: a hungry parent answers thirst, not appetite.
+    expect(chooseCareTarget(s.parent, [calm, s.child], s.cfg)?.id).toBe(s.child.id);
+    expect(chooseCareTarget(s.parent, [calm], s.cfg)).toBeUndefined();
+    // A thirsty or frightened parent has nothing safe to give, whatever the emergency.
+    s.parent.drives.thirst = 0.65;
+    expect(availableForCare(s.parent, s.child)).toBe(false);
+    s.parent.drives.thirst = 0.1; s.parent.drives.fear = 0.5;
+    expect(availableForCare(s.parent, s.child)).toBe(false);
+    s.parent.drives.fear = 0;
+    s.parent.alive = false;
+    expect(availableForCare(s.parent, s.child)).toBe(false);
+  });
   it('uses explicit species following ages without giving infant pups adult ground locomotion', () => {
     const s = fixture(); expect(canFollowParent(s.child, s.cfg)).toBe(false);
     const calf = makeAgent('elephant', { ageDays: 1 }); expect(canFollowParent(calf, speciesOf('elephant'))).toBe(true);
@@ -143,6 +162,24 @@ describe('world family coordination', () => {
     const restored = restoreSnapshot(takeSnapshot(s.world), options); s.world.log.take();
     for (let i = 0; i < 48; i++) { s.world.step(1); restored.step(1); }
     expect(restored.agents).toEqual(s.world.agents); expect(restored.log.all()).toEqual(s.world.log.all());
+  });
+  it('brings a hungry, watered mother back to a thirsty pup with water only, at her own cost (sim_0.32.0)', () => {
+    for (const pupThirst of [0.3, 0.6]) {
+      const s = family(); s.parent.drives = { hunger: 0.85, thirst: 0.1, fear: 0, fatigue: 0 };
+      s.child.drives = { hunger: 0.4, thirst: pupThirst, fatigue: 0, fear: 0 };
+      s.world.step(1);
+      const given = s.world.log.all().filter(e => e.type === 'provisioned');
+      if (pupThirst < HYDRATION_EMERGENCY_THIRST) { expect(given).toHaveLength(0); continue; }
+      expect(given).toHaveLength(1);
+      expect(given[0]!.actors).toEqual([s.child.id, s.parent.id]);
+      expect(Number(given[0]!.effects.waterEquivalentL)).toBeGreaterThan(0);
+      // Past the 0.8 donor ceiling she has no food to give; hunger only allowed the visit.
+      expect(given[0]!.effects.foodEquivalentKg).toBe(0);
+      expect(s.child.drives.hunger).toBeGreaterThan(0.4);
+      const cfg = s.world.species.get('dhole')!;
+      const drunk = Number(given[0]!.effects.waterEquivalentL) / needsOf(s.parent, cfg).waterL * 0.4;
+      expect(s.parent.drives.thirst).toBeCloseTo(0.1 + 0.4 / 24 + drunk, 10);
+    }
   });
   it('does not provision or jump when the parent cannot arrive in time', () => {
     const s = family(); s.world.species.get('dhole')!.locomotion.walkMs = 0.001;

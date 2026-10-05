@@ -8,14 +8,29 @@ import { navigate } from './navigation.js';
 export interface FamilyLocation { patchId: number; position: WorldPosition }
 export interface CareVisit { parent: Agent; arrival: number; position: WorldPosition; routeId?: string }
 
-/** Explicit model policy: a caregiver must also eat/drink and respond to danger. */
-export function availableForCare(parent: Agent): boolean {
-  return parent.alive && parent.drives.hunger < 0.72 && parent.drives.thirst < 0.65 && parent.drives.fear < 0.5;
+/** A dependent this thirsty is in a hydration emergency: under three days' water deficit
+ * is fatal, and at the thirst rate this leaves a little over a day. Matches the urgent thirst
+ * at which a mobile dependent stops waiting for its parent (DEPENDENT_URGENT_THIRST). */
+export const HYDRATION_EMERGENCY_THIRST = 0.5;
+
+/**
+ * Explicit model policy: a caregiver must also eat/drink and respond to danger.
+ *
+ * sim_0.32.0: hunger alone no longer silences care for a dependent in a hydration
+ * emergency. Before, a mother past 0.72 hunger stopped all provisioning, water included,
+ * though she had drunk her fill: whole dhole litters and the gaur calves of a famine died of
+ * thirst beside a living, watered mother who was out hunting or grazing. A thirsty or
+ * frightened parent still cannot answer, and what she gives is still bounded by her own
+ * reserves in provisionYoung (no food past the 0.8 donor ceiling, no water past hers).
+ */
+export function availableForCare(parent: Agent, child?: Agent): boolean {
+  if (!parent.alive || parent.drives.thirst >= 0.65 || parent.drives.fear >= 0.5) return false;
+  return parent.drives.hunger < 0.72 || child !== undefined && child.drives.thirst >= HYDRATION_EMERGENCY_THIRST;
 }
 
 export function chooseCareTarget(parent: Agent, children: readonly Agent[], cfg: SpeciesConfig, start = 0, hours = 1): Agent | undefined {
-  if (!availableForCare(parent)) return;
-  return children.filter((child) => child.alive && child.dependentOn === parent.id
+  // A hungry parent is available only to a dependent in a hydration emergency.
+  return children.filter((child) => availableForCare(parent, child) && child.alive && child.dependentOn === parent.id
     && child.speciesId === parent.speciesId && needsProvisioning(child, cfg)
     && nursingEligible(child, cfg, start, start + hours * 3600)
     && Math.max(child.drives.hunger, child.drives.thirst) >= (cfg.lifecycle.nursing ? 1e-8 : 0.15))

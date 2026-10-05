@@ -39,7 +39,7 @@ import {
   packAllowsBreeding,
 } from './agents/reproduction.js';
 
-export const SIM_VERSION = 'sim_0.31.0';
+export const SIM_VERSION = 'sim_0.32.0';
 
 /** Uncalibrated group-decision policy, not a claim of a species-specific thirst measurement.
  * An unweaned independent drinker need not leave a nearby caregiver every hour for a sip. */
@@ -1019,11 +1019,11 @@ export class World {
       // Hold only for an already loaded, route-reachable pack member, not for an empty promise.
       // A local mother may keep caring; a remote mother cannot walk away and receive at her old point.
       if (packWaiters.has(agent.id) && percept.threat === null && agent.drives.thirst < 0.8
-        && !(careTarget && availableForCare(agent) && inCareContact(agent, careTarget, cfg))) {
+        && !(careTarget && availableForCare(agent, careTarget) && inCareContact(agent, careTarget, cfg))) {
         agent.currentGoal = 'wait_for_pack_food'; agent.state = 'resting'; agent.alternativeGoal = null;
         agent.goalScore = 1; agent.targetId = null; delete agent.journey; continue;
       }
-      if (careStart && careTarget?.alive && availableForCare(agent) && percept.threat === null) {
+      if (careStart && careTarget?.alive && availableForCare(agent, careTarget) && percept.threat === null) {
         careVisits.push(travelToFamily(agent, cfg, this.patches, careStart, 'care_for_young', this.#time, hours, this.log));
         continue;
       }

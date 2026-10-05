@@ -110,9 +110,11 @@ Stop/start with `docker compose ... stop` and `docker compose ... start`. Never 
 `docker compose down -v`: that deletes the persistent world and TLS volumes. Before a code
 upgrade, take and verify a backup; preserve the old image and database until the new build
 passes restart and health checks. Do not enable version-upgrade flags without a separate
-checkpoint migration review. To move a saved `sim_0.29.0` world to this code after a
-verified backup, add `VANA_ALLOW_V29_UPGRADE: "1"` to the server's environment in a compose
-override for one start, confirm `/api/health`, then remove it.
+checkpoint migration review. To move a saved `sim_0.31.0` world to this code after a
+verified backup, add `VANA_ALLOW_V31_UPGRADE: "1"` to the server's environment in a compose
+override for one start, confirm `/api/health`, then remove it. (Each flag names the saved
+world's version and moves it straight to this runtime: a `sim_0.30.0` world uses
+`VANA_ALLOW_V30_UPGRADE`, a `sim_0.29.0` world `VANA_ALLOW_V29_UPGRADE`.)
 
 ## Verification boundary
 
