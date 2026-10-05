@@ -1,6 +1,6 @@
 import {
   NUTRIENT_PER_KG_BIOMASS, PATCH_COUNT, WORLD_SECONDS_PER_DAY, WORLD_SECONDS_PER_HOUR,
-  createRng, seasonAt, carcassMass, landWalkable, spatialHash, treeAnchorForPatch, patchAtPosition, positionInPatch, type TerrainProfile,
+  createRng, seasonAt, carcassMass, edibleMass, landWalkable, spatialHash, treeAnchorForPatch, patchAtPosition, positionInPatch, type TerrainProfile,
   type WorldPosition,
   type Agent, type Carcass, type DeathCause, type Patch, type Rng, type SkillId,
   type RngState, type SpeciesConfig, type WorldTime, type WaterBudget, type MicroEcologyState, type CommunityState, type CommunityProfile,
@@ -16,7 +16,7 @@ import { establishFloweringGuild, stepFloweringGuild } from './fields/floweringG
 import { EventLog } from './events/log.js';
 import { foundCommunity, stepCommunity } from './community.js';
 import { updateDrives } from './agents/drives.js';
-import { perceive, type WorldView } from './agents/perception.js';
+import { perceive, perceptionRadius, type WorldView } from './agents/perception.js';
 import { selectGoal } from './agents/goals.js';
 import { controlledAction, controlledFeed, descendPerchedAnimal, executeGoal, type ControlledAction, type WorldServices } from './agents/behaviours.js';
 import { foundingTraits } from './agents/genetics.js';
@@ -368,6 +368,29 @@ export class World {
       ...(arrival ? { position: { ...locateAgent(agent) } } : {}),
     });
     return agent;
+  }
+
+  /**
+   * sim_0.33.0: the unfinished predation carcass this hunter has already fed from, within the
+   * patches it perceives, that still holds meat it will eat. Island probes found tigers eating
+   * 8% of a 127 kg kill and dholes 4% (12% with packmates) before wandering off and killing
+   * again a day or three later, leaving three quarters to decay: three times the kills their
+   * food needs. Tigers stay with a large kill for days, feeding repeatedly, and a dhole pack
+   * finishes its kill where it falls, so an idle hunter now stays and feeds from what it killed.
+   * Hunger, thirst, fear and every other goal still win; only aimless wandering is replaced.
+   */
+  #unfinishedKill(agent: Agent, cfg: SpeciesConfig): { carcass: Carcass; patchId: number } | null {
+    if (!cfg.hunting || !cfg.diet.canScavenge || needsProvisioning(agent, cfg)) return null;
+    const here = this.patches[agent.patchId]!, reach = perceptionRadius(cfg);
+    let best: Carcass | null = null;
+    for (const carcass of this.carcasses) {
+      const there = this.patches[carcass.patchId]!;
+      if (carcass.cause !== 'predation' || Math.abs(there.x - here.x) + Math.abs(there.y - here.y) > reach
+        || carcass.pathogenLoad > cfg.diet.carrionTolerance || !(edibleMass(carcass.biomass) > 0)
+        || !carcass.consumers.some(c => c.agentId === agent.id)) continue;
+      if (!best || edibleMass(carcass.biomass) > edibleMass(best.biomass)) best = carcass;
+    }
+    return best ? { carcass: best, patchId: best.patchId } : null;
   }
 
   #shore: number[] | null = null;
@@ -1156,6 +1179,14 @@ export class World {
         ? idleRangeAnchor(agent, cfg, childrenByParent.get(agent.id) ?? [], familyStarts, this.patches) : null;
       if (tether) {
         travelToFamily(agent, cfg, this.patches, tether, 'care_for_young', this.#time, hours, this.log);
+        continue;
+      }
+      // A hunter stays with an unfinished kill instead of wandering off from it (sim_0.33.0).
+      const kill = choice.goal === 'wander' && percept.threat === null ? this.#unfinishedKill(agent, cfg) : null;
+      if (kill) {
+        executeGoal({ agent, species: cfg, patches: this.patches, view, percept: { ...percept, carrion: kill },
+          choice: { goal: 'scavenge', score: choice.score, alternative: choice.goal }, hours, worldTime: this.#time,
+          log: this.log, rng: this.#rng, services });
         continue;
       }
       executeGoal({
