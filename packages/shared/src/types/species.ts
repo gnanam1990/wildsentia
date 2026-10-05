@@ -26,6 +26,8 @@ export interface SpeciesConfig {
   diet: {
     eats: Array<{ target: 'grass' | 'browse' | 'meat'; preference: number }>;
     dailyIntakeKg: number;
+    /** sim_0.35.0: largest meal beyond the day's need, as a fraction of body mass (meat eaters). */
+    gutCapacityBodyFraction?: number;
     waterNeedLPerDay: number;
     canScavenge: boolean;
     /** 0-1 resistance to the pathogens a carcass carries. Vultures are near 1; jackals are not. */
@@ -39,6 +41,11 @@ export interface SpeciesConfig {
     /** Success against an unaware, healthy adult in the open, before every modifier. */
     baseSuccess: number;
     staminaCostPerChase: number;
+    /**
+     * sim_0.35.0: hunger below which a predator does not start a hunt. Calibrated to field kill
+     * intervals: with its stomach digested, a tiger fasts about two days before hunting again.
+     */
+    huntFromHunger?: number;
   };
   social: {
     structure: 'solitary' | 'pair' | 'herd' | 'troop' | 'pack' | 'family';
