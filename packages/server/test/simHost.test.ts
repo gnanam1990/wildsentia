@@ -401,6 +401,18 @@ maybe('SimHost', () => {
     await upgraded.abort();
   });
 
+  it('plays a fresh hour straight after start instead of freezing every animal for a whole interval', async () => {
+    // At one world hour per real hour, waiting a full interval for the first tick left a
+    // restarted world with no movement frame, and every wild animal standing still, for an hour.
+    const host = new SimHost({ ...options(), snapshotEveryWorldHours: 1, worldHoursPerRealHour: 1 });
+    await host.boot();
+    const before = host.world.now();
+    expect(host.liveEncounterFrame()).toBeNull();
+    host.start();
+    await expect.poll(() => host.liveEncounterFrame()?.endWorldTime ?? null, { timeout: 20_000 }).toBe(before + 3600);
+    await host.stop();
+  });
+
   it('can restart before its first tick without regenerating founder event IDs', async () => {
     const first = new SimHost(options());
     await first.boot();

@@ -626,7 +626,7 @@ export class SimHost {
     this.#writer.assertActive();
     if (this.#timer !== null) return;
     const realMsPerWorldHour = 3_600_000 / this.#options.worldHoursPerRealHour;
-    this.#timer = setInterval(() => {
+    const tick = (): void => {
       if (this.#ticking) return;
       this.#ticking = true;
       void this.advance(1)
@@ -636,7 +636,11 @@ export class SimHost {
           this.lastError = error instanceof Error ? error.message : String(error);
         })
         .finally(() => { this.#ticking = false; });
-    }, realMsPerWorldHour);
+    };
+    this.#timer = setInterval(tick, realMsPerWorldHour);
+    // A restored world has no recorded hour to play, so without this every wild animal would
+    // stand still until the first interval ends (an hour, in the real-time world).
+    if (this.#encounterFrame === null) tick();
   }
 
   async stop(): Promise<void> {
