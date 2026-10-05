@@ -16,8 +16,8 @@ export interface GeneralLimits {
 export const GENERAL_LIMIT_DEFAULTS: GeneralLimits = {
   // Twenty a second, sustained, per address: dozens of observers behind one carrier NAT.
   publicReadsPerMinute: 1200,
-  // Set from the measured load test (docs/2026-10-05-load-test.md), with headroom below the point
-  // where the world's own clock starts to slip.
+  // The highest load tested (docs/2026-10-05-load-test.md): 1000 viewers plus 500 agents held,
+  // with the main thread near one full core on a 4-CPU VM.
   liveMaxConnections: 1000,
   // A school, office or carrier NAT can put many real viewers behind one address.
   liveMaxPerNetwork: 100,

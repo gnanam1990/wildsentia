@@ -176,9 +176,10 @@ These per-visitor limits hold everywhere. A visitor network is one IPv4 address 
   `VANA_LIVE_MAX_CONNECTIONS_PER_NETWORK`, default 100). Past either cap, a new connection is
   closed with code 1013 ("try again later"), reason `busy` or `busy_network`. The observer
   then says the forest is at its viewer limit and retries after 8–120 s with jitter. Its
-  ordinary reconnect also backs off, from 1–2 s up to a minute. The default total sits below
-  the load-tested limit of the reference machine (`docs/2026-10-05-load-test.md`). Raise it
-  only after running `tools/ops/load.ts` on the real host.
+  ordinary reconnect also backs off, from 1–2 s up to a minute. The default total is the
+  highest load tested on the reference machine (1000 viewers plus 500 agents held, with the
+  main thread near one full core; `docs/2026-10-05-load-test.md`). Raise it only after running
+  `tools/ops/load.ts` on the real host.
 
 Watch `vana_http_rate_limited_total` and `vana_ws_connections_refused_total`. Refusals that
 grow while the number of visitors is normal mean a limit is too low, often a large NAT.
