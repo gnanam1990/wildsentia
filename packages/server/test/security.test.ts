@@ -46,3 +46,18 @@ describe('route guards', () => {
     }
   });
 });
+
+describe('error responses', () => {
+  it('never send an unexpected failure\'s message, which can name hosts, tables or constraints', async () => {
+    const res = await app.inject({ method: 'POST', url: '/rewards/session', payload: {} });
+    expect(res.statusCode).toBe(500);
+    expect(res.json()).toEqual({ error: 'internal_error' });
+    expect(res.body).not.toContain('10.1.2.3');
+    expect(res.body).not.toContain('ECONNREFUSED');
+  });
+  it('still explain a client mistake', async () => {
+    const res = await app.inject({ method: 'POST', url: '/rewards/session', headers: { 'content-type': 'application/json' }, payload: '{"x":' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ statusCode: 400, error: 'Bad Request' });
+  });
+});
