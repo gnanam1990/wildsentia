@@ -120,9 +120,23 @@ describe('animal layer render lifecycle', () => {
     expect(visual.position.z).toBeLessThan(0); // held clear of the trunk's centre
     delete pose.climbVisualPhase;
     layer.sync(living, 2, 'l', { x: 0, z: 0 }, poses);
-    expect(visual.rotation.x).toBe(0);
-    expect(visual.position.z).toBe(0);
+    expect(visual.rotation.x).toBeCloseTo(0);
+    expect(visual.position.z).toBeCloseTo(0);
     expect(rig.getObjectByName('paw')!.position.x).not.toBe(5);
+    layer.sync(new Map(), 3, null, { x: 0, z: 0 }); await ready(layer);
+  });
+  it('keeps the model root rotation (an export axis fix) when nothing is climbing', async () => {
+    // The Asian elephant ships with a Sketchfab root turned -90 degrees about X; an earlier climb
+    // reset zeroed it and drew every elephant on its side beneath the ground.
+    const scene = new THREE.Group(); scene.rotation.x = -Math.PI / 2;
+    scene.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial()));
+    const load = vi.spyOn(GLTFLoader.prototype, 'loadAsync').mockResolvedValue({ scene, animations: [] } as never);
+    const layer = new AnimalLayer(new THREE.Texture()); layer.groundHeightAt = () => 0;
+    const living = new Map([['e', { ...animal('e'), speciesId: 'gaur' }]]);
+    layer.sync(living, 0, 'e', { x: 0, z: 0 });
+    await vi.waitFor(() => expect(load).toHaveBeenCalled(), { timeout: 1000, interval: 2 });
+    await ready(layer); layer.sync(living, 1, 'e', { x: 0, z: 0 }); layer.sync(living, 2, 'e', { x: 0, z: 0 });
+    expect(layer.root.getObjectByName('e')!.children[0]!.rotation.x).toBeCloseTo(-Math.PI / 2);
     layer.sync(new Map(), 3, null, { x: 0, z: 0 }); await ready(layer);
   });
   it('samples real Flap/Glide clips only for recorded vulture phases, not a later checkpoint state', async () => {

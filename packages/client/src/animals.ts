@@ -7,6 +7,7 @@ import type { AnimalState } from './protocol.js';
 import { chooseVisible } from './lod.js';
 import { RENDER_BUDGETS, type RenderTier } from './renderQuality.js';
 import { visualFor, visualForAnimal } from './species.js';
+import { onShore, type Pool } from './pools.js';
 import { characterScale, coatMultiplier, markerSize } from './appearance.js';
 import { separateBodies, type Body, type Obstacle, type ObstacleField } from './obstacles.js';
 import type { LivePose } from './liveEncounters.js';
@@ -45,9 +46,18 @@ interface Rig {
   restRotationZ: number;
   /** Nose-to-tail length of the placed model, in metres, for standing it upright on a trunk. */
   bodyLengthM: number;
+  /** The model's own pose before a climb stood it upright; null when not climbing. */
+  climbRest: { rotationX: number; z: number; y: number } | null;
   needsCorpseGrounding: boolean;
   appearanceKey: string;
   materials: Array<{ material: THREE.MeshStandardMaterial; base: THREE.Color }>;
+}
+
+/** A stable small number per animal, to spread drinkers round a pool. */
+function idSeed(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return h;
 }
 
 function variantKey(animal: AnimalState, airborne = false): string {
@@ -91,6 +101,10 @@ export class AnimalLayer {
   readonly #markerTexture: THREE.Texture;
   #wanted = new Set<string>();
   #wantedVariants = new Map<string, string>();
+  /** The drawn drinking pools; animals recorded at a pool's centre are drawn on its shore. */
+  pools: Pool[] = [];
+  /** Off in the clean (interface-hidden) view, so nothing floats over the followed animal. */
+  markersVisible = true;
   /** Vultures in the air this frame: they are drawn with the rig that can spread its wings. */
   #airborne = new Set<string>();
 
@@ -261,7 +275,7 @@ export class AnimalLayer {
 
     const bodyLengthM = new THREE.Box3().setFromObject(visual).getSize(new THREE.Vector3()).z;
     const rig: Rig = { variantKey: key, group, mixer, actions, clipNames: clips.map((c) => c.name), playing: null, marker,
-      visual, footY: visual.position.y, restRotationZ: visual.rotation.z, bodyLengthM,
+      visual, footY: visual.position.y, restRotationZ: visual.rotation.z, bodyLengthM, climbRest: null,
       needsCorpseGrounding: false, appearanceKey: '', materials };
     this.#pending.delete(animal.id);
     this.#rigs.set(animal.id, rig);
@@ -332,7 +346,7 @@ export class AnimalLayer {
         this.#climb(rig, animal.speciesId, phase);
         this.#animate(rig, state, phase, elevated && position.moving && phase === null);
       }
-      rig.marker.visible = id === followedId || id === partner;
+      rig.marker.visible = this.markersVisible && (id === followedId || id === partner);
     }
 
     // Keep pending actors selectable as dots until their placed model is actually available.
@@ -377,7 +391,7 @@ export class AnimalLayer {
         && !position.moving && animal.state === 'travelling' ? 'resting' : renderStateFor(animal.state, position.moving);
       this.#climb(rig, animal.speciesId, phase);
       this.#poseAt(rig, state, seconds, null, unknownClimb, phase);
-      rig.marker.visible = true;
+      rig.marker.visible = this.markersVisible;
     }
   }
 
@@ -395,9 +409,12 @@ export class AnimalLayer {
       const pose = recorded.get(id);
       if (arboreal(animal.speciesId) && (animal.locomotionMode === 'climb' || pose?.climbVisualPhase !== undefined)) continue;
       const radius = visualFor(animal.speciesId).heightM * 0.5 * characterScale(animal);
+      const shown = pose?.animal ?? animal;
+      const ashore = onShore(position, this.pools, radius, shown.state === 'drinking', idSeed(id));
+      if (ashore !== position) positions.set(id, ashore);
       // A carcass lies where it fell; scavengers gather round it rather than nudging it.
-      if ((pose?.animal ?? animal).state === 'dead') { fixed.push({ x: position.x, z: position.z, radius: radius * 0.8 }); continue; }
-      bodies.push({ id, x: position.x, z: position.z, heading: position.heading, radius,
+      if (shown.state === 'dead') { fixed.push({ x: ashore.x, z: ashore.z, radius: radius * 0.8 }); continue; }
+      bodies.push({ id, x: ashore.x, z: ashore.z, heading: ashore.heading, radius,
         ...(pose?.partnerId ? { partnerId: pose.partnerId } : {}) });
     }
     if (bodies.length === 0) return;
@@ -434,12 +451,21 @@ export class AnimalLayer {
 
   /** Upright against the trunk while a recorded climb plays; back on its feet otherwise. */
   #climb(rig: Rig, speciesId: string, phase: ClimbVisualPhase | null): void {
-    // Only a climb (or the frame after one) touches the pose, so corpse grounding keeps its own.
-    if (phase === null && rig.visual.rotation.x === 0 && rig.visual.position.z === 0) return;
+    // Only a climb touches the pose. A model's own root rotation (an export's axis fix, a yaw)
+    // and corpse grounding are kept, and restored exactly when the climb ends.
+    if (phase === null) {
+      if (rig.climbRest === null) return;
+      rig.visual.rotation.x = rig.climbRest.rotationX;
+      rig.visual.position.z = rig.climbRest.z;
+      rig.visual.position.y = rig.climbRest.y;
+      rig.climbRest = null;
+      return;
+    }
+    rig.climbRest ??= { rotationX: rig.visual.rotation.x, z: rig.visual.position.z, y: rig.visual.position.y };
     const { pitch, back, lift } = climbPose(speciesId, phase, rig.bodyLengthM);
-    rig.visual.rotation.x = pitch;
-    rig.visual.position.z = back;
-    rig.visual.position.y = rig.footY + lift;
+    rig.visual.rotation.x = rig.climbRest.rotationX + pitch;
+    rig.visual.position.z = rig.climbRest.z + back;
+    rig.visual.position.y = rig.climbRest.y + lift;
   }
 
   #place(rig: Rig, position: RenderPosition): void {
