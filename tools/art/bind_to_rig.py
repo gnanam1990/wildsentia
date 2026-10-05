@@ -73,7 +73,9 @@ def apply_transforms(obj):
 rig_objects = imported(args.rig)
 armature = next(o for o in rig_objects if o.type == "ARMATURE")
 old_meshes = [o for o in rig_objects if o.type == "MESH"]
-old_body = max(old_meshes, key=lambda o: len(o.data.vertices))
+# The skinned body, not a stray helper mesh (several packs ship an unskinned icosphere).
+skinned = [o for o in old_meshes if o.parent == armature or any(m.type == "ARMATURE" for m in o.modifiers)]
+old_body = max(skinned or old_meshes, key=lambda o: len(o.data.vertices))
 rig_lo, rig_hi = world_bbox([old_body])
 for mesh in old_meshes:
     bpy.data.objects.remove(mesh, do_unlink=True)
