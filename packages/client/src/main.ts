@@ -21,6 +21,7 @@ import { encounterAt, isRecordedEncounter, ReplayClock, type RecordedEncounter }
 import { SPECIES_VISUALS, visualFor } from './species.js';
 import { Atmosphere, atmosphereAt, observerExposure } from './environment.js';
 import { groundTint } from './groundTint.js';
+import { wind } from './wind.js';
 import { characterScale, markerSize } from './appearance.js';
 import { LiveEncounterPlayer, withRecordedVisualIdentity } from './liveEncounters.js';
 import { ObserverVisibility, type ObserverSubject } from './observerVisibility.js';
@@ -437,7 +438,7 @@ try { savedQuality = storage?.getItem('vana.graphics'); } catch { /* optional pr
 const quality = new AdaptiveQuality(qualityMode(savedQuality));
 graphics.value = quality.mode;
 function applyQuality(): void {
-  setQuality(quality.tier); animals.quality = quality.tier;
+  setQuality(quality.tier); animals.quality = quality.tier; wind.setTier(quality.tier);
   groundCover?.setQuality(quality.tier); nature?.setQuality(quality.tier);
   graphicsStatus.textContent = `${quality.mode === 'auto' ? 'Auto · ' : ''}${quality.tier} graphics`;
 }
@@ -709,7 +710,8 @@ function frame(): void {
     renderer.toneMappingExposure = observerExposure(atmosphereAt(shownTime, store.world.season).daylight, follow.distance);
   }
 
-  groundCover?.animate(now / 1000, reducedMotion.matches);
+  // Grass, leaves, branches and the wind channel share one presentation-only wind (wind.ts).
+  if (store.world !== null) wind.update(liveWorldTime(now)!, store.world.season, now / 1000, reducedMotion.matches);
 
   communityLayer.setReplay(replay !== null);
   if (replay !== null) {

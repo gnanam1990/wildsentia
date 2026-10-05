@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { RenderTier } from './renderQuality.js';
+import { SWAY, wind } from './wind.js';
 
 /** One shared transition for full geometry and its own atlas, not unrelated placeholder trees. */
 export const TREE_FADE_START_M = 50;
@@ -177,7 +178,9 @@ export function treeImpostorMaterial(atlas: TreeAtlas,
     shader.uniforms.treeCentre = { value: atlas.centre };
     shader.uniforms.treeDiameter = { value: atlas.diameter };
     shader.uniforms.treeFadeRange = fadeRange;
+    Object.assign(shader.uniforms, { windTime: wind.time, windStrength: wind.strength, windDirection: wind.direction });
     shader.vertexShader = `uniform vec3 treeCentre; uniform float treeDiameter;
+      uniform float windTime; uniform float windStrength; uniform vec2 windDirection;
       varying float vTreeDistance; varying vec2 vTreeTile;\n` + shader.vertexShader;
     shader.vertexShader = shader.vertexShader.replace('#include <project_vertex>', `
       vec4 treeWorld = modelMatrix * instanceMatrix * vec4(treeCentre, 1.0);
@@ -189,7 +192,13 @@ export function treeImpostorMaterial(atlas: TreeAtlas,
       float row = clamp(floor(elevation / 0.78539816339 + 0.5), 0.0, 2.0);
       vTreeTile = vec2(column, row);
       vTreeDistance = distance((modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz, cameraPosition);
-      vec4 mvPosition = viewMatrix * treeWorld;
+      // The same downwind lean as the near crown (wind.ts), from the card's top only.
+      float windTop = clamp(position.y + 0.5, 0.0, 1.0);
+      float windPhase = dot(treeWorld.xz, vec2(0.071, 0.053));
+      float windGust = 0.6 + 0.4 * sin(windTime * 0.83 + windPhase);
+      vec3 windLean = vec3(windDirection.x, 0.0, windDirection.y) * windStrength * windGust * windTop * windTop
+        * ${SWAY.leaves.bend.toFixed(4)} * treeDiameter * length(instanceMatrix[0].xyz);
+      vec4 mvPosition = viewMatrix * vec4(treeWorld.xyz + windLean, 1.0);
       mvPosition.xy += position.xy * treeDiameter * length(instanceMatrix[0].xyz);
       gl_Position = projectionMatrix * mvPosition;
     `);
@@ -205,6 +214,6 @@ export function treeImpostorMaterial(atlas: TreeAtlas,
       if (screenNoise < detail) discard;
     `);
   };
-  material.customProgramCacheKey = () => 'vana-tree-impostor-v2';
+  material.customProgramCacheKey = () => 'vana-tree-impostor-v3';
   return material;
 }

@@ -9,6 +9,7 @@ import { ForestBatches } from './forestBatches.js';
 import { addLeafLodFade, alternateLeafCards, LEAF_LOD_START_M, LEAF_LOD_END_M } from './leafLod.js';
 import type { RenderTier } from './renderQuality.js';
 import { preferenceFor, standSpot, treeAgeScale } from './forestStructure.js';
+import { SWAY, swayFor, wind, type SwayProfile } from './wind.js';
 
 /**
  * Poly Haven textured broadleaf trees/rocks plus Quaternius understory (CC0). Tree sources
@@ -488,6 +489,16 @@ export class NearVegetation {
       });
       const box = new THREE.Box3();
       for (const mesh of meshes) { mesh.geometry.computeBoundingBox(); box.union(mesh.geometry.boundingBox!); }
+      // Grass, leaves and branches lean with the observer's wind; bases and rocks stay put.
+      const swayed = new Set<THREE.Material>();
+      for (const mesh of meshes) {
+        for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+          const sway = swayFor(kind, material.name);
+          if (!sway || swayed.has(material)) continue;
+          swayed.add(material);
+          wind.apply(material, { height: Math.max(0.1, box.max.y), ...SWAY[sway] });
+        }
+      }
       this.#kinds.set(kind, { meshes, bounds: box.getBoundingSphere(new THREE.Sphere()) });
     }));
     const failures = loaded.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
@@ -530,6 +541,8 @@ export class NearVegetation {
             const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking,
               map: source.map, alphaMap: source.alphaMap, alphaTest: source.alphaTest,
               side: source.shadowSide ?? source.side });
+            const sway = source.userData.windSway as SwayProfile | undefined;
+            if (sway) wind.apply(depth, sway);
             addTreeDetailFade(depth, this.#observer, this.#treeFade);
             if (near.userData.leafLod === 'full' || near.userData.leafLod === 'middle')
               addLeafLodFade(depth, near.userData.leafLod);

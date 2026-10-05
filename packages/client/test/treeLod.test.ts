@@ -75,7 +75,7 @@ describe('continuous forest detail', () => {
     const far = treeImpostorMaterial({ target, centre: new THREE.Vector3(), diameter: 12 }, range);
     expect(compile(far).fragmentShader).toContain('screenNoise < detail');
     expect((compile(far).uniforms as Record<string, unknown>).treeFadeRange).toBe(range);
-    expect(compile(far).vertexShader).toContain('viewMatrix * treeWorld');
+    expect(compile(far).vertexShader).toContain('viewMatrix * vec4(treeWorld.xyz + windLean, 1.0)');
     expect(far.transparent).toBe(false); expect(far.depthWrite).toBe(true);
     target.dispose(); far.dispose(); near.dispose();
   });

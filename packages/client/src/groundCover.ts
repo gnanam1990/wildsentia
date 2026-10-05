@@ -3,6 +3,7 @@ import { GRID_SIZE, PATCH_METRES, spatialHash } from '@vana/shared';
 import type { HeightSampler, PatchView } from './terrain.js';
 import { RENDER_BUDGETS, type RenderTier } from './renderQuality.js';
 import { islandPool } from './pools.js';
+import { SWAY, wind } from './wind.js';
 import { standDensity } from './forestStructure.js';
 
 export const COVER_RADIUS_M = 144;
@@ -140,11 +141,9 @@ export function grassTuftGeometry(segments: 2 | 4 = 4): THREE.BufferGeometry {
   return geometry;
 }
 
-/** Two bounded instanced draws; GPU wind only moves blade tips, never simulation state. */
+/** Two bounded instanced draws; GPU wind (wind.ts) only moves blade tips, never simulation state. */
 export class GroundCover {
   readonly root = new THREE.Group();
-  readonly #time = { value: 0 };
-  readonly #motion = { value: 1 };
   readonly #meshes: [THREE.InstancedMesh, THREE.InstancedMesh];
   #disposed = false;
   #tier: RenderTier = 'high';
@@ -160,16 +159,9 @@ export class GroundCover {
       // Vertex/instance colours supply the green; a third tint made shaded blades black.
       color: 0xffffff, vertexColors: true, roughness: 1, side: THREE.DoubleSide,
     });
-    material.onBeforeCompile = (shader) => {
-      shader.uniforms.coverTime = this.#time; shader.uniforms.coverMotion = this.#motion;
-      shader.vertexShader = 'uniform float coverTime; uniform float coverMotion;\n' + shader.vertexShader;
-      shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `
-        #include <begin_vertex>
-        float phase = instanceMatrix[3].x * 0.19 + instanceMatrix[3].z * 0.13;
-        transformed.x += sin(coverTime * 1.4 + phase) * position.y * position.y * 0.045 * coverMotion;
-      `);
-    };
-    material.customProgramCacheKey = () => 'vana-ground-cover-v2';
+    material.customProgramCacheKey = () => 'vana-ground-cover-v3';
+    // Blades lean with the observer's wind (wind.ts); roots stay planted.
+    wind.apply(material, { height: 1, ...SWAY.grass });
     // Geometric upper bound for the whole square; actual circular plan is smaller.
     const capacity = Math.ceil(2 * DENSE_COVER_RADIUS_M / COVER_SPACING_M + 3) ** 2
       + Math.ceil(2 * COVER_RADIUS_M / MID_SPACING_M + 3) ** 2;
@@ -196,9 +188,6 @@ export class GroundCover {
   setQuality(tier: RenderTier): void {
     if (tier === this.#tier) return;
     this.#tier = tier; this.#lastFocus = null; this.#pending = null;
-  }
-  animate(seconds: number, reducedMotion: boolean): void {
-    this.#time.value = seconds; this.#motion.value = reducedMotion ? 0 : 1;
   }
   /** Live viewer passes 2 ms; Infinity retains synchronous offline/test planning.
    * Budget is cooperative (512-cell chunks), not a hard real-time guarantee. */
