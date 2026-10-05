@@ -163,11 +163,13 @@ export class AgentStore {
     finally { db.release(); }
   }
 
-  async loadPossessions(worldId: string): Promise<Array<{ agentId: string; agentName: string; animalId: string; x: number; z: number; heading: number; since: number }>> {
-    const { rows } = await this.pool.query<{ agent_id: string; name: string; animal_id: string; x: number; z: number; heading: number; since: number }>(
-      `select p.agent_id, a.name, p.animal_id, p.x, p.z, p.heading, extract(epoch from p.started_at) * 1000 as since
+  async loadPossessions(worldId: string): Promise<Array<{ agentId: string; agentName: string; animalId: string; x: number; z: number; heading: number; since: number; lastCommand: number }>> {
+    const { rows } = await this.pool.query<{ agent_id: string; name: string; animal_id: string; x: number; z: number; heading: number; since: number; last_command: number }>(
+      `select p.agent_id, a.name, p.animal_id, p.x, p.z, p.heading, extract(epoch from p.started_at) * 1000 as since,
+         extract(epoch from p.last_command_at) * 1000 as last_command
        from live_possessions p join live_agents a on a.id = p.agent_id where p.world_id=$1`, [worldId]);
-    return rows.map((r) => ({ agentId: r.agent_id, agentName: r.name, animalId: r.animal_id, x: r.x, z: r.z, heading: r.heading, since: Number(r.since) }));
+    return rows.map((r) => ({ agentId: r.agent_id, agentName: r.name, animalId: r.animal_id, x: r.x, z: r.z, heading: r.heading,
+      since: Number(r.since), lastCommand: Number(r.last_command) }));
   }
 }
 

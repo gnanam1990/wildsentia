@@ -193,7 +193,7 @@ export class LiveLayer {
   }
 
   /** Restores an avatar saved before a restart, if the world still agrees it is this agent's. */
-  restore(saved: { agentId: string; agentName: string; animalId: string; x: number; z: number; heading: number; since: number }): boolean {
+  restore(saved: { agentId: string; agentName: string; animalId: string; x: number; z: number; heading: number; since: number; lastCommand?: number }): boolean {
     let animal = this.world.animal(saved.animalId);
     if (!animal?.alive) return false;
     if (animal.controller !== saved.agentId) {
@@ -206,7 +206,8 @@ export class LiveLayer {
     const now = this.clock();
     this.avatars.set(saved.agentId, { agentId: saved.agentId, agentName: saved.agentName, animalId: saved.animalId,
       speciesId: animal.speciesId, ...at, gait: 'walk', path: [], moving: false, action: 'idle', pendingSeconds: 0,
-      stamina: 1, since: saved.since, lastCommand: now, opening: null });
+      // Keep the saved idle clock: a restart must not hand an abandoned animal another 15 minutes.
+      stamina: 1, since: saved.since, lastCommand: Math.min(saved.lastCommand ?? now, now), opening: null });
     return true;
   }
 

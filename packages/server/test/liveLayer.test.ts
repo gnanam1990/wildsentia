@@ -13,7 +13,7 @@ function setup(drops: DropLedger | null = null) {
   let now = 1_000_000;
   const live = new LiveLayer(worldPort(() => world, () => 'w1'), drops, () => now);
   const run = (seconds: number) => { for (let i = 0; i < seconds * 10; i++) { now += 100; live.tick(0.1); } };
-  return { world, live, run, advance: (ms: number) => { now += ms; } };
+  return { world, live, run, advance: (ms: number) => { now += ms; }, now: () => now };
 }
 
 function ledger(drop: PlaceDrop) {
@@ -90,6 +90,20 @@ describe('live layer', () => {
     expect(live.act('ag_1', 'drink')).toBeNull();
     run(31);
     expect(animal.drives.thirst).toBeLessThan(0.6);
+  });
+
+  it('keeps the saved idle clock across a restart', () => {
+    // A restart used to reset every possession's idle timer, so an abandoned animal was never freed
+    // while the server kept being redeployed.
+    const { live, world, run, now } = setup();
+    live.possess('ag_1', 'Sora', { speciesId: 'sambar' });
+    const a = live.avatars.get('ag_1')!;
+    live.release('ag_1');
+    expect(live.restore({ agentId: 'ag_1', agentName: 'Sora', animalId: a.animalId, x: a.x, z: a.z, heading: 0, since: 0,
+      lastCommand: now() - IDLE_RELEASE_MS - 1 })).toBe(true);
+    run(0.1);
+    expect(live.avatars.has('ag_1')).toBe(false);
+    expect(world.animal(a.animalId)!.controller).toBeUndefined();
   });
 
   it('lets go after 15 idle minutes, and ends when the animal dies', () => {
