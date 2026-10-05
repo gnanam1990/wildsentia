@@ -8,6 +8,7 @@ import { NonceStore, verifySigned, type SignedHeaders } from './signing.js';
 import { OPEN_RADIUS_M, type Gait, type LiveLayer, type WorldPort } from './liveLayer.js';
 import { agentIdFor, type AgentRecord, type AgentStore, type PlaceDropLedger, type RegistrationLimits } from './liveStore.js';
 import { displayAmount } from '../rewards.js';
+import { networkKey } from '../network.js';
 
 /**
  * The agent API (docs/2026-09-26-live-agents-design.md). Everything under /agents/me is
@@ -87,7 +88,7 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
     catch { return { status: 503, error: 'holding_check_unavailable' }; }
     return { wallet: wallet.toLowerCase() };
   };
-  const networkHash = (req: FastifyRequest) => createHash('sha256').update(`live-network:${deps.networkSecret}:${req.ip}`).digest('hex');
+  const networkHash = (req: FastifyRequest) => createHash('sha256').update(`live-network:${deps.networkSecret}:${networkKey(req.ip)}`).digest('hex');
 
   app.register(async (scope) => {
     // The signature covers the exact body bytes, so keep them.

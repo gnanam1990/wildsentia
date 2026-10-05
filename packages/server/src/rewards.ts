@@ -4,6 +4,7 @@ import type { PlaceDropLedger } from './live/liveStore.js';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Pool } from './db/pool.js';
 import { baseReceiptRpc, matchBaseUsdcReceipt, type ReceiptRpc } from './baseReceipt.js';
+import { networkKey } from './network.js';
 
 export type RewardNetwork = 'base';
 export interface RewardConfig {
@@ -132,7 +133,7 @@ export function installRewards(app: FastifyInstance, deps: {
   /** A receipt lets a claimant check their own claim later. Derived, so a retried claim gets the same one. */
   const receiptKey = hash(`claim-receipt:${config?.adminToken ?? ''}`);
   const receiptFor = (claimId: string): string => createHmac('sha256', receiptKey).update(claimId).digest('hex');
-  const clientHash = (req: FastifyRequest): string => hash(`claim-client:${config?.adminToken ?? ''}:${req.ip}`);
+  const clientHash = (req: FastifyRequest): string => hash(`claim-client:${config?.adminToken ?? ''}:${networkKey(req.ip)}`);
   const receiptRpc = deps.receiptRpc ?? (config?.receiptRpcUrl ? baseReceiptRpc(config.receiptRpcUrl) : undefined);
   const limits = new Map<string, { count: number; until: number }>();
   app.addHook('onRequest', async (req, reply) => {
@@ -146,7 +147,7 @@ export function installRewards(app: FastifyInstance, deps: {
     if (!config) return reply.code(503).send({ error: 'rewards_not_configured' });
     const now = Date.now();
     for (const [key, value] of limits) if (value.until < now) limits.delete(key);
-    const key = req.ip;
+    const key = networkKey(req.ip);
     const window = limits.get(key) ?? { count: 0, until: now + 60_000 };
     if (!limits.has(key) && limits.size >= 5000 || ++window.count > 120) return reply.code(429).send({ error: 'rate_limited' });
     limits.set(key, window);

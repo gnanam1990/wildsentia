@@ -285,4 +285,21 @@ maybe('live agent API', () => {
       finally { clock.mockRestore(); }
     } finally { await gated.close(); }
   });
+
+  it('counts registrations from one IPv6 /64 against one network', async () => {
+    // Security review 5 October 2026: each address of a /64 used to be a network of its own.
+    const limited = buildApi({ host, pool: pool!, rewards, live: { ...deps, limits: { slots: 50, perNetworkPerDay: 2 }, spot: () => randomLandSpot(host.world) } });
+    await limited.ready();
+    try {
+      const register = (n: number, remoteAddress: string) => {
+        const k = keypair(), raw = JSON.stringify({ name: `Six ${n}` });
+        return limited.inject({ method: 'POST', url: '/agents/register', remoteAddress, payload: raw,
+          headers: signedHeaders(k, audience, 'POST', '/agents/register', raw) });
+      };
+      expect((await register(1, '2001:db8:42:1::a')).statusCode).toBe(200);
+      expect((await register(2, '2001:db8:42:1::b')).statusCode).toBe(200);
+      expect((await register(3, '2001:db8:42:1:ffff::c')).json()).toEqual({ error: 'network_daily_limit' });
+      expect((await register(4, '2001:db8:42:2::a')).statusCode).toBe(200);
+    } finally { await limited.close(); }
+  });
 });

@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApi } from '../src/api.js';
+import { networkKey } from '../src/network.js';
 import type { Pool } from '../src/db/pool.js';
 import type { SimHost } from '../src/simHost.js';
 
@@ -44,6 +45,31 @@ describe('route guards', () => {
       const res = await app.inject({ method: 'POST', url, payload: {}, headers: { 'sec-fetch-site': 'cross-site' } });
       expect(res.statusCode, url).toBe(403);
     }
+  });
+});
+
+describe('per-visitor limits', () => {
+  it('count one IPv6 /64 as one visitor, so a host cannot rotate addresses past them', async () => {
+    // A machine is normally given a whole /64; counting single addresses gave it 2^64 fresh allowances.
+    const statuses: number[] = [];
+    for (let i = 1; i <= 121; i++) {
+      const res = await app.inject({ url: '/admin/rewards', remoteAddress: `2001:db8:7:1::${i.toString(16)}`,
+        headers: { authorization: 'Bearer wrong-key' } });
+      statuses.push(res.statusCode);
+    }
+    expect(statuses.slice(0, 120).every((s) => s === 401)).toBe(true);
+    expect(statuses[120]).toBe(429);
+    // A different /64 is a different visitor.
+    expect((await app.inject({ url: '/admin/rewards', remoteAddress: '2001:db8:7:2::1', headers: { authorization: 'Bearer wrong-key' } })).statusCode).toBe(401);
+  });
+  it('reduce an address to the network it stands for', () => {
+    expect(networkKey('203.0.113.9')).toBe('203.0.113.9');
+    expect(networkKey('::ffff:203.0.113.9')).toBe('203.0.113.9');
+    expect(networkKey('2001:db8:7:1::1')).toBe('2001:db8:7:1::/64');
+    expect(networkKey('2001:0DB8:0007:0001:ffff:1:2:3')).toBe('2001:db8:7:1::/64');
+    expect(networkKey('2001:db8::1')).toBe('2001:db8:0:0::/64');
+    expect(networkKey('fe80::1%eth0')).toBe('fe80:0:0:0::/64');
+    expect(networkKey('::1')).toBe('0:0:0:0::/64');
   });
 });
 
