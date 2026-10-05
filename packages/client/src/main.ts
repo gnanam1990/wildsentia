@@ -26,6 +26,7 @@ import { characterScale, markerSize } from './appearance.js';
 import { LiveEncounterPlayer, recordedClimbPhase, withRecordedVisualIdentity } from './liveEncounters.js';
 import { ObserverVisibility, type ObserverSubject } from './observerVisibility.js';
 import { refreshSpeciesOptions } from './speciesPicker.js';
+import { islandPool } from './pools.js';
 import { stackLabels } from './labelLayout.js';
 import { restoreFollowOnOpen } from './followSubscription.js';
 import { LIVE_BUSY_CLOSE_CODE, ReconnectBackoff } from './reconnect.js';
@@ -503,6 +504,7 @@ const sceneUpdates = new SceneUpdates<{
       else groundCover?.setPatches(update.environment.patches);
       groundCover?.setQuality(quality.tier);
       nature?.setPatches(update.environment.patches);
+      animals.pools = update.environment.patches.flatMap((patch) => { const pool = islandPool(patch); return pool ? [pool] : []; });
       microEcology.sync(update.environment.microEcology, update.environment.patches, prepared.terrain.height);
       communityLayer.sync(update.environment.community, prepared.terrain.height);
       communityLayer.setReplay(replay !== null);
@@ -566,6 +568,19 @@ function pickedAnimal(event: MouseEvent | PointerEvent): string | null {
 }
 
 // Explore lets go and rises to a wide view, so the button always shows the island around you.
+// Clean view for screenshots, streams and trailers: H toggles it, ?cinema=1 starts in it.
+function setCleanView(on: boolean): void {
+  document.body.classList.toggle('clean-view', on);
+  animals.markersVisible = !on;
+}
+if (new URLSearchParams(location.search).has('cinema')) setCleanView(true);
+addEventListener('keydown', (event) => {
+  if (event.key.toLowerCase() !== 'h' || event.ctrlKey || event.metaKey || event.altKey) return;
+  const target = event.target as HTMLElement | null;
+  if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+  setCleanView(!document.body.classList.contains('clean-view'));
+});
+
 // On-screen camera pad. Holding a button keeps turning, tilting or zooming until released.
 const cameraActions: Record<string, () => void> = {
   'rotate-left': () => follow.rotateBy(-0.05), 'rotate-right': () => follow.rotateBy(0.05),
