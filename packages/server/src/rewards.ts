@@ -136,7 +136,10 @@ export function installRewards(app: FastifyInstance, deps: {
   const receiptRpc = deps.receiptRpc ?? (config?.receiptRpcUrl ? baseReceiptRpc(config.receiptRpcUrl) : undefined);
   const limits = new Map<string, { count: number; until: number }>();
   app.addHook('onRequest', async (req, reply) => {
-    if (!/^\/(rewards|admin\/rewards)(\/|\?|$)/.test(req.url)) return;
+    // The route the request was dispatched to, not its raw URL: the router decodes
+    // percent-escapes, so "/%61dmin/rewards" reaches /admin/rewards too.
+    const route = req.routeOptions.url ?? '';
+    if (!/^\/(rewards|admin\/rewards)(\/|$)/.test(route)) return;
     reply.header('Cache-Control', 'no-store');
     reply.header('Referrer-Policy', 'no-referrer');
     if (req.headers['sec-fetch-site'] === 'cross-site') return reply.code(403).send({ error: 'same_origin_required' });
@@ -148,7 +151,7 @@ export function installRewards(app: FastifyInstance, deps: {
     if (!limits.has(key) && limits.size >= 5000 || ++window.count > 120) return reply.code(429).send({ error: 'rate_limited' });
     limits.set(key, window);
     // Count rejected admin attempts too; otherwise guesses bypass the per-IP limit.
-    if (req.url.startsWith('/admin/')) {
+    if (route.startsWith('/admin/')) {
       const actual = Buffer.from(hash(bearer(req))), expected = Buffer.from(hash(config.adminToken));
       if (!timingSafeEqual(actual, expected)) return reply.code(401).send({ error: 'admin_auth_required' });
     }
