@@ -349,12 +349,12 @@ export class AnimalLayer {
    * Shows one animal alone, at a position the replay computed from its recorded track. Every
    * other model is released while a life is replayed; they come back when live sync resumes.
    */
-  syncReplay(animal: AnimalState, position: RenderPosition, seconds = 0): void {
-    this.syncReplayGroup([{ animal, position }], seconds);
+  syncReplay(animal: AnimalState, position: RenderPosition, seconds = 0, climbPhase: ClimbVisualPhase | null = null): void {
+    this.syncReplayGroup([{ animal, position, climbPhase }], seconds);
   }
 
   /** Paired encounter actors share a playhead; calling syncReplay twice would release one. */
-  syncReplayGroup(subjects: Array<{ animal: AnimalState; position: RenderPosition }>, seconds = 0): void {
+  syncReplayGroup(subjects: Array<{ animal: AnimalState; position: RenderPosition; climbPhase?: ClimbVisualPhase | null }>, seconds = 0): void {
     this.#dotLayer.hide();
     const ids = new Set(subjects.map(({ animal }) => animal.id));
     this.#wanted = ids;
@@ -364,17 +364,19 @@ export class AnimalLayer {
       if (ids.has(id)) continue;
       this.#release(id, rig);
     }
-    for (const { animal, position } of subjects) {
+    for (const { animal, position, climbPhase = null } of subjects) {
       void this.#ensureRig(animal);
       const rig = this.#rigs.get(animal.id);
       if (!rig) continue;
       this.#place(rig, position);
       rig.group.rotation.y = position.heading;
       this.#appearance(rig, animal);
-      const unknownClimb = arboreal(animal.speciesId) && (position.altitudeM ?? 0) > 0 && position.moving;
+      const phase = arboreal(animal.speciesId) ? climbPhase : null;
+      const unknownClimb = arboreal(animal.speciesId) && (position.altitudeM ?? 0) > 0 && position.moving && phase === null;
       const state = arboreal(animal.speciesId) && (position.altitudeM ?? 0) > 0
         && !position.moving && animal.state === 'travelling' ? 'resting' : renderStateFor(animal.state, position.moving);
-      this.#poseAt(rig, state, seconds, null, unknownClimb);
+      this.#climb(rig, animal.speciesId, phase);
+      this.#poseAt(rig, state, seconds, null, unknownClimb, phase);
       rig.marker.visible = true;
     }
   }

@@ -22,7 +22,7 @@ import { SPECIES_VISUALS, visualFor } from './species.js';
 import { Atmosphere, atmosphereAt, observerExposure } from './environment.js';
 import { groundTint } from './groundTint.js';
 import { characterScale, markerSize } from './appearance.js';
-import { LiveEncounterPlayer, withRecordedVisualIdentity } from './liveEncounters.js';
+import { LiveEncounterPlayer, recordedClimbPhase, withRecordedVisualIdentity } from './liveEncounters.js';
 import { ObserverVisibility, type ObserverSubject } from './observerVisibility.js';
 import { refreshSpeciesOptions } from './speciesPicker.js';
 import { stackLabels } from './labelLayout.js';
@@ -745,7 +745,8 @@ function frame(): void {
       const position = movementAt(climb.trace, seconds);
       const drives = { hunger: 0, thirst: 0, fatigue: 0, fear: 0 }; // The route has no recorded drive series.
       animals.syncReplay({ id: life.id, speciesId: life.speciesId, patchId: climb.trace.destinationPatchId,
-        state: position.moving ? 'travelling' : 'resting', currentGoal: climb.trace.goal, drives }, position, seconds);
+        state: position.moving ? 'travelling' : 'resting', currentGoal: climb.trace.goal, drives }, position, seconds,
+        recordedClimbPhase(climb.trace, seconds));
       observerSubjects = [observerSubject(life.speciesId, position)];
       follow.follow({ ...position, moving: !playback.paused && position.moving,
         y: renderBaseY(position, animals.groundHeightAt) }, playback.paused || reducedMotion.matches ? 1 : dt);
