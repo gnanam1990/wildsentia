@@ -3,7 +3,7 @@ import { writeFileSync } from 'node:fs';
 import { FOREST_FLOOR, FOREST_LANDSCAPE, FOREST_POPULATION, ISLAND_POPULATION, SIM_VERSION, careRadius, createWorld, waterBudgetResidual, surfaceWaterL } from '@vana/sim';
 import type { WaterBudget } from '@vana/shared';
 import { recordPopulationPeaks } from './populationMetrics.js';
-import { emptySoakYear, recordYearEvent, type ParentLookup, type SoakYear, type YoungDeprivationRecord } from './yearMetrics.js';
+import { emptySoakYear, foragePercent, recordYearEvent, sampleYearForage, type ParentLookup, type SoakYear, type YoungDeprivationRecord } from './yearMetrics.js';
 import { recordHunt, type HuntMetrics } from './huntMetrics.js';
 import { emptyHumanFamilyMetrics, recordHumanFamily, validHumanFamilyMetrics } from './communityMetrics.js';
 import { emptyIllnessEventMetrics, recordIllnessEvent, type IllnessEventMetrics } from './illnessMetrics.js';
@@ -279,6 +279,7 @@ export function runSoak({ seed, days, speciesDir, terrainProfile = 'mainland', c
       if (year.population[speciesId] === 0) year.extinct.push(speciesId);
     }
     year.nutrientDrift = Math.abs(world.totalNutrients() - baseline);
+    year.forage.endPct = foragePercent(world.patches.filter(landWalkable));
     years.push(year);
     year = emptySoakYear(year.year + 1, endDay);
   };
@@ -308,6 +309,7 @@ export function runSoak({ seed, days, speciesDir, terrainProfile = 'mainland', c
     }
 
     completedDays = day + 1;
+    sampleYearForage(year, completedDays, foragePercent(world.patches.filter(landWalkable)));
     if (completedDays % yearDays === 0) { tally(); closeYear(completedDays); }
     if (world.community && !isCommunityState(world.community) && failures.length < MAX_RECORDED_FAILURES)
       failures.push(`day ${day}: invalid community state`);

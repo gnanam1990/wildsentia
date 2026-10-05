@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { WorldEvent } from '@vana/shared';
-import { emptySoakYear, recordYearEvent, type ParentLookup } from '../src/yearMetrics.js';
+import { emptySoakYear, foragePercent, recordYearEvent, sampleYearForage, type ParentLookup } from '../src/yearMetrics.js';
 
 const died = (child: string, cause: string, careState: string, lifeStage = 'newborn',
   position = { x: 0, z: 0 }): WorldEvent => ({
@@ -36,5 +36,14 @@ describe('per-year soak accounting', () => {
     expect(near).toMatchObject({ contact: 'near', parentId: 'boar_mother', parentDistanceM: 1 });
     expect(remote).toMatchObject({ contact: 'remote', parentDistanceM: 300, parentPatchId: 5 });
     expect(year.youngDeprivationWithParent).toEqual({ near: 1, remote: 1, unknown: 0 });
+  });
+
+  it('keeps the year-end forage stock and the day of its lowest daily sample', () => {
+    const patch = (grass: number, browse: number) => ({ plant: { grass, browse }, capacity: { grass: 100, browse: 100 } });
+    expect(foragePercent([patch(50, 0), patch(100, 50)])).toBe(50);
+    expect(foragePercent([])).toBe(0);
+    const year = emptySoakYear(2, 360);
+    sampleYearForage(year, 361, 40); sampleYearForage(year, 362, 12); sampleYearForage(year, 363, 30);
+    expect(year.forage).toMatchObject({ minPct: 12, minDay: 362 });
   });
 });

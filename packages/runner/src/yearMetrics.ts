@@ -27,12 +27,14 @@ export interface SoakYear {
   weanedYoungDeprivation: number;
   extinct: string[];
   nutrientDrift: number;
+  /** Grazeable land's standing grass+browse as a percent of capacity: year end and daily low. */
+  forage: { endPct: number; minPct: number; minDay: number };
 }
 
 export function emptySoakYear(year: number, startDay: number): SoakYear {
   return { year, startDay, endDay: startDay, population: {}, births: {}, deaths: {}, deathsByCause: {},
     deprivation: {}, youngDeprivationWithParent: { near: 0, remote: 0, unknown: 0 },
-    weanedYoungDeprivation: 0, extinct: [], nutrientDrift: 0 };
+    weanedYoungDeprivation: 0, extinct: [], nutrientDrift: 0, forage: { endPct: NaN, minPct: Infinity, minDay: startDay } };
 }
 
 const bump = (tally: Record<string, number>, key: string): void => { tally[key] = (tally[key] ?? 0) + 1; };
@@ -74,4 +76,17 @@ export function recordYearEvent(year: SoakYear, event: WorldEvent, parents: Pare
   return { worldTime: event.worldTime, species, cause, lifeStage, ageDays: Number(event.conditions.ageDays ?? NaN),
     childId, parentId, patchId: event.patchId, parentPatchId: parent?.patchId ?? null,
     parentDistanceM: distance, careRadiusM: radius, contact };
+}
+
+/** Standing grass+browse on grazeable land, as a percent of its capacity. */
+export function foragePercent(patches: ReadonlyArray<{ plant: { grass: number; browse: number };
+  capacity: { grass: number; browse: number } }>): number {
+  let standing = 0, capacity = 0;
+  for (const p of patches) { standing += p.plant.grass + p.plant.browse; capacity += p.capacity.grass + p.capacity.browse; }
+  return capacity > 0 ? 100 * standing / capacity : 0;
+}
+
+/** Fold one daily forage sample into the year's low. */
+export function sampleYearForage(year: SoakYear, day: number, percent: number): void {
+  if (percent < year.forage.minPct) year.forage = { ...year.forage, minPct: percent, minDay: day };
 }
