@@ -10,6 +10,8 @@ import * as THREE from 'three';
 
 export const CLIP_PREFERENCES: Record<string, readonly string[]> = {
   resting:    ['Resting', 'Idle', 'Idle_2'],
+  // Paused on its feet: never a lying-down rest clip, never a stride.
+  standing:   ['Idle', 'Idle_2', 'Resting'],
   grazing:    ['Eating', 'TrunkReach', 'Idle_Headlow', 'Idle_2_HeadLow', 'Idle'],
   drinking:   ['Drinking', 'TrunkReach', 'Idle_Headlow', 'Idle_2_HeadLow', 'Eating', 'Idle'],
   travelling: ['Walk', 'Gallop', 'Idle'],
@@ -88,9 +90,18 @@ export function replayClipTime(state: string, duration: number, seconds: number)
   return state === 'dead' ? duration : ((seconds % duration) + duration) % duration;
 }
 
-/** Keep chase/stalk/death semantics even while interpolating between server patches. */
+/** States whose clip is a stride cycle, which only reads right on a body covering ground. */
+const STRIDING_STATES = ['travelling', 'chasing', 'fleeing', 'stalking'];
+
+/**
+ * Keep chase/stalk/death semantics while the animal moves. One that is not covering ground
+ * stands: between live hours, or with motion reduced, every animal keeps its saved
+ * "travelling" or "fleeing" state where it stopped, and a stride clip on a still body
+ * walks it on the spot.
+ */
 export function renderStateFor(state: string, moving: boolean): string {
-  if (['dead', 'chasing', 'fleeing', 'stalking'].includes(state)) return state;
+  if (state === 'dead') return state;
+  if (STRIDING_STATES.includes(state)) return moving ? state : 'standing';
   return moving ? 'travelling' : state;
 }
 

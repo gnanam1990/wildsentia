@@ -35,13 +35,20 @@ describe('clipForState', () => {
     expect(clipForState('drinking', clips)).toBe('Drinking');
     expect(clipForState('injured', clips)).toBe('Injured');
   });
-  it('preserves authoritative hunt and death states during patch interpolation', () => {
-    for (const state of ['stalking', 'chasing', 'fleeing', 'dead']) {
-      expect(renderStateFor(state, true)).toBe(state);
-      expect(renderStateFor(state, false)).toBe(state);
-    }
+  it('preserves authoritative hunt and death states while the animal is moving', () => {
+    for (const state of ['stalking', 'chasing', 'fleeing', 'dead']) expect(renderStateFor(state, true)).toBe(state);
+    expect(renderStateFor('dead', false)).toBe('dead');
     expect(renderStateFor('grazing', true)).toBe('travelling');
     expect(renderStateFor('grazing', false)).toBe('grazing');
+  });
+  it('stands an animal that is not covering ground, instead of walking or running on the spot', () => {
+    // Between two live hours every animal still carries its saved "travelling" or "fleeing"
+    // state while it stands where it arrived; a stride clip then plays on a motionless body.
+    for (const state of ['travelling', 'stalking', 'chasing', 'fleeing']) {
+      expect(renderStateFor(state, false)).toBe('standing');
+      expect(clipForState(renderStateFor(state, false), DEER_CLIPS)).toBe('Idle');
+      expect(clipForState(renderStateFor(state, false), ['Idle', 'Walk', 'Run', 'Resting'])).toBe('Idle');
+    }
   });
   it('grazes with the eating clip, not a walk cycle', () => {
     expect(clipForState('grazing', DEER_CLIPS)).toBe('Eating');

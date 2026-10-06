@@ -70,6 +70,14 @@ export function clipForGait(state: string, gait: Gait | null, availableClips: re
   return null;
 }
 
+/** Below this shown ground speed a stride reads as walking on the spot, so the animal stands. */
+export const STAND_BELOW_MS = 0.12;
+
+/** A striding state on a body that has all but stopped is shown standing. */
+export function stateAtSpeed(state: string, clock: GaitClock): string {
+  return STRIDING.has(state) && clock.gait !== null && clock.speedMs < STAND_BELOW_MS ? 'standing' : state;
+}
+
 export function isStrideClip(name: string): boolean {
   return /^(walk|trot|run|gallop|sneak)$/i.test(name);
 }

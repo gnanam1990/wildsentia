@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { clipForGait, GaitClock, gaitFor, hipHeightM, strideCycles, strideHz, strideLengthM, strideRate } from '../src/gait.js';
+import { clipForGait, GaitClock, gaitFor, hipHeightM, stateAtSpeed, strideCycles, strideHz, strideLengthM, strideRate } from '../src/gait.js';
 
 const TIGER_CLIPS = ['Death', 'Drinking', 'Eating', 'Gallop', 'Idle', 'Resting', 'Run', 'Sneak', 'Walk'];
 const DEER_CLIPS = ['Death', 'Eating', 'Gallop', 'Gallop_Jump', 'Idle', 'Idle_2', 'Idle_Headlow', 'Walk'];
@@ -111,5 +111,21 @@ describe('GaitClock', () => {
     clock.observe(0.2, 0, 0.1, tigerHip);
     const held = clock.clipSeconds;
     expect(clock.advance(2, 1)).toBe(held);
+  });
+});
+
+describe('stateAtSpeed', () => {
+  it('stands a travelling or chasing animal that has all but stopped, rather than walking it on the spot', () => {
+    const clock = new GaitClock();
+    for (let i = 0; i <= 30; i++) clock.observe(0.05 * i / 60, 0, i / 60, tigerHip);
+    expect(stateAtSpeed('travelling', clock)).toBe('standing');
+    expect(stateAtSpeed('chasing', clock)).toBe('standing');
+    expect(stateAtSpeed('grazing', clock)).toBe('grazing');
+  });
+  it('keeps the stride while the animal covers ground, and before its speed is known', () => {
+    const walking = new GaitClock();
+    for (let i = 0; i <= 30; i++) walking.observe(1.3 * i / 60, 0, i / 60, tigerHip);
+    expect(stateAtSpeed('travelling', walking)).toBe('travelling');
+    expect(stateAtSpeed('travelling', new GaitClock())).toBe('travelling');
   });
 });

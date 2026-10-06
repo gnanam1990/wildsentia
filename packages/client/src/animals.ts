@@ -13,7 +13,7 @@ import { separateBodies, type Body, type Obstacle, type ObstacleField } from './
 import type { LivePose } from './liveEncounters.js';
 import { AnimalDots } from './animalDots.js';
 import { elephantSurface } from './elephantSurface.js';
-import { clipForGait, GaitClock, hipHeightM, isStrideClip, strideCycles, strideRate } from './gait.js';
+import { clipForGait, GaitClock, hipHeightM, isStrideClip, stateAtSpeed, strideCycles, strideRate } from './gait.js';
 
 /**
  * A plain stand-in for a species with no rigged model yet: a body and a head in the species'
@@ -447,6 +447,7 @@ export class AnimalLayer {
   #poseAt(rig: Rig, state: string, seconds: number, flightPhase: FlightVisualPhase | null = null,
     unknownAirborne = false, climbPhase: ClimbVisualPhase | null = null): void {
     const grounded = flightPhase === null && climbPhase === null && !unknownAirborne;
+    if (grounded) state = stateAtSpeed(state, rig.gait);
     const clip = (grounded ? clipForGait(state, rig.gait.gait, rig.clipNames) : null)
       ?? clipForObservedMotion(state, rig.clipNames, flightPhase, unknownAirborne, climbPhase);
     rig.mixer?.stopAllAction();
@@ -507,6 +508,7 @@ export class AnimalLayer {
     unknownAirborne = false): void {
     if (rig.mixer === null) return;
     const grounded = climbPhase === null && !unknownAirborne;
+    if (grounded) state = stateAtSpeed(state, rig.gait);
     const wanted = (grounded ? clipForGait(state, rig.gait.gait, rig.clipNames) : null)
       ?? clipForObservedMotion(state, rig.clipNames, null, unknownAirborne, climbPhase);
     // Never keep walking/eating after a state changes to one without a supported clip.
