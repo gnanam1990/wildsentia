@@ -43,6 +43,15 @@ export function visualFor(speciesId: string): SpeciesVisual {
   return SPECIES_VISUALS[speciesId] ?? UNKNOWN;
 }
 
+/**
+ * The Asian elephant exports face backwards and are also turned on their root bone: the adults'
+ * body axis lies 32.2 degrees, the calf's 30.5, off the file's forward axis (measured from the
+ * skinned mesh's long axis; the root bone carries the same -147.8 degree turn). A half turn alone
+ * left them walking crabwise, a third of a right angle off their path.
+ */
+export const ASIAN_ELEPHANT_YAW = Math.PI - 32.2 * Math.PI / 180;
+export const ASIAN_ELEPHANT_CALF_YAW = Math.PI - 30.5 * Math.PI / 180;
+
 /** Local interim Asian-elephant age/sex variants. Body-mass scale still comes
  * from the saved animal; these only choose its visual geometry. */
 export function visualForAnimal(animal: Pick<AnimalState, 'speciesId' | 'sex' | 'lifeStage'>, airborne = false): SpeciesVisual {
@@ -54,12 +63,12 @@ export function visualForAnimal(animal: Pick<AnimalState, 'speciesId' | 'sex' | 
     return { ...SPECIES_VISUALS.chital!, model: { file: '/assets/animals/ChitalHind.glb' } };
   if (animal.speciesId === 'elephant') {
     if (animal.lifeStage === 'newborn' || animal.lifeStage === 'juvenile')
-      return { ...SPECIES_VISUALS.elephant!, model: { file: '/assets/animals/AsianElephantCalf.glb', yaw: Math.PI } };
+      return { ...SPECIES_VISUALS.elephant!, model: { file: '/assets/animals/AsianElephantCalf.glb', yaw: ASIAN_ELEPHANT_CALF_YAW } };
     if (animal.lifeStage === 'subadult')
-      return { ...SPECIES_VISUALS.elephant!, model: { file: '/assets/animals/AsianElephantAdultFemale.glb', yaw: Math.PI } };
+      return { ...SPECIES_VISUALS.elephant!, model: { file: '/assets/animals/AsianElephantAdultFemale.glb', yaw: ASIAN_ELEPHANT_YAW } };
     if (animal.lifeStage === 'adult' || animal.lifeStage === 'elder') {
-      if (animal.sex === 'male') return { ...SPECIES_VISUALS.elephant!, model: { file: '/assets/animals/AsianElephantAdultMale.glb', yaw: Math.PI } };
-      if (animal.sex === 'female') return { ...SPECIES_VISUALS.elephant!, model: { file: '/assets/animals/AsianElephantAdultFemale.glb', yaw: Math.PI } };
+      if (animal.sex === 'male') return { ...SPECIES_VISUALS.elephant!, model: { file: '/assets/animals/AsianElephantAdultMale.glb', yaw: ASIAN_ELEPHANT_YAW } };
+      if (animal.sex === 'female') return { ...SPECIES_VISUALS.elephant!, model: { file: '/assets/animals/AsianElephantAdultFemale.glb', yaw: ASIAN_ELEPHANT_YAW } };
     }
   }
   return visualFor(animal.speciesId);
