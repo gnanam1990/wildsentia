@@ -84,6 +84,35 @@ export function clipForObservedMotion(state: string, availableClips: readonly st
 
 const FALLBACK: readonly string[] = ['Idle'];
 
+/** A well-mixed 0..1 value from an animal's seed, one per `salt`. */
+function unit(seed: number, salt: number): number {
+  let h = Math.imul((seed >>> 0) ^ Math.imul(salt + 1, 0x9e3779b1), 0x85ebca6b);
+  h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35); h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+
+/** Where in a looping clip this animal is, so a herd or a line at the water does not move in unison. */
+export function clipPhase(seed: number, duration: number): number {
+  return duration > 0 ? unit(seed, 0) * duration : 0;
+}
+
+const VIGILANT = new Set(['drinking', 'grazing', 'feeding']);
+
+/**
+ * How far an animal at water or forage has lifted its head to look round, 0 (head down) to 1.
+ * Animals do not drink or graze with their heads down throughout: they stop, look up and scan,
+ * and go back to it. Each animal keeps its own rhythm: a look of 2.4–3.2 s every 8–13 s,
+ * about a fifth to a third of the time, eased over 0.6 s at either end.
+ */
+export function vigilance(state: string, seconds: number, seed: number): number {
+  if (!VIGILANT.has(state) || !Number.isFinite(seconds)) return 0;
+  const period = 8 + unit(seed, 1) * 5, look = 2.4 + unit(seed, 2) * 0.8, ramp = 0.6;
+  const t = ((seconds + unit(seed, 3) * period) % period + period) % period;
+  if (t >= look) return 0;
+  const ease = (x: number) => { const c = Math.min(1, Math.max(0, x)); return c * c * (3 - 2 * c); };
+  return Math.min(ease(t / ramp), ease((look - t) / ramp));
+}
+
 /** A replay seek samples a pose directly; a corpse must not freeze on frame zero of Death. */
 export function replayClipTime(state: string, duration: number, seconds: number): number {
   if (!Number.isFinite(duration) || duration <= 0 || !Number.isFinite(seconds)) return 0;

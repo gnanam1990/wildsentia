@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { clipForObservedMotion, elephantTrunkReach, renderStateFor, replayClipTime,
+import { clipForObservedMotion, clipForState, clipPhase, elephantTrunkReach, renderStateFor, replayClipTime, vigilance,
   type ClimbVisualPhase, type FlightVisualPhase, climbPose } from './animation.js';
 import { PositionTracker, renderBaseY, type RenderPosition } from './space.js';
 import type { AnimalState } from './protocol.js';
@@ -54,6 +54,8 @@ interface Rig {
   gait: GaitClock;
   /** Hip height of the drawn animal, in metres, for its stride length. */
   hipM: number;
+  /** Stable per-animal number: its own clip phase and look-up rhythm. */
+  seed: number;
   appearanceKey: string;
   materials: Array<{ material: THREE.MeshStandardMaterial; base: THREE.Color }>;
 }
@@ -108,6 +110,8 @@ export class AnimalLayer {
 
   readonly #templates = new Map<string, Promise<THREE.Group>>();
   readonly #rigs = new Map<string, Rig>();
+  /** Seconds of drawn time, for each animal's own look-up rhythm while it feeds or drinks. */
+  #clockSeconds = 0;
   /** Ids whose model is being loaded. Without this, sync() would start a fresh load every frame. */
   readonly #pending = new Set<string>();
   readonly #ready = new Map<string, { animal: AnimalState; template: THREE.Group; variantKey: string }>();
@@ -289,7 +293,7 @@ export class AnimalLayer {
     const bodyLengthM = new THREE.Box3().setFromObject(visual).getSize(new THREE.Vector3()).z;
     const rig: Rig = { variantKey: key, group, mixer, actions, clipNames: clips.map((c) => c.name), playing: null, marker,
       visual, footY: visual.position.y, restRotationZ: visual.rotation.z, bodyLengthM, climbRest: null,
-      needsCorpseGrounding: false, gait: new GaitClock(), hipM: hipHeightM(height * characterScale(animal)),
+      needsCorpseGrounding: false, gait: new GaitClock(), hipM: hipHeightM(height * characterScale(animal)), seed: idSeed(animal.id),
       appearanceKey: '', materials };
     this.#pending.delete(animal.id);
     this.#rigs.set(animal.id, rig);
@@ -461,8 +465,18 @@ export class AnimalLayer {
       // A stride is sampled from a clock run at the pace of the ground covered, not the playhead.
       action.time = grounded && isStrideClip(source.name) && rig.gait.speedMs > 0
         ? rig.gait.advance(strideRate(source, cyclesOf(source), rig.gait.speedMs, rig.hipM), source.duration)
-        : replayClipTime(state, source.duration, seconds);
+        : replayClipTime(state, source.duration, seconds + clipPhase(rig.seed, source.duration));
       action.paused = true;
+      // A drinking or grazing animal lifts its head to look round now and then, blended in.
+      const look = grounded ? vigilance(state, seconds, rig.seed) : 0;
+      const alertClip = look > 0 ? clipForState('standing', rig.clipNames) : null;
+      const alert = alertClip === null || alertClip === clip ? undefined : rig.actions.get(alertClip);
+      if (alert) {
+        alert.reset().setEffectiveWeight(look).setLoop(THREE.LoopRepeat, Infinity).play();
+        alert.time = replayClipTime('standing', alert.getClip().duration, seconds + clipPhase(rig.seed, alert.getClip().duration));
+        alert.paused = true;
+        action.setEffectiveWeight(1 - look);
+      }
       rig.mixer?.update(0);
     }
     if (rig.needsCorpseGrounding) this.#groundCorpse(rig);
@@ -473,6 +487,7 @@ export class AnimalLayer {
   }
 
   update(deltaSeconds: number): void {
+    this.#clockSeconds += deltaSeconds;
     for (const rig of this.#rigs.values()) rig?.mixer?.update(deltaSeconds);
   }
 
@@ -509,6 +524,7 @@ export class AnimalLayer {
     if (rig.mixer === null) return;
     const grounded = climbPhase === null && !unknownAirborne;
     if (grounded) state = stateAtSpeed(state, rig.gait);
+    if (grounded && vigilance(state, this.#clockSeconds, rig.seed) > 0.5) state = 'standing';
     const wanted = (grounded ? clipForGait(state, rig.gait.gait, rig.clipNames) : null)
       ?? clipForObservedMotion(state, rig.clipNames, null, unknownAirborne, climbPhase);
     // Never keep walking/eating after a state changes to one without a supported clip.
@@ -526,6 +542,8 @@ export class AnimalLayer {
     if (state === 'dead') { next.setLoop(THREE.LoopOnce, 1); next.clampWhenFinished = true; }
     else { next.setLoop(THREE.LoopRepeat, Infinity); next.clampWhenFinished = false; }
     next.reset().play();
+    // Animals changing state together (at an hour change) must not then move in unison.
+    if (state !== 'dead') next.time = clipPhase(rig.seed, next.getClip().duration);
     if (previous !== null) previous.crossFadeTo(next, 0.35, false);
     rig.playing = wanted;
     this.#pace(rig, wanted, grounded);

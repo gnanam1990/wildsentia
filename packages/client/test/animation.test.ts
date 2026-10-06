@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { climbPose, CLIMB_TRUNK_CLEARANCE_M, clipForClimbPhase, clipForObservedMotion, clipForState, elephantTrunkReach, renderStateFor } from '../src/animation.js';
+import { clipPhase, climbPose, CLIMB_TRUNK_CLEARANCE_M, clipForClimbPhase, clipForObservedMotion, clipForState, elephantTrunkReach, renderStateFor, vigilance } from '../src/animation.js';
 
 const DEER_CLIPS = [
   'Attack_Headbutt', 'Attack_Kick', 'Death', 'Eating', 'Gallop', 'Gallop_Jump',
@@ -125,5 +125,39 @@ describe('climbPose', () => {
     // Langurs come down tail first, head still up; squirrels come down head first.
     expect(climbPose('langur', 'descending', 0.8).pitch).toBe(-Math.PI / 2);
     expect(climbPose('squirrel', 'descending', 0.4)).toEqual({ pitch: Math.PI / 2, back: CLIMB_TRUNK_CLEARANCE_M, lift: 0.2 });
+  });
+});
+
+describe('vigilance', () => {
+  const share = (seed: number, state = 'drinking') => {
+    let up = 0; const n = 6000;
+    for (let i = 0; i < n; i++) up += vigilance(state, i * 0.05, seed);
+    return up / n;
+  };
+  it('has a drinking or grazing animal lift its head to look round for part of the time', () => {
+    for (const seed of [1, 77, 4021, 99991]) {
+      expect(share(seed)).toBeGreaterThan(0.12);
+      expect(share(seed)).toBeLessThan(0.35);
+      expect(share(seed, 'grazing')).toBeGreaterThan(0.12);
+    }
+  });
+  it('never looks up while resting, travelling or dead', () => {
+    for (const state of ['resting', 'travelling', 'dead', 'chasing']) expect(share(5, state)).toBe(0);
+  });
+  it('raises and lowers the head smoothly, never in one frame', () => {
+    for (let i = 1; i < 6000; i++) expect(Math.abs(vigilance('drinking', i / 60, 321) - vigilance('drinking', (i - 1) / 60, 321))).toBeLessThan(0.05);
+  });
+  it('keeps neighbours out of step', () => {
+    let same = 0;
+    for (let i = 0; i < 2000; i++) if ((vigilance('drinking', i * 0.1, 11) > 0.5) === (vigilance('drinking', i * 0.1, 12345) > 0.5)) same++;
+    expect(same / 2000).toBeLessThan(0.9);
+  });
+});
+
+describe('clipPhase', () => {
+  it('starts each animal at its own point in a clip, so a herd does not move in unison', () => {
+    const phases = [1, 2, 3, 4, 5, 1000, 31337].map((seed) => clipPhase(seed, 2));
+    expect(new Set(phases.map((p) => p.toFixed(3))).size).toBe(phases.length);
+    for (const p of phases) { expect(p).toBeGreaterThanOrEqual(0); expect(p).toBeLessThan(2); }
   });
 });

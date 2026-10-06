@@ -159,13 +159,16 @@ describe('animal layer render lifecycle', () => {
     await ready(layer);
     const wingX = () => layer.root.getObjectByName('v')!.getObjectByName('wing')!.position.x;
     layer.sync(living, 1, 'v', { x: 0, z: 0 }, poses);
-    expect(wingX()).toBeCloseTo(.5);
+    // Each animal has its own phase in a clip, so only the clip's range is fixed: Flap is 0..1,
+    // where Glide, Walk and Death hold 2, 3 and 4.
+    const flapping = () => { expect(wingX()).toBeGreaterThanOrEqual(0); expect(wingX()).toBeLessThanOrEqual(1); };
+    flapping();
     poses.get('v')!.flightVisualPhase = 'gliding'; poses.get('v')!.seconds = 1;
     layer.sync(living, 2, 'v', { x: 0, z: 0 }, poses);
     expect(wingX()).toBeCloseTo(2);
     poses.get('v')!.flightVisualPhase = 'descending'; poses.get('v')!.seconds = 1.5;
     layer.sync(living, 3, 'v', { x: 0, z: 0 }, poses);
-    expect(wingX()).toBeCloseTo(.5);
+    flapping();
     delete poses.get('v')!.flightVisualPhase;
     layer.sync(living, 4, 'v', { x: 0, z: 0 }, poses);
     expect(wingX()).not.toBeCloseTo(3); // unknown airborne segment must not walk mid-air
