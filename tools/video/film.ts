@@ -39,17 +39,18 @@ const shots: Shot[] = [
   { name: 'b-elephant', species: 'elephant', seconds: 7, path: { theta: [2.2, 3.1], phi: [0.22, 0.3], distance: [16, 12] } },
   { name: 'c-chital', species: 'chital', seconds: 6, path: { theta: [0.3, 1.0], phi: [0.18, 0.24], distance: [6.5, 5] } },
   { name: 'd-langur', species: 'langur', seconds: 6, path: { theta: [4.0, 4.7], phi: [0.2, 0.26], distance: [5, 4] } },
-  { name: 'e-gaur', species: 'gaur', seconds: 6, path: { theta: [1.2, 1.8], phi: [0.16, 0.2], distance: [13, 11] } },
+  { name: 'e-gaur', species: 'gaur', seconds: 6, path: { theta: [1.2, 1.8], phi: [0.16, 0.2], distance: [8, 7] } },
   // Tigers ambush, so their chases start close. A shot that keeps hunter and quarry both in frame
   // over a 25 m chase leaves them as dots, so each hunt is held on the tiger from the final
   // sprint, through the catch, to the kill.
   { name: 'f-hunt-tiger', seconds: 9, hunt: { predator: 'tiger', lead: 3.5, at: 'contact', eventId: 'hunt_000000010000000000020bc8' },
     path: { theta: [0, 0.5], phi: [0.16, 0.2], distance: [7.5, 5.5], track: 'predator' } },
-  { name: 'g-hunt-sambar', seconds: 6.5, hunt: { predator: 'tiger', lead: 3, at: 'contact', eventId: 'hunt_000000010000000000002d87' },
-    path: { theta: [2.0, 2.5], phi: [0.16, 0.2], distance: [8, 6], track: 'predator' } },
-  { name: 'h-boar', species: 'boar', seconds: 5, path: { theta: [5.0, 5.6], phi: [0.18, 0.22], distance: [5, 4] } },
+  // The same kill from the other side, close and low, from just before the spring: the grip and the fall.
+  { name: 'g-hunt-sambar', seconds: 6.5, hunt: { predator: 'tiger', lead: 1.2, at: 'contact', eventId: 'hunt_000000010000000000020bc8' },
+    path: { theta: [3.5, 3.9], phi: [0.2, 0.24], distance: [5.5, 4.5], track: 'predator' } },
+  { name: 'h-boar', species: 'boar', seconds: 5, path: { theta: [5.0, 5.6], phi: [0.18, 0.22], distance: [6.5, 5.5] } },
   { name: 'i-squirrel', species: 'squirrel', seconds: 5, path: { theta: [2.0, 2.6], phi: [0.2, 0.24], distance: [3.2, 2.6] } },
-  { name: 'j-sambar', species: 'sambar', seconds: 6, path: { theta: [3.0, 3.6], phi: [0.16, 0.2], distance: [11, 9] } },
+  { name: 'j-sambar', species: 'sambar', seconds: 6, path: { theta: [3.0, 3.6], phi: [0.16, 0.2], distance: [7.5, 6.5] } },
   { name: 'k-rise', species: 'elephant', seconds: 10, path: { theta: [0.0, 0.9], phi: [0.3, 1.15], distance: [14, 160] } },
 ];
 
@@ -72,7 +73,7 @@ interface Sample { seconds: number; phase: string; predator: { x: number; z: num
 /** A successful recorded hunt by the species, newest first, with its chase window. */
 async function pickHunt(species: string, used: Set<string>, eventId?: string): Promise<{ predator: string; prey: string; eventId: string; from: number; contact: number; total: number }> {
   const { markers } = await fetch(`${api}/api/event-map`).then((r) => r.json()) as { markers: Marker[] };
-  const hunts = markers.filter((m) => m.type === 'hunt' && (eventId ? m.id === eventId : m.outcome === 'success') && m.actorId?.startsWith(`${species}_`) && !used.has(m.id))
+  const hunts = markers.filter((m) => m.type === 'hunt' && (eventId ? m.id === eventId : m.outcome === 'success' && !used.has(m.id)) && m.actorId?.startsWith(`${species}_`))
     .sort((a, b) => b.worldTime - a.worldTime);
   // The chase that starts closest makes the best shot: both animals share the frame from the start.
   let best: { predator: string; prey: string; eventId: string; from: number; contact: number; total: number; gap: number } | null = null;
@@ -88,7 +89,7 @@ async function pickHunt(species: string, used: Set<string>, eventId?: string): P
     if (!best || gap < best.gap) best = { predator: m.actorId!, prey, eventId: m.id, from: chase.seconds, contact,
       total: samples.at(-1)!.seconds + (m.outcome === 'success' ? AFTERMATH_S : 0), gap };
   }
-  if (best) { if (!eventId) used.add(best.eventId); console.log(`  ${species} hunt ${best.eventId}: chase starts ${best.gap.toFixed(0)} m apart`); return best; }
+  if (best) { used.add(best.eventId); console.log(`  ${species} hunt ${best.eventId}: chase starts ${best.gap.toFixed(0)} m apart`); return best; }
   throw new Error(`no recorded ${species} hunt with a chase`);
 }
 
@@ -202,7 +203,14 @@ for (const shot of shots) {
     subject = animal;
     await page.goto(`${viewer}/?cinema=1&maxfps=240#animal=${animal}`, { waitUntil: 'domcontentloaded' });
     await waitReady(page);
-    await page.waitForTimeout(8000); // models, vegetation and the follow flight settle (real time)
+    await page.waitForTimeout(8000); // models and vegetation load (real time)
+    // The page clock runs slow while filming, so the follow flight takes longer than it looks:
+    // wait until the camera is actually on the animal, or a shot frames empty grass beside it.
+    await page.waitForFunction((id) => {
+      const v = (window as any).__vana, g = v.animals.root.getObjectByName(id), f = v.follow;
+      return g && Math.hypot(f.target.x - g.position.x, f.target.z - g.position.z) < 1
+        && v.camera.position.distanceTo(g.position) < 40;
+    }, animal, { timeout: 120_000, polling: 250 });
   }
   await startPath(page, shot.path, shot.seconds + 1, pair);
   const stamps: number[] = [];
