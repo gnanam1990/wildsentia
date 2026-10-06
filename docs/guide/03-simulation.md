@@ -2,7 +2,7 @@
 
 The simulation (`packages/sim`) is the whole truth of the world. It is headless, deterministic
 and conserves nutrients. The live server runs the `island_v1` terrain with the `household_v1`
-village; the current rules are **`sim_0.35.0`**.
+village; the current rules are **`sim_0.36.0`**.
 
 ## The island
 
@@ -62,6 +62,9 @@ continuously: drift beyond tolerance fails the build.
 - Parents care for their young through recorded contact: nursing, provisioning (a tigress
   opens a carcass for her cubs) and visits. Young follow their mother on the ground; nothing
   teleports. Parents also teach skills, and raised young outperform orphans.
+- Litters stay together (`sim_0.36.0`): young too small to walk gather to the sibling their
+  mother is feeding and do not scatter when she is attacked; langur infants are carried;
+  leverets are nursed from birth. Each species' following and foraging ages are in its config.
 - Births carry the population. The island receives only rare, recorded arrivals of animals
   that swim ashore (tiger, elephant, jackal), each written to a ledger.
 
@@ -72,18 +75,31 @@ the canopy, herd vigilance, both animals' stamina and condition, the distance at
 hunter commits, the terrain, and the land boundary. It is recorded as a trace of predator and
 prey positions through its phases:
 
-`approach` → `stalk` → `chase` → `contact` (and, from `sim_0.36`, a recorded `subdue` hold
-until the prey dies) — or `escape` / `abandon` when it fails.
+`approach` → `stalk` → `chase` → `contact` → `subdue` (the hold until the prey dies) — or
+`escape` / `abandon` when it fails.
+
+**The kill is a hold, not a touch** (`sim_0.36.0`). After contact the predator holds the prey
+(by the throat or nape) and the prey drags a little, until it dies at the end of the hold. A
+tiger holds small prey for seconds and large prey for one to four minutes; a dhole pack takes
+longer, shared among the hunters. Large prey sometimes break free from a tiger and escape,
+possibly wounded. Hunts recorded before `sim_0.36.0` have no hold: their prey died at contact.
 
 A failed hunt records the stage it reached, so it can be explained afterwards from the record.
-On the current rules a tiger succeeds in about one hunt in five, a dhole in about one in nine.
+On the current rules a tiger succeeds in about one hunt in five.
+
+**Dholes hunt as a pack** (`sim_0.36.0`). Packmates within reach join a hunt, each adding to
+its chance, and all feed at the kill; weaned pups follow, and helpers carry food to the den.
+Prey choice follows field data: sambar are favoured, pigs and langur avoided, and a pack goes
+for prey of 30–235 kg unless it is starving. Pack hunts succeed in about one in seven to one in
+six.
 
 **Feeding is calibrated to field intake** (`sim_0.35.0`). A kill fills the predator's stomach
 (a tiger holds about 27 kg, matching the 18–35 kg a tiger eats at one sitting). The stomach is
 digested over the following days, and a predator does not hunt while it is sated or below its
-hunting hunger. A lone tiger among plentiful deer makes about 48 kills a year, about 8 days
-apart, against about 50 a year at 7–8-day intervals in the field (Karanth & Sunquist). There is
-no kill cap anywhere: kill rates emerge from intake, satiety, carcass use and hunt success.
+hunting hunger. A lone tiger among plentiful deer makes about 50–56 kills a year, roughly a
+week apart, against about 50 a year at 7–8-day intervals in the field (Karanth & Sunquist).
+There is no kill cap anywhere: kill rates emerge from intake, satiety, carcass use and hunt
+success.
 
 ## Fear
 

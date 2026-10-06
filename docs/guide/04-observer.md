@@ -74,8 +74,9 @@ rules decide only which clip plays and how fast.
   crouched, does not.
 - **A kill is a sequence.** The hunter springs the last moments before contact (pounce), seizes
   and holds the prey (hold); the prey is struck, falls and struggles until the recorded death,
-  then lies still while the hunter feeds. Hunts recorded before the hold existed show the prey
-  collapsing at contact, where it was recorded dead.
+  then lies still while the hunter feeds. A prey that breaks free fights the grip on its feet
+  and then runs. Hunts recorded before the hold existed show the prey collapsing at contact,
+  where it was recorded dead.
 - **Climbing and flight** use recorded altitude: a langur or squirrel is stood upright against
   its tree; a vulture flaps when climbing or descending and glides when level.
 - Elephants reach their trunk to the ground to feed and drink.

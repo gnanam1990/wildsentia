@@ -81,7 +81,8 @@ The browser receives the recorded hour and plays it through, in step with every 
    walks at its species' real pace. An hour holding more movement than fits plays proportionally
    faster, and the animal is shown running.
 2. **Hunts share one timeline.** Predator and prey are sampled at the same instant. A chase
-   plays at sprinting pace; a predator's hold on its prey plays in real time.
+   plays at sprinting pace; a predator's hold on its prey plays at a quarter of its recorded
+   length, so a four-minute hold takes a minute.
 3. **Between hours** the client interpolates from each animal's last position to its new one.
 4. **Close to the camera, animals get full 3D models** within a render budget; farther ones are
    drawn as lightweight dots. Bodies are kept clear of each other, of people, of tree trunks and

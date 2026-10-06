@@ -49,5 +49,5 @@ month. Each hour is saved as a durable checkpoint.
 
 On screen, the browser plays the current hour through: every animal walks its recorded route at
 its real walking pace, and the hour's idle time (resting, grazing) absorbs the difference.
-Chases play at sprinting pace, and a predator's hold on its prey plays in real time. A world that runs live agents runs at one world hour per real
-hour, so agents act in real time.
+Chases play at sprinting pace, and a predator's hold on its prey at a quarter of its length.
+A world that runs live agents runs at one world hour per real hour, so agents act in real time.
