@@ -61,15 +61,16 @@ describe('daily nursing policy', () => {
     expect(event.conditions.arrivalWorldTime).toBe(s.childVisit.arrival);
     expect(event.conditions.provisioningSeconds).toBe(60);
     expect(event.causalParents).toEqual([s.parentVisit.routeId, s.childVisit.routeId]);
-    expect(event.effects.foodEquivalentKg).toBeCloseTo(needsOf(s.child, s.cfg).foodKg / 5);
-    expect(event.effects.waterEquivalentL).toBeCloseTo(needsOf(s.child, s.cfg).waterL / 5);
+    // sim_0.36.0: a full 300 s bout can replace 2.5 days (the whole deficit a young can carry).
+    expect(event.effects.foodEquivalentKg).toBeCloseTo(needsOf(s.child, s.cfg).foodKg / 2);
+    expect(event.effects.waterEquivalentL).toBeCloseTo(needsOf(s.child, s.cfg).waterL / 2);
     expect(s.parent.drives.hunger - before.hunger).toBeCloseTo(Number(event.effects.foodEquivalentKg) / needsOf(s.parent, s.cfg).foodKg * HUNGER_PER_DAY);
     expect(s.parent.drives.thirst - before.thirst).toBeCloseTo(Number(event.effects.waterEquivalentL) / needsOf(s.parent, s.cfg).waterL * THIRST_PER_DAY);
     expect(s.child.nursingIntake).toMatchObject({ cycle: 0, contactSeconds: 60, completed: false });
-    expect(s.child.nursingIntake!.foodDays).toBeCloseTo(0.2, 12);
-    expect(s.child.nursingIntake!.waterDays).toBeCloseTo(0.2, 12);
+    expect(s.child.nursingIntake!.foodDays).toBeCloseTo(0.5, 12);
+    expect(s.child.nursingIntake!.waterDays).toBeCloseTo(0.5, 12);
   });
-  it('resumes a partial bout without overlapping time, caps daily intake, and never refills on retry', () => {
+  it('resumes a partial bout without overlapping time, feeds to repletion, and never refills on retry', () => {
     const s = fixture(); s.finish(s.childVisit.arrival + 60);
     const first = structuredClone(s.child);
     s.finish(s.childVisit.arrival + 60); expect(s.child).toEqual(first);
@@ -79,8 +80,11 @@ describe('daily nursing policy', () => {
     expect(events[1]!.conditions.arrivalWorldTime).toBe(s.childVisit.arrival + 60);
     expect(events[1]!.conditions.provisioningSeconds).toBe(240);
     expect(s.child.nursingIntake).toMatchObject({ contactSeconds: 300, completed: true });
-    expect(s.child.nursingIntake!.foodDays).toBeCloseTo(1, 12);
-    expect(s.child.nursingIntake!.waterDays).toBeCloseTo(1, 12);
+    // Thirst 0.6 is 1.5 days of water, all replaced; hunger 0.6 is 4.3 days of food, of which a
+    // full bout replaces 2.5 (sim_0.36.0: no one-day cap).
+    expect(s.child.nursingIntake!.foodDays).toBeCloseTo(2.5, 12);
+    expect(s.child.nursingIntake!.waterDays).toBeCloseTo(1.5, 9);
+    expect(s.child.drives.thirst).toBeCloseTo(0, 9);
     const final = structuredClone(s.child); s.finish(); expect(s.child).toEqual(final);
     expect(nursingEligible(s.child, s.cfg, 20 * hour, 21 * hour)).toBe(false);
     expect(nursingEligible(s.child, s.cfg, 43 * hour, 44 * hour)).toBe(true);

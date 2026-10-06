@@ -10,11 +10,11 @@ import { choosePrey } from './predation.js';
 import { resolveSpatialHunt } from './encounters.js';
 import { canRetryPrey, rememberFailedHunt } from './huntMemory.js';
 import type { GoalChoice } from './goals.js';
-import { heldByPredatorOf, type Percept, type WorldView } from './perception.js';
+import { HUNGER_DESPERATION, heldByPredatorOf, type Percept, type WorldView } from './perception.js';
 import { locateAgent, locateCarcass } from './spatial.js';
 import { approachContact } from './movement.js';
 import { navigate } from './navigation.js';
-import { allowsDependentGoal, canEatMaternalCarcass, canHuntIndependently, creditMeal, gutCapacityKg, locomotionFactor,
+import { allowsDependentGoal, cannotYetWalk, canEatMaternalCarcass, canHuntIndependently, creditMeal, gutCapacityKg, locomotionFactor,
   mealRoom, needsOf, needsProvisioning } from './needs.js';
 import { exposeToCarrion } from './illness.js';
 import { exposeToContactWound } from './wound.js';
@@ -27,6 +27,13 @@ export interface WorldServices {
   removeCarcassIfSpent(carcass: Carcass): void;
   /** An animal used a skill. The world records it and lets the young beside it learn. */
   practised(agent: Agent, skill: SkillId, success: boolean): void;
+  /**
+   * sim_0.36.0: packmates free to join this hunter as it commits to a hunt. Joining spends their
+   * decision: they relay the chase and feed at the kill. Absent for worlds and tests without packs.
+   */
+  joinPackHunt?(hunter: Agent, species: SpeciesConfig): { hunters: Agent[]; followers: Agent[] };
+  /** sim_0.36.0: whether packmates able to join a hunt stand within reach (read-only). */
+  packmatesNearby?(hunter: Agent, species: SpeciesConfig): boolean;
 }
 
 export interface BehaviourContext {
@@ -283,6 +290,25 @@ function wander(ctx: BehaviourContext): void {
   moveTo(ctx, pool[ctx.rng.int(pool.length)]!);
 }
 
+/**
+ * sim_0.36.0: how long a seized prey takes to die, from the species' field table by prey mass,
+ * shared among a pack's hunters. Tigers kill prey under about half their weight with a nape or
+ * throat bite within seconds to tens of seconds and hold large prey by the throat until it
+ * suffocates, about one to four minutes; two or three dholes kill a 50 kg deer in under two
+ * minutes by disembowelling it, a large stag in about fifteen (see the ecology doc for sources).
+ */
+export function subdueSecondsFor(hunting: NonNullable<SpeciesConfig['hunting']>, preyKg: number, hunters: number): number {
+  const table = hunting.subdueSeconds;
+  if (!table?.length || !(preyKg >= 0)) return 0;
+  let seconds = table[table.length - 1]![1];
+  if (preyKg <= table[0]![0]) seconds = table[0]![1];
+  else for (let i = 1; i < table.length; i++) {
+    const [k0, s0] = table[i - 1]!, [k1, s1] = table[i]!;
+    if (preyKg <= k1) { seconds = k1 > k0 ? s0 + (s1 - s0) * (preyKg - k0) / (k1 - k0) : s1; break; }
+  }
+  return seconds * (hunting.subdueReferenceHunters ?? 1) / Math.max(1, hunters);
+}
+
 function hunt(ctx: BehaviourContext): void {
   const hunting = ctx.species.hunting;
   const candidates = ctx.percept.prey.filter((p) => p.agent.alive
@@ -295,7 +321,17 @@ function hunt(ctx: BehaviourContext): void {
   }
 
   // Keep an approach commitment only while that living target remains perceptible and eligible.
-  const choice = candidates.find((p) => p.agent.id === ctx.agent.targetId) ?? choosePrey(candidates, ctx.rng);
+  // sim_0.36.0: a pack hunting together goes for the species packs take (Hayward et al. 2014:
+  // accessible prey species of 30-235 kg, by adult mass, so their fawns too); a lone dhole still
+  // takes a hare, and so does a starving pack (its diet widens past the hunger at which need
+  // outranks fear). With none in view, the pack takes what it finds.
+  const range = hunting.packPreyKg;
+  const adultKg = (p: { agent: Agent }) => ctx.view.speciesOf(p.agent.speciesId).body.adultMassKg;
+  const accessible = range && ctx.agent.drives.hunger < HUNGER_DESPERATION && ctx.services.packmatesNearby?.(ctx.agent, ctx.species)
+    ? candidates.filter(p => adultKg(p) >= range[0] && adultKg(p) <= range[1]) : [];
+  const pool = accessible.length ? accessible : candidates;
+  const choice = pool.find((p) => p.agent.id === ctx.agent.targetId)
+    ?? choosePrey(pool, ctx.rng, hunting.preyPreference);
   ctx.agent.targetId = choice.agent.id;
 
   if (choice.patchId !== ctx.agent.patchId) { moveTo(ctx, choice.patchId); return; }
@@ -310,8 +346,20 @@ function hunt(ctx: BehaviourContext): void {
   const predatorTerrainCost = ctx.species.locomotion.terrainCost[terrain];
   const preyTerrainCost = preySpecies.locomotion.terrainCost[terrain];
   const predatorScale = locomotionFactor(ctx.agent, ctx.species);
-  const preyScale = locomotionFactor(victim, preySpecies);
+  // A denned young that cannot yet walk does not run (sim_0.36.0); 1% keeps the solver's speeds positive.
+  const preyScale = locomotionFactor(victim, preySpecies) * (cannotYetWalk(victim, preySpecies) ? 0.01 : 1);
   const predatorCondition = Math.max(0.15, 1 - ctx.agent.drives.fatigue * 0.5) * predatorScale;
+  // sim_0.36.0: a dhole pack hunts together. Packmates close by join the commit, relay the chase
+  // and feed at the kill (Johnsingh 1982; Hayward et al. 2014: a kill is eaten at once).
+  // Weaned young too young to hunt follow the pack and feed at its kills (Johnsingh 1982: pups
+  // leave the den at 70-80 days and help kill only at about seven months).
+  const joined = hunting.packHuntRadiusM !== undefined ? ctx.services.joinPackHunt?.(ctx.agent, ctx.species) : undefined;
+  const party = joined?.hunters ?? [], followers = joined?.followers ?? [];
+  const huntersKg = ctx.agent.massKg + party.reduce((kg, m) => kg + m.massKg, 0);
+  for (const mate of [...party, ...followers]) {
+    mate.currentGoal = 'hunt'; mate.alternativeGoal = null; mate.goalScore = ctx.choice.score;
+    mate.targetId = victim.id; mate.state = 'stalking'; delete mate.journey;
+  }
   const preyCondition = Math.max(0.15, 1 - victim.drives.fatigue * 0.5) * preyScale;
   const outcome = resolveSpatialHunt({
     ...(ctx.percept.patch.islandSeed === undefined ? {} : { landBoundaryM: (p: WorldPosition, heading: number) => landRayDistance(ctx.patches, p, heading) }),
@@ -326,6 +374,11 @@ function hunt(ctx: BehaviourContext): void {
     contactRadiusM: 0.35 + (ctx.species.body.shoulderHeightM + preySpecies.body.shoulderHeightM) * 0.25,
     secondsAvailable: ctx.hours * 3600,
     chaseStaminaCost: hunting.staminaCostPerChase,
+    subdueSeconds: subdueSecondsFor(hunting, victim.massKg, 1 + party.length),
+    // A heavy animal drags its killer a few metres before it goes down; a light one barely moves,
+    // and the heavier it is against its hunters, the likelier it fights free.
+    subdueDragM: Math.min(6, 3 * victim.massKg / huntersKg),
+    subdueBreakFreeChance: (hunting.subdueBreakFree ?? 0) * Math.min(1, victim.massKg / huntersKg),
     contest: {
     baseSuccess: hunting.baseSuccess,
     // Taught or practised technique moves both sides of the contest.
@@ -340,6 +393,7 @@ function hunt(ctx: BehaviourContext): void {
     preyAlert: victim.drives.fear > 0.35,
     herdSize: choice.herdSize,
     commitDistanceM: hunting.commitDistanceM,
+    hunters: 1 + party.length,
     },
   }, ctx.rng);
 
@@ -372,7 +426,9 @@ function hunt(ctx: BehaviourContext): void {
     actors: [ctx.agent.id, victim.id], goal: ctx.choice.goal,
     conditions: { stage: outcome.stage, predatorSpecies: ctx.agent.speciesId, preySpecies: victim.speciesId,
       cover: ctx.percept.patch.canopyCover, herdSize: choice.herdSize,
-      distanceAtCommitM: outcome.distanceAtCommitM, durationSeconds: last.seconds },
+      distanceAtCommitM: outcome.distanceAtCommitM, durationSeconds: last.seconds,
+      ...(party.length ? { packHunters: 1 + party.length, packmateIds: party.map(m => m.id).join(',') } : {}),
+      ...(followers.length ? { packFollowerIds: followers.map(m => m.id).join(',') } : {}) },
     outcome: outcome.killed ? 'success'
       : outcome.stage === 'approaching' || outcome.stage === 'time_exhausted' ? 'interrupted'
       : outcome.stage === 'chase_abandoned' ? 'abandoned' : 'failure',
@@ -386,6 +442,12 @@ function hunt(ctx: BehaviourContext): void {
     ctx.agent.state = continuing ? 'stalking' : 'resting';
     ctx.agent.targetId = continuing ? victim.id : null;
     if (!continuing) rememberFailedHunt(ctx.agent, victim.id, at);
+    for (const mate of party) {
+      mate.state = continuing ? 'stalking' : 'resting'; mate.targetId = continuing ? victim.id : null;
+      mate.stamina = clamp01((mate.stamina ?? 1) - outcome.staminaSpent);
+      if (!continuing) rememberFailedHunt(mate, victim.id, at);
+    }
+    for (const young of followers) { young.state = 'resting'; young.targetId = null; }
     return;
   }
 
@@ -393,6 +455,21 @@ function hunt(ctx: BehaviourContext): void {
   ctx.agent.state = 'feeding';
   ctx.agent.targetId = null;
   consume(ctx, carcass, last.seconds, event.id);
+  // The pack feeds together at once (sim_0.36.0). Each packmate walks over land from where it ran
+  // to the kill, and feeds with the time it has left.
+  const target = locateCarcass(carcass), reach = Math.max(0.35, ctx.species.body.shoulderHeightM * 0.65);
+  for (const mate of [...party, ...followers]) {
+    if (party.includes(mate)) mate.stamina = clamp01((mate.stamina ?? 1) - outcome.staminaSpent);
+    mate.state = 'feeding'; mate.targetId = null;
+    const mateCtx = afterTravel({ ...ctx, agent: mate }, last.seconds);
+    if (!mate.alive || !(mateCtx.hours > 0)) continue;
+    const at = locateAgent(mate);
+    if (mate.patchId === carcass.patchId && Math.hypot(at.x - target.x, at.z - target.z) <= reach) {
+      consume(mateCtx, carcass, 0, event.id); continue;
+    }
+    const travel = moveTo(mateCtx, carcass.patchId, false, { ...target });
+    if (travel.trace.completed && travel.seconds < mateCtx.hours * 3600) consume(afterTravel(mateCtx, travel.seconds), carcass, 0, travel.eventId);
+  }
 }
 
 function consume(ctx: BehaviourContext, carcass: Carcass, elapsedSeconds = 0, causalParent?: string): void {

@@ -273,7 +273,8 @@ describe('hunting', () => {
       expect(carcassMass(carcass.biomass)).toBeLessThanOrEqual(carcass.originalMassKg);
       expect(carcass.consumers.length).toBeGreaterThan(0);
       const event = s.log.all().find((e) => e.type === 'hunt')!;
-      expect(event.encounter!.samples.at(-1)!.phase).toBe('contact');
+      expect(event.encounter!.samples.at(-1)!.phase).toBe('subdue'); // sim_0.36.0: death ends the hold after contact
+      expect(event.encounter!.samples.some(s => s.phase === 'contact')).toBe(true);
       expect(carcass.position).toEqual(event.encounter!.samples.at(-1)!.prey);
       expect(carcass.diedAt).toBe(event.worldTime);
       expect(carcass.consumers.every((c) => c.at >= carcass.diedAt)).toBe(true);

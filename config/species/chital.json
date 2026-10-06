@@ -115,6 +115,9 @@
     "interBirthIntervalDays": 300,
     "oestrusCycleDays": 21,
     "weanDays": 150,
+    "followFromDays": 28,
+    "gatherFromDays": 14,
+    "forageFromDays": 90,
     "dispersalDays": 330
   }
 }

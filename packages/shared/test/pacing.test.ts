@@ -76,13 +76,13 @@ describe('presentation pacing of a recorded hour', () => {
     expect(66 / (chase / 12)).toBeCloseTo(12);
   });
 
-  it('plays a recorded hold in real time, not at the hour\'s pace', () => {
+  it('plays a recorded hold at a quarter of its length, not at the hour\'s pace', () => {
     const pacing = paceEncounter({ version: 1, predatorId: 't', preyId: 's', startWorldTime: 0, patchId: 0, contactRadiusM: 1,
       samples: [{ seconds: 100, phase: 'chase', predator: at(0), prey: at(20) },
         { seconds: 106, phase: 'contact', predator: at(59), prey: at(60) },
         { seconds: 146, phase: 'subdue', predator: at(60), prey: at(61) }] }, 12);
     const hold = pacing.display[3]! - pacing.display[2]!;
-    expect(hold / 12).toBeCloseTo(40); // forty recorded seconds of struggle take forty real seconds
+    expect(hold / 12).toBeCloseTo(10); // forty recorded seconds of hold take ten real seconds
   });
 
   it('leaves an idle hour untouched', () => {

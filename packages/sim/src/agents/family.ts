@@ -126,16 +126,15 @@ export function finishCare(visit: CareVisit, children: readonly Agent[], starts:
       seconds = Math.min(seconds, Math.max(0, policy.dailyContactSeconds - budget.contactSeconds));
     }
     if (!(seconds > 0)) continue;
-    const provided = provisionYoung(parent, child, cfg, seconds / 3600,
-      budget ? { foodDays: Math.max(0, 1 - budget.foodDays), waterDays: Math.max(0, 1 - budget.waterDays) } : undefined,
-      arrival + seconds);
+    // A scheduled feed is to repletion (sim_0.36.0): the budget bounds contact time, not intake.
+    const provided = provisionYoung(parent, child, cfg, seconds / 3600, undefined, arrival + seconds);
     if (provided.foodEquivalentKg <= 0 && provided.waterEquivalentL <= 0) continue;
     if (cfg.id === 'boar' && child.ageDays < (cfg.lifecycle.drinkFromDays ?? cfg.lifecycle.weanDays)
       && provided.waterEquivalentL > 0) child.lastMaternalWaterAt = arrival + seconds;
     if (budget && policy) {
       const daily = needsOf(child, cfg);
-      budget.foodDays = Math.min(1, budget.foodDays + provided.foodEquivalentKg / daily.foodKg);
-      budget.waterDays = Math.min(1, budget.waterDays + provided.waterEquivalentL / daily.waterL);
+      budget.foodDays = budget.foodDays + provided.foodEquivalentKg / daily.foodKg;
+      budget.waterDays = budget.waterDays + provided.waterEquivalentL / daily.waterL;
       budget.contactSeconds = Math.min(policy.dailyContactSeconds, budget.contactSeconds + seconds);
       budget.lastEnd = arrival + seconds;
       budget.completed = budget.contactSeconds >= policy.dailyContactSeconds - 1e-8

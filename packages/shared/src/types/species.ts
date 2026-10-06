@@ -46,6 +46,31 @@ export interface SpeciesConfig {
      * intervals: with its stomach digested, a tiger fasts about two days before hunting again.
      */
     huntFromHunger?: number;
+    /**
+     * sim_0.36.0: field prey selection as a multiplier on how often a kind of prey is chosen
+     * (Jacobs' index D as the selection ratio (1 + D) / (1 - D); 1 where not significant).
+     */
+    preyPreference?: Record<string, number>;
+    /**
+     * sim_0.36.0: packmates within this distance of a hunter committing to a hunt join it,
+     * relay the chase and feed at the kill (dholes hunt as a pack).
+     */
+    packHuntRadiusM?: number;
+    /** sim_0.36.0: adult mass range [min, max] kg of the prey species a pack hunting together goes for. */
+    packPreyKg?: [min: number, max: number];
+    /**
+     * sim_0.36.0: seconds from a killing bite to the prey's death, by prey mass: a piecewise-
+     * linear table of [preyKg, seconds] (held at the ends). A pack divides it among its hunters
+     * relative to `subdueReferenceHunters`. Omitted: the prey dies at contact (legacy).
+     */
+    subdueSeconds?: Array<[preyKg: number, seconds: number]>;
+    subdueReferenceHunters?: number;
+    /**
+     * sim_0.36.0: chance a seized prey as heavy as its hunters (together) breaks free during the
+     * hold, scaled down in proportion for lighter prey (Fernández Moya et al. 2021: prey that
+     * defended themselves escaped in 10-23.6% of filmed attacks).
+     */
+    subdueBreakFree?: number;
   };
   social: {
     structure: 'solitary' | 'pair' | 'herd' | 'troop' | 'pack' | 'family';
@@ -108,6 +133,12 @@ export interface SpeciesConfig {
     weanDays: number;
     /** Earliest ground-following age. Omitted: conservative weaning-age fallback, not a biological claim. */
     followFromDays?: number;
+    /**
+     * sim_0.36.0: earliest age a dependent walks to its parent's care point within its senses,
+     * before it can follow her on the move: a litter gathering to suckle or to be fed at the nest
+     * or den. Omitted: the species' young do not gather (follow rules alone apply).
+     */
+    gatherFromDays?: number;
     /** Earliest independent plant foraging before weaning; omitted keeps the old weaning gate. */
     forageFromDays?: number;
     /** Earliest independent route to surface water; omitted retains the previous forage/wean gate. */

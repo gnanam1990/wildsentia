@@ -120,6 +120,7 @@
     "interBirthIntervalDays": 365,
     "oestrusCycleDays": 365,
     "weanDays": 60,
+    "gatherFromDays": 10,
     "dispersalDays": 300
   }
 }

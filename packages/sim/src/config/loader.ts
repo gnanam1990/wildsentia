@@ -62,6 +62,14 @@ export const SpeciesConfigSchema = z
         baseSuccess: z.number().min(0).max(1),
         staminaCostPerChase: z.number().min(0).max(1),
         huntFromHunger: z.number().min(0).max(0.9).optional(),
+        preyPreference: z.record(z.string(), z.number().positive().finite()).optional(),
+        packHuntRadiusM: z.number().positive().finite().optional(),
+        packPreyKg: z.tuple([z.number().min(0).finite(), z.number().positive().finite()])
+          .refine(([lo, hi]) => lo <= hi, 'pack prey range must be ordered').optional(),
+        subdueSeconds: z.array(z.tuple([z.number().min(0).finite(), z.number().positive().max(1800)])).min(1)
+          .refine(t => t.every((p, i) => i === 0 || p[0] >= t[i - 1]![0]), 'subdue table must be ordered by prey mass').optional(),
+        subdueReferenceHunters: z.number().positive().finite().optional(),
+        subdueBreakFree: z.number().min(0).max(1).optional(),
       })
       .optional(),
     social: z.object({
@@ -110,6 +118,7 @@ export const SpeciesConfigSchema = z
       oestrusCycleDays: z.number().positive(),
       weanDays: z.number().positive(),
       followFromDays: z.number().nonnegative().optional(),
+      gatherFromDays: z.number().finite().nonnegative().optional(),
       forageFromDays: z.number().nonnegative().optional(),
       drinkFromDays: z.number().finite().nonnegative().optional(),
       meatFromDays: z.number().finite().nonnegative().optional(),
@@ -126,11 +135,22 @@ export const SpeciesConfigSchema = z
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['social', 'cooperativeCare'],
         message: 'cooperative food care requires a meat-eating scavenging pack, weaned donors and a pre-weaning recipient age' });
     }
+    if (cfg.hunting?.packHuntRadiusM !== undefined && cfg.social.structure !== 'pack') {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['hunting', 'packHuntRadiusM'], message: 'only a pack hunts as a pack' });
+    }
+    for (const prey of Object.keys(cfg.hunting?.preyPreference ?? {})) if (!cfg.hunting!.preferredPrey.includes(prey)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['hunting', 'preyPreference', prey], message: 'a prey preference needs a preferred prey' });
+    }
     if (cfg.lifecycle.forageFromDays !== undefined && (cfg.lifecycle.forageFromDays > cfg.lifecycle.weanDays
       || cfg.lifecycle.forageFromDays < cfg.lifecycle.weanDays
       && !cfg.diet.eats.some(e => e.target === 'grass' || e.target === 'browse'))) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['lifecycle', 'forageFromDays'],
         message: 'early foraging requires a plant food target and must start by weaning' });
+    }
+    if (cfg.lifecycle.gatherFromDays !== undefined && (cfg.lifecycle.gatherFromDays > cfg.lifecycle.weanDays
+      || cfg.lifecycle.gatherFromDays > (cfg.lifecycle.followFromDays ?? cfg.lifecycle.weanDays))) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['lifecycle', 'gatherFromDays'],
+        message: 'a litter gathers to its parent no later than it follows her or is weaned' });
     }
     if (cfg.lifecycle.drinkFromDays !== undefined && cfg.lifecycle.drinkFromDays > cfg.lifecycle.weanDays) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['lifecycle', 'drinkFromDays'],

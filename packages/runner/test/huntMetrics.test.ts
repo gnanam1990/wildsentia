@@ -18,7 +18,9 @@ describe('hunt evidence', () => {
     recordHunt(metrics, event);
     recordHunt(metrics, { ...event, outcome: 'success', conditions: { ...event.conditions, stage: 'killed' } });
     expect(metrics.dhole).toEqual({ attempts: 2, kills: 1, contacts: 2,
-      stages: { escaped: 1, killed: 1 }, prey: { sambar: 2 }, seconds: 20 });
+      stages: { escaped: 1, killed: 1 }, prey: { sambar: 2 }, killsByPrey: { sambar: 1 }, packHunts: 0, packKills: 0, seconds: 20 });
+    recordHunt(metrics, { ...event, outcome: 'success', conditions: { ...event.conditions, stage: 'killed', packHunters: 3 } });
+    expect(metrics.dhole).toMatchObject({ kills: 2, packHunts: 1, packKills: 1, killsByPrey: { sambar: 2 } });
   });
   it('does not invent contact or species evidence for legacy events', () => {
     const metrics: Record<string, HuntMetrics> = {};
@@ -26,6 +28,6 @@ describe('hunt evidence', () => {
     recordHunt(metrics, { ...legacy, conditions: {} });
     recordHunt(metrics, { ...event, type: 'died' });
     expect(metrics).toEqual({ unknown: { attempts: 1, kills: 0, contacts: 0,
-      stages: { unknown: 1 }, prey: { unknown: 1 }, seconds: 0 } });
+      stages: { unknown: 1 }, prey: { unknown: 1 }, killsByPrey: {}, packHunts: 0, packKills: 0, seconds: 0 } });
   });
 });

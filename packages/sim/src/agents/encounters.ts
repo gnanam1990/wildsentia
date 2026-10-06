@@ -8,13 +8,25 @@ export interface SpatialHuntInput {
   predatorWalkMs: number; predatorSprintMs: number; preySprintMs: number;
   predatorSprintSeconds: number; preySprintSeconds: number; preyTrotMs: number;
   contactRadiusM: number; secondsAvailable: number; chaseStaminaCost: number;
+  /**
+   * sim_0.36.0: seconds from a killing contact to the prey's death (the bite and hold). The prey
+   * dies at the end of the subdue phase, not on touch. Omitted or 0: legacy death at contact.
+   */
+  subdueSeconds?: number;
+  /** Metres the seized prey drags its killer before it goes down (0 when omitted). */
+  subdueDragM?: number;
+  /**
+   * Chance that a seized prey breaks free during the hold, fights off its killer and runs
+   * (0 when omitted): the hunt then fails after contact, as a `broke_free` stage.
+   */
+  subdueBreakFreeChance?: number;
   contest: Omit<HuntInput, 'distanceAtCommitM'>;
   /** Optional authoritative land-mask boundary; not a client collision approximation. */
   landBoundaryM?: (position: WorldPosition, heading: number) => number;
 }
 export interface SpatialHuntResult {
   killed: boolean;
-  stage: HuntStage | 'approaching' | 'boundary_escape' | 'time_exhausted';
+  stage: HuntStage | 'approaching' | 'boundary_escape' | 'time_exhausted' | 'broke_free';
   staminaSpent: number;
   distanceAtCommitM: number;
   trace: EncounterTrace;
@@ -95,6 +107,28 @@ export function resolveSpatialHunt(input: SpatialHuntInput, rng: Rng): SpatialHu
     sample('escape'); return finish('prey_alerted');
   }
 
+  /**
+   * The hold after a killing contact (sim_0.36.0). The prey keeps a little way on along its line
+   * of flight (it is pulled down or drags its killer a few metres, easing to a stop) with a small
+   * side-to-side struggle; the predator stays within the contact radius, on its quarter. Samples
+   * every 2-5 s, and the last one is the moment of death. Pure arithmetic: no random draw.
+   */
+  const subdue = (seconds: number, fatal = true): void => {
+    if (!(seconds > 0)) return;
+    const from = { ...prey }, hold = Math.min(input.contactRadiusM * 0.6, distance(predator, prey));
+    const drag = Math.max(0, Math.min((input.subdueDragM ?? 0) * (fatal ? 1 : 0.5), boundaryTime(prey, 1)));
+    const step = Math.min(5, Math.max(2, seconds / 12));
+    const start = elapsed;
+    for (let t = Math.min(step, seconds); ; t = Math.min(t + step, seconds)) {
+      const f = t / seconds, along = drag * (1 - (1 - f) ** 2), sway = 0.25 * Math.sin(t * 1.3) * (1 - f);
+      prey.x = from.x + vx * along + vz * sway; prey.z = from.z + vz * along - vx * sway;
+      predator.x = prey.x - vx * hold; predator.z = prey.z - vz * hold;
+      elapsed = start + t;
+      sample('subdue');
+      if (t >= seconds) break;
+    }
+  };
+
   sample('chase');
   let chaseSeconds = 0; let nextSample = 2;
   while (chaseSeconds < sprintBudget && elapsed < input.secondsAvailable) {
@@ -116,7 +150,18 @@ export function resolveSpatialHunt(input: SpatialHuntInput, rng: Rng): SpatialHu
       advance(predator, input.predatorSprintMs, contactIn); advance(prey, preySpeed, contactIn);
       elapsed += contactIn; chaseSeconds += contactIn; sample('contact');
       spent += input.chaseStaminaCost * chaseSeconds / input.predatorSprintSeconds;
-      if (contest.killed) return finish('killed', true);
+      if (contest.killed) {
+        const hold = Math.min(input.subdueSeconds ?? 0, input.secondsAvailable - elapsed);
+        // A seized animal that fights free does so partway through the hold, then runs.
+        if (hold > 0 && (input.subdueBreakFreeChance ?? 0) > 0 && rng.bool(input.subdueBreakFreeChance!)) {
+          subdue(hold * (0.2 + 0.6 * rng.next()), false);
+          const escapeSeconds = Math.min(3, input.secondsAvailable - elapsed, boundaryTime(prey, preySpeed));
+          advance(prey, preySpeed, escapeSeconds); elapsed += escapeSeconds;
+          sample('escape'); return finish('broke_free');
+        }
+        subdue(hold);
+        return finish('killed', true);
+      }
       // A failed physical capture lets prey break away; a failed roll never creates a carcass.
       const escapeSeconds = Math.min(3, input.secondsAvailable - elapsed, boundaryTime(prey, preySpeed));
       advance(prey, preySpeed, escapeSeconds); elapsed += escapeSeconds;

@@ -16,6 +16,11 @@ export interface HuntInput {
   herdSize: number;
   distanceAtCommitM: number;
   commitDistanceM: number;
+  /**
+   * sim_0.36.0: hunters closing on the prey together (a dhole pack; 1 for a lone hunter). Each
+   * relays the chase, so the chance that one of them pulls the prey down is 1 - (1 - p)^n.
+   */
+  hunters?: number;
 }
 
 export interface HuntOutcome {
@@ -66,9 +71,11 @@ export function resolveHunt(input: HuntInput, rng: Rng): HuntOutcome {
   const escapeFactor = 1 - clamp01(input.preyEvasiveness) * (0.22 + clamp01(input.preyCondition) * 0.22);
   const alertPenalty = detected ? 0.45 : 1;
 
-  const chance = clamp01(
+  const single = clamp01(
     input.baseSuccess * distanceFactor * staminaFactor * conditionFactor * escapeFactor * alertPenalty,
   );
+  const hunters = Math.max(1, Math.floor(input.hunters ?? 1));
+  const chance = hunters === 1 ? single : 1 - (1 - single) ** hunters;
 
   const staminaSpent = clamp01(0.12 + (1 - distanceFactor) * 0.2 + rng.next() * 0.12);
 
@@ -92,10 +99,12 @@ export interface PreyCandidate {
 /**
  * Picks what to go after. A predator settles on a kind of prey in proportion to the square of
  * how many it can see: it finds what is plentiful and rarely comes across what is scarce, so a
- * prey that has grown rare is left alone to recover (a type III response). Within that kind it
+ * prey that has grown rare is left alone to recover (a type III response), weighted by the
+ * species' field prey selection where one is configured. Within that kind it
  * picks off the most vulnerable — a tired, unwary animal first.
  */
-export function choosePrey<T extends PreyCandidate>(candidates: readonly T[], rng: Rng): T {
+export function choosePrey<T extends PreyCandidate>(candidates: readonly T[], rng: Rng,
+  preference: Readonly<Record<string, number>> = {}): T {
   const bySpecies = new Map<string, T[]>();
   for (const candidate of candidates) {
     const list = bySpecies.get(candidate.agent.speciesId);
@@ -103,12 +112,15 @@ export function choosePrey<T extends PreyCandidate>(candidates: readonly T[], rn
     else list.push(candidate);
   }
 
+  // sim_0.36.0: a species' field prey selection (selection ratio, 1 when not significant)
+  // multiplies the encounter weight, as a pack seeks out sambar and passes over pigs.
+  const weight = (list: T[]): number => list.length * list.length * (preference[list[0]!.agent.speciesId] ?? 1);
   const kinds = [...bySpecies.values()];
-  const total = kinds.reduce((sum, list) => sum + list.length * list.length, 0);
+  const total = kinds.reduce((sum, list) => sum + weight(list), 0);
   let pick = rng.next() * total;
   let chosen = kinds[kinds.length - 1]!;
   for (const list of kinds) {
-    pick -= list.length * list.length;
+    pick -= weight(list);
     if (pick < 0) { chosen = list; break; }
   }
 

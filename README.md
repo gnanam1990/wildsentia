@@ -349,7 +349,15 @@ of the 63 starvation deaths.
 
 ### Running an existing world on new code
 
-The current runtime identifies as `sim_0.35.0`. Its rule change from `sim_0.34.0` calibrates
+The current runtime identifies as `sim_0.36.0`. Its rule changes from `sim_0.35.0` are on young
+care, pack hunting and the kill itself: a litter gathers to its mother's care point (piglets from
+birth, jackal pups from ten days, dhole pups from three weeks, langur infants are carried), a pup
+that cannot yet walk does not run from an attack, leverets suckle at birth and a once-daily
+nursing feeds to repletion; dholes hunt as a pack (packmates join the chase, relay it and feed
+at the kill; weaned pups follow and eat), with field prey selection for dholes and tigers;
+boar piglet survival follows the field; and a seized prey is subdued (a recorded `subdue` hold
+after contact) and dies at its end, not on touch. A saved 0.35 world starts on this code only
+with `VANA_ALLOW_V35_UPGRADE=1`. `sim_0.35.0`'s change from `sim_0.34.0` calibrated
 predator feeding to field intake: meat beyond the day's hunger fills a stomach (tiger 14%, dhole
 20% of body mass) digested at the daily rate, and a predator does not start a hunt while sated or
 below its hunting hunger, so a tiger kills about once a week, as at Nagarahole. A saved 0.34 world
