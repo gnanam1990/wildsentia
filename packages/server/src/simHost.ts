@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { collectLiveEncounters, indexLiveMovements, selectLiveMovements, encounterAppearance } from './liveEncounters.js';
 import {
   FOREST_FLOOR, FOREST_LANDSCAPE, FOREST_POPULATION, ISLAND_POPULATION, SIM_VERSION,
-  upgradeV16Snapshot, upgradeV17Snapshot, upgradeV18Snapshot, upgradeV19Snapshot, upgradeV20Snapshot, upgradeV21Snapshot, upgradeV22Snapshot, upgradeV23Snapshot, upgradeV24Snapshot, upgradeV25Snapshot, upgradeV26Snapshot, upgradeV27Snapshot, upgradeV28Snapshot, upgradeV29Snapshot, upgradeV30Snapshot, upgradeV31Snapshot, upgradeV32Snapshot, upgradeV33Snapshot, upgradeV34Snapshot,
+  upgradeV16Snapshot, upgradeV17Snapshot, upgradeV18Snapshot, upgradeV19Snapshot, upgradeV20Snapshot, upgradeV21Snapshot, upgradeV22Snapshot, upgradeV23Snapshot, upgradeV24Snapshot, upgradeV25Snapshot, upgradeV26Snapshot, upgradeV27Snapshot, upgradeV28Snapshot, upgradeV29Snapshot, upgradeV30Snapshot, upgradeV31Snapshot, upgradeV32Snapshot, upgradeV33Snapshot, upgradeV34Snapshot, upgradeV35Snapshot,
   createWorld, restoreSnapshot, takeSnapshot, totalNutrients, upgradeV5Snapshot, upgradeV6Snapshot, upgradeV7Snapshot, upgradeV8Snapshot, upgradeV9Snapshot, upgradeV10Snapshot, upgradeV11Snapshot, upgradeV12Snapshot, upgradeV13Snapshot, upgradeV14Snapshot, upgradeV15Snapshot, type Snapshot, type World, type WorldOptions,
 } from '@vana/sim';
 import type { Pool } from './db/pool.js';
@@ -56,6 +56,8 @@ export interface SimHostOptions {
   allowV33Upgrade?: boolean;
   /** v0.35 calibrates predator feeding (stomach satiety); see upgradeV34Snapshot. */
   allowV34Upgrade?: boolean;
+  /** v0.36 gathers litters, nurses to repletion, hunts dholes as a pack; see upgradeV35Snapshot. */
+  allowV35Upgrade?: boolean;
   allowV15Upgrade?: boolean;
   allowV14Upgrade?: boolean;
   /** Explicit rules-change acknowledgement. Back up the database before enabling. Default false. */
@@ -283,6 +285,7 @@ export class SimHost {
       allowV32Upgrade: false,
       allowV33Upgrade: false,
       allowV34Upgrade: false,
+      allowV35Upgrade: false,
       allowV5Upgrade: false,
       allowV6Upgrade: false,
       allowV7Upgrade: false,
@@ -403,13 +406,13 @@ export class SimHost {
     if (snapshot.simVersion !== SIM_VERSION) {
       // Wounds first existed in v0.26. Pre-v0.26 direct jumps must not smuggle them in;
       // a genuine v0.26 checkpoint may preserve its active wound across this upgrade.
-      if (!['sim_0.26.0', 'sim_0.27.0', 'sim_0.28.0', 'sim_0.29.0', 'sim_0.30.0', 'sim_0.31.0', 'sim_0.32.0', 'sim_0.33.0', 'sim_0.34.0'].includes(snapshot.simVersion)
+      if (!['sim_0.26.0', 'sim_0.27.0', 'sim_0.28.0', 'sim_0.29.0', 'sim_0.30.0', 'sim_0.31.0', 'sim_0.32.0', 'sim_0.33.0', 'sim_0.34.0', 'sim_0.35.0'].includes(snapshot.simVersion)
         && snapshot.agents.some(agent => agent.wound !== undefined))
         throw new Error('refusing to upgrade: old snapshot contains future wound state');
-      if (!['sim_0.27.0', 'sim_0.28.0', 'sim_0.29.0', 'sim_0.30.0', 'sim_0.31.0', 'sim_0.32.0', 'sim_0.33.0', 'sim_0.34.0'].includes(snapshot.simVersion)
+      if (!['sim_0.27.0', 'sim_0.28.0', 'sim_0.29.0', 'sim_0.30.0', 'sim_0.31.0', 'sim_0.32.0', 'sim_0.33.0', 'sim_0.34.0', 'sim_0.35.0'].includes(snapshot.simVersion)
         && snapshot.microEcology?.patches.some(patch => patch.fishCohort !== undefined))
         throw new Error('refusing to upgrade: old snapshot contains future fish cohort state');
-      if (!['sim_0.28.0', 'sim_0.29.0', 'sim_0.30.0', 'sim_0.31.0', 'sim_0.32.0', 'sim_0.33.0', 'sim_0.34.0'].includes(snapshot.simVersion)
+      if (!['sim_0.28.0', 'sim_0.29.0', 'sim_0.30.0', 'sim_0.31.0', 'sim_0.32.0', 'sim_0.33.0', 'sim_0.34.0', 'sim_0.35.0'].includes(snapshot.simVersion)
         && snapshot.patches.some(patch => patch.floweringGuild !== undefined))
         throw new Error('refusing to upgrade: old snapshot contains future flowering guild state');
       if (this.#options.allowV5Upgrade && snapshot.simVersion === 'sim_0.5.0') {
@@ -502,6 +505,9 @@ export class SimHost {
       } else if (this.#options.allowV34Upgrade && snapshot.simVersion === 'sim_0.34.0') {
         upgradedFrom = snapshot.simVersion;
         snapshot = upgradeV34Snapshot(snapshot);
+      } else if (this.#options.allowV35Upgrade && snapshot.simVersion === 'sim_0.35.0') {
+        upgradedFrom = snapshot.simVersion;
+        snapshot = upgradeV35Snapshot(snapshot);
       } else throw new Error(
         `refusing to boot: snapshot ${snapshot.simVersion} predates runtime ${SIM_VERSION}`,
       );

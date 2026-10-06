@@ -2,7 +2,11 @@ import type { WorldPosition } from './spatial.js';
 import type { LiveMovement } from './movement.js';
 import type { LifeStage, Sex } from './types/agent.js';
 
-export type EncounterPhase = 'approach' | 'stalk' | 'chase' | 'contact' | 'escape' | 'abandon';
+/**
+ * `subdue` (sim_0.36.0): after a killing `contact`, the hold until the prey dies, sampled every
+ * 2-5 s. Traces recorded before sim_0.36.0 have none: their prey died at `contact`.
+ */
+export type EncounterPhase = 'approach' | 'stalk' | 'chase' | 'contact' | 'subdue' | 'escape' | 'abandon';
 export interface EncounterSample {
   seconds: number;
   phase: EncounterPhase;

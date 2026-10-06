@@ -79,14 +79,14 @@
         "startDays": 0,
         "sizeFactor": 0.12,
         "dependent": true,
-        "mortalityPerDay": 0.006
+        "mortalityPerDay": 0.018
       },
       {
         "name": "juvenile",
         "startDays": 45,
         "sizeFactor": 0.35,
         "dependent": true,
-        "mortalityPerDay": 0.003
+        "mortalityPerDay": 0.0012
       },
       {
         "name": "subadult",
@@ -120,6 +120,7 @@
     "oestrusCycleDays": 21,
     "weanDays": 90,
     "followFromDays": 10,
+    "gatherFromDays": 0,
     "forageFromDays": 21,
     "drinkFromDays": 10,
     "dispersalDays": 220

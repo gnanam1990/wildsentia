@@ -59,7 +59,10 @@
     "commitDistanceM": 25,
     "baseSuccess": 0.53,
     "staminaCostPerChase": 0.34,
-    "huntFromHunger": 0.35
+    "huntFromHunger": 0.35,
+    "subdueSeconds": [[0, 5], [95, 30], [95, 60], [380, 240]],
+    "subdueBreakFree": 0.2,
+    "preyPreference": { "boar": 1.5, "sambar": 1.5 }
   },
   "social": {
     "structure": "solitary",

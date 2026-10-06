@@ -418,6 +418,18 @@ export function upgradeV27Snapshot(snapshot: Snapshot): Snapshot {
 }
 
 /**
+ * v0.36 gathers litters to their parent's care point, feeds a once-daily nursing to repletion,
+ * hunts dholes as a pack with field prey selection and calibrates boar piglet survival. Future
+ * decisions only; every v0.35 state byte is kept and nothing new is persisted.
+ */
+export function upgradeV35Snapshot(snapshot: Snapshot): Snapshot {
+  if (snapshot.simVersion !== 'sim_0.35.0') throw new Error('only sim_0.35.0 snapshots can use this upgrade');
+  const upgraded = structuredClone(snapshot);
+  upgraded.simVersion = SIM_VERSION;
+  return upgraded;
+}
+
+/**
  * v0.35 calibrates predator feeding to field intake: meat beyond the day's hunger fills a
  * stomach (tiger 14%, dhole 20% of body mass) digested at the daily rate, and a predator with
  * food in its stomach does not start a hunt. Future decisions only; every v0.34 state byte is

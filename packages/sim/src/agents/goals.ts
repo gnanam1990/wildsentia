@@ -92,7 +92,11 @@ export function selectGoal(
   // Orphanhood never unlocks abilities. Precocial plant foraging has a separate age gate.
   if (needsProvisioning(agent, species) && !canForageIndependently(agent, species)
     && !canDrinkIndependently(agent, species) && !canEatMaternalMeat(agent, species)) {
-    return { goal: !hider && d.fear > 0.5 && percept.threat !== null ? 'flee' : 'rest', score: 1, alternative: null };
+    // sim_0.36.0: a young old enough to follow moves off once frightened (fear 0.5, the level at
+    // which its mother and every family routine break off), not only above it. A three-month-old
+    // chital fawn lay two days beside a resting tiger, its mother scared off every other hour,
+    // and died of thirst at 358 m from her with water in its own patch.
+    return { goal: !hider && d.fear >= 0.5 && percept.threat !== null ? 'flee' : 'rest', score: 1, alternative: null };
   }
 
   const allowed = goalsFor(species.archetype)

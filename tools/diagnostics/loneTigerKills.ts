@@ -9,7 +9,7 @@ import { createWorld } from '@vana/sim';
 
 const arg = (name: string, fallback: string) => { const i = process.argv.indexOf(`--${name}`); return i >= 0 ? process.argv[i + 1]! : fallback; };
 const seed = Number(arg('seed', '4')), days = Number(arg('days', '90'));
-const world = createWorld({ seed, speciesDir: new URL('../../config/species', import.meta.url).pathname,
+const world = createWorld({ seed, speciesDir: arg('species-dir', new URL('../../config/species', import.meta.url).pathname),
   initialAgents: { tiger: 1, chital: 300, sambar: 80 }, minPopulation: {} });
 const tiger = world.agents.find(a => a.speciesId === 'tiger')!;
 const kills: Array<{ day: number; prey: string; hunger: number }> = [];

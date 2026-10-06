@@ -22,13 +22,14 @@ import { controlledAction, controlledFeed, descendPerchedAnimal, executeGoal, ty
 import { foundingTraits } from './agents/genetics.js';
 import { Pedigree } from './agents/pedigree.js';
 import { mortalityFor, stageFor, targetMass } from './agents/lifecycle.js';
-import { needsProvisioning, canFollowParent, careRadius, digestGut, gutCapacityKg, inCareContact, mealRoom, needsOf } from './agents/needs.js';
+import { needsProvisioning, provisionYoung, canFollowParent, canGatherToParent, careRadius, digestGut, gutCapacityKg, inCareContact, mealRoom, needsOf } from './agents/needs.js';
 import { availableForCare, chooseCareTarget, finishCare, idleRangeAnchor, travelToFamily, type FamilyLocation, type CareVisit } from './agents/family.js';
 import { establishNursingSites, nursingEligible } from './agents/nursing.js';
 import { choosePackRecipient, packDonorEligible, canWaitForPackFood, beginPackCollection, finishPackCollection,
   beginPackDelivery, finishPackDelivery, digestPackFood, type PackCollection, type PackDelivery } from './agents/packCare.js';
 import { isFloater } from './agents/territory.js';
 import { decaySkills, experiencedSkills, recordOutcome, teach } from './agents/learning.js';
+import { canHuntIndependently } from './agents/needs.js';
 import { advanceIllness } from './agents/illness.js';
 import { advanceWound } from './agents/wound.js';
 import { EDGE_PATCHES, EDGE_PATCH_IDS, expectedExchange } from './landscape.js';
@@ -39,7 +40,7 @@ import {
   packAllowsBreeding,
 } from './agents/reproduction.js';
 
-export const SIM_VERSION = 'sim_0.35.0';
+export const SIM_VERSION = 'sim_0.36.0';
 
 /** Uncalibrated group-decision policy, not a claim of a species-specific thirst measurement.
  * An unweaned independent drinker need not leave a nearby caregiver every hour for a sip. */
@@ -227,7 +228,60 @@ export class World {
         this.#retireCarcass(carcass);
       },
       practised: (agent, skill, success) => this.#practised(agent, skill, success),
+      joinPackHunt: (hunter, cfg) => this.#joinPackHunt(hunter, cfg),
+      packmatesNearby: (hunter, cfg) => this.#packCandidates(hunter, cfg).some(c => !c.follower),
     };
+  }
+
+  /** Decisions already taken this step, and packmates whose decision a pack hunt has spent. */
+  #stepProcessed: ReadonlySet<string> = new Set();
+  readonly #packHunted = new Set<string>();
+
+  /**
+   * sim_0.36.0: dholes hunt as a pack. Before, each dhole hunted alone and the pack met at a
+   * carcass only by chance: on the island they made 10-11% of attempts, mostly at hares and
+   * piglets (2.5-9 kg), and fell to one to three animals with starving pups. Packmates within
+   * the configured radius of a hunter as it commits join it, relay the chase and feed at the
+   * kill. A packmate joins only if it is a calm, independent hunter not already busy this hour
+   * (it has not yet decided, or it only rested or wandered), is not carrying food to the den and
+   * is not the mother of pups too young to follow (she stays at the den). Weaned young old enough
+   * to follow come along as followers: they do not add to the chase but feed at the kill (pups
+   * leave the den at 70-80 days and help kill only at about seven months, Johnsingh 1982).
+   * Nothing is created: joiners spend their own decision and stamina and eat from the one carcass.
+   */
+  #joinPackHunt(hunter: Agent, cfg: SpeciesConfig): { hunters: Agent[]; followers: Agent[] } {
+    const candidates = this.#packCandidates(hunter, cfg);
+    if (cfg.hunting?.packHuntRadiusM === undefined || hunter.groupId == null) return { hunters: [], followers: [] };
+    this.#packHunted.add(hunter.id);
+    for (const c of candidates) this.#packHunted.add(c.mate.id);
+    return { hunters: candidates.filter(c => !c.follower).map(c => c.mate),
+      followers: candidates.filter(c => c.follower).map(c => c.mate) };
+  }
+
+  /** Packmates free to join this hunter now, and whether each would only follow (read-only). */
+  #packCandidates(hunter: Agent, cfg: SpeciesConfig): Array<{ mate: Agent; follower: boolean }> {
+    const radius = cfg.hunting?.packHuntRadiusM;
+    const group = hunter.groupId == null ? undefined : this.#groups.get(hunter.groupId);
+    if (radius === undefined || !group) return [];
+    const at = locateAgent(hunter), found: Array<{ mate: Agent; follower: boolean }> = [];
+    for (const id of [...group.memberIds].sort()) {
+      const mate = this.#agentsById.get(id);
+      if (!mate?.alive || mate.id === hunter.id || mate.speciesId !== hunter.speciesId || mate.controller
+        || this.#packHunted.has(mate.id) || mate.lastEncounterAt === this.#time || (mate.altitudeM ?? 0) > 0
+        || mate.packFood || mate.drives.fear >= 0.5 || mate.drives.thirst >= 0.65 || needsProvisioning(mate, cfg)
+        || this.#stepProcessed.has(mate.id) && mate.currentGoal !== 'rest' && mate.currentGoal !== 'wander') continue;
+      // Weaned young that can keep up follow the hunt and feed at the kill; only adults hunt.
+      const follower = !canHuntIndependently(mate, cfg);
+      if (follower && !canFollowParent(mate, cfg)) continue;
+      if (mate.offspringIds.some(childId => {
+        const child = this.#agentsById.get(childId);
+        return child?.alive === true && child.dependentOn === mate.id && !canFollowParent(child, cfg);
+      })) continue;
+      const there = locateAgent(mate);
+      if (Math.hypot(there.x - at.x, there.z - at.z) > radius) continue;
+      found.push({ mate, follower });
+    }
+    return found;
   }
 
   /**
@@ -562,6 +616,12 @@ export class World {
       placeBeside(child, locateAgent(mother), careRadius(cfg) * 0.25);
       if (cfg.lifecycle.nursing) child.nursingSite = { patchId: mother.patchId,
         position: { ...locateAgent(mother) }, establishedAt: this.#time, origin: 'birth' };
+      // sim_0.36.0: young on a once-daily schedule suckle at birth, from the mother's own
+      // reserves, before she leaves them (leverets are nursed post partum, then once a day at
+      // dusk: Broekhuizen & Maaskamp 1980). Born after dusk, a litter otherwise waited up to a
+      // day for its first milk and died if the doe missed the next evening.
+      const firstFeed = cfg.lifecycle.nursing && provisionYoung(mother, child, cfg,
+        cfg.lifecycle.nursing.dailyContactSeconds / 3600, undefined, this.#time);
       this.agents.push(child);
       this.#agentsById.set(child.id, child);
       this.#livingBySpecies.set(
@@ -581,7 +641,8 @@ export class World {
           species: child.speciesId, sex: child.sex, generation: child.generation,
           coatVariant: child.traits.coatVariant,
         },
-        outcome: 'success', effects: { massKg: child.massKg },
+        outcome: 'success', effects: { massKg: child.massKg,
+          ...(firstFeed ? { firstFeedFoodKg: firstFeed.foodEquivalentKg, firstFeedWaterL: firstFeed.waterEquivalentL } : {}) },
         causalParents: [], confidence: 'authoritative',
       });
     }
@@ -918,6 +979,8 @@ export class World {
     const courtshipVisits: CourtshipVisit[] = [];
     const maleCourtshipVisits = new Map<string, CourtshipVisit>();
     const processedAgents = new Set<string>();
+    this.#stepProcessed = processedAgents;
+    this.#packHunted.clear();
     const nursingArrivals = new Map<string, CareVisit>();
     const activeNursingParents = () => new Set([...childrenByParent].filter(([, children]) => children.some(c =>
       c.alive && c.dependentOn !== null && needsProvisioning(c, this.species.get(c.speciesId)!))).map(([id]) => id));
@@ -1045,6 +1108,8 @@ export class World {
       if (isReadyToGiveBirth(agent, cfg, this.#time)) { this.#giveBirth(agent, cfg); continue; }
       // The joint encounter already consumed this prey's action; physiology above still runs.
       if (agent.lastEncounterAt === this.#time) continue;
+      // A packmate that joined a pack hunt this hour has spent its decision (sim_0.36.0).
+      if (this.#packHunted.has(agent.id)) continue;
       // An outside agent steers this animal: the live layer decides where it goes and what
       // it does. Its body has aged, hungered and faced every hazard above like any other.
       if (agent.controller) continue;
@@ -1143,10 +1208,18 @@ export class World {
       const mobileDependent = cfg.id === 'boar' && !cfg.lifecycle.nursing && cfg.lifecycle.drinkFromDays !== undefined
         && needsProvisioning(agent, cfg) && canFollowParent(agent, cfg) && parent?.alive
         && calm;
+      // sim_0.36.0: a litter gathers to its parent's care point. Island traces found boar
+      // piglets and jackal pups scattered 6-45 m apart within one patch (a chase displaces the
+      // young it fails to catch) while their mother, beside them all day, could reach only one
+      // spot an hour: each young got one visit in six and died of thirst. Piglets gather to the
+      // sow at every nursing and pups come to the adult returning to the den, so young old enough
+      // to walk (gatherFromDays) now walk to the sibling she is visiting and are fed together.
+      const gathering = !mobileDependent && !!careSite && !cfg.lifecycle.nursing && needsProvisioning(agent, cfg)
+        && canGatherToParent(agent, cfg) && !!parent?.alive && calm;
       const independentNeed = choice.goal === 'find_food' || choice.goal === 'find_water';
       const urgentNeed = choice.goal === 'find_water' && agent.drives.thirst >= DEPENDENT_URGENT_THIRST
         || choice.goal === 'find_food' && agent.drives.hunger >= DEPENDENT_URGENT_HUNGER;
-      if (mobileDependent && !urgentNeed) {
+      if ((mobileDependent || gathering) && !urgentNeed) {
         const rendezvous = careSite ?? parentStart;
         if (rendezvous) {
           const gap = Math.hypot(agent.position!.x - rendezvous.position.x, agent.position!.z - rendezvous.position.z);

@@ -90,6 +90,22 @@ export const careRadius = (species: SpeciesConfig): number => 0.5 + species.body
 export const canFollowParent = (agent: Agent, species: SpeciesConfig): boolean =>
   agent.ageDays >= (species.lifecycle.followFromDays ?? species.lifecycle.weanDays);
 
+/**
+ * sim_0.36.0: a dependent this old walks to its parent's care point within its senses (the
+ * litter gathers to suckle or to be fed), before it can follow her on the move.
+ */
+export const canGatherToParent = (agent: Agent, species: SpeciesConfig): boolean =>
+  species.lifecycle.gatherFromDays !== undefined && agent.ageDays >= species.lifecycle.gatherFromDays;
+
+/**
+ * sim_0.36.0: a denned young below its gathering age cannot yet walk (jackal pups open their eyes
+ * at about ten days). Attacked, it cannot run: a failed attack leaves it where it lies, instead
+ * of scattering a litter of six-day-old pups 15-30 m apart where their mother could reach one
+ * spot an hour.
+ */
+export const cannotYetWalk = (agent: Agent, species: SpeciesConfig): boolean =>
+  species.lifecycle.gatherFromDays !== undefined && agent.ageDays < species.lifecycle.gatherFromDays;
+
 /** Same patch is not contact. Missing/invalid legacy coordinates cannot authorize a transfer. */
 export function inCareContact(parent: Agent, child: Agent, species: SpeciesConfig): boolean {
   return parent.patchId === child.patchId && positionInPatch(parent.position, parent.patchId)
@@ -137,13 +153,20 @@ export function provisionYoung(parent: Agent, child: Agent, species: SpeciesConf
     || !needsProvisioning(child, species) || !Number.isFinite(hours) || !(hours > 0)) return none;
   if (remaining && [remaining.foodDays, remaining.waterDays].some(v => !Number.isFinite(v) || v < 0)) return none;
   const source = needsOf(parent, species), target = needsOf(child, species);
-  const contactHoursPerDay = (species.lifecycle.nursing?.dailyContactSeconds ?? 8 * 3600) / 3600;
+  // sim_0.36.0: a once-daily feed (hares) is taken to repletion: its few minutes can replace the
+  // whole deficit a young can carry (1 / THIRST_PER_DAY = 2.5 days), bounded by that deficit and
+  // the mother's own reserves, not by one day's ration. Capped at a day, a leveret nursed at
+  // thirst 0.9 left at 0.5 and lived permanently one missed feed from death: island traces found
+  // whole litters dying the night after a doe fled a dhole once.
+  const contactHoursPerDay = species.lifecycle.nursing
+    ? species.lifecycle.nursing.dailyContactSeconds / 3600 * THIRST_PER_DAY : 8;
   const food = Math.min(child.drives.hunger / HUNGER_PER_DAY * target.foodKg,
     target.foodKg * hours / contactHoursPerDay, target.foodKg * (remaining?.foodDays ?? Infinity),
     Math.max(0, 0.8 - parent.drives.hunger) / HUNGER_PER_DAY * source.foodKg);
   const boarCap = boarMaternalWaterCap(child, species, hours, at, target.waterL);
   const water = Math.min(child.drives.thirst / THIRST_PER_DAY * target.waterL,
-    boarCap ?? target.waterL * hours / contactHoursPerDay, target.waterL * (remaining?.waterDays ?? Infinity),
+    boarCap ?? target.waterL * hours / contactHoursPerDay,
+    target.waterL * (remaining?.waterDays ?? Infinity),
     Math.max(0, 0.8 - parent.drives.thirst) / THIRST_PER_DAY * source.waterL);
   child.drives.hunger = Math.max(0, child.drives.hunger - food / target.foodKg * HUNGER_PER_DAY);
   child.drives.thirst = Math.max(0, child.drives.thirst - water / target.waterL * THIRST_PER_DAY);

@@ -23,6 +23,11 @@ const RUN_FACTOR = 3.5;
 const CLIMB_MPS = 0.8;
 const CHASE_MPS = 12;
 const STALK_MPS = 1.2;
+/**
+ * A recorded subdue hold (sim_0.36.0) plays at a quarter of its recorded length in real time
+ * (a 20 s nape bite in 5 s, a four-minute throat hold in one minute), never squeezed into idle.
+ */
+const SUBDUE_SPEEDUP = 4;
 
 export function walkingPace(speciesId: string): number {
   return WALK_MPS[speciesId] ?? 1.4;
@@ -106,6 +111,7 @@ export function paceEncounter(trace: EncounterTrace, rate: number): Pacing {
     const moved = Math.max(Math.hypot(b.predator.x - a.predator.x, b.predator.z - a.predator.z),
       Math.hypot(b.prey.x - a.prey.x, b.prey.z - a.prey.z));
     const fast = a.phase === 'chase' || a.phase === 'escape';
+    if (b.phase === 'subdue') { inner.push({ from: a.seconds, to: b.seconds, minDisplay: (b.seconds - a.seconds) / SUBDUE_SPEEDUP * rate }); continue; }
     inner.push({ from: a.seconds, to: b.seconds, minDisplay: moved > 0 ? moved / (fast ? CHASE_MPS : STALK_MPS) * rate : null });
   }
   return pace(withIdleEnds(s[0]!.seconds, s.at(-1)!.seconds, inner));
