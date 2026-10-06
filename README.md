@@ -2,6 +2,10 @@
 
 One shared, server-authoritative wildlife simulation. You can watch it. You cannot control it.
 
+**Start here: [the end-to-end guide](docs/guide/README.md)** covers what Wildsentia is, the
+architecture, the simulation, the observer, live agents, the API, running it locally, deploying
+and operating it, art and video, and current status.
+
 - **Design spec:** [`docs/2026-09-22-vana-design.md`](docs/2026-09-22-vana-design.md)
 - **M1 plan:** [`docs/superpowers/plans/2026-09-22-vana-m1-simulation-core.md`](docs/superpowers/plans/2026-09-22-vana-m1-simulation-core.md)
 
