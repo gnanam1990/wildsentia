@@ -88,6 +88,12 @@ export function huntMoment(trace: EncounterTrace, outcome: string, seconds: numb
           prey = { state: 'struggling', act: fromContact - STRUCK_S - FALL_S, weight: 0.2 + 0.8 * left };
         }
       } else prey = { state: 'dead' };
+    } else if (held && seconds < trace.samples.filter((s) => s.phase === 'subdue').at(-1)!.seconds) {
+      // Seized and held, but it broke free (sim_0.36): it fights the grip on its feet, staggering
+      // again and again, then runs as recorded. It is never shown down or dead.
+      predator = { state: 'holding', act: fromContact };
+      prey = { state: 'struck', act: fromContact % (STRUCK_S * 2) };
+      facePrey = true;
     } else if (fromContact < STRUCK_S) {
       // Seized but not killed: struck, then running again as recorded.
       prey = { state: 'struck', act: fromContact };

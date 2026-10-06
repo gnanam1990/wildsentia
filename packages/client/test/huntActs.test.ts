@@ -46,15 +46,29 @@ describe('huntMoment', () => {
     expect(moment(legacy, 21).predator.state).toBe('holding');
     expect(moment(legacy, 20 + HOLD_AFTER_S + FALL_S + 0.1).predator.state).toBe('feeding');
   });
-  it('never kills in a failed hunt: a seized prey that broke free is only struck', () => {
-    expect(moment(held, 20.2, 'failure').prey.state).toBe('struck');
-    expect(moment(held, 25, 'failure').prey.state).toBe('fleeing');
-    expect(moment(held, 25, 'failure').predator.state).toBe('chasing');
+  it('never kills in a failed hunt: a prey touched but not held is only struck', () => {
+    expect(moment(legacy, 20.2, 'failure').prey.state).toBe('struck');
+    expect(moment(legacy, 25, 'failure').prey.state).toBe('fleeing');
+    expect(moment(legacy, 25, 'failure').predator.state).toBe('chasing');
   });
   it('times each act in real seconds, whatever pace the recorded hour is played at', () => {
     // Live playback shows idle recorded time faster than real time; acts follow the real clock.
     const fast = huntMoment(held, 'success', 30, { phase: 'subdue', predatorMoving: false, preyMoving: false, finished: false },
       (recorded) => (30 - recorded) / 12);
     expect(fast.prey).toEqual({ state: 'falling', act: expect.closeTo(10 / 12 - STRUCK_S, 6) });
+  });
+  it('shows a prey that broke free fighting the grip on its feet, then running, and never dead', () => {
+    // sim_0.36: contact, a recorded hold, then escape; the hunt is a failure.
+    const brokeFree = trace([[0, 'stalk', 0, 30], [10, 'chase', 10, 30], [20, 'contact', 39.5, 40], [24, 'subdue', 39.8, 40.4],
+      [28, 'subdue', 40, 40.7], [40, 'escape', 41, 60]]);
+    for (const s of [21, 25, 27.5]) {
+      const m = moment(brokeFree, s, 'failure');
+      expect(m.predator.state).toBe('holding');
+      expect(m.prey.state).toBe('struck');
+      expect(m.facePrey).toBe(true);
+    }
+    expect(moment(brokeFree, 30, 'failure').prey.state).toBe('fleeing');
+    expect(moment(brokeFree, 30, 'failure').predator.state).toBe('chasing');
+    for (const s of [21, 27, 30, 45]) expect(moment(brokeFree, s, 'failure').prey.state).not.toBe('dead');
   });
 });
