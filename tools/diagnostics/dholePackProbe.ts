@@ -7,7 +7,7 @@
  * window (led, joined, party sizes, success, kills and kilograms by prey) and the meat its
  * members ate. Each dhole death is printed with the animal's last 48 hourly goals and drives.
  */
-import { ISLAND_POPULATION, createWorld } from '@vana/sim';
+import { createWorld, islandPopulation } from '@vana/sim';
 import { needsProvisioning } from '../../packages/sim/src/agents/needs.js';
 
 const arg = (name: string, fallback: string): string => {
@@ -15,10 +15,11 @@ const arg = (name: string, fallback: string): string => {
   return i >= 0 ? process.argv[i + 1]! : fallback;
 };
 const seed = Number(arg('seed', '1')), days = Number(arg('days', '360'));
+const profile = arg('profile', 'island_v2') as 'island_v1' | 'island_v2';
 // --trace-from/--trace-to print every dhole's hourly state (with any pack food it carries) in a window.
 const traceFrom = Number(arg('trace-from', 'Infinity')), traceTo = Number(arg('trace-to', '-Infinity'));
 const world = createWorld({ seed, speciesDir: new URL('../../config/species', import.meta.url).pathname,
-  terrainProfile: 'island_v1', communityProfile: 'household_v1', initialAgents: ISLAND_POPULATION,
+  terrainProfile: profile, communityProfile: 'household_v1', initialAgents: islandPopulation(profile),
   minPopulation: {}, retainEvents: 200_000 });
 const dhole = world.species.get('dhole')!;
 const ring = new Map<string, string[]>();

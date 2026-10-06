@@ -1,6 +1,6 @@
-import { carcassMass, landWalkable, islandHeightAt, positionInPatch, isCommunityState, homeCondition, type CommunityProfile, type TerrainProfile, type WorldEvent } from '@vana/shared';
+import { carcassMass, landWalkable, islandHeightAt, isIslandProfile, islandGeometrySeed, positionInPatch, isCommunityState, homeCondition, type CommunityProfile, type TerrainProfile, type WorldEvent } from '@vana/shared';
 import { writeFileSync } from 'node:fs';
-import { FOREST_FLOOR, FOREST_LANDSCAPE, FOREST_POPULATION, ISLAND_POPULATION, SIM_VERSION, careRadius, createWorld, waterBudgetResidual, surfaceWaterL } from '@vana/sim';
+import { FOREST_FLOOR, FOREST_LANDSCAPE, FOREST_POPULATION, SIM_VERSION, islandPopulation, careRadius, createWorld, waterBudgetResidual, surfaceWaterL } from '@vana/sim';
 import type { WaterBudget } from '@vana/shared';
 import { recordPopulationPeaks } from './populationMetrics.js';
 import { emptySoakYear, foragePercent, recordYearEvent, sampleYearForage, unreconciledPopulations, type ParentLookup, type SoakYear, type YoungDeprivationRecord } from './yearMetrics.js';
@@ -145,13 +145,14 @@ export function runSoak({ seed, days, speciesDir, terrainProfile = 'mainland', c
   if (!Number.isSafeInteger(days) || days <= 0) throw new Error('soak days must be a positive safe integer');
   if (!Number.isSafeInteger(yearDays) || yearDays <= 0) throw new Error('soak yearDays must be a positive safe integer');
   if (!Number.isSafeInteger(seed)) throw new Error('soak seed must be a safe integer');
-  if (terrainProfile !== 'mainland' && terrainProfile !== 'island_v1') throw new Error('invalid soak terrain profile');
+  if (terrainProfile !== 'mainland' && !isIslandProfile(terrainProfile)) throw new Error('invalid soak terrain profile');
+  const island = isIslandProfile(terrainProfile);
   const started = Date.now();
   const world = createWorld({
     seed, speciesDir, terrainProfile, communityProfile,
-    initialAgents: terrainProfile === 'island_v1' ? ISLAND_POPULATION : SOAK_POPULATION,
-    minPopulation: terrainProfile === 'island_v1' ? {} : SOAK_FLOOR,
-    ...(terrainProfile === 'island_v1' ? {} : { landscape: SOAK_LANDSCAPE }),
+    initialAgents: island ? islandPopulation(terrainProfile as 'island_v1' | 'island_v2') : SOAK_POPULATION,
+    minPopulation: island ? {} : SOAK_FLOOR,
+    ...(island ? {} : { landscape: SOAK_LANDSCAPE }),
     // A fifty-year run emits hundreds of millions of events. Keep a small window and tally
     // as we go; the numbers below are counted, never reconstructed from a retained array.
     retainEvents: 200_000,
@@ -324,9 +325,9 @@ export function runSoak({ seed, days, speciesDir, terrainProfile = 'mainland', c
         const invalid = world.agents.find(a => a.alive && !positionInPatch(a.position, a.patchId));
         if (invalid) failures.push(`day ${day} hour ${hour}: ${invalid.id} position/patch disagreement`);
       }
-      if (terrainProfile === 'island_v1' && failures.length < MAX_RECORDED_FAILURES) {
+      if (island && failures.length < MAX_RECORDED_FAILURES) {
         for (const a of world.agents) if (!landWalkable(world.patches[a.patchId]) || !a.position
-          || islandHeightAt(seed, a.position.x, a.position.z) <= 0) {
+          || islandHeightAt(islandGeometrySeed(seed, terrainProfile), a.position.x, a.position.z) <= 0) {
           failures.push(`day ${day} hour ${hour}: ${a.id} outside island core land`); break;
         }
         if (world.patches.some(p => p.surface === 'ocean' && p.waterVolume !== 0)) failures.push('ocean contains freshwater stock');

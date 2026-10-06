@@ -2,13 +2,13 @@
  * Read-only island trace of the sim_0.37.0 changes: the leopard, the dhole den mother and pack,
  * and the wild boar's rooting food and body condition.
  *
- *   npx tsx tools/diagnostics/guildProbe.ts --seed 2 --days 360 [--every 30] [--set dhole=6]
+ *   npx tsx tools/diagnostics/guildProbe.ts --seed 2 --days 360 [--every 30] [--set dhole=6] [--profile island_v1]
  *
  * Every window it prints the counts of the main species, the boar's mean condition and hunger,
  * the rooting food standing as a share of capacity, and the window's hunts and kills by leopards,
  * tigers and dholes (kills by prey). Every leopard and adult dhole death is printed with its cause.
  */
-import { ISLAND_POPULATION, createWorld } from '@vana/sim';
+import { createWorld, islandPopulation } from '@vana/sim';
 
 const arg = (name: string, fallback: string): string => {
   const i = process.argv.indexOf(`--${name}`);
@@ -16,10 +16,11 @@ const arg = (name: string, fallback: string): string => {
 };
 const seed = Number(arg('seed', '1')), days = Number(arg('days', '360')), every = Number(arg('every', '30'));
 // --set dhole=6 overrides one founding count, for trials.
-const founding = { ...ISLAND_POPULATION };
+const profile = arg('profile', 'island_v2') as 'island_v1' | 'island_v2';
+const founding = { ...islandPopulation(profile) };
 for (const [id, n] of process.argv.flatMap((a, i) => process.argv[i - 1] === '--set' ? [a.split('=')] : [])) founding[id!] = Number(n);
 const world = createWorld({ seed, speciesDir: new URL('../../config/species', import.meta.url).pathname,
-  terrainProfile: 'island_v1', communityProfile: 'household_v1', initialAgents: founding,
+  terrainProfile: profile, communityProfile: 'household_v1', initialAgents: founding,
   minPopulation: {}, retainEvents: 200_000 });
 const SHOWN = ['chital', 'sambar', 'boar', 'hare', 'langur', 'gaur', 'jackal', 'tiger', 'leopard', 'dhole'];
 type Tally = { hunts: number; kills: number; byPrey: Record<string, number> };

@@ -1,6 +1,6 @@
 import { GRID_SIZE, PATCH_METRES, edibleMass, landWalkable, patchCentre, positionInPatch, type Agent, type Carcass, type Patch, type SpeciesConfig } from '@vana/shared';
 import { confidenceOf } from './learning.js';
-import { canEatMaternalCarcass, needsOf, needsProvisioning } from './needs.js';
+import { canEatMaternalCarcass, canFollowParent, needsOf, needsProvisioning } from './needs.js';
 
 /** What the behaviour layer is allowed to ask the world. Agents never read global state. */
 export interface WorldView {
@@ -32,6 +32,12 @@ export interface Percept {
   /** Patches where a detected predator of this species stands: avoided unless desperate. */
   dangerous: ReadonlySet<number>;
   herdSize: number;
+  /**
+   * sim_0.37.0: for a hunter with a preferred prey size that perceives none of that size, the
+   * patch within its range memory holding the most such prey, outside any patch where a predator
+   * that hunts it stands; null when it perceives some, or knows of none.
+   */
+  preyRange?: number | null;
 }
 
 const edibleKg = (patch: Patch, species: SpeciesConfig): number => {
@@ -246,6 +252,15 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
   const needs = needsOf(agent, species);
   const dailyNeed = Math.max(needs.foodKg, 0.05);
   const waterNeed = Math.max(needs.waterL, 0.05);
+  // sim_0.37.0: a mother of young that cannot yet follow her looks for food only within her senses
+  // of where she is, unless she is starving, as she only idles within reach of them (sim_0.32.0).
+  // On island_v2 a food-limited sow walked 900 m to dig while her 9-day piglets, in the nest,
+  // died of thirst, and a leopardess hunting from memory left her 57-day cub 480 m behind.
+  // Leopard mothers leave cubs hidden for up to 36 hours (Animal Diversity Web), not for days.
+  const tethered = !starving && agent.offspringIds.some(id => {
+    const child = view.agentById?.(id);
+    return child?.alive === true && child.dependentOn === agent.id && needsProvisioning(child, species) && !canFollowParent(child, species);
+  });
   const grazes = species.diet.eats.some((e) => e.target === 'grass' || e.target === 'browse' || e.target === 'roots');
   const needFood = grazes && (bestFood === null || bestFood.kg < dailyNeed);
   const needWater = bestWater === null || bestWater.litres < waterNeed;
@@ -255,14 +270,19 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
   if (needFood || needWater) {
     const waterReach = Math.min(RANGE_MEMORY_RADIUS, Math.max(2,
       Math.round(2 + 12 * confidenceOf(agent, species, 'water_locations'))));
-    const reach = needFood ? RANGE_MEMORY_RADIUS : waterReach;
+    // The tether limits only where she looks for food: she still remembers water as far as any
+    // animal does. Limiting both left a thirsty, food-limited sow on island_v2 blind to water
+    // past her senses (two patches); she grazed 400-950 m from the nest at thirst 0.7-0.86, too
+    // thirsty to nurse, and her 9-day piglets died of thirst.
+    const foodReach = tethered ? perceptionRadius(species) : RANGE_MEMORY_RADIUS;
+    const reach = needFood ? Math.max(tethered && needWater ? waterReach : 0, foodReach) : waterReach;
     for (const p of patchesWithin(patch, reach, view.patches)) {
       if (dangerous.has(p.id) && !(needFood ? starving : thirsty)) continue;
-      if (needFood) {
+      const steps = Math.abs(p.x - patch.x) + Math.abs(p.y - patch.y);
+      if (needFood && steps <= foodReach) {
         const kg = edibleKg(p, species);
         if (kg > (bestFood?.kg ?? 0)) bestFood = { patchId: p.id, kg };
       }
-      const steps = Math.abs(p.x - patch.x) + Math.abs(p.y - patch.y);
       if (needWater && steps <= waterReach && p.waterVolume > (bestWater?.litres ?? 0)) {
         bestWater = { patchId: p.id, litres: p.waterVolume };
       }
@@ -287,7 +307,14 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
     const reach = Math.min(MAX_PERCEPTION_RADIUS, Math.max(CARRION_SEARCH_RADIUS, sightPatches));
     const enough = dailyNeed * 2;
     let bestWorth = 0;
+    // sim_0.37.0: a young that cannot yet follow its mother eats her kills only where it lies. A
+    // leopard's cubs eat meat from six to eight weeks, when they begin to leave the den (Animal
+    // Diversity Web), two weeks before they follow her; on island_v2 a 54-day cub walked 930 m
+    // alone to a cached kill, splitting the litter, and its mother, shuttling between the two,
+    // let both halves die of thirst. (A tiger's cubs follow before they eat meat.)
+    const lies = needsProvisioning(agent, species) && !canFollowParent(agent, species);
     for (const p of patchesWithin(patch, reach, view.patches)) {
+      if (lies && p.id !== patch.id) continue;
       const steps = Math.abs(p.x - patch.x) + Math.abs(p.y - patch.y);
       const distanceM = steps * PATCH_METRES;
       // Nothing walks up to a carcass something that hunts it is standing over. Without this
@@ -317,5 +344,22 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
     .agentsInPatch(agent.patchId)
     .reduce((n, other) => n + (other.alive && other.speciesId === agent.speciesId ? 1 : 0), 0);
 
-  return { patch, neighbours, bestFood, bestWater, prey, carrion, threat, dangerous, herdSize };
+  // sim_0.37.0: range memory for a hunter of medium prey. A leopard knows where the deer and pigs
+  // of its range graze, as grazers know where their pasture is. On island_v2 leopards that saw only
+  // hares for days (in grassland where no deer stood within 300 m) walked from hare patch to hare
+  // patch at random and starved. Leopards patrol their ranges and revisit places where prey gather.
+  let preyRange: number | null = null;
+  const sized = species.hunting?.preferredPreyKg;
+  if (sized && !tethered && !prey.some(p => p.agent.massKg >= sized[0])) {
+    let best = 0;
+    for (const p of patchesWithin(patch, RANGE_MEMORY_RADIUS, view.patches)) {
+      if (dangerous.has(p.id) || p.id === patch.id) continue;
+      let count = 0;
+      for (const other of view.agentsInPatch(p.id)) if (other.alive && preferred.has(other.speciesId) && (other.altitudeM ?? 0) === 0
+        && other.massKg >= sized[0] && other.massKg <= (species.hunting?.maxPreyKg ?? Infinity)) count++;
+      if (count > best) { best = count; preyRange = p.id; }
+    }
+  }
+
+  return { patch, neighbours, bestFood, bestWater, prey, carrion, threat, dangerous, herdSize, ...(sized ? { preyRange } : {}) };
 }

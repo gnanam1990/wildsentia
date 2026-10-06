@@ -69,6 +69,34 @@ export const ISLAND_POPULATION: Record<string, number> = {
 };
 
 /**
+ * sim_0.37.0 `island_v2` founding cohort: the larger island (25.9-26.2 km² of land on seeds 1-3,
+ * against 12.2-12.4 for `island_v1`). Prey, the elephant, the vulture and the jackal keep the
+ * densities `island_v1` uses: 0.72 of the 36 km² forest's counts (about 39 chital, 12 sambar and
+ * 14 wild pig per km²; the jackal's 1.1/km²). The predators are set from field densities on 26 km²:
+ * - tiger 3, one male and two females (11.5/100 km²; Nagarahole 11.2 at 56 prey/km² and Kanha 11.5
+ *   at 57, Karanth et al. 2004): a male range (60 km²) spans more than one female's (20 km²);
+ * - leopard 4, one male and three females (15/100 km²; Mudumalai carries 13/100 km² beside 17.7
+ *   tigers/100 km², Kalle et al. 2011, and Yala 12-18 resident adults/100 km², Kittle & Watson 2012).
+ *   Female ranges of 11 km² (Odden et al. 2014; Seidensticker 1976: 7 km² in Chitwan) and one
+ *   male's range over them (Kittle & Watson 2012: each male's range covers several females').
+ *   On `island_v1` every seed's pair ended with one leopard; on `island_v2` three founders lost two
+ *   in their first year in one seed of three (a natural death and carrion disease) and died out;
+ * - dhole 6, one pack of Tadoba's mean size (6.4 +- 1.3, Bhandari et al. 2021): 0.23/km², the
+ *   density of Nagarahole's packs (about 0.2, the soak ceiling's figure) rather than Bandipur's
+ *   core. The land in its range holds six adults (packCapacity: 9 x 0.69 land share).
+ */
+export const ISLAND_V2_LAND_SHARE = 0.72;
+export const ISLAND_V2_POPULATION: Record<string, number> = {
+  ...Object.fromEntries(Object.entries(FOREST_POPULATION).map(([id, count]) => [id, Math.max(2, Math.round(count * ISLAND_V2_LAND_SHARE))])),
+  tiger: 3, dhole: 6, leopard: 4, jackal: 29,
+};
+
+/** The founding cohort of a closed island, by terrain profile. */
+export function islandPopulation(profile: 'island_v1' | 'island_v2'): Record<string, number> {
+  return profile === 'island_v2' ? ISLAND_V2_POPULATION : ISLAND_POPULATION;
+}
+
+/**
  * The forest is a thirty-six square kilometre window onto a larger one. Animals cross its edge
  * in proportion to how far it is from the density of the country around it (FOREST_POPULATION,
  * the density it was seeded at): a thousandth of the difference a day, both ways.

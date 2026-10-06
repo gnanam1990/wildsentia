@@ -2,8 +2,8 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { NUTRIENT_PER_KG_BIOMASS, type CommunityProfile, type TerrainProfile } from '@vana/shared';
-import { ISLAND_POPULATION, loadSpeciesDir } from '@vana/sim';
+import { NUTRIENT_PER_KG_BIOMASS, isIslandProfile, type CommunityProfile, type TerrainProfile } from '@vana/shared';
+import { islandPopulation, loadSpeciesDir } from '@vana/sim';
 import { SOAK_FLOOR, SOAK_POPULATION, runSoak, type SoakResult } from '../src/soak.js';
 
 const speciesDir = fileURLToPath(new URL('../../../config/species', import.meta.url));
@@ -23,7 +23,8 @@ const speciesDir = fileURLToPath(new URL('../../../config/species', import.meta.
  */
 const env = process.env;
 const TERRAIN = (env.VANA_LONG_SOAK_TERRAIN ?? 'mainland') as TerrainProfile;
-const ISLAND = TERRAIN === 'island_v1';
+const ISLAND = isIslandProfile(TERRAIN);
+const FOUNDING = ISLAND ? islandPopulation(TERRAIN as 'island_v1' | 'island_v2') : {};
 const COMMUNITY = (env.VANA_LONG_SOAK_COMMUNITY ?? (ISLAND ? 'household_v1' : 'none')) as CommunityProfile;
 const DAYS = Number(env.VANA_LONG_SOAK_DAYS ?? 1800);
 const SEEDS = (env.VANA_LONG_SOAK_SEEDS ?? '1').split(',').map(Number);
@@ -96,7 +97,7 @@ describe.skipIf(env.VANA_LONG_SOAK !== '1')(`long soak gate (${TERRAIN}, ${DAYS}
   it.skipIf(!ISLAND)(`keeps every prey species at ${ISLAND_PREY_FLOOR * 100}% or more of its founding count at every year end`, () => {
     for (const result of results) for (const year of result.years) for (const speciesId of PREY) {
       expect(year.population[speciesId], `seed ${result.seed} year ${year.year} ${speciesId}`)
-        .toBeGreaterThanOrEqual(ISLAND_POPULATION[speciesId]! * ISLAND_PREY_FLOOR);
+        .toBeGreaterThanOrEqual(FOUNDING[speciesId]! * ISLAND_PREY_FLOOR);
     }
   });
 

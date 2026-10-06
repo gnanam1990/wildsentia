@@ -98,6 +98,11 @@ export const canFollowParent = (agent: Agent, species: SpeciesConfig): boolean =
 export const canGatherToParent = (agent: Agent, species: SpeciesConfig): boolean =>
   species.lifecycle.gatherFromDays !== undefined && agent.ageDays >= species.lifecycle.gatherFromDays;
 
+/** sim_0.37.0: a dependent young enough to cling to its mother and be carried (langur infants). */
+export const isCarried = (agent: Agent, species: SpeciesConfig): boolean =>
+  species.lifecycle.carriedUntilDays !== undefined && agent.dependentOn !== null
+  && agent.ageDays < species.lifecycle.carriedUntilDays;
+
 /**
  * sim_0.36.0: a denned young below its gathering age cannot yet walk (jackal pups open their eyes
  * at about ten days). Attacked, it cannot run: a failed attack leaves it where it lies, instead

@@ -3,11 +3,12 @@ import { movementAt, paceMovement, recordedSecondAt, type Pacing } from '@vana/s
 import { randomUUID } from 'node:crypto';
 import { collectLiveEncounters, indexLiveMovements, selectLiveMovements, encounterAppearance } from './liveEncounters.js';
 import {
-  FOREST_FLOOR, FOREST_LANDSCAPE, FOREST_POPULATION, ISLAND_POPULATION, SIM_VERSION,
+  FOREST_FLOOR, FOREST_LANDSCAPE, FOREST_POPULATION, SIM_VERSION, islandPopulation,
   upgradeV16Snapshot, upgradeV17Snapshot, upgradeV18Snapshot, upgradeV19Snapshot, upgradeV20Snapshot, upgradeV21Snapshot, upgradeV22Snapshot, upgradeV23Snapshot, upgradeV24Snapshot, upgradeV25Snapshot, upgradeV26Snapshot, upgradeV27Snapshot, upgradeV28Snapshot, upgradeV29Snapshot, upgradeV30Snapshot, upgradeV31Snapshot, upgradeV32Snapshot, upgradeV33Snapshot, upgradeV34Snapshot, upgradeV35Snapshot, upgradeV36Snapshot,
   createWorld, restoreSnapshot, takeSnapshot, totalNutrients, upgradeV5Snapshot, upgradeV6Snapshot, upgradeV7Snapshot, upgradeV8Snapshot, upgradeV9Snapshot, upgradeV10Snapshot, upgradeV11Snapshot, upgradeV12Snapshot, upgradeV13Snapshot, upgradeV14Snapshot, upgradeV15Snapshot, type Snapshot, type World, type WorldOptions,
 } from '@vana/sim';
 import type { Pool } from './db/pool.js';
+import { isIslandProfile } from '@vana/shared';
 import { EventStore } from './db/eventStore.js';
 import { SnapshotStore } from './db/snapshotStore.js';
 import { LifeStore } from './db/lifeStore.js';
@@ -307,9 +308,9 @@ export class SimHost {
       housekeepingEveryWorldHours: 24,
       routineRetentionWorldDays: 3,
       archiveAfterWorldDays: 730,
-      initialAgents: options.terrainProfile === 'island_v1' ? ISLAND_POPULATION : FOREST_POPULATION,
-      minPopulation: options.terrainProfile === 'island_v1' ? {} : FOREST_FLOOR,
-      landscape: options.terrainProfile === 'island_v1' ? null : FOREST_LANDSCAPE,
+      initialAgents: isIslandProfile(options.terrainProfile) ? islandPopulation(options.terrainProfile as 'island_v1' | 'island_v2') : FOREST_POPULATION,
+      minPopulation: isIslandProfile(options.terrainProfile) ? {} : FOREST_FLOOR,
+      landscape: isIslandProfile(options.terrainProfile) ? null : FOREST_LANDSCAPE,
       ...options,
     };
     this.#writer = new WorldWriter(options.pool, () => {

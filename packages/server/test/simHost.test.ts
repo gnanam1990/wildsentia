@@ -5,12 +5,12 @@ import { migrate } from '../src/db/migrate.js';
 import { EventStore } from '../src/db/eventStore.js';
 import { LifeStore } from '../src/db/lifeStore.js';
 import { SimHost } from './trackedHost.js';
-import { FOREST_LANDSCAPE, FOREST_POPULATION, SIM_VERSION, takeSnapshot, restoreSnapshot } from '@vana/sim';
+import { FOREST_LANDSCAPE, FOREST_POPULATION, ISLAND_V2_POPULATION, SIM_VERSION, takeSnapshot, restoreSnapshot } from '@vana/sim';
 import { SnapshotStore } from '../src/db/snapshotStore.js';
 import { testDatabaseUrl } from './testDatabase.js';
 import { isLiveEncounterFrame, LiveEncounterPlayer } from '../../client/src/liveEncounters.js';
 import { Gateway } from '../src/gateway.js';
-import type { LiveEncounterFrame } from '@vana/shared';
+import { islandGeometrySeed, type LiveEncounterFrame } from '@vana/shared';
 import { asLegacySnapshot, stripV37State } from '../../sim/test/legacySnapshot.js';
 
 const url = testDatabaseUrl();
@@ -203,6 +203,19 @@ maybe('SimHost', () => {
     upgraded.world.step(24);
     expect(upgraded.world.livingCount('leopard')).toBe(2);
     await upgraded.abort();
+  });
+
+  it('founds an island_v2 world with its own cohort, and refuses to boot it as island_v1', async () => {
+    const island = { pool: pool!, seed: 4, speciesDir, snapshotEveryWorldHours: 24, terrainProfile: 'island_v2' as const };
+    const first = new SimHost(island); await first.boot();
+    for (const [speciesId, count] of Object.entries(ISLAND_V2_POPULATION))
+      expect(first.world.livingCount(speciesId), speciesId).toBe(count);
+    expect(first.world.patches[0]!.islandSeed).toBe(islandGeometrySeed(4, 'island_v2'));
+    await first.abort();
+    await expect(new SimHost({ ...island, terrainProfile: 'island_v1' }).boot()).rejects.toThrow(/terrain profile mismatch/);
+    const restarted = new SimHost(island); await restarted.boot();
+    expect(restarted.world.terrainProfile).toBe('island_v2');
+    await restarted.abort();
   });
 
   it('refuses a v0.19 island save without explicit freshwater-basin upgrade opt-in', async () => {

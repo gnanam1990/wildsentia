@@ -192,6 +192,12 @@ export interface SpeciesConfig {
      * or den. Omitted: the species' young do not gather (follow rules alone apply).
      */
     gatherFromDays?: number;
+    /**
+     * sim_0.37.0: a dependent younger than this clings to its mother and is carried wherever she
+     * walks or runs while it is in contact with her (grey langur infants: 100% contact in the first
+     * week, following by the fourth; Dolhinow & Murphy 1982). It does not flee on its own.
+     */
+    carriedUntilDays?: number;
     /** Earliest independent plant foraging before weaning; omitted keeps the old weaning gate. */
     forageFromDays?: number;
     /** Earliest independent route to surface water; omitted retains the previous forage/wean gate. */

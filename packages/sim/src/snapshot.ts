@@ -1,5 +1,5 @@
 import type { Agent, Carcass, Patch, RngState, WorldTime, WaterBudget, TerrainProfile, MicroEcologyState } from '@vana/shared';
-import { yearOf } from '@vana/shared';
+import { isIslandProfile, islandGeometrySeed, yearOf } from '@vana/shared';
 import { positionInPatch, patchAtPosition, isCommunityState, type CommunityState } from '@vana/shared';
 import { humanWalkable } from './communityNavigation.js';
 import { validateIllness } from './agents/illness.js';
@@ -124,8 +124,8 @@ export function restoreSnapshot(snapshot: Snapshot, options: WorldOptions): Worl
   // Build an empty world, then overwrite its state from the snapshot.
   // Restore never re-founds a household or emits a second founding event.
   const world = new World({ ...options, seed: snapshot.seed, initialAgents: {}, communityProfile: 'none' });
-  if (world.terrainProfile === 'island_v1' && (snapshot.patches.length !== world.patches.length
-    || snapshot.patches.some((p, i) => p.id !== i || p.islandSeed !== snapshot.seed
+  if (isIslandProfile(world.terrainProfile) && (snapshot.patches.length !== world.patches.length
+    || snapshot.patches.some((p, i) => p.id !== i || p.islandSeed !== islandGeometrySeed(snapshot.seed, world.terrainProfile)
       || p.surface !== world.patches[i]!.surface || p.elevation !== world.patches[i]!.elevation
       || p.habitat !== world.patches[i]!.habitat)))
     throw new Error('island checkpoint geometry does not match its versioned seed');
@@ -162,13 +162,13 @@ export function restoreSnapshot(snapshot: Snapshot, options: WorldOptions): Worl
       ? candidate.id : null;
   }
   if (snapshot.islandArrivals !== undefined) {
-    if (world.terrainProfile !== 'island_v1' || Object.entries(snapshot.islandArrivals).some(([speciesId, at]) =>
+    if (!isIslandProfile(world.terrainProfile) || Object.entries(snapshot.islandArrivals).some(([speciesId, at]) =>
       !world.species.get(speciesId)?.islandArrival || !Number.isFinite(at) || at < 0 || at > snapshot.worldTime))
       throw new Error('invalid island arrival checkpoint');
     Object.assign(world.islandArrivals, snapshot.islandArrivals);
   }
   if (snapshot.pendingArrivals !== undefined) {
-    if (world.terrainProfile !== 'island_v1' || !Array.isArray(snapshot.pendingArrivals)
+    if (!isIslandProfile(world.terrainProfile) || !Array.isArray(snapshot.pendingArrivals)
       || snapshot.pendingArrivals.some(a => !world.species.has(a?.speciesId) || !['female', 'male'].includes(a.sex)
         || typeof a.trigger !== 'string' || !a.trigger))
       throw new Error('invalid pending arrival checkpoint');

@@ -1,7 +1,7 @@
 import {
   NUTRIENT_PER_KG_BIOMASS, PATCH_COUNT, WORLD_SECONDS_PER_DAY, WORLD_SECONDS_PER_HOUR,
-  createRng, seasonAt, carcassMass, edibleMass, landWalkable, spatialHash, treeAnchorForPatch, patchAtPosition, positionInPatch, type TerrainProfile,
-  type WorldPosition,
+  createRng, isIslandProfile, seasonAt, carcassMass, edibleMass, landWalkable, spatialHash, treeAnchorForPatch, patchAtPosition, positionInPatch, type TerrainProfile,
+  type WorldPosition, type MovementTrace,
   type Agent, type Carcass, type DeathCause, type Patch, type Rng, type SkillId,
   type RngState, type SpeciesConfig, type WorldTime, type WaterBudget, type MicroEcologyState, type CommunityState, type CommunityProfile,
 } from '@vana/shared';
@@ -23,12 +23,12 @@ import { controlledAction, controlledFeed, descendPerchedAnimal, executeGoal, ty
 import { foundingTraits } from './agents/genetics.js';
 import { Pedigree } from './agents/pedigree.js';
 import { adultMassFor, mortalityFor, stageFor, targetMass } from './agents/lifecycle.js';
-import { updateCondition, needsProvisioning, provisionYoung, canFollowParent, canGatherToParent, careRadius, digestGut, gutCapacityKg, inCareContact, mealRoom, needsOf } from './agents/needs.js';
+import { isCarried, updateCondition, needsProvisioning, provisionYoung, canFollowParent, canGatherToParent, careRadius, digestGut, gutCapacityKg, inCareContact, mealRoom, needsOf } from './agents/needs.js';
 import { availableForCare, chooseCareTarget, finishCare, idleRangeAnchor, travelToFamily, type FamilyLocation, type CareVisit } from './agents/family.js';
 import { establishNursingSites, nursingEligible } from './agents/nursing.js';
 import { choosePackRecipient, packDonorEligible, canWaitForPackFood, beginPackCollection, finishPackCollection,
   beginPackDelivery, finishPackDelivery, digestPackFood, type PackCollection, type PackDelivery } from './agents/packCare.js';
-import { isFloater } from './agents/territory.js';
+import { isFloater, territoryRadiusPatches } from './agents/territory.js';
 import { decaySkills, experiencedSkills, recordOutcome, teach } from './agents/learning.js';
 import { canHuntIndependently } from './agents/needs.js';
 import { advanceIllness } from './agents/illness.js';
@@ -107,9 +107,9 @@ export class World {
     if (options.initialCommunityRulesVersion !== undefined && ![2, 3, 4, 5, 6, 7, 8].includes(options.initialCommunityRulesVersion))
       throw new Error('unsupported initial community rules');
     this.terrainProfile = options.terrainProfile ?? 'mainland';
-    if (this.terrainProfile !== 'mainland' && this.terrainProfile !== 'island_v1') throw new Error('unknown terrain profile');
-    if (this.terrainProfile === 'island_v1' && !Number.isSafeInteger(options.seed)) throw new Error('island seed must be a safe integer');
-    if (this.terrainProfile === 'island_v1' && (options.landscape || Object.values(options.minPopulation).some(n => n !== 0)))
+    if (this.terrainProfile !== 'mainland' && !isIslandProfile(this.terrainProfile)) throw new Error('unknown terrain profile');
+    if (isIslandProfile(this.terrainProfile) && !Number.isSafeInteger(options.seed)) throw new Error('island seed must be a safe integer');
+    if (isIslandProfile(this.terrainProfile) && (options.landscape || Object.values(options.minPopulation).some(n => n !== 0)))
       throw new Error('island worlds require closed population policy: no floors or mainland exchange');
     this.#options = options;
     this.#rng = createRng(options.seed, 'world');
@@ -124,11 +124,16 @@ export class World {
     for (const [speciesId, count] of Object.entries(options.initialAgents)) {
       const founders: Agent[] = [];
       for (let i = 0; i < count; i++) founders.push(this.#spawn(speciesId, false));
-      // A closed island starts with just two tigers (and, sim_0.37.0, three leopards) and has no
-      // immigration/rescue floor. Preserve every random draw and the first founder; only correct
-      // the second founder when random sex assignment made a solitary cat's whole founding
-      // cohort unable to breed.
-      if (this.terrainProfile === 'island_v1' && this.species.get(speciesId)?.social.structure === 'solitary'
+      // A closed island starts with a handful of big cats and has no immigration/rescue floor.
+      // Preserve every random draw. On `island_v1` only the second founder is corrected, when
+      // random sex assignment made a solitary cat's whole founding cohort unable to breed. On
+      // `island_v2` (sim_0.37.0) the cohort is founded as these polygynous cats hold land: one
+      // male, whose range spans several females' (tiger 60 against 20 km², leopard 48 against
+      // 11 km²), and the rest females.
+      const cfg = this.species.get(speciesId);
+      if (this.terrainProfile === 'island_v2' && cfg?.social.structure === 'solitary' && cfg.hunting !== undefined) {
+        founders.forEach((agent, i) => { agent.sex = i === 0 ? 'male' : 'female'; agent.massKg = adultMassFor(agent, cfg); });
+      } else if (isIslandProfile(this.terrainProfile) && this.species.get(speciesId)?.social.structure === 'solitary'
         && this.species.get(speciesId)?.hunting !== undefined
         && founders.length >= 2 && founders.every(agent => agent.sex === founders[0]!.sex)) {
         const second = founders[1]!;
@@ -239,6 +244,7 @@ export class World {
       joinPackHunt: (hunter, cfg) => this.#joinPackHunt(hunter, cfg),
       packmatesNearby: (hunter, cfg) => this.#packCandidates(hunter, cfg).some(c => !c.follower),
       packRendezvous: (hunter, cfg) => this.#packRendezvous(hunter, cfg),
+      carryYoung: (mother, from, trace, causalParent) => this.#carryYoung(mother, from, trace, causalParent),
     };
   }
 
@@ -295,6 +301,38 @@ export class World {
     for (const c of candidates) this.#packHunted.add(c.mate.id);
     return { hunters: candidates.filter(c => !c.follower).map(c => c.mate),
       followers: candidates.filter(c => c.follower).map(c => c.mate) };
+  }
+
+  /**
+   * sim_0.37.0: a langur infant clings to its mother and goes where she goes. On the larger
+   * island a dhole den beside a langur troop kept mothers fleeing between two patches for two
+   * days; each infant fled on its own to a different spot, ended 100-500 m from its mother, and
+   * 19 died of thirst in two days (seed 1, days 230-232). An infant in contact with its mother
+   * when she sets off is carried along her route, recorded as its own movement with her.
+   */
+  #carryYoung(mother: Agent, from: { patchId: number; position: WorldPosition }, trace: MovementTrace, causalParent: string): void {
+    const cfg = this.species.get(mother.speciesId)!;
+    if (cfg.lifecycle.carriedUntilDays === undefined || (mother.altitudeM ?? 0) > 0) return;
+    const end = locateAgent(mother);
+    for (const id of mother.offspringIds) {
+      const child = this.#agentsById.get(id);
+      if (!child?.alive || child.dependentOn !== mother.id || !isCarried(child, cfg) || child.controller
+        || (child.altitudeM ?? 0) > 0 || child.patchId !== from.patchId) continue;
+      const at = locateAgent(child);
+      if (Math.hypot(at.x - from.position.x, at.z - from.position.z) > careRadius(cfg) + 1e-8) continue;
+      if (child.patchId !== mother.patchId) child.previousPatchId = child.patchId;
+      child.patchId = mother.patchId;
+      child.position = { ...end };
+      delete child.journey;
+      child.state = mother.state === 'fleeing' ? 'fleeing' : 'travelling';
+      this.log.append({ type: 'moved', worldTime: Math.floor(trace.startWorldTime + (trace.samples.at(-1)?.seconds ?? 0)),
+        simVersion: SIM_VERSION, patchId: child.patchId, actors: [child.id, mother.id], goal: 'follow_parent',
+        conditions: { reason: 'carried', carrierId: mother.id, from: from.patchId, destination: trace.destinationPatchId },
+        outcome: trace.completed ? 'success' : 'interrupted',
+        effects: { durationSeconds: trace.samples.at(-1)?.seconds ?? 0 },
+        causalParents: [causalParent], confidence: 'authoritative',
+        movement: { ...trace, actorId: child.id, goal: 'follow_parent', samples: trace.samples.map(s => ({ ...s, position: { ...s.position } })) } });
+    }
   }
 
   /** sim_0.37.0: a den mother of pups younger than the species' denning days (read-only). */
@@ -440,7 +478,7 @@ export class World {
     const cfg = this.species.get(speciesId);
     if (!cfg) throw new Error(`unknown species: ${speciesId}`);
 
-    const eligibleLand = this.terrainProfile === 'island_v1' && !arrival ? this.patches.filter(landWalkable) : null;
+    const eligibleLand = isIslandProfile(this.terrainProfile) && !arrival ? this.patches.filter(landWalkable) : null;
     if (eligibleLand && !eligibleLand.length) throw new Error('island has no founding habitat');
     const patchId = arrival ? arrival.patchId : eligibleLand ? eligibleLand[this.#rng.int(eligibleLand.length)]!.id : atEdge
       ? EDGE_PATCH_IDS[this.#rng.int(EDGE_PATCH_IDS.length)]!
@@ -531,7 +569,7 @@ export class World {
    * authoritative `immigration` event with its trigger and draw, and nothing else changes.
    */
   #islandArrival(at: WorldTime): void {
-    if (this.terrainProfile !== 'island_v1') return;
+    if (!isIslandProfile(this.terrainProfile)) return;
     const day = Math.floor(at / WORLD_SECONDS_PER_DAY);
     // sim_0.37.0: an upgraded island's scheduled arrivals (its leopard pair) come ashore first, each
     // a recorded, ledgered crossing like any other, on a shore patch chosen from seed, species and day.
@@ -653,6 +691,26 @@ export class World {
           best = assessment;
         }
       }
+    }
+    // sim_0.37.0: a solitary cat in oestrus that perceives no mate seeks the male whose range she
+    // lives in. Female tigers and leopards advertise oestrus by calling and scent marking, and the
+    // resident male finds them (Sunquist & Sunquist 2002). On island_v2, twice the land of
+    // island_v1, a leopard pair met twice in three years and never bred, and tigers in one seed
+    // never bred: mates were sought only in the patches each animal stood beside.
+    const territory = cfg.social.territory;
+    if (best === null && cfg.social.structure === 'solitary' && territory) {
+      const reach = territoryRadiusPatches(territory.maleKm2), here = this.patches[agent.patchId]!;
+      let nearest: Agent | null = null, steps = Infinity;
+      for (const other of this.agents) {
+        if (!other.alive || other.speciesId !== agent.speciesId || other.sex === agent.sex || other.controller
+          || (other.altitudeM ?? 0) > 0 || !isReceptive(other, cfg, this.#time)) continue;
+        const start = starts.get(other.id), there = start && this.patches[start.patchId];
+        if (!start || !there || !landWalkable(there)) continue;
+        const d = Math.abs(there.x - here.x) + Math.abs(there.y - here.y);
+        if (d > reach || d >= steps || assessMate(agent, other, this.pedigree) === null) continue;
+        nearest = other; steps = d;
+      }
+      if (nearest) best = assessMate(agent, nearest, this.pedigree);
     }
     if (best === null) return false;
     const visit = approachMate(agent, best.candidate, starts.get(best.candidate.id)!, cfg, this.patches,

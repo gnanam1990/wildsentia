@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NUTRIENT_PER_KG_BIOMASS, createRng, type Patch } from '@vana/shared';
+import { NUTRIENT_PER_KG_BIOMASS, createRng, landWalkable, patchCentre, type Agent, type Patch } from '@vana/shared';
 import { buildGrid } from '../src/grid.js';
 import { createWorld } from '../src/world.js';
 import { ROOTING_CAPACITY_KG, establishRooting, growRooting, rootingEligible } from '../src/fields/rooting.js';
@@ -130,6 +130,29 @@ describe('wild boar rooting and mast food (sim_0.37.0)', () => {
     expect(Math.max(...fat)).toBe(boar.lifecycle.litterSize[1]);
     const mean = (xs: number[]) => xs.reduce((s, n) => s + n, 0) / xs.length;
     expect(mean(fat) - mean(lean)).toBeGreaterThan(2.5);
+  });
+
+  it('a sow with piglets in the nest looks for food near them but remembers water as far as ever', () => {
+    const world = createWorld({ seed: 4, speciesDir: SPECIES_DIR, initialAgents: { boar: 2 }, minPopulation: {} });
+    const [sow, piglet] = world.agents.filter(a => a.speciesId === 'boar') as [Agent, Agent];
+    const home = world.patches.find(p => landWalkable(p) && p.x === 10 && p.y === 10)!;
+    const far = (d: number) => world.patches.find(p => landWalkable(p) && Math.abs(p.x - home.x) + Math.abs(p.y - home.y) === d)!;
+    const pasture = far(4), pool = far(4) === pasture ? world.patches.find(p => landWalkable(p) && p !== pasture
+      && Math.abs(p.x - home.x) + Math.abs(p.y - home.y) === 4)! : far(4);
+    for (const p of world.patches) { p.waterVolume = 0; p.plant.grass = 0; p.plant.browse = 0; if (p.rooting) p.rooting.kg = 0; delete p.floweringGuild; }
+    pasture.plant.grass = 5000; pool.waterVolume = 5000;
+    const at = (agent: Agent, extra: Partial<Agent>) => {
+      Object.assign(agent, { patchId: home.id, position: { ...patchCentre(home.id), heading: 0 }, ...extra });
+    };
+    at(sow, { sex: 'female', drives: { hunger: 0.6, thirst: 0.7, fatigue: 0, fear: 0 }, offspringIds: [piglet.id] });
+    at(piglet, { dependentOn: sow.id, motherId: sow.id, ageDays: 5, lifeStage: 'newborn', massKg: 1.5 });
+    world.__reindexForTest();
+    const percept = perceive(sow, boar, world.__viewForTest());
+    expect(percept.bestWater?.patchId).toBe(pool.id);
+    expect(percept.bestFood).toBeNull();
+    // Once the piglets follow her (10 days), she ranges to the pasture she remembers.
+    piglet.ageDays = 12;
+    expect(perceive(sow, boar, world.__viewForTest()).bestFood?.patchId).toBe(pasture.id);
   });
 
   it('checkpoints condition and rooting food, and rejects impossible values', () => {

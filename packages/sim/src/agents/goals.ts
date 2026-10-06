@@ -2,7 +2,7 @@ import { type Agent, type GoalId, type Rng, type SpeciesConfig } from '@vana/sha
 import { edibleMass } from '../fields/decomposition.js';
 import { goalsFor } from './archetypes.js';
 import type { Percept } from './perception.js';
-import { allowsDependentGoal, canDrinkIndependently, canFollowParent, canEatMaternalMeat, canForageIndependently, canHuntIndependently, needsOf, needsProvisioning } from './needs.js';
+import { isCarried, allowsDependentGoal, canDrinkIndependently, canFollowParent, canEatMaternalMeat, canForageIndependently, canHuntIndependently, needsOf, needsProvisioning } from './needs.js';
 
 export interface GoalChoice {
   goal: GoalId;
@@ -50,7 +50,10 @@ export function selectGoal(
     ? Math.min(1, percept.bestFood.kg / (dailyNeed * 8)) : 0.05;
   const waterOpportunity = percept.bestWater
     ? Math.min(1, percept.bestWater.litres / (waterNeed * 8)) : 0.05;
-  const preyOpportunity = percept.prey.length > 0 ? Math.min(1, percept.prey.length / 3) : 0;
+  // sim_0.37.0: a hunter that knows where prey of its size graze (range memory) has a reason to
+  // go hunting even with none in sight.
+  const preyOpportunity = Math.max(percept.prey.length > 0 ? Math.min(1, percept.prey.length / 3) : 0,
+    percept.preyRange != null ? 0.5 : 0);
   const carrionOpportunity = percept.carrion
     ? Math.min(1, edibleMass(percept.carrion.carcass.biomass) / (dailyNeed * 2))
     : 0;
@@ -95,7 +98,8 @@ export function selectGoal(
   // and pups in the den lie still when danger is near rather than run (the hider strategy);
   // with prey now sensing predators hundreds of metres off, fleeing scattered whole litters
   // where their mother could not reach them and they died of thirst.
-  const hider = needsProvisioning(agent, species) && !canFollowParent(agent, species);
+  // sim_0.37.0: a carried infant clings to its mother rather than run on its own; she carries it.
+  const hider = needsProvisioning(agent, species) && (!canFollowParent(agent, species) || isCarried(agent, species));
 
   // Orphanhood never unlocks abilities. Precocial plant foraging has a separate age gate.
   if (needsProvisioning(agent, species) && !canForageIndependently(agent, species)

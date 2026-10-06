@@ -227,6 +227,78 @@ describe('leopard hunting and the recorded hold', () => {
   });
 });
 
+describe('a leopard leaves hares alone unless starving (sim_0.37.0)', () => {
+  it('moves on from a patch of hares to look for larger prey, and takes a hare when starving', () => {
+    const huntsAt = (hunger: number) => {
+      let hunts = 0, moved = 0;
+      for (let seed = 1; seed <= 20; seed++) {
+        const { world, get } = scene({ leopard: 1, hare: 6 }, seed);
+        const cat = get('leopard');
+        place(world, cat, P, -40, { drives: { ...calm, hunger } });
+        for (let i = 0; i < 6; i++) place(world, get('hare', i), P, 10 + i * 4);
+        world.step(1);
+        if (world.log.all().some(e => e.type === 'hunt' && e.actors[0] === cat.id)) hunts++;
+        if (world.log.all().some(e => e.type === 'moved' && e.actors[0] === cat.id)) moved++;
+      }
+      return { hunts, moved };
+    };
+    const fed = huntsAt(0.6), starving = huntsAt(0.85);
+    expect(fed.hunts).toBe(0);
+    expect(fed.moved).toBeGreaterThan(10);
+    expect(starving.hunts).toBeGreaterThan(5);
+  });
+});
+
+describe('big cats search where their prey graze (range memory, sim_0.37.0)', () => {
+  it('a leopard that sees only hares knows the nearest herd of deer and heads for it', () => {
+    const { world, get } = scene({ leopard: 1, hare: 3, chital: 4 });
+    const cat = get('leopard');
+    place(world, cat, P, 0, { drives: { ...calm, hunger: 0.5 } });
+    for (let i = 0; i < 3; i++) place(world, get('hare', i), P, 10 + i * 5);
+    const herd = P + 4 * GRID_SIZE; // four patches south, beyond its senses
+    for (let i = 0; i < 4; i++) place(world, get('chital', i), herd, i * 5);
+    const percept = perceive(cat, leopard, world.__viewForTest());
+    expect(percept.prey.every(p => p.agent.speciesId === 'hare')).toBe(true);
+    expect(percept.preyRange).toBe(herd);
+    // With deer in sight there is nothing to remember.
+    place(world, get('chital', 0), P, 30);
+    expect(perceive(cat, leopard, world.__viewForTest()).preyRange).toBeNull();
+    // A hunter without a preferred size (a dhole) keeps no such memory.
+    expect(perceive(makeAgent('dhole', { patchId: P, position: { ...patchCentre(P), heading: 0 } }), speciesOf('dhole'), world.__viewForTest()).preyRange).toBeUndefined();
+  });
+
+  it('a mother of cubs too young to follow hunts near them, not from range memory', () => {
+    const { world, get } = scene({ leopard: 2, hare: 3, chital: 4 });
+    const [mother, cub] = [get('leopard', 0), get('leopard', 1)];
+    place(world, mother, P, 0, { sex: 'female', drives: { ...calm, hunger: 0.5 }, offspringIds: [cub.id] });
+    place(world, cub, P, 1, { dependentOn: mother.id, motherId: mother.id, ageDays: 20, lifeStage: 'newborn', massKg: 3 });
+    for (let i = 0; i < 3; i++) place(world, get('hare', i), P, 10 + i * 5);
+    for (let i = 0; i < 4; i++) place(world, get('chital', i), P + 4 * GRID_SIZE, i * 5);
+    expect(perceive(mother, leopard, world.__viewForTest()).preyRange).toBeNull();
+    // Starving, she goes where she must.
+    mother.drives.hunger = 0.85;
+    expect(perceive(mother, leopard, world.__viewForTest()).preyRange).toBe(P + 4 * GRID_SIZE);
+  });
+
+  it('a solitary cat in oestrus seeks the male of her range when none is in sight', () => {
+    let approached = 0;
+    for (let seed = 1; seed <= 6; seed++) {
+      const { world, get } = scene({ leopard: 2 }, seed);
+      const [female, male] = [get('leopard', 0), get('leopard', 1)];
+      place(world, female, P, 0, { sex: 'female', ageDays: 2000, lastBirthAt: null, pregnantSince: null, nextOestrusAt: null });
+      place(world, male, P + 5 * GRID_SIZE, 0, { sex: 'male', ageDays: 2000 });
+      world.step(1);
+      if (world.log.all().some(e => e.type === 'moved' && e.actors[0] === female.id && e.conditions.reason === 'approach_mate'
+        && e.conditions.mateId === male.id)) approached++;
+    }
+    expect(approached).toBeGreaterThan(3);
+  });
+
+  it('tigers prefer prey of 60-250 kg (Hayward et al. 2012)', () => {
+    expect(speciesOf('tiger').hunting!.preferredPreyKg).toEqual([60, 250]);
+  });
+});
+
 describe('a leopard caches its kill in a tree (Balme et al. 2017)', () => {
   it('only she and her young can feed from a cached kill', () => {
     let seen = false;
@@ -234,7 +306,7 @@ describe('a leopard caches its kill in a tree (Balme et al. 2017)', () => {
       const { world, get } = scene({ leopard: 2, chital: 4, boar: 2 }, seed);
       const treed = world.patches.find(p => treeAnchorForPatch(p) && p.neighbours.length === 4)!;
       const [cat, cub] = [get('leopard', 0), get('leopard', 1)];
-      place(world, cat, treed.id, -20, { drives: { ...calm, hunger: 0.6 } });
+      place(world, cat, treed.id, -20, { sex: 'female', drives: { ...calm, hunger: 0.6 } });
       place(world, cub, P, 0, { dependentOn: cat.id, motherId: cat.id, ageDays: 150, lifeStage: 'juvenile', massKg: 18 });
       for (let i = 0; i < 4; i++) place(world, get('chital', i), treed.id, 5 + i * 3);
       for (let i = 0; i < 2; i++) place(world, get('boar', i), P, 40 + i * 3);
@@ -255,6 +327,13 @@ describe('a leopard caches its kill in a tree (Balme et al. 2017)', () => {
       expect(perceive(near, speciesOf('boar'), view).carrion).toBeNull();
       const kitten = { ...cub, patchId: carcass.patchId, position: { ...carcass.position! }, ageDays: 150 };
       expect(perceive(kitten, leopard, view).carrion?.carcass.id).toBe(carcass.id);
+      // A cub old enough for meat but not yet to follow her eats only where it lies: it does not
+      // walk to the kill from the next patch (sim_0.37.0); once it follows her, it does.
+      const next = world.patches[treed.neighbours.find(id => world.patches[id]!.habitat !== 'water')!]!;
+      const lying = { ...cub, patchId: next.id, position: { ...patchCentre(next.id), heading: 0 }, ageDays: 50, lifeStage: 'newborn' as const };
+      expect(perceive({ ...lying, patchId: carcass.patchId, position: { ...carcass.position! } }, leopard, view).carrion?.carcass.id).toBe(carcass.id);
+      expect(perceive(lying, leopard, view).carrion).toBeNull();
+      expect(perceive({ ...lying, ageDays: 65 }, leopard, view).carrion?.carcass.id).toBe(carcass.id);
     }
     expect(seen).toBe(true);
   });

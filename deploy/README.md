@@ -117,7 +117,12 @@ world's version and moves it straight to this runtime: a `sim_0.35.0` world uses
 `VANA_ALLOW_V35_UPGRADE`, a `sim_0.34.0` world `VANA_ALLOW_V34_UPGRADE`, a `sim_0.33.0` world
 `VANA_ALLOW_V33_UPGRADE`, a `sim_0.32.0` world `VANA_ALLOW_V32_UPGRADE`.) An upgraded island
 receives a recorded leopard pair (one male, one female) at the first day boundary after the
-start, and every land patch gets its rooting food out of its own soil. Otherwise an upgraded island
+start, and every land patch gets its rooting food out of its own soil. A saved world never changes
+terrain: `deploy/compose.yml` now founds new worlds on `island_v2` (sim_0.37.0, about 26 km² of
+land against about 12 km² for `island_v1`), so a database that already holds an `island_v1` world
+must set `VANA_TERRAIN_PROFILE=island_v1` in the server's environment to keep booting; the server
+refuses a terrain mismatch rather than reshape a world. To launch on `island_v2`, start from a new
+database. Otherwise an upgraded island
 keeps the animals it was founded with; only new worlds get the calibrated predator cohort.
 
 ## Upgrade and rollback

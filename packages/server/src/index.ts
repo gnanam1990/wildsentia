@@ -31,7 +31,7 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
   const speciesDir =
     process.env.SPECIES_DIR ?? fileURLToPath(new URL('../../../config/species', import.meta.url));
   const terrainProfile = process.env.VANA_TERRAIN_PROFILE ?? 'mainland';
-  if (terrainProfile !== 'mainland' && terrainProfile !== 'island_v1') throw new Error('invalid VANA_TERRAIN_PROFILE');
+  if (terrainProfile !== 'mainland' && terrainProfile !== 'island_v1' && terrainProfile !== 'island_v2') throw new Error('invalid VANA_TERRAIN_PROFILE');
   const communityProfile = process.env.VANA_COMMUNITY_PROFILE ?? 'none';
   if (communityProfile !== 'none' && communityProfile !== 'household_v1') throw new Error('invalid VANA_COMMUNITY_PROFILE');
 

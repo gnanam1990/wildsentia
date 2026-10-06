@@ -128,6 +128,7 @@ export const SpeciesConfigSchema = z
       weanDays: z.number().positive(),
       followFromDays: z.number().nonnegative().optional(),
       gatherFromDays: z.number().finite().nonnegative().optional(),
+      carriedUntilDays: z.number().positive().finite().optional(),
       forageFromDays: z.number().nonnegative().optional(),
       drinkFromDays: z.number().finite().nonnegative().optional(),
       meatFromDays: z.number().finite().nonnegative().optional(),

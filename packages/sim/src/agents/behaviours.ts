@@ -32,6 +32,11 @@ export interface WorldServices {
    * decision: they relay the chase and feed at the kill. Absent for worlds and tests without packs.
    */
   joinPackHunt?(hunter: Agent, species: SpeciesConfig): { hunters: Agent[]; followers: Agent[] };
+  /**
+   * sim_0.37.0: the mother has just moved along `trace` from `from`; the infants clinging to her
+   * there are carried along the same route and recorded as moving with her.
+   */
+  carryYoung?(mother: Agent, from: { patchId: number; position: WorldPosition }, trace: MovementTrace, causalParent: string): void;
   /** sim_0.36.0: whether packmates able to join a hunt stand within reach (read-only). */
   packmatesNearby?(hunter: Agent, species: SpeciesConfig): boolean;
   /**
@@ -107,7 +112,7 @@ function emit(
 }
 
 function moveTo(ctx: BehaviourContext, patchId: number, fleeing = false, endpoint?: WorldPosition) {
-  const from = ctx.agent.patchId;
+  const from = ctx.agent.patchId, start = { patchId: from, position: { ...locateAgent(ctx.agent) } };
   const result = navigate(ctx.agent, ctx.species, ctx.patches, patchId, ctx.choice.goal, ctx.worldTime, ctx.hours * 3600, fleeing, endpoint);
   ctx.agent.state = result.unreachable ? 'resting' : fleeing ? 'fleeing' : 'travelling';
   const event = ctx.log.append({
@@ -119,6 +124,7 @@ function moveTo(ctx: BehaviourContext, patchId: number, fleeing = false, endpoin
     effects: { distanceM: result.distanceM, durationSeconds: result.seconds, sprintSeconds: result.sprintSeconds },
     causalParents: [], confidence: 'authoritative', movement: result.trace,
   });
+  if (result.distanceM > 0) ctx.services.carryYoung?.(ctx.agent, start, result.trace, event.id);
   return { ...result, eventId: event.id };
 }
 
@@ -355,8 +361,11 @@ function hunt(ctx: BehaviourContext): void {
     && (p.agent.altitudeM ?? 0) === 0
     && canRetryPrey(ctx.agent, p.agent.id, ctx.worldTime));
   if (hunting === undefined || candidates.length === 0) {
-    delete ctx.agent.journey;
-    ctx.agent.targetId = null; wander(ctx); return;
+    ctx.agent.targetId = null;
+    // sim_0.37.0: a hunter with range memory heads for where its prey graze (perceive: preyRange).
+    const range = ctx.percept.preyRange;
+    if (range != null && range !== ctx.agent.patchId) { moveTo(ctx, range); return; }
+    delete ctx.agent.journey; wander(ctx); return;
   }
 
   // Keep an approach commitment only while that living target remains perceptible and eligible.
@@ -376,15 +385,22 @@ function hunt(ctx: BehaviourContext): void {
     if (rendezvous != null && rendezvous !== ctx.agent.patchId) { ctx.agent.targetId = null; moveTo(ctx, rendezvous); return; }
   }
   // sim_0.37.0: a hunter with a preferred prey size (leopards: 10-40 kg, Hayward et al. 2006) does
-  // not spend its hunts on animals below that size while larger ones are in view: a leopardess
-  // among hares chased them for weeks, in 2.5 kg meals, and starved. With nothing larger in view
-  // it takes what it finds. Within the kind it picks, it takes the individual of its preferred
-  // size where there is one (choosePrey).
+  // not spend its hunts on animals below that size unless it is starving: it moves on to find
+  // larger prey. On island_v2 a male leopard made 89 of 122 hunts at hares in its last month, in
+  // 1.5 kg meals, and starved; hares are 3.8% of Bandipur leopards' prey (Andheria et al. 2007).
+  // Within the kind it picks, it takes the individual of its preferred size (choosePrey).
   const sized = hunting.preferredPreyKg;
   const accessible = range && ctx.agent.drives.hunger < HUNGER_DESPERATION && ctx.services.packmatesNearby?.(ctx.agent, ctx.species)
-    ? candidates.filter(p => adultKg(p) >= range[0] && adultKg(p) <= range[1])
-    : sized ? candidates.filter(p => p.agent.massKg >= sized[0]) : [];
-  const pool = accessible.length ? accessible : candidates;
+    ? candidates.filter(p => adultKg(p) >= range[0] && adultKg(p) <= range[1]) : [];
+  if (sized && ctx.agent.drives.hunger < HUNGER_DESPERATION && !candidates.some(p => p.agent.massKg >= sized[0])) {
+    ctx.agent.targetId = null;
+    // It heads for where it knows larger prey graze (range memory), or else searches.
+    const range = ctx.percept.preyRange;
+    if (range != null && range !== ctx.agent.patchId) { moveTo(ctx, range); return; }
+    delete ctx.agent.journey; wander(ctx); return;
+  }
+  const pool = accessible.length ? accessible
+    : sized && ctx.agent.drives.hunger < HUNGER_DESPERATION ? candidates.filter(p => p.agent.massKg >= sized[0]) : candidates;
   const choice = pool.find((p) => p.agent.id === ctx.agent.targetId)
     ?? choosePrey(pool, ctx.rng, hunting.preyPreference, hunting.preferredPreyKg);
   ctx.agent.targetId = choice.agent.id;

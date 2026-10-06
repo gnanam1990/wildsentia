@@ -78,7 +78,7 @@
     ],
     "alarmSharing": false,
     "territory": {
-      "femaleKm2": 17,
+      "femaleKm2": 11,
       "maleKm2": 48,
       "floaterMortalityPerDay": 0.004
     }
