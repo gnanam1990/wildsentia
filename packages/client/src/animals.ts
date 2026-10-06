@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { actClipTime, clipForObservedMotion, clipForState, clipPhase, elephantTrunkReach, renderStateFor, replayClipTime, struggleClip, vigilance,
+import { actClipTime, climbs, clipForObservedMotion, clipForState, clipPhase, elephantTrunkReach, renderStateFor, replayClipTime, struggleClip, vigilance,
   type ClimbVisualPhase, type FlightVisualPhase, climbPose } from './animation.js';
 import { PositionTracker, renderBaseY, type RenderPosition } from './space.js';
 import type { AnimalState } from './protocol.js';
@@ -33,7 +33,7 @@ function standIn(colour: number): THREE.Group {
   return root;
 }
 
-const arboreal = (speciesId: string): boolean => speciesId === 'langur' || speciesId === 'squirrel';
+const arboreal = climbs;
 
 interface Rig {
   variantKey: string;

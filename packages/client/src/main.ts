@@ -124,7 +124,7 @@ revealAnimal.addEventListener('change', () => {
 });
 // Created with the HUD: watch() can run before the feed timers below are set up.
 /** Plain words for what an animal is doing in the played hour. */
-const SPECIES_LABEL: Record<string, string> = { boar: 'Wild boar', squirrel: 'Giant squirrel' };
+const SPECIES_LABEL: Record<string, string> = { boar: 'Wild boar', squirrel: 'Giant squirrel', leopard: 'Leopard' };
 const ACTIVITY_LABEL: Record<string, string> = {
   travelling: 'walking', fleeing: 'running away', drinking: 'drinking', resting: 'resting', chasing: 'chasing',
   stalking: 'stalking', dead: 'dead', grazing: 'grazing', feeding: 'feeding',

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { actClipTime, clipPhase, climbPose, struggleClip, CLIMB_TRUNK_CLEARANCE_M, clipForClimbPhase, clipForObservedMotion, clipForState, elephantTrunkReach, renderStateFor, vigilance } from '../src/animation.js';
+import { actClipTime, clipPhase, climbPose, climbs, struggleClip, CLIMB_TRUNK_CLEARANCE_M, clipForClimbPhase, clipForObservedMotion, clipForState, elephantTrunkReach, renderStateFor, vigilance } from '../src/animation.js';
 
 const DEER_CLIPS = [
   'Attack_Headbutt', 'Attack_Kick', 'Death', 'Eating', 'Gallop', 'Gallop_Jump',
@@ -200,5 +200,15 @@ describe('hunt act clips', () => {
     expect(kick).toBeGreaterThan(0.3);
     for (let i = 0; i < torso.times.length; i++) expect(at(torso, i).angleTo(base)).toBeLessThan(1e-5);
     expect(Array.from(body.values.slice(0, 3))).toEqual([0, expect.closeTo(0.3, 6), 0]);
+  });
+});
+
+describe('leopard climbing', () => {
+  it('treats the leopard as a climber that, like a squirrel, comes down its tree head first', () => {
+    expect(climbs('leopard')).toBe(true);
+    expect(climbs('tiger')).toBe(false);
+    expect(climbPose('leopard', 'descending', 1.4)).toEqual(climbPose('squirrel', 'descending', 1.4));
+    expect(climbPose('leopard', 'ascending', 1.4)).toEqual(climbPose('langur', 'ascending', 1.4));
+    expect(climbPose('leopard', 'descending', 1.4).pitch).toBeGreaterThan(0);
   });
 });

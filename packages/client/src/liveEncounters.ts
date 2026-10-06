@@ -4,7 +4,7 @@ import { patchAtPosition, isMovementTrace, isDrinkingActivity, movementAt, treeA
 import { encounterAt, isRecordedEncounter } from './encounterReplay.js';
 import type { AnimalState } from './protocol.js';
 import type { RenderPosition } from './space.js';
-import type { ClimbVisualPhase, FlightVisualPhase } from './animation.js';
+import { climbs, type ClimbVisualPhase, type FlightVisualPhase } from './animation.js';
 import type { MovementTrace } from '@vana/shared';
 import { displaySecondAt, paceEncounter, paceMovement, recordedSecondAt, walkingPace, type Pacing } from '@vana/shared';
 import { huntMoment } from './huntActs.js';
@@ -228,7 +228,7 @@ export class LiveEncounterPlayer {
       if (activity && seconds >= activity.startSeconds) position = { ...activity.position, moving: false };
       const flightVisualPhase = m.actor.speciesId === 'vulture' && !drinking
         ? recordedFlightPhase(m.trace, seconds) : null;
-      const climbVisualPhase = (m.actor.speciesId === 'langur' || m.actor.speciesId === 'squirrel') && !drinking
+      const climbVisualPhase = climbs(m.actor.speciesId) && !drinking
         ? recordedClimbPhase(m.trace, seconds) : null;
       // Only explicitly recorded drinking gets an action window. Other endpoints stay
       // neutral rather than displaying the newer checkpoint's unrecorded action early.

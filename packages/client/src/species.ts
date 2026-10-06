@@ -29,7 +29,7 @@ export const SPECIES_VISUALS: Record<string, SpeciesVisual> = {
   // Existing project-owned geometry, rigged locally. Not the blocked Sketchfab download.
   tiger:    { heightM: 1.0,  model: { file: '/assets/animals/TigerRigged.glb' }, colour: 0xd9822b },
   // Interim: the same big-cat rig and clips with a leopard's rosette coat (tools/assets/leopard_from_tiger.py).
-  leopard:  { heightM: 0.65, model: { file: '/assets/animals/LeopardRigged.glb' }, colour: 0xc9963e },
+  leopard:  { heightM: 0.7,  model: { file: '/assets/animals/LeopardRigged.glb' }, colour: 0xc9963e },
   // OpenGameArt CC0 rigs. See credits: generic elephant; rabbit is a hare approximation.
   elephant: { heightM: 2.7,  model: { file: '/assets/animals/ElephantWalking.glb' }, colour: 0x7d7a76 },
   // The arched tail rises above the head; scale by the body (front half) height.

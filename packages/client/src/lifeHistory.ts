@@ -2,6 +2,7 @@ import { positionInPatch } from '@vana/shared';
 import { isRecordedEncounter, type RecordedEncounter } from './encounterReplay.js';
 import { validNextCursor } from './historyCursor.js';
 import { isRecordedClimb, type Life, type LifeMoment, type LifeTrackPoint } from './replay.js';
+import { climbs } from './animation.js';
 
 const whole = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
 const record = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
@@ -35,7 +36,7 @@ export async function loadSelectedClimb(id: string, eventId: string, signal: Abo
   const p: unknown = await response.json(); signal.throwIfAborted();
   if (!record(p) || p.id !== id || p.source !== 'checkpoint' || p.scope !== 'movement'
     || !whole(p.asOfWorldTime) || !whole(p.nextEventSequence)
-    || !['langur', 'squirrel'].includes(String(p.speciesId))
+    || !climbs(String(p.speciesId))
     || typeof p.alive !== 'boolean' || !whole(p.bornAt) || p.bornAt > p.asOfWorldTime
     || p.departedAt !== null && (!whole(p.departedAt) || p.departedAt > p.asOfWorldTime)
     || !isRecordedClimb(p.movement) || p.movement.eventId !== eventId || p.movement.trace.actorId !== id
