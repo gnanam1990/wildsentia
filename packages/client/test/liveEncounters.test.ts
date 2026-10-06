@@ -209,9 +209,13 @@ describe('checkpointed live encounter playback', () => {
     expect(poses.get('t')!.position.x).toBe(9.5); expect(poses.get('s')!.position.x).toBe(15);
     expect(poses.get('s')!.animal).toMatchObject({ state: 'fleeing', sizeRatio: 0.25 });
     const end = player.poses(11_000);
-    expect(end.get('s')!.animal.state).toBe('dead');
+    // Recorded dead at contact: from that moment it collapses (its dying), then lies dead.
+    expect(end.get('s')!.animal.state).toBe('falling');
+    expect(end.get('t')!.animal.state).toBe('holding');
     expect(end.get('t')!.position.x).toBe(19);
     expect(player.poses(50_000).get('s')!.position.x).toBe(20);
+    expect(player.poses(50_000).get('s')!.animal.state).toBe('dead');
+    expect(player.poses(50_000).get('t')!.animal.state).toBe('feeding');
   });
   it('does not restart on duplicate or late broadcasts and joins at the server playhead', () => {
     const a = new LiveEncounterPlayer(), b = new LiveEncounterPlayer();

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { clipPhase, climbPose, CLIMB_TRUNK_CLEARANCE_M, clipForClimbPhase, clipForObservedMotion, clipForState, elephantTrunkReach, renderStateFor, vigilance } from '../src/animation.js';
+import { actClipTime, clipPhase, climbPose, struggleClip, CLIMB_TRUNK_CLEARANCE_M, clipForClimbPhase, clipForObservedMotion, clipForState, elephantTrunkReach, renderStateFor, vigilance } from '../src/animation.js';
 
 const DEER_CLIPS = [
   'Attack_Headbutt', 'Attack_Kick', 'Death', 'Eating', 'Gallop', 'Gallop_Jump',
@@ -159,5 +159,46 @@ describe('clipPhase', () => {
     const phases = [1, 2, 3, 4, 5, 1000, 31337].map((seed) => clipPhase(seed, 2));
     expect(new Set(phases.map((p) => p.toFixed(3))).size).toBe(phases.length);
     for (const p of phases) { expect(p).toBeGreaterThanOrEqual(0); expect(p).toBeLessThan(2); }
+  });
+});
+
+describe('hunt act clips', () => {
+  it('fits the spring to its window, plays a stagger or fall once, and loops a hold', () => {
+    expect(actClipTime('pouncing', 0.8, 0.35)).toBeCloseTo(0.4);
+    expect(actClipTime('pouncing', 0.8, 5)).toBe(0.8);
+    expect(actClipTime('falling', 1, 0.3)).toBeCloseTo(0.3);
+    expect(actClipTime('falling', 1, 4)).toBe(1);
+    expect(actClipTime('holding', 2, 5)).toBeCloseTo(1);
+  });
+  it('makes a struggle from the animal\'s own death pose, kicking its legs about their gait swing axis', () => {
+    const axisX = new THREE.Vector3(1, 0, 0);
+    const q = (angle: number, axis = axisX) => new THREE.Quaternion().setFromAxisAngle(axis, angle).toArray();
+    const lying = q(1.2, new THREE.Vector3(0, 0, 1));
+    const death = new THREE.AnimationClip('Death', 1, [
+      new THREE.QuaternionKeyframeTrack('FrontUpperLeg.L.quaternion', [0, 1], [...q(0), ...lying]),
+      new THREE.QuaternionKeyframeTrack('Torso.quaternion', [0, 1], [...q(0), ...lying]),
+      new THREE.VectorKeyframeTrack('Body.position', [0, 1], [0, 1, 0, 0, 0.3, 0]),
+    ]);
+    const gait = new THREE.AnimationClip('Gallop', 1, [
+      new THREE.QuaternionKeyframeTrack('FrontUpperLeg.L.quaternion', [0, 0.25, 0.5, 0.75, 1],
+        [...q(0), ...q(0.5), ...q(0), ...q(-0.5), ...q(0)]),
+    ]);
+    const clip = struggleClip(death, gait);
+    expect(clip.name).toBe('Struggle');
+    const leg = clip.tracks.find((t) => t.name === 'FrontUpperLeg.L.quaternion')!;
+    const torso = clip.tracks.find((t) => t.name === 'Torso.quaternion')!;
+    const body = clip.tracks.find((t) => t.name === 'Body.position')!;
+    const at = (track: THREE.KeyframeTrack, i: number) => new THREE.Quaternion().fromArray(track.values as unknown as number[], i * 4);
+    const base = new THREE.Quaternion().fromArray(lying);
+    let kick = 0;
+    for (let i = 0; i < leg.times.length; i++) {
+      const rel = base.clone().invert().multiply(at(leg, i));
+      kick = Math.max(kick, base.angleTo(at(leg, i)));
+      // The kick is about the leg's own swing axis (x), on top of the lying pose.
+      if (rel.lengthSq() > 0 && Math.abs(rel.w) < 0.9999) expect(Math.abs(new THREE.Vector3(rel.x, rel.y, rel.z).normalize().x)).toBeGreaterThan(0.99);
+    }
+    expect(kick).toBeGreaterThan(0.3);
+    for (let i = 0; i < torso.times.length; i++) expect(at(torso, i).angleTo(base)).toBeLessThan(1e-5);
+    expect(Array.from(body.values.slice(0, 3))).toEqual([0, expect.closeTo(0.3, 6), 0]);
   });
 });

@@ -106,7 +106,10 @@ export function paceEncounter(trace: EncounterTrace, rate: number): Pacing {
     const moved = Math.max(Math.hypot(b.predator.x - a.predator.x, b.predator.z - a.predator.z),
       Math.hypot(b.prey.x - a.prey.x, b.prey.z - a.prey.z));
     const fast = a.phase === 'chase' || a.phase === 'escape';
-    inner.push({ from: a.seconds, to: b.seconds, minDisplay: moved > 0 ? moved / (fast ? CHASE_MPS : STALK_MPS) * rate : null });
+    // A hold (the prey seized and struggling) plays in real time; at the hour's pace it was a blur.
+    const held = b.phase === 'subdue' ? (b.seconds - a.seconds) * rate : 0;
+    const travel = moved > 0 ? moved / (fast ? CHASE_MPS : STALK_MPS) * rate : 0;
+    inner.push({ from: a.seconds, to: b.seconds, minDisplay: held > 0 || travel > 0 ? Math.max(held, travel) : null });
   }
   return pace(withIdleEnds(s[0]!.seconds, s.at(-1)!.seconds, inner));
 }

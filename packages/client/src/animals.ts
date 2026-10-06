@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { clipForObservedMotion, clipForState, clipPhase, elephantTrunkReach, renderStateFor, replayClipTime, vigilance,
+import { actClipTime, clipForObservedMotion, clipForState, clipPhase, elephantTrunkReach, renderStateFor, replayClipTime, struggleClip, vigilance,
   type ClimbVisualPhase, type FlightVisualPhase, climbPose } from './animation.js';
 import { PositionTracker, renderBaseY, type RenderPosition } from './space.js';
 import type { AnimalState } from './protocol.js';
@@ -13,6 +13,7 @@ import { separateBodies, type Body, type Obstacle, type ObstacleField } from './
 import type { LivePose } from './liveEncounters.js';
 import { AnimalDots } from './animalDots.js';
 import { elephantSurface } from './elephantSurface.js';
+import { ACT_STATES } from './huntActs.js';
 import { clipForGait, GaitClock, hipHeightM, isStrideClip, stateAtSpeed, strideCycles, strideRate } from './gait.js';
 
 /**
@@ -56,6 +57,11 @@ interface Rig {
   hipM: number;
   /** Stable per-animal number: its own clip phase and look-up rhythm. */
   seed: number;
+  /**
+   * Whether it lifts its head to look round while feeding or drinking. The tiger feeds and
+   * drinks crouched; blending toward its standing idle would stand it up and down.
+   */
+  looksUp: boolean;
   appearanceKey: string;
   materials: Array<{ material: THREE.MeshStandardMaterial; base: THREE.Color }>;
 }
@@ -166,7 +172,11 @@ export class AnimalLayer {
             const source = ['/assets/animals/AsianElephantAdultMale.glb', '/assets/animals/AsianElephantAdultFemale.glb',
               '/assets/animals/AsianElephantCalf.glb'].includes(visual.model?.file ?? '')
               ? gltf.animations.find(clip => clip.name === 'SprayWater') : undefined;
-            return { root: gltf.scene, clips: source ? [...gltf.animations, elephantTrunkReach(source)] : gltf.animations };
+            const clips = source ? [...gltf.animations, elephantTrunkReach(source)] : gltf.animations;
+            // A downed prey's struggle, from its own death pose and gait (see struggleClip).
+            const death = clips.find((c) => /^(death|dead)$/i.test(c.name));
+            const gait = clips.find((c) => /^(gallop|run|walk)$/i.test(c.name)) ?? null;
+            return { root: gltf.scene, clips: death && !clips.some((c) => c.name === 'Struggle') ? [...clips, struggleClip(death, gait)] : clips };
           });
       pending = loaded.then(({ root, clips }) => {
         // Turned before measuring, so the height and foot offset are of the model as it stands.
@@ -293,7 +303,7 @@ export class AnimalLayer {
     const bodyLengthM = new THREE.Box3().setFromObject(visual).getSize(new THREE.Vector3()).z;
     const rig: Rig = { variantKey: key, group, mixer, actions, clipNames: clips.map((c) => c.name), playing: null, marker,
       visual, footY: visual.position.y, restRotationZ: visual.rotation.z, bodyLengthM, climbRest: null,
-      needsCorpseGrounding: false, gait: new GaitClock(), hipM: hipHeightM(height * characterScale(animal)), seed: idSeed(animal.id),
+      needsCorpseGrounding: false, gait: new GaitClock(), hipM: hipHeightM(height * characterScale(animal)), seed: idSeed(animal.id), looksUp: animal.speciesId !== 'tiger',
       appearanceKey: '', materials };
     this.#pending.delete(animal.id);
     this.#rigs.set(animal.id, rig);
@@ -355,7 +365,7 @@ export class AnimalLayer {
         const shown = renderStateFor(pose.animal.state, position.moving);
         this.#climb(rig, animal.speciesId, climbPhase);
         this.#poseAt(rig, pose.hurried && shown === 'travelling' ? 'fleeing' : shown, pose.clipSeconds ?? pose.seconds,
-          flightPhase, unknownAirborne, climbPhase);
+          flightPhase, unknownAirborne, climbPhase, pose.act, pose.actWeight);
       } else {
         const climbing = arboreal(animal.speciesId) && animal.locomotionMode === 'climb';
         const phase = climbing ? this.tracker.verticalPhaseAt(id, nowMs) : null;
@@ -387,7 +397,8 @@ export class AnimalLayer {
   }
 
   /** Paired encounter actors share a playhead; calling syncReplay twice would release one. */
-  syncReplayGroup(subjects: Array<{ animal: AnimalState; position: RenderPosition; climbPhase?: ClimbVisualPhase | null }>, seconds = 0): void {
+  syncReplayGroup(subjects: Array<{ animal: AnimalState; position: RenderPosition; climbPhase?: ClimbVisualPhase | null;
+    act?: number; actWeight?: number }>, seconds = 0): void {
     this.#dotLayer.hide();
     const ids = new Set(subjects.map(({ animal }) => animal.id));
     this.#wanted = ids;
@@ -397,7 +408,7 @@ export class AnimalLayer {
       if (ids.has(id)) continue;
       this.#release(id, rig);
     }
-    for (const { animal, position, climbPhase = null } of subjects) {
+    for (const { animal, position, climbPhase = null, act, actWeight } of subjects) {
       void this.#ensureRig(animal);
       const rig = this.#rigs.get(animal.id);
       if (!rig) continue;
@@ -410,7 +421,7 @@ export class AnimalLayer {
       const state = arboreal(animal.speciesId) && (position.altitudeM ?? 0) > 0
         && !position.moving && animal.state === 'travelling' ? 'resting' : renderStateFor(animal.state, position.moving);
       this.#climb(rig, animal.speciesId, phase);
-      this.#poseAt(rig, state, seconds, null, unknownClimb, phase);
+      this.#poseAt(rig, state, seconds, null, unknownClimb, phase, act, actWeight);
       rig.marker.visible = this.markersVisible;
     }
   }
@@ -449,7 +460,7 @@ export class AnimalLayer {
   }
 
   #poseAt(rig: Rig, state: string, seconds: number, flightPhase: FlightVisualPhase | null = null,
-    unknownAirborne = false, climbPhase: ClimbVisualPhase | null = null): void {
+    unknownAirborne = false, climbPhase: ClimbVisualPhase | null = null, act?: number, actWeight = 1): void {
     const grounded = flightPhase === null && climbPhase === null && !unknownAirborne;
     if (grounded) state = stateAtSpeed(state, rig.gait);
     const clip = (grounded ? clipForGait(state, rig.gait.gait, rig.clipNames) : null)
@@ -463,12 +474,21 @@ export class AnimalLayer {
       action.clampWhenFinished = true;
       const source = action.getClip();
       // A stride is sampled from a clock run at the pace of the ground covered, not the playhead.
-      action.time = grounded && isStrideClip(source.name) && rig.gait.speedMs > 0
+      action.time = act !== undefined && ACT_STATES.has(state) ? actClipTime(state, source.duration, act)
+        : grounded && isStrideClip(source.name) && rig.gait.speedMs > 0
         ? rig.gait.advance(strideRate(source, cyclesOf(source), rig.gait.speedMs, rig.hipM), source.duration)
         : replayClipTime(state, source.duration, seconds + clipPhase(rig.seed, source.duration));
       action.paused = true;
+      // A struggling prey weakens: its kicks fade toward the stillness of its death pose.
+      const lying = state === 'struggling' && actWeight < 1 ? clipForState('dead', rig.clipNames) : null;
+      const still = lying === null || lying === clip ? undefined : rig.actions.get(lying);
+      if (still) {
+        still.reset().setEffectiveWeight(1 - actWeight).setLoop(THREE.LoopOnce, 1).play();
+        still.clampWhenFinished = true; still.time = still.getClip().duration; still.paused = true;
+        action.setEffectiveWeight(actWeight);
+      }
       // A drinking or grazing animal lifts its head to look round now and then, blended in.
-      const look = grounded ? vigilance(state, seconds, rig.seed) : 0;
+      const look = grounded && rig.looksUp ? vigilance(state, seconds, rig.seed) : 0;
       const alertClip = look > 0 ? clipForState('standing', rig.clipNames) : null;
       const alert = alertClip === null || alertClip === clip ? undefined : rig.actions.get(alertClip);
       if (alert) {
@@ -524,7 +544,7 @@ export class AnimalLayer {
     if (rig.mixer === null) return;
     const grounded = climbPhase === null && !unknownAirborne;
     if (grounded) state = stateAtSpeed(state, rig.gait);
-    if (grounded && vigilance(state, this.#clockSeconds, rig.seed) > 0.5) state = 'standing';
+    if (grounded && rig.looksUp && vigilance(state, this.#clockSeconds, rig.seed) > 0.5) state = 'standing';
     const wanted = (grounded ? clipForGait(state, rig.gait.gait, rig.clipNames) : null)
       ?? clipForObservedMotion(state, rig.clipNames, null, unknownAirborne, climbPhase);
     // Never keep walking/eating after a state changes to one without a supported clip.

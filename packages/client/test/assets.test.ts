@@ -130,7 +130,7 @@ describe('free local character assets', () => {
     const gltf = manifest('TigerRigged.glb');
     expect(gltf.skins?.length).toBeGreaterThan(0);
     expect(gltf.images?.length).toBeGreaterThan(0);
-    for (const name of ['Idle', 'Walk', 'Run', 'Gallop', 'Sneak', 'Eating', 'Drinking', 'Death']) expect(gltf.animations?.find((a) => a.name === name)?.channels.length).toBeGreaterThan(0);
+    for (const name of ['Idle', 'Walk', 'Run', 'Gallop', 'Pounce', 'Bite', 'Sneak', 'Eating', 'Drinking', 'Death']) expect(gltf.animations?.find((a) => a.name === name)?.channels.length).toBeGreaterThan(0);
     expect(modelStatus('tiger')).toContain('Local tiger rig');
     expect(modelStatus('tiger')).toContain('polish pending');
   });

@@ -7,7 +7,7 @@ export interface RecordedEncounter {
   preySpecies: string;
   trace: EncounterTrace;
 }
-const phases = new Set(['approach', 'stalk', 'chase', 'contact', 'escape', 'abandon']);
+const phases = new Set(['approach', 'stalk', 'chase', 'contact', 'subdue', 'escape', 'abandon']);
 const record = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
 
 /** Reject incomplete/legacy traces instead of inventing the missing second actor or trajectory. */
@@ -33,7 +33,9 @@ export function isRecordedEncounter(value: unknown): value is RecordedEncounter 
   const last = t.samples.at(-1) as EncounterTrace['samples'][number];
   if (typeof t.patchId !== 'number' || !positionInPatch(first.predator, t.patchId)
     || !positionInPatch(first.prey, t.patchId) || first.seconds !== 0) return false;
-  return value.outcome !== 'success' || (last.phase === 'contact'
+  // A kill ends at contact, or (sim_0.36 and later) at the end of the hold that follows it.
+  return value.outcome !== 'success' || ((last.phase === 'contact' || last.phase === 'subdue')
+    && t.samples.some((s) => (s as EncounterTrace['samples'][number]).phase === 'contact')
     && Math.hypot(last.predator.x - last.prey.x, last.predator.z - last.prey.z) <= t.contactRadiusM + 1e-6);
 }
 

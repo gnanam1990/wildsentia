@@ -2,7 +2,7 @@ import type { WorldPosition } from './spatial.js';
 import type { LiveMovement } from './movement.js';
 import type { LifeStage, Sex } from './types/agent.js';
 
-export type EncounterPhase = 'approach' | 'stalk' | 'chase' | 'contact' | 'escape' | 'abandon';
+export type EncounterPhase = 'approach' | 'stalk' | 'chase' | 'contact' | 'subdue' | 'escape' | 'abandon';
 export interface EncounterSample {
   seconds: number;
   phase: EncounterPhase;

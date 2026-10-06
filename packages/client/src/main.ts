@@ -18,6 +18,7 @@ import { climbMoment, isRecordedClimb, pointAt, momentAt, replayDurationMs, trac
 import { CommunityLayer } from './communityLayer.js';
 import { loadLifeHistory, loadSelectedClimb, loadSelectedEncounter } from './lifeHistory.js';
 import { encounterAt, isRecordedEncounter, ReplayClock, type RecordedEncounter } from './encounterReplay.js';
+import { huntMoment, huntReplaySeconds } from './huntActs.js';
 import { SPECIES_VISUALS, visualFor } from './species.js';
 import { Atmosphere, atmosphereAt, observerExposure } from './environment.js';
 import { groundTint } from './groundTint.js';
@@ -127,6 +128,7 @@ const SPECIES_LABEL: Record<string, string> = { boar: 'Wild boar', squirrel: 'Gi
 const ACTIVITY_LABEL: Record<string, string> = {
   travelling: 'walking', fleeing: 'running away', drinking: 'drinking', resting: 'resting', chasing: 'chasing',
   stalking: 'stalking', dead: 'dead', grazing: 'grazing', feeding: 'feeding',
+  pouncing: 'pouncing', holding: 'holding its prey', struck: 'struck', falling: 'falling', struggling: 'struggling',
 };
 hud.clockTime = () => liveWorldTime();
 hud.liveActivity = (id) => {
@@ -326,7 +328,7 @@ function selectRecording(): void {
   const e = replay.encounter, climb = replay.climb;
   replayAutoFrame.disabled = e === null;
   replayAutoFrame.checked = true;
-  const span = e ? e.trace.samples.at(-1)!.seconds : climb ? climb.trace.samples.at(-1)!.seconds
+  const span = e ? huntReplaySeconds(e.trace, e.outcome) : climb ? climb.trace.samples.at(-1)!.seconds
     : replay.life.track.at(-1)!.worldTime - replay.life.track[0]!.worldTime;
   replay.clock = new ReplayClock(e || climb ? Math.max(1, span * 1000) : replayDurationMs(span));
   replay.clock.speed = Number(replaySpeed.value);
@@ -787,14 +789,23 @@ function frame(): void {
     playback.tick(dt * 1000);
     const progress = playback.progress;
     if (encounter) {
-      const seconds = encounter.trace.samples.at(-1)!.seconds * progress;
+      const seconds = huntReplaySeconds(encounter.trace, encounter.outcome) * progress;
       const points = encounterAt(encounter.trace, seconds);
       const drives = { hunger: 0, thirst: 0, fatigue: 0, fear: 0 }; // Rendering input only; no drive UI in encounter mode.
+      // The replay runs recorded time 1:1, so an act's real time is its recorded time.
+      const moment = huntMoment(encounter.trace, encounter.outcome, seconds,
+        { phase: points.phase, predatorMoving: points.predator.moving, preyMoving: points.prey.moving, finished: points.finished },
+        (recorded) => seconds - recorded);
+      const predatorAt = moment.facePrey ? { ...points.predator,
+        heading: Math.atan2(points.prey.x - points.predator.x, points.prey.z - points.predator.z) } : points.predator;
       animals.syncReplayGroup([
         { animal: { id: encounter.trace.predatorId, speciesId: encounter.predatorSpecies, patchId: 0,
-          state: points.predator.moving ? points.phase === 'chase' ? 'chasing' : 'stalking' : 'resting', currentGoal: '', drives }, position: points.predator },
+          state: moment.predator.state, currentGoal: '', drives }, position: predatorAt,
+          ...(moment.predator.act === undefined ? {} : { act: moment.predator.act }) },
         { animal: { id: encounter.trace.preyId, speciesId: encounter.preySpecies, patchId: 0,
-          state: points.finished && encounter.outcome === 'success' ? 'dead' : points.prey.moving ? 'fleeing' : 'resting', currentGoal: '', drives }, position: points.prey },
+          state: moment.prey.state, currentGoal: '', drives }, position: points.prey,
+          ...(moment.prey.act === undefined ? {} : { act: moment.prey.act }),
+          ...(moment.prey.weight === undefined ? {} : { actWeight: moment.prey.weight }) },
       ], seconds);
       observerSubjects = [observerSubject(encounter.predatorSpecies, points.predator), observerSubject(encounter.preySpecies, points.prey)];
       const x = (points.predator.x + points.prey.x) / 2; const z = (points.predator.z + points.prey.z) / 2;

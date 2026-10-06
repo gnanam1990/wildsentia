@@ -6,7 +6,8 @@ import type { AnimalState } from './protocol.js';
 import type { RenderPosition } from './space.js';
 import type { ClimbVisualPhase, FlightVisualPhase } from './animation.js';
 import type { MovementTrace } from '@vana/shared';
-import { paceEncounter, paceMovement, recordedSecondAt, walkingPace, type Pacing } from '@vana/shared';
+import { displaySecondAt, paceEncounter, paceMovement, recordedSecondAt, walkingPace, type Pacing } from '@vana/shared';
+import { huntMoment } from './huntActs.js';
 
 /** A wing pose may follow only two explicit adjacent altitude samples from the saved route. */
 export function recordedFlightPhase(trace: MovementTrace, seconds: number): FlightVisualPhase | null {
@@ -121,6 +122,9 @@ export interface LivePose {
    * rig runs instead. Clip choice only.
    */
   hurried?: boolean;
+  /** Real seconds into a hunt act (huntActs.ts), and a struggling prey's remaining strength. */
+  act?: number;
+  actWeight?: number;
   partnerId: string;
   eventId: string;
   phase: string;
@@ -195,14 +199,23 @@ export class LiveEncounterPlayer {
     for (const e of frame.encounters) {
       const seconds = paced(e.trace, () => paceEncounter(e.trace, frame.rate));
       const at = encounterAt(e.trace, seconds);
-      const add = (body: EncounterAppearance, position: RenderPosition, state: string, partnerId: string): void => {
+      // Acts (the spring, the hold, the prey's fall) keep real time, whatever pace the hour plays at.
+      const pacing = this.#pacing.get(e.trace)!;
+      const moment = huntMoment(e.trace, e.outcome, seconds,
+        { phase: at.phase, predatorMoving: at.predator.moving, preyMoving: at.prey.moving, finished: at.finished },
+        (recorded) => clipSeconds - displaySecondAt(pacing, recorded) / frame.rate);
+      const predatorAt = moment.facePrey
+        ? { ...at.predator, heading: Math.atan2(at.prey.x - at.predator.x, at.prey.z - at.predator.z) } : at.predator;
+      const add = (body: EncounterAppearance, position: RenderPosition, act: { state: string; act?: number; weight?: number },
+        partnerId: string): void => {
         result.set(body.id, { animal: { ...body, patchId: patchAtPosition(position), position,
-          state, currentGoal: '', drives: { hunger: 0, thirst: 0, fatigue: 0, fear: 0 } },
+          state: act.state, currentGoal: '', drives: { hunger: 0, thirst: 0, fatigue: 0, fear: 0 } },
           position, seconds: Math.min(seconds, e.trace.samples.at(-1)!.seconds), clipSeconds, partnerId,
+          ...(act.act === undefined ? {} : { act: act.act }), ...(act.weight === undefined ? {} : { actWeight: act.weight }),
           eventId: e.eventId, phase: at.finished ? `recorded ${e.outcome}` : at.phase });
       };
-      add(e.predator, at.predator, at.predator.moving ? at.phase === 'chase' ? 'chasing' : 'stalking' : 'resting', e.prey.id);
-      add(e.prey, at.prey, at.finished && e.outcome === 'success' ? 'dead' : at.prey.moving ? 'fleeing' : 'resting', e.predator.id);
+      add(e.predator, predatorAt, moment.predator, e.prey.id);
+      add(e.prey, at.prey, moment.prey, e.predator.id);
     }
     for (const m of frame.movements ?? []) {
       const seconds = paced(m.trace, () => paceMovement(m.trace, m.actor.speciesId, frame.rate));

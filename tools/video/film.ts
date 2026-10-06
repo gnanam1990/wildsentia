@@ -13,6 +13,7 @@
 import { mkdirSync, statfsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium, type Page } from 'playwright';
+import { AFTERMATH_S } from '../../packages/client/src/huntActs.js';
 
 const viewer = process.env.VANA_FILM_ORIGIN ?? 'http://localhost:5299';
 const api = process.env.VANA_E2E_ORIGIN ?? 'http://localhost:28080';
@@ -42,7 +43,7 @@ const shots: Shot[] = [
   // Tigers ambush, so their chases start close. A shot that keeps hunter and quarry both in frame
   // over a 25 m chase leaves them as dots, so each hunt is held on the tiger from the final
   // sprint, through the catch, to the kill.
-  { name: 'f-hunt-tiger', seconds: 8, hunt: { predator: 'tiger', lead: 3.5, at: 'contact', eventId: 'hunt_000000010000000000020bc8' },
+  { name: 'f-hunt-tiger', seconds: 9, hunt: { predator: 'tiger', lead: 3.5, at: 'contact', eventId: 'hunt_000000010000000000020bc8' },
     path: { theta: [0, 0.5], phi: [0.16, 0.2], distance: [7.5, 5.5], track: 'predator' } },
   { name: 'g-hunt-sambar', seconds: 6.5, hunt: { predator: 'tiger', lead: 3, at: 'contact', eventId: 'hunt_000000010000000000002d87' },
     path: { theta: [2.0, 2.5], phi: [0.16, 0.2], distance: [8, 6], track: 'predator' } },
@@ -83,7 +84,9 @@ async function pickHunt(species: string, used: Set<string>, eventId?: string): P
     const gap = Math.hypot(chase.predator.x - chase.prey.x, chase.predator.z - chase.prey.z);
     const prey = (m.actors ?? []).find((id) => id !== m.actorId) ?? '';
     const contact = (samples.find((s) => s.phase === 'contact') ?? samples.at(-1)!).seconds;
-    if (!best || gap < best.gap) best = { predator: m.actorId!, prey, eventId: m.id, from: chase.seconds, contact, total: samples.at(-1)!.seconds, gap };
+    // The replay of a kill runs on past its last sample (huntReplaySeconds); seek on that span.
+    if (!best || gap < best.gap) best = { predator: m.actorId!, prey, eventId: m.id, from: chase.seconds, contact,
+      total: samples.at(-1)!.seconds + (m.outcome === 'success' ? AFTERMATH_S : 0), gap };
   }
   if (best) { if (!eventId) used.add(best.eventId); console.log(`  ${species} hunt ${best.eventId}: chase starts ${best.gap.toFixed(0)} m apart`); return best; }
   throw new Error(`no recorded ${species} hunt with a chase`);
