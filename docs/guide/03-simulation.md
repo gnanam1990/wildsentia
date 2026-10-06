@@ -1,13 +1,15 @@
 # 3. The simulation
 
 The simulation (`packages/sim`) is the whole truth of the world. It is headless, deterministic
-and conserves nutrients. The live server runs the `island_v1` terrain with the `household_v1`
-village; the current rules are **`sim_0.37.0`**.
+and conserves nutrients. New worlds run the `island_v2` terrain with the `household_v1`
+village; the current rules are **`sim_0.37.0`**. Worlds founded on `island_v1` keep it.
 
 ## The island
 
-- A 20 × 20 grid of 300 m patches (6 × 6 km), with an island of about 12 km² of land surrounded
-  by sea. Each patch has a habitat, elevation, canopy cover, grass, browse (shrubs and leaves),
+- A 20 × 20 grid of 300 m patches (6 × 6 km), with an island surrounded by sea. `island_v2`
+  (`sim_0.37.0`, the default for new worlds) has about 26 km² of land, filling the grid but for a
+  sea margin of about one patch; `island_v1` has about 12 km². Both share the same hills, habitats,
+  pools and freshwater basins rules. A saved world never changes terrain. Each patch has a habitat, elevation, canopy cover, grass, browse (shrubs and leaves),
   soil nutrients and, where there is one, a water access point (a pool).
 - Positions are exact planar coordinates in metres, not just patch numbers, so animals walk
   real routes round water and sea.
@@ -39,6 +41,12 @@ hungry either gets.
 | Giant squirrel | arboreal troop | 2 kg | 0.25 m | 0.9 / 7 |
 | White-rumped vulture | scavenger (flies) | 5.5 kg | 0.8 m | 0.6 / 18 |
 
+A new `island_v2` world is founded at field densities on its 26 km²: prey at about 71 ungulates
+per km² (1,008 chital, 324 sambar, 144 gaur, 360 wild boar), three tigers (one male, two
+females; 11.5 per 100 km², as Nagarahole and Kanha), four leopards (one male, three females; 15
+per 100 km², as Mudumalai and Yala), one dhole pack of six (Tadoba's mean pack) and 29 jackals.
+An `island_v1` world was founded with half of each, and two tigers, two leopards and five dholes.
+
 ## Needs and decisions
 
 Each animal has drives (hunger, thirst, fatigue, fear) that rise and fall with what it does.
@@ -64,8 +72,10 @@ continuously: drift beyond tolerance fails the build.
   opens a carcass for her cubs) and visits. Young follow their mother on the ground; nothing
   teleports. Parents also teach skills, and raised young outperform orphans.
 - Litters stay together (`sim_0.36.0`): young too small to walk gather to the sibling their
-  mother is feeding and do not scatter when she is attacked; langur infants are carried;
-  leverets are nursed from birth. Each species' following and foraging ages are in its config.
+  mother is feeding and do not scatter when she is attacked; langur infants cling to their
+  mother and go where she walks or runs for their first four weeks (`sim_0.37.0`); leverets are
+  nursed from birth. Until her young can follow her, a mother looks for food only within her
+  senses of them, unless she is starving, and cubs eat at her kills only where they lie. Each species' following and foraging ages are in its config.
 - Births carry the population. The island receives only rare, recorded arrivals of animals
   that swim ashore (tiger, elephant, jackal), each written to a ledger. Leopards are not among
   them: no sea crossing by a leopard is documented. A world saved before `sim_0.37.0` gains its
@@ -104,7 +114,10 @@ not spend their hunts on hares while deer are in view. A leopard kills about
 once every six days, as in Bardia (one kill every 5.6 days, Odden & Wegge 2009), and holds a
 chital by the throat for one to three minutes. Where its patch has a tree it caches the kill in
 it, out of reach of everything but itself and its cubs (Balme et al. 2017), and a mother hunts
-for her weaned cubs as well as herself.
+for her weaned cubs as well as herself. A leopard that sees no prey of its size heads for where
+it knows deer and pigs graze (range memory, as grazers remember pasture), and a tigress or
+leopardess in oestrus seeks out the male whose range she lives in. Tigers prefer prey of
+60-250 kg (Hayward et al. 2012).
 
 **Leopards keep away from tigers.** A leopard treats a tiger as prey treat a predator: it detects
 it, keeps out of its patch, does not hunt or range where it stands unless starving, keeps off a
@@ -157,7 +170,11 @@ Long gates run on request (`VANA_LONG_SOAK=1 … npx vitest run soak-long`; see
 the before-and-after numbers and the sources). Current status is in
 [10. Status and what's next](10-status-and-roadmap.md).
 
-**On `sim_0.37.0` the island gate fails in every seed.** The dhole pack now holds and boar settle
-at 6-14 per km², but three large predators on 12 km² eat the deer faster than they breed: chital
-end the third year at 5%, 10% and 28% of their founding count, the tigers die out in one seed, and
-every seed ends with a single leopard. The ecology doc sets out why and the owner's options.
+**On `sim_0.37.0` the island gate runs on `island_v2`** (`VANA_LONG_SOAK_TERRAIN=island_v2`).
+Seed 1 passes every check. Seeds 2 and 3 pass every check but one: each loses one litter to
+thirst while the mother is away, seven piglets of a starving sow in the dry season and three
+leverets whose mother was kept from them two evenings running by hunting dholes. No species dies
+out, all six people live, tigers kill about 50 a year and breed, leopards breed, the dhole pack
+holds, and the lowest prey count is chital at 30-39% of founding after three years, still
+falling. On `island_v1` (12 km²) the same guild ate the chital down to 5-28% in three years. The
+ecology doc has the traces and what would fix the rest.
