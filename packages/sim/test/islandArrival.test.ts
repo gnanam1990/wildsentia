@@ -88,7 +88,11 @@ describe('rare recorded island arrivals (sim_0.33.0)', () => {
     const before = structuredClone(old);
     expect(() => restoreSnapshot(old, island({ tiger: 1 }))).toThrow(/version/);
     const upgraded = upgradeV32Snapshot(old);
-    expect(upgraded).toEqual(current);
+    // sim_0.37.0: the only addition is the scheduled leopard pair an island without leopards receives.
+    const { pendingArrivals, ...rest } = upgraded;
+    expect(rest).toEqual(current);
+    expect(pendingArrivals).toEqual([{ speciesId: 'leopard', sex: 'male', trigger: 'rules_upgrade' },
+      { speciesId: 'leopard', sex: 'female', trigger: 'rules_upgrade' }]);
     expect(upgraded.islandArrivals).toBeUndefined();
     expect(old).toEqual(before);
     expect(() => upgradeV32Snapshot(upgraded)).toThrow(/only sim_0.32.0/);

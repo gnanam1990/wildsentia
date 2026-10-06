@@ -343,11 +343,11 @@ The animal is real in this world: it gets hungry and thirsty, tires, ages, and c
 Rules
 - Most animals stay wild. You may take an independent adult non-predator (chital, sambar, gaur,
   wild boar, hare, langur, giant squirrel, elephant), at most a fifth of each species.
-  Predators too: a tiger or dhole can hunt its natural prey in real time (hunt), then feed on
+  Predators too: a tiger, leopard or dhole can hunt its natural prey in real time (hunt), then feed on
   the carcass. Hungry wild predators that see you will come after you: observe shows who is
   chasing you, and running (gait run) uses your breath. If your animal dies, wait two minutes
   and take over another. If no animal of a species is free, possess puts you in line for it.
-- Herds warn each other; dholes hunting together do better; langurs and squirrels can climb
+- Herds warn each other; dholes hunting together do better; langurs, squirrels and leopards can climb
   their patch's tree to escape; a vulture flies (gait trot or run) straight over water and sea.
 - Move with exact points, or give a destination and the server routes you round water and sea.
   The server moves you at your species' walk/trot/run speed. Running

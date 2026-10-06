@@ -10,6 +10,7 @@ import { finishCare, type FamilyLocation } from '../src/agents/family.js';
 import { EventLog } from '../src/events/log.js';
 import { createWorld } from '../src/world.js';
 import { restoreSnapshot, takeSnapshot, upgradeV35Snapshot } from '../src/snapshot.js';
+import { SIM_VERSION } from '../src/world.js';
 import { makeAgent, SPECIES_DIR, speciesOf } from './helpers.js';
 
 /**
@@ -176,7 +177,7 @@ describe('sim_0.36.0 upgrade', () => {
   it('opts a saved v0.35 world in unchanged and refuses it without the upgrade', () => {
     const options = { seed: 4, speciesDir: SPECIES_DIR, initialAgents: { boar: 3, dhole: 4 }, minPopulation: {} };
     const current = takeSnapshot(createWorld(options));
-    expect(current.simVersion).toBe('sim_0.36.0');
+    expect(current.simVersion).toBe(SIM_VERSION);
     const old = structuredClone(current); old.simVersion = 'sim_0.35.0';
     expect(() => restoreSnapshot(old, options)).toThrow(/version/);
     expect(upgradeV35Snapshot(old)).toEqual(current);

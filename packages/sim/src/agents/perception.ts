@@ -40,12 +40,22 @@ const edibleKg = (patch: Patch, species: SpeciesConfig): number => {
     if (item.target === 'grass') kg += patch.plant.grass * item.preference;
     if (item.target === 'browse') kg += (patch.plant.browse
       + (patch.floweringGuild?.vegetativeKg ?? 0)) * item.preference;
+    if (item.target === 'roots') kg += (patch.rooting?.kg ?? 0) * item.preference;
   }
   return kg;
 };
 
 const isPredator = (config: SpeciesConfig): boolean =>
   config.archetype === 'apex_predator' || config.archetype === 'pack_predator';
+
+/**
+ * Whether `prey` must keep away from `predator`: it is among the predator's prey, or (sim_0.37.0)
+ * it avoids that predator, as leopards avoid tigers, without being its prey.
+ */
+export function threatens(predator: SpeciesConfig | undefined, prey: SpeciesConfig | undefined): boolean {
+  if (!predator || !prey) return false;
+  return (predator.hunting?.preferredPrey ?? []).includes(prey.id) || (prey.escape.avoids ?? []).includes(predator.id);
+}
 
 /** What a predator is visibly doing, as prey can read it. */
 export type ThreatPosture = 'hunting' | 'moving' | 'settled';
@@ -106,8 +116,17 @@ export function heldByPredatorOf(carcass: Carcass, speciesId: string, worldTime:
     if (c.at < worldTime - 3600) return false;
     const eater = view.agentById?.(c.agentId);
     if (!eater?.alive || eater.speciesId === speciesId) return false;
-    return (view.speciesOf(eater.speciesId)?.hunting?.preferredPrey ?? []).includes(speciesId);
+    return threatens(view.speciesOf(eater.speciesId), view.speciesOf(speciesId));
   });
+}
+
+/**
+ * sim_0.37.0: a kill cached in a tree (leopards) feeds only the animal that cached it and the
+ * young that depend on her. Leopards haul kills into trees to keep them from kleptoparasites,
+ * which cuts their losses sharply (Balme et al. 2017).
+ */
+export function canReachCarcass(carcass: Carcass, agent: Agent): boolean {
+  return carcass.cachedBy === undefined || carcass.cachedBy === agent.id || agent.dependentOn === carcass.cachedBy;
 }
 
 /**
@@ -174,7 +193,7 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
     for (const other of view.agentsInPatch(p.id)) {
       if (!other.alive || other.id === agent.id) continue;
       const otherSpecies = view.speciesOf(other.speciesId);
-      if (!isPredator(otherSpecies) || !(otherSpecies.hunting?.preferredPrey ?? []).includes(agent.speciesId)) continue;
+      if (!isPredator(otherSpecies) || !threatens(otherSpecies, species)) continue;
       const posture = threatPosture(other);
       const rangeM = posture === 'hunting' ? senseM * (1 - (otherSpecies.hunting?.stalkConcealment ?? 0)) : senseM;
       const at = where(other), distanceM = Math.hypot(at.x - here.x, at.z - here.z);
@@ -206,6 +225,11 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
         // animal on an exact tree anchor above ground. No general invulnerability is implied.
         if (!other.alive || other.id === agent.id || !preferred.has(other.speciesId)
           || (other.altitudeM ?? 0) > 0) continue;
+        // sim_0.37.0 intraguild avoidance: a hunter does not hunt where a predator that hunts it
+        // stands (leopards keep away from tigers), unless it is starving.
+        if (dangerous.has(p.id) && !starving) continue;
+        // sim_0.37.0: prey heavier than the hunter will take (an adult sambar for a leopard).
+        if (other.massKg > (species.hunting?.maxPreyKg ?? Infinity)) continue;
         // An agent-steered animal is hunted in real time by the live layer, not by the
         // hourly solver, which cannot know where its agent will take it.
         if (other.controller) continue;
@@ -222,7 +246,7 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
   const needs = needsOf(agent, species);
   const dailyNeed = Math.max(needs.foodKg, 0.05);
   const waterNeed = Math.max(needs.waterL, 0.05);
-  const grazes = species.diet.eats.some((e) => e.target === 'grass' || e.target === 'browse');
+  const grazes = species.diet.eats.some((e) => e.target === 'grass' || e.target === 'browse' || e.target === 'roots');
   const needFood = grazes && (bestFood === null || bestFood.kg < dailyNeed);
   const needWater = bestWater === null || bestWater.litres < waterNeed;
   //
@@ -270,12 +294,13 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
       // boar took two-thirds of every tiger kill, and tigers killed three times as often.
       const guarded = view.agentsInPatch(p.id).some((other) =>
         other.alive && other.id !== agent.id
-        && (view.speciesOf(other.speciesId).hunting?.preferredPrey ?? []).includes(agent.speciesId));
+        && threatens(view.speciesOf(other.speciesId), species));
       if (guarded) continue;
       for (const candidate of view.carcassesInPatch(p.id)) {
         if (needsProvisioning(agent, species)
           && !canEatMaternalCarcass(agent, species, candidate, view)) continue;
         if (view.worldTime !== undefined && heldByPredatorOf(candidate, agent.speciesId, view.worldTime, view)) continue;
+        if (!canReachCarcass(candidate, agent)) continue;
         const smelt = distanceM <= candidate.scentRadiusM + species.senses.smellRangeM;
         const seen = distanceM <= species.senses.sightRangeM;
         if (!smelt && !seen) continue;

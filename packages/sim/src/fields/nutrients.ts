@@ -22,7 +22,7 @@ export function totalNutrients(
 ): number {
   let total = 0;
   for (const p of patches) {
-    total += p.soilNutrients + (p.plant.grass + p.plant.browse) * NUTRIENT_PER_KG_BIOMASS;
+    total += p.soilNutrients + (p.plant.grass + p.plant.browse + (p.rooting?.kg ?? 0)) * NUTRIENT_PER_KG_BIOMASS;
     const guild = p.floweringGuild;
     if (guild) total += (guild.vegetativeKg + (guild.bloom?.openKg ?? 0)
       + (guild.bloom?.visitedKg ?? 0)

@@ -19,9 +19,14 @@ export function stageConfig(
   return found;
 }
 
+/** Adult mass for this animal's sex where the species' sexes differ (sim_0.37.0), else the mean. */
+export function adultMassFor(agent: Pick<Agent, 'sex'>, config: SpeciesConfig): number {
+  return config.body.massBySexKg?.[agent.sex] ?? config.body.adultMassKg;
+}
+
 /** Target mass for an animal at its current stage. Growth moves it toward this. */
 export function targetMass(agent: Agent, config: SpeciesConfig): number {
-  return config.body.adultMassKg * stageConfig(agent.lifeStage, config).sizeFactor;
+  return adultMassFor(agent, config) * stageConfig(agent.lifeStage, config).sizeFactor;
 }
 
 export function isDependent(agent: Agent, config: SpeciesConfig): boolean {

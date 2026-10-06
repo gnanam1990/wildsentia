@@ -1,0 +1,148 @@
+{
+  "id": "leopard",
+  "displayName": "Leopard",
+  "archetype": "apex_predator",
+  "trophicRole": [
+    "apex_predator"
+  ],
+  "body": {
+    "adultMassKg": 46,
+    "shoulderHeightM": 0.7,
+    "massBySexKg": { "female": 34, "male": 58 }
+  },
+  "locomotion": {
+    "walkMs": 1.0,
+    "trotMs": 4.6,
+    "sprintMs": 16.1,
+    "sprintStaminaS": 30,
+    "climbsTrees": true,
+    "terrainCost": {
+      "shola": 1.0,
+      "grassland": 1.1,
+      "riparian": 1.0,
+      "rock": 1.0,
+      "marsh": 1.6,
+      "water": 2.5
+    }
+  },
+  "senses": {
+    "sightRangeM": 150,
+    "hearingRangeM": 300,
+    "smellRangeM": 100
+  },
+  "escape": {
+    "detectionDistanceM": 60,
+    "flightInitiationM": 20,
+    "evasiveness": 0.6,
+    "avoids": ["tiger"]
+  },
+  "diet": {
+    "eats": [
+      {
+        "target": "meat",
+        "preference": 1.0
+      }
+    ],
+    "dailyIntakeKg": 3.5,
+    "gutCapacityBodyFraction": 0.14,
+    "waterNeedLPerDay": 3,
+    "canScavenge": true,
+    "carrionTolerance": 0.6
+  },
+  "hunting": {
+    "preferredPrey": [
+      "chital",
+      "boar",
+      "langur",
+      "hare",
+      "sambar",
+      "jackal",
+      "gaur"
+    ],
+    "stalkConcealment": 0.75,
+    "commitDistanceM": 30,
+    "baseSuccess": 0.7,
+    "staminaCostPerChase": 0.3,
+    "huntFromHunger": 0.35,
+    "maxPreyKg": 100,
+    "preferredPreyKg": [10, 40],
+    "subdueSeconds": [[0, 5], [23, 20], [23, 60], [100, 180]],
+    "subdueBreakFree": 0.2,
+    "cachesKills": true
+  },
+  "social": {
+    "structure": "solitary",
+    "groupSize": [
+      1,
+      1
+    ],
+    "alarmSharing": false,
+    "territory": {
+      "femaleKm2": 17,
+      "maleKm2": 48,
+      "floaterMortalityPerDay": 0.004
+    }
+  },
+  "learning": {
+    "innate": {
+      "stalk_technique": 0.25,
+      "water_locations": 0.2,
+      "predator_avoidance": 0.3
+    },
+    "learnRateFromParent": 0.05
+  },
+  "lifecycle": {
+    "followFromDays": 60,
+    "maxAgeDays": 6120,
+    "baselineMortalityPerDay": 0.00018,
+    "stages": [
+      {
+        "name": "newborn",
+        "startDays": 0,
+        "sizeFactor": 0.06,
+        "dependent": true,
+        "mortalityPerDay": 0.002
+      },
+      {
+        "name": "juvenile",
+        "startDays": 90,
+        "sizeFactor": 0.4,
+        "dependent": true,
+        "mortalityPerDay": 0.001
+      },
+      {
+        "name": "subadult",
+        "startDays": 570,
+        "sizeFactor": 0.75,
+        "dependent": false,
+        "mortalityPerDay": 0.00027
+      },
+      {
+        "name": "adult",
+        "startDays": 1100,
+        "sizeFactor": 1.0,
+        "dependent": false,
+        "mortalityPerDay": 0.00018
+      },
+      {
+        "name": "elder",
+        "startDays": 4320,
+        "sizeFactor": 0.92,
+        "dependent": false,
+        "mortalityPerDay": 0.00072
+      }
+    ],
+    "sexualMaturityDays": 1100,
+    "gestationDays": 96,
+    "litterSize": [
+      1,
+      3
+    ],
+    "interBirthIntervalDays": 750,
+    "oestrusCycleDays": 46,
+    "weanDays": 90,
+    "drinkFromDays": 60,
+    "meatFromDays": 45,
+    "dispersalDays": 570
+  }
+}

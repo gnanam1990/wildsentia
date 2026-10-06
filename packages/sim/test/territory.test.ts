@@ -111,14 +111,16 @@ describe('a pack range on an island (sim_0.33.0)', () => {
     expect(packRangeLandFraction(dhole, centre, island)).toBeCloseTo(138 / 421, 6);
     expect(packRangeLandFraction(dhole, patches[at(5, 5)]!, patches)).toBe(1);
     expect(packCapacity(dhole, patches[at(5, 5)]!, patches)).toBe(dhole.social.groupSize[1]);
-    // Nine adults for a full range would be three on this much land; four is the smallest pack.
+    // Nine adults for a full range would be three on this much land; five is the smallest
+    // working pack (sim_0.37.0: Indian packs run 5-12; four before).
     expect(packCapacity(dhole, centre, island)).toBe(dhole.social.groupSize[0]);
+    expect(dhole.social.groupSize[0]).toBe(5);
   });
 
-  it('turns the island pack\'s fifth adult into a floater, without any count cap in code', () => {
-    const members = pack(6);
-    expect(members.slice(0, 4).map(m => isFloater(m, dhole, members, island))).toEqual([false, false, false, false]);
-    expect(members.slice(4).map(m => isFloater(m, dhole, members, island))).toEqual([true, true]);
+  it('turns the island pack\'s sixth adult into a floater, without any count cap in code', () => {
+    const members = pack(7);
+    expect(members.slice(0, 5).map(m => isFloater(m, dhole, members, island))).toEqual([false, false, false, false, false]);
+    expect(members.slice(5).map(m => isFloater(m, dhole, members, island))).toEqual([true, true]);
     // The same pack on the mainland is well within its size.
     const mainland = members.map(m => ({ ...m, patchId: at(5, 5) }));
     expect(mainland.some(m => isFloater(m, dhole, mainland, patches))).toBe(false);

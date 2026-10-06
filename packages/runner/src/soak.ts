@@ -32,7 +32,7 @@ export const SOAK_LANDSCAPE = FOREST_LANDSCAPE;
 export const SOAK_CEILING: Record<string, number> = {
   chital: 3000, sambar: 1100, hare: 2500, langur: 800, squirrel: 700, boar: 1200,
   gaur: 500, elephant: 40,
-  tiger: 14, dhole: 40,
+  tiger: 14, dhole: 40, leopard: 12,
   jackal: 200, vulture: 90,
 };
 

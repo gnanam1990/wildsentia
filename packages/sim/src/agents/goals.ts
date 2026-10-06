@@ -27,8 +27,16 @@ export function selectGoal(
   species: SpeciesConfig,
   percept: Percept,
   rng: Rng,
+  litterHunger = 0,
 ): GoalChoice {
   const d = agent.drives;
+  // sim_0.37.0: a cat mother hunts for her cubs as well as herself. Her own stomach cannot feed
+  // weaned cubs that cannot yet hunt (cats do not regurgitate), so she hunts when they are hungry
+  // even while she is sated. On the island a leopardess, full from her own kills, never hunted
+  // again before her three 95-day-old cubs starved beside her.
+  const threshold = species.hunting?.huntFromHunger ?? 0;
+  const forLitter = litterHunger >= threshold && litterHunger > d.hunger;
+  const huntHunger = forLitter ? litterHunger : d.hunger;
   const stamina = agent.stamina ?? 1;
 
   // Opportunity is measured against what this animal actually needs, not against a fixed
@@ -66,8 +74,8 @@ export function selectGoal(
     // animals for every one a predator actually ate.
     // A predator with meat still in its stomach is sated and does not start a hunt
     // (sim_0.35.0): its attempt rate follows its intake, not an hourly retry on any hunger.
-    hunt: carrionOpportunity > 0.3 || (agent.gutKg ?? 0) > 0 || d.hunger < (species.hunting?.huntFromHunger ?? 0)
-      ? 0 : d.hunger * preyOpportunity * stamina,
+    hunt: carrionOpportunity > 0.3 || (agent.gutKg ?? 0) > 0 && !forLitter || huntHunger < threshold
+      ? 0 : huntHunger * preyOpportunity * stamina,
     // Carrion is cheaper than a hunt, so a hungry scavenger prefers it strongly.
     scavenge: d.hunger * carrionOpportunity * 1.35,
     // Fear outranks ordinary needs but not desperate ones, and an exhausted animal cannot
@@ -99,7 +107,12 @@ export function selectGoal(
     return { goal: !hider && d.fear >= 0.5 && percept.threat !== null ? 'flee' : 'rest', score: 1, alternative: null };
   }
 
-  const allowed = goalsFor(species.archetype)
+  // sim_0.37.0: a predator that is itself hunted (a leopard that detects a tiger) can flee, as
+  // prey do. Archetypes without flight gain it only while such a threat is detected, so a tiger
+  // or dhole, which nothing hunts, scores exactly the goals it always did.
+  const archetypeGoals = goalsFor(species.archetype);
+  const goals = percept.threat !== null && !archetypeGoals.includes('flee') ? [...archetypeGoals, 'flee' as const] : archetypeGoals;
+  const allowed = goals
     .filter((goal) => allowsDependentGoal(agent, species, goal))
     .filter((goal) => goal !== 'find_water' || !needsProvisioning(agent, species)
       || canForageIndependently(agent, species) || d.thirst >= DEPENDENT_WATER_SEARCH_THIRST)

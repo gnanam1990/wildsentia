@@ -25,7 +25,7 @@ describe('soak completion evidence', () => {
     expect(result.completedWorldTime).toBe(11 * 86400); expect(result.stoppedEarly).toBe(true);
     expect(progress.at(-1)).toBe(result.completedDays);
     expect(result.failures).toContain('incomplete soak: 11 of 90 requested days');
-    // Twelve species, each extinct from the first sample and each recorded exactly once.
-    expect(result.failures.filter(f => f.includes('extinct'))).toHaveLength(12);
+    // Thirteen species, each extinct from the first sample and each recorded exactly once.
+    expect(result.failures.filter(f => f.includes('extinct'))).toHaveLength(13);
   });
 });

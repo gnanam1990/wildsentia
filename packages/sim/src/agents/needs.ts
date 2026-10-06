@@ -1,6 +1,6 @@
 import { edibleMass, positionInPatch, type Agent, type Carcass, type GoalId, type SpeciesConfig, type WorldTime } from '@vana/shared';
 import { HUNGER_PER_DAY, THIRST_PER_DAY } from './drives.js';
-import { stageConfig } from './lifecycle.js';
+import { adultMassFor, stageConfig } from './lifecycle.js';
 import type { WorldView } from './perception.js';
 import { woundMobilityFactor } from './wound.js';
 
@@ -57,12 +57,13 @@ export const canForageIndependently = (agent: Agent, species: SpeciesConfig): bo
 export const canDrinkIndependently = (agent: Agent, species: SpeciesConfig): boolean =>
   agent.ageDays >= (species.lifecycle.drinkFromDays ?? species.lifecycle.forageFromDays ?? species.lifecycle.weanDays);
 
-/** Cub solid food is not independent hunting or a general carrion license. */
+/** Cub solid food is not independent hunting or a general carrion license. Cats whose cubs eat
+ * at their mother's kills before weaning set `meatFromDays` (tiger; sim_0.37.0 leopard). */
 export const canEatMaternalMeat = (agent: Agent, species: SpeciesConfig): boolean =>
-  species.id === 'tiger' && needsProvisioning(agent, species)
+  species.hunting !== undefined && species.lifecycle.meatFromDays !== undefined && needsProvisioning(agent, species)
   && agent.ageDays >= (species.lifecycle.meatFromDays ?? species.lifecycle.weanDays);
 
-/** A still-dependent tiger may only eat a finite carcass its living mother already opened.
+/** A still-dependent cub may only eat a finite carcass its living mother already opened.
  * Perception may omit `at`; the action supplies decision time to reject a same-tick future meal.
  * The bounded scan is for simple test views; production supplies an O(1) `agentById` hook. */
 export function canEatMaternalCarcass(agent: Agent, species: SpeciesConfig, carcass: Carcass,
@@ -118,9 +119,10 @@ export function canHuntIndependently(agent: Agent, species: SpeciesConfig): bool
   return !needsProvisioning(agent, species) && !stageConfig(agent.lifeStage, species).dependent;
 }
 
-/** Young legs are not adult legs; adult speed remains the configured value. */
+/** Young legs are not adult legs; adult speed remains the configured value. Measured against the
+ * adult mass of the animal's own sex (sim_0.37.0), so a full-grown leopardess runs at full speed. */
 export function locomotionFactor(agent: Agent, species: SpeciesConfig): number {
-  return Math.sqrt(Math.min(1, Math.max(0.01, agent.massKg / species.body.adultMassKg))) * woundMobilityFactor(agent);
+  return Math.sqrt(Math.min(1, Math.max(0.01, agent.massKg / adultMassFor(agent, species)))) * woundMobilityFactor(agent);
 }
 
 /** The hourly engine cannot resolve individual milk-ejection bouts. For boar piglets still
@@ -173,4 +175,42 @@ export function provisionYoung(parent: Agent, child: Agent, species: SpeciesConf
   parent.drives.hunger += food / source.foodKg * HUNGER_PER_DAY;
   parent.drives.thirst += water / source.waterL * THIRST_PER_DAY;
   return { foodEquivalentKg: food, waterEquivalentL: water };
+}
+
+/**
+ * sim_0.37.0 body condition, for species whose reproduction tracks food (lifecycle.condition): a
+ * running mean, over `conditionDays`, of the share of each day's food need met by the natural,
+ * energy-rich diet (wild boar: rooting and mast food). Mast and seed crops, not the green forage
+ * that keeps pigs alive, drive sows' body mass and fertility (Servanty et al. 2009; Gamelon et al.
+ * 2017). Once a day, at the first hour of a new world day, the previous day's tally is folded in
+ * (a day without feeding counts as none) and a new tally starts. Condition starts full.
+ */
+export function updateCondition(agent: Agent, species: SpeciesConfig, today: number): void {
+  const policy = species.lifecycle.condition;
+  if (!policy) return;
+  const tally = agent.gutFill;
+  if (tally === undefined) { agent.gutFill = { day: today, kg: 0, naturalKg: 0 }; return; }
+  if (tally.day >= today) return;
+  const need = needsOf(agent, species).foodKg;
+  let condition = agent.condition ?? 1;
+  const days = Math.min(today - tally.day, Math.ceil(policy.conditionDays * 3));
+  for (let d = 0; d < days; d++) {
+    const quality = d === 0 ? Math.min(1, tally.naturalKg / need) : 0;
+    condition += (quality - condition) / policy.conditionDays;
+  }
+  agent.condition = Math.min(1, Math.max(0, condition));
+  agent.gutFill = { day: today, kg: 0, naturalKg: 0 };
+}
+
+/**
+ * 0-1: how fully body condition allows breeding (sim_0.37.0). Wild boar breed and carry large
+ * litters in good condition and fail to breed, or carry small litters, in poor condition (Bieber
+ * & Ruf 2005; Servanty et al. 2009). 1 for species without a condition policy.
+ */
+export function breedingFertility(agent: Agent, species: SpeciesConfig): number {
+  const policy = species.lifecycle.condition;
+  if (!policy) return 1;
+  const condition = agent.condition ?? 1;
+  return Math.min(1, Math.max(0, (condition - policy.minBreedingCondition)
+    / (policy.fullBreedingCondition - policy.minBreedingCondition)));
 }

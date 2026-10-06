@@ -3,6 +3,7 @@ export * from './world.js';
 export * from './events/log.js';
 export * from './fields/nutrients.js';
 export * from './fields/plants.js';
+export * from './fields/rooting.js';
 export * from './fields/water.js';
 export * from './fields/drainage.js';
 export * from './config/loader.js';

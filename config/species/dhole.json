@@ -70,7 +70,7 @@
   "social": {
     "structure": "pack",
     "groupSize": [
-      4,
+      5,
       9
     ],
     "alarmSharing": true,
@@ -140,6 +140,7 @@
     "oestrusCycleDays": 365,
     "weanDays": 70,
     "gatherFromDays": 21,
+    "denStayDays": 60,
     "dispersalDays": 330
   }
 }

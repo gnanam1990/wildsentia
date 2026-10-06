@@ -43,6 +43,11 @@ export interface Carcass {
   pathogenLoad: number;
   scentRadiusM: number;
   consumers: Array<{ agentId: string; at: WorldTime; kg: number }>;
+  /**
+   * sim_0.37.0: the leopard that cached this kill in its patch's tree. Only she and the young
+   * that depend on her feed from it; ground scavengers and other predators cannot reach it.
+   */
+  cachedBy?: string;
 }
 
 /** Proportions of a mammal carcass by mass. They sum to 1, which the nutrient ledger relies on. */

@@ -659,7 +659,7 @@ export class LiveLayer {
     for (let i = this.#said.length - 1; i >= 0; i--) if (this.#said[i]!.agentId === agentId) this.#said.splice(i, 1);
   }
 
-  /** Up the tree beside it (langur, squirrel): no ground hunter can reach it there. */
+  /** Up the tree beside it (langur, squirrel, leopard): no ground hunter can reach it there. */
   climb(agentId: string): string | null {
     const avatar = this.avatars.get(agentId);
     if (!avatar) return 'not_possessing';

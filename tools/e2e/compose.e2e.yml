@@ -14,6 +14,7 @@ services:
       VANA_ALLOW_V33_UPGRADE: "1"
       VANA_ALLOW_V34_UPGRADE: "1"
       VANA_ALLOW_V35_UPGRADE: "1"
+      VANA_ALLOW_V36_UPGRADE: "1"
       # Load tests (tools/ops/load.ts) run hundreds of agents and viewers from this one address,
       # and must be able to go past the production caps to find where the server breaks.
       VANA_AGENT_SLOTS: ${VANA_AGENT_SLOTS:-1000}

@@ -23,13 +23,15 @@ export const SpeciesConfigSchema = z
     trophicRole: z
       .array(z.enum(['apex_predator', 'mesopredator', 'grazer', 'browser', 'omnivore', 'scavenger']))
       .min(1),
-    body: z.object({ adultMassKg: z.number().positive(), shoulderHeightM: z.number().positive() }),
+    body: z.object({ adultMassKg: z.number().positive(), shoulderHeightM: z.number().positive(),
+      massBySexKg: z.object({ female: z.number().positive().finite(), male: z.number().positive().finite() }).optional() }),
     locomotion: z.object({
       walkMs: z.number().positive(),
       trotMs: z.number().positive(),
       sprintMs: z.number().positive(),
       sprintStaminaS: z.number().positive(),
       terrainCost: habitatCost,
+      climbsTrees: z.boolean().optional(),
     }),
     senses: z.object({
       sightRangeM: z.number().nonnegative(),
@@ -40,16 +42,19 @@ export const SpeciesConfigSchema = z
       detectionDistanceM: z.number().nonnegative(),
       flightInitiationM: z.number().nonnegative(),
       evasiveness: z.number().min(0).max(1),
+      avoids: z.array(z.string().min(1)).optional(),
     }),
     diet: z.object({
       eats: z
         .array(z.object({
-          target: z.enum(['grass', 'browse', 'meat']),
+          target: z.enum(['grass', 'browse', 'meat', 'roots']),
           preference: z.number().min(0).max(1),
+          foodValue: z.number().gt(0).max(1).optional(),
         }))
         .min(1),
       dailyIntakeKg: z.number().positive(),
       gutCapacityBodyFraction: z.number().gt(0).max(0.3).optional(),
+      maxDailyIntakeKg: z.number().positive().finite().optional(),
       waterNeedLPerDay: z.number().positive(),
       canScavenge: z.boolean(),
       carrionTolerance: z.number().min(0).max(1),
@@ -70,6 +75,10 @@ export const SpeciesConfigSchema = z
           .refine(t => t.every((p, i) => i === 0 || p[0] >= t[i - 1]![0]), 'subdue table must be ordered by prey mass').optional(),
         subdueReferenceHunters: z.number().positive().finite().optional(),
         subdueBreakFree: z.number().min(0).max(1).optional(),
+        maxPreyKg: z.number().positive().finite().optional(),
+        cachesKills: z.boolean().optional(),
+        preferredPreyKg: z.tuple([z.number().min(0).finite(), z.number().positive().finite()])
+          .refine(([lo, hi]) => lo <= hi, 'preferred prey range must be ordered').optional(),
       })
       .optional(),
     social: z.object({
@@ -125,6 +134,10 @@ export const SpeciesConfigSchema = z
       nursing: z.object({ startHour: z.number().min(0).lt(24), windowHours: z.number().positive().max(24),
         dailyContactSeconds: z.number().positive().max(3600), locomotionFromDays: z.number().nonnegative() })
         .refine(n => n.startHour + n.windowHours <= 24, 'nursing window must fit inside one world day').optional(),
+      denStayDays: z.number().positive().finite().optional(),
+      condition: z.object({ conditionDays: z.number().positive().finite(), minBreedingCondition: z.number().min(0).max(1),
+        fullBreedingCondition: z.number().min(0).max(1) })
+        .refine(c => c.minBreedingCondition < c.fullBreedingCondition, 'breeding condition range must be ordered').optional(),
       dispersalDays: z.number().positive(),
     }),
   })
@@ -135,6 +148,19 @@ export const SpeciesConfigSchema = z
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['social', 'cooperativeCare'],
         message: 'cooperative food care requires a meat-eating scavenging pack, weaned donors and a pre-weaning recipient age' });
     }
+    if (cfg.lifecycle.condition && (cfg.diet.maxDailyIntakeKg === undefined || !cfg.diet.eats.some(e => e.target === 'roots'))) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['lifecycle', 'condition'],
+        message: 'condition-dependent breeding tracks a roots diet under a daily gut limit' });
+    }
+    if (cfg.lifecycle.denStayDays !== undefined && !cfg.social.cooperativeCare) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['lifecycle', 'denStayDays'],
+        message: 'a mother stays at the den only where the pack feeds her' });
+    }
+    if (cfg.body.massBySexKg && Math.abs((cfg.body.massBySexKg.female + cfg.body.massBySexKg.male) / 2 - cfg.body.adultMassKg)
+      > cfg.body.adultMassKg * 0.05) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['body', 'massBySexKg'],
+        message: 'the mean adult mass must be the mean of the two sexes' });
+    }
     if (cfg.hunting?.packHuntRadiusM !== undefined && cfg.social.structure !== 'pack') {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['hunting', 'packHuntRadiusM'], message: 'only a pack hunts as a pack' });
     }
@@ -143,7 +169,7 @@ export const SpeciesConfigSchema = z
     }
     if (cfg.lifecycle.forageFromDays !== undefined && (cfg.lifecycle.forageFromDays > cfg.lifecycle.weanDays
       || cfg.lifecycle.forageFromDays < cfg.lifecycle.weanDays
-      && !cfg.diet.eats.some(e => e.target === 'grass' || e.target === 'browse'))) {
+      && !cfg.diet.eats.some(e => e.target === 'grass' || e.target === 'browse' || e.target === 'roots'))) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['lifecycle', 'forageFromDays'],
         message: 'early foraging requires a plant food target and must start by weaning' });
     }

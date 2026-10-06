@@ -10,7 +10,7 @@ import { choosePrey } from './predation.js';
 import { resolveSpatialHunt } from './encounters.js';
 import { canRetryPrey, rememberFailedHunt } from './huntMemory.js';
 import type { GoalChoice } from './goals.js';
-import { HUNGER_DESPERATION, heldByPredatorOf, type Percept, type WorldView } from './perception.js';
+import { HUNGER_DESPERATION, canReachCarcass, heldByPredatorOf, type Percept, type WorldView } from './perception.js';
 import { locateAgent, locateCarcass } from './spatial.js';
 import { approachContact } from './movement.js';
 import { navigate } from './navigation.js';
@@ -34,6 +34,11 @@ export interface WorldServices {
   joinPackHunt?(hunter: Agent, species: SpeciesConfig): { hunters: Agent[]; followers: Agent[] };
   /** sim_0.36.0: whether packmates able to join a hunt stand within reach (read-only). */
   packmatesNearby?(hunter: Agent, species: SpeciesConfig): boolean;
+  /**
+   * sim_0.37.0: the patch of the nearest packmate that could hunt with this one, when none is
+   * within reach; null when it has none (read-only).
+   */
+  packRendezvous?(hunter: Agent, species: SpeciesConfig): number | null;
 }
 
 export interface BehaviourContext {
@@ -136,23 +141,44 @@ function feed(ctx: BehaviourContext, mayMove = true): void {
     * skillFactor(confidenceOf(ctx.agent, ctx.species, 'forage_efficiency'), 0.7, 1.3);
   const available = patch.plant.grass + patch.plant.browse
     + (patch.floweringGuild?.vegetativeKg ?? 0);
+  // sim_0.37.0: a rooting forager (wild boar) digs the patch's finite rooting and mast food first
+  // and meets the rest of its need from green forage, a kilogram of which meets only part of a
+  // kilogram of its need (diet foodValue; 1 for every other species, whose feeding is unchanged).
+  const eats = ctx.species.diet.eats;
+  const valueOf = (t: 'grass' | 'browse'): number => eats.find(e => e.target === t)?.foodValue ?? 1;
+  const roots = eats.some(e => e.target === 'roots') ? patch.rooting?.kg ?? 0 : 0;
+  const greenBrowse = patch.plant.browse + (patch.floweringGuild?.vegetativeKg ?? 0);
+  const plantValue = available > 0 && (valueOf('grass') < 1 || valueOf('browse') < 1)
+    ? (patch.plant.grass * valueOf('grass') + greenBrowse * valueOf('browse')) / available : 1;
+  // What an hour here can actually give it, once gut fill bounds the green forage.
+  const availableNeed = roots + Math.min(available, Math.max(0, wanted - roots)) * plantValue;
 
   // Move only if this patch cannot feed the animal now, or a predator that hunts it stands
   // here (sim_0.34.0). Otherwise eat where it stands.
-  if (mayMove && (available < wanted || ctx.percept.dangerous.has(patch.id)) && target !== null && target.patchId !== patch.id) {
+  if (mayMove && (availableNeed < wanted || ctx.percept.dangerous.has(patch.id)) && target !== null && target.patchId !== patch.id) {
     const travel = moveTo(ctx, target.patchId);
     if (travel.trace.completed && travel.seconds < ctx.hours * 3600) feed(afterTravel(ctx, travel.seconds), false);
     return;
   }
   delete ctx.agent.journey;
 
-  const wantedHere = Math.min(wanted, available);
-  if (wantedHere <= 0) { ctx.agent.state = 'travelling'; return; }
+  const wantedNeed = Math.min(wanted, availableNeed);
+  if (wantedNeed <= 0) { ctx.agent.state = 'travelling'; return; }
+  // Appetite is gut fill: it bounds the kilograms swallowed, however poor the food, so a pig
+  // living on fibrous grass fills up on less energy than on roots and mast (van Wieren 2000). A
+  // daily gut limit (diet.maxDailyIntakeKg) stops it making that up by feeding all day.
+  const day = Math.floor(ctx.worldTime / 86400);
+  const dailyLimit = ctx.species.diet.maxDailyIntakeKg === undefined ? Infinity
+    : ctx.species.diet.maxDailyIntakeKg * (needsOf(ctx.agent, ctx.species).foodKg / ctx.species.diet.dailyIntakeKg);
+  const gutRoom = Math.max(0, dailyLimit - (ctx.agent.gutFill?.day === day ? ctx.agent.gutFill.kg : 0));
+  const fromRoots = Math.min(roots, wantedNeed, gutRoom);
+  const swallow = Math.min(wanted, gutRoom) - fromRoots;
+  const wantedHere = Math.max(0, Math.min(available, (wantedNeed - fromRoots) / plantValue, swallow));
 
   // Take from each pool no more than it holds, and count only what was actually taken.
   // Splitting by `eaten * share` could overshoot a pool by one unit in the last place when an
   // animal ate a patch bare, leaving -2e-16 kg of grass — which is still negative biomass.
-  const grassShare = patch.plant.grass / available;
+  const grassShare = available > 0 ? patch.plant.grass / available : 0;
   const fromGrass = Math.min(patch.plant.grass, wantedHere * grassShare);
   const browseWanted = wantedHere - fromGrass;
   const guildStock = patch.floweringGuild?.vegetativeKg ?? 0;
@@ -162,21 +188,27 @@ function feed(ctx: BehaviourContext, mayMove = true): void {
   patch.plant.grass -= fromGrass;
   patch.plant.browse -= fromBrowse;
   if (patch.floweringGuild) patch.floweringGuild.vegetativeKg -= fromGuild;
-  const eaten = fromGrass + fromBrowse + fromGuild;
+  if (fromRoots > 0) patch.rooting!.kg = Math.max(0, patch.rooting!.kg - fromRoots);
+  const eaten = fromGrass + fromBrowse + fromGuild + fromRoots;
   // Metabolised within the tick; the nutrients return to this patch's soil.
   patch.soilNutrients += eaten * NUTRIENT_PER_KG_BIOMASS;
+  const nourishment = fromGrass * valueOf('grass') + fromBrowse * valueOf('browse') + fromGuild * valueOf('browse') + fromRoots;
+  if (dailyLimit < Infinity) {
+    const tally = ctx.agent.gutFill?.day === day ? ctx.agent.gutFill : { day, kg: 0, naturalKg: 0 };
+    ctx.agent.gutFill = { day, kg: tally.kg + eaten, naturalKg: tally.naturalKg + fromRoots };
+  }
 
   // Hunger is an energy deficit measured in days of intake. A full day's ration offsets
   // exactly a day of hunger, so an animal that cannot find its ration genuinely goes
   // hungry — which is what makes the food supply limit the population rather than
   // decorate it. Before this, an animal stayed fed on under two percent of its ration.
   ctx.agent.drives.hunger = clamp01(
-    ctx.agent.drives.hunger - (eaten / dailyNeed) * HUNGER_PER_DAY,
+    ctx.agent.drives.hunger - (nourishment / dailyNeed) * HUNGER_PER_DAY,
   );
   ctx.agent.state = 'grazing';
   if (eaten > 0) ctx.services.practised(ctx.agent, 'forage_efficiency', true);
   emit(ctx, 'fed', patch.id, [ctx.agent.id],
-    { hunger: ctx.agent.drives.hunger, available }, 'success', { kg: eaten });
+    { hunger: ctx.agent.drives.hunger, available }, 'success', { kg: eaten, ...(fromRoots > 0 ? { rootsKg: fromRoots } : {}) });
 }
 
 function drink(ctx: BehaviourContext, mayMove = true, causalParents: string[] = []): void {
@@ -241,8 +273,15 @@ function rest(ctx: BehaviourContext): void {
  * worth being in.
  */
 function wander(ctx: BehaviourContext): void {
-  if (ctx.agent.journey?.goal === ctx.choice.goal) { moveTo(ctx, ctx.agent.journey.destinationPatchId); return; }
-  const options = ctx.percept.patch.neighbours.filter(id => landWalkable(ctx.patches[id]));
+  // sim_0.37.0 intraguild avoidance: a hunter that is itself hunted (a leopard) does not range
+  // into a patch where it has detected the predator that hunts it (a tiger).
+  const avoid = (id: number) => ctx.species.hunting !== undefined && ctx.percept.dangerous.has(id);
+  if (ctx.agent.journey?.goal === ctx.choice.goal && !avoid(ctx.agent.journey.destinationPatchId)) {
+    moveTo(ctx, ctx.agent.journey.destinationPatchId); return;
+  }
+  const walkable = ctx.percept.patch.neighbours.filter(id => landWalkable(ctx.patches[id]));
+  const safe = walkable.filter(id => !avoid(id));
+  const options = safe.length ? safe : walkable;
   if (options.length === 0) { ctx.agent.state = 'resting'; return; }
 
   const structure = ctx.species.social.structure;
@@ -327,11 +366,27 @@ function hunt(ctx: BehaviourContext): void {
   // outranks fear). With none in view, the pack takes what it finds.
   const range = hunting.packPreyKg;
   const adultKg = (p: { agent: Agent }) => ctx.view.speciesOf(p.agent.speciesId).body.adultMassKg;
+  // sim_0.37.0: a pack hunter does not hunt alone while it has packmates able to hunt with it; it
+  // goes to them first, unless starving. Dholes hunt in groups and carry food back to the den
+  // (Johnsingh 1982). With the den mother staying home, island traces found her helpers each
+  // hunting alone near the den, at hares (party 1.2-1.6), until two of them, the mother and her
+  // four pups starved within two days.
+  if (range && ctx.agent.drives.hunger < HUNGER_DESPERATION && !ctx.services.packmatesNearby?.(ctx.agent, ctx.species)) {
+    const rendezvous = ctx.services.packRendezvous?.(ctx.agent, ctx.species);
+    if (rendezvous != null && rendezvous !== ctx.agent.patchId) { ctx.agent.targetId = null; moveTo(ctx, rendezvous); return; }
+  }
+  // sim_0.37.0: a hunter with a preferred prey size (leopards: 10-40 kg, Hayward et al. 2006) does
+  // not spend its hunts on animals below that size while larger ones are in view: a leopardess
+  // among hares chased them for weeks, in 2.5 kg meals, and starved. With nothing larger in view
+  // it takes what it finds. Within the kind it picks, it takes the individual of its preferred
+  // size where there is one (choosePrey).
+  const sized = hunting.preferredPreyKg;
   const accessible = range && ctx.agent.drives.hunger < HUNGER_DESPERATION && ctx.services.packmatesNearby?.(ctx.agent, ctx.species)
-    ? candidates.filter(p => adultKg(p) >= range[0] && adultKg(p) <= range[1]) : [];
+    ? candidates.filter(p => adultKg(p) >= range[0] && adultKg(p) <= range[1])
+    : sized ? candidates.filter(p => p.agent.massKg >= sized[0]) : [];
   const pool = accessible.length ? accessible : candidates;
   const choice = pool.find((p) => p.agent.id === ctx.agent.targetId)
-    ?? choosePrey(pool, ctx.rng, hunting.preyPreference);
+    ?? choosePrey(pool, ctx.rng, hunting.preyPreference, hunting.preferredPreyKg);
   ctx.agent.targetId = choice.agent.id;
 
   if (choice.patchId !== ctx.agent.patchId) { moveTo(ctx, choice.patchId); return; }
@@ -421,6 +476,8 @@ function hunt(ctx: BehaviourContext): void {
     if (!outcome.killed) ctx.services.practised(victim, 'predator_avoidance', true);
   }
   const at = Math.floor(ctx.worldTime + last.seconds);
+  // sim_0.37.0: a leopard hauls its kill into the tree of the patch it fell in, where there is one.
+  const cached = outcome.killed && hunting.cachesKills === true && treeAnchorForPatch(ctx.patches[victim.patchId]!) !== null;
   const event = ctx.log.append({
     type: 'hunt', worldTime: at, simVersion: '', patchId: victim.patchId,
     actors: [ctx.agent.id, victim.id], goal: ctx.choice.goal,
@@ -428,7 +485,8 @@ function hunt(ctx: BehaviourContext): void {
       cover: ctx.percept.patch.canopyCover, herdSize: choice.herdSize,
       distanceAtCommitM: outcome.distanceAtCommitM, durationSeconds: last.seconds,
       ...(party.length ? { packHunters: 1 + party.length, packmateIds: party.map(m => m.id).join(',') } : {}),
-      ...(followers.length ? { packFollowerIds: followers.map(m => m.id).join(',') } : {}) },
+      ...(followers.length ? { packFollowerIds: followers.map(m => m.id).join(',') } : {}),
+      ...(cached ? { cachedInTree: 1 } : {}) },
     outcome: outcome.killed ? 'success'
       : outcome.stage === 'approaching' || outcome.stage === 'time_exhausted' ? 'interrupted'
       : outcome.stage === 'chase_abandoned' ? 'abandoned' : 'failure',
@@ -452,6 +510,7 @@ function hunt(ctx: BehaviourContext): void {
   }
 
   const carcass = ctx.services.kill(victim, 'predation', ctx.agent.id, { at, causalParent: event.id });
+  if (cached) carcass.cachedBy = ctx.agent.id;
   ctx.agent.state = 'feeding';
   ctx.agent.targetId = null;
   consume(ctx, carcass, last.seconds, event.id);
@@ -479,6 +538,8 @@ function consume(ctx: BehaviourContext, carcass: Carcass, elapsedSeconds = 0, ca
     && !canEatMaternalCarcass(ctx.agent, ctx.species, carcass, ctx.view, ctx.worldTime)) return;
   // Nothing feeds beside something that hunts it (see heldByPredatorOf, sim_0.31.0).
   if (heldByPredatorOf(carcass, ctx.agent.speciesId, ctx.worldTime, ctx.view)) { ctx.agent.state = 'resting'; return; }
+  // A kill cached in a tree is out of reach of all but the leopard and her young (sim_0.37.0).
+  if (!canReachCarcass(carcass, ctx.agent)) { ctx.agent.state = 'resting'; return; }
   const end = ctx.endWorldTime ?? ctx.worldTime + ctx.hours * 3600;
   // Another actor may create this body partway through the same coarse tick. Never grant
   // approach or feeding time before it exists, nor reuse time already spent hunting.
@@ -583,7 +644,8 @@ function flee(ctx: BehaviourContext): void {
   const anchor = threat?.patchId === ctx.agent.patchId && !needsProvisioning(ctx.agent, ctx.species)
     && ctx.agent.dependentOn === null && ctx.agent.pregnantSince === null && !raisingYoung
     ? treeAnchorForPatch(ctx.percept.patch) : null;
-  if (anchor && (ctx.agent.speciesId === 'langur' || ctx.agent.speciesId === 'squirrel')) {
+  // Tree climbers (langur, giant squirrel and, sim_0.37.0, the leopard escaping a tiger).
+  if (anchor && ctx.species.locomotion.climbsTrees) {
     climbToEscape(ctx, anchor);
     return;
   }
@@ -619,7 +681,7 @@ function climbToEscape(ctx: BehaviourContext, anchor: NonNullable<ReturnType<typ
   let trace: MovementTrace = { ...ground.trace, completed: false }, verticalDistanceM = 0, verticalSeconds = 0;
   if (ground.trace.completed && !ground.unreachable && ground.seconds < budget) {
     const vertical = advanceTreeVertical(agent, ctx.patches[anchor.patchId]!, 'ascend', 'flee', ctx.worldTime,
-      budget - ground.seconds);
+      budget - ground.seconds, ctx.species.locomotion.climbsTrees === true);
     if (!vertical.unreachable) {
       verticalDistanceM = vertical.distanceM; verticalSeconds = vertical.seconds;
       // The vertical segment starts at zero height. Make that boundary explicit so the
@@ -651,10 +713,10 @@ function climbToEscape(ctx: BehaviourContext, anchor: NonNullable<ReturnType<typ
 /** A saved perched animal spends real time returning along its exact stable trunk. Ground
  * actions resume on the next decision, never retroactively in the remainder of this hour. */
 export function descendPerchedAnimal(agent: Agent, patch: Patch, worldTime: WorldTime, hours: number,
-  reason: 'threat_gone' | 'canopy_lost' | 'urgent_need', log: EventLog): void {
+  reason: 'threat_gone' | 'canopy_lost' | 'urgent_need', log: EventLog, climbs?: boolean): void {
   const anchor = treeAnchorGeometry(patch.id);
   if (!anchor || !agent.altitudeM) throw new Error('descent requires a perched agent at a stable anchor');
-  const vertical = advanceTreeVertical(agent, patch, 'descend', 'rest', worldTime, Math.min(3600, hours * 3600));
+  const vertical = advanceTreeVertical(agent, patch, 'descend', 'rest', worldTime, Math.min(3600, hours * 3600), climbs);
   if (vertical.unreachable) throw new Error('persisted tree descent became unreachable');
   agent.currentGoal = 'rest'; agent.alternativeGoal = null; agent.goalScore = 1;
   if (vertical.trace.completed) agent.state = 'resting';
