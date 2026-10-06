@@ -58,8 +58,8 @@ interface Rig {
   /** Stable per-animal number: its own clip phase and look-up rhythm. */
   seed: number;
   /**
-   * Whether it lifts its head to look round while feeding or drinking. The tiger feeds and
-   * drinks crouched; blending toward its standing idle would stand it up and down.
+   * Whether it lifts its head to look round while feeding or drinking. The big cats (on the
+   * tiger rig) feed and drink crouched; blending toward a standing idle would stand them up and down.
    */
   looksUp: boolean;
   appearanceKey: string;
@@ -303,7 +303,7 @@ export class AnimalLayer {
     const bodyLengthM = new THREE.Box3().setFromObject(visual).getSize(new THREE.Vector3()).z;
     const rig: Rig = { variantKey: key, group, mixer, actions, clipNames: clips.map((c) => c.name), playing: null, marker,
       visual, footY: visual.position.y, restRotationZ: visual.rotation.z, bodyLengthM, climbRest: null,
-      needsCorpseGrounding: false, gait: new GaitClock(), hipM: hipHeightM(height * characterScale(animal)), seed: idSeed(animal.id), looksUp: animal.speciesId !== 'tiger',
+      needsCorpseGrounding: false, gait: new GaitClock(), hipM: hipHeightM(height * characterScale(animal)), seed: idSeed(animal.id), looksUp: animal.speciesId !== 'tiger' && animal.speciesId !== 'leopard',
       appearanceKey: '', materials };
     this.#pending.delete(animal.id);
     this.#rigs.set(animal.id, rig);

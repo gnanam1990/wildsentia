@@ -31,7 +31,7 @@ describe('generated species replacements', () => {
 });
 
 describe('free local character assets', () => {
-  it.each(['TigerRigged', 'ElephantWalking', 'Langur', 'Squirrel', 'Vulture', 'WildBoar', 'Chital', 'Sambar', 'Gaur', 'Dhole', 'Jackal', 'GreyLangur', 'GiantSquirrel', 'WhiteRumpedVulture', 'ChitalHind', 'Hare'])('%s contains finite, normalized skin weights and actual changing motion', (name) => {
+  it.each(['TigerRigged', 'LeopardRigged', 'ElephantWalking', 'Langur', 'Squirrel', 'Vulture', 'WildBoar', 'Chital', 'Sambar', 'Gaur', 'Dhole', 'Jackal', 'GreyLangur', 'GiantSquirrel', 'WhiteRumpedVulture', 'ChitalHind', 'Hare'])('%s contains finite, normalized skin weights and actual changing motion', (name) => {
     const buffer = readFileSync(new URL(`../public/assets/animals/${name}.glb`, import.meta.url));
     const jsonLength = buffer.readUInt32LE(12);
     const gltf = JSON.parse(buffer.subarray(20, 20 + jsonLength).toString());
@@ -133,5 +133,13 @@ describe('free local character assets', () => {
     for (const name of ['Idle', 'Walk', 'Run', 'Gallop', 'Pounce', 'Bite', 'Sneak', 'Eating', 'Drinking', 'Death']) expect(gltf.animations?.find((a) => a.name === name)?.channels.length).toBeGreaterThan(0);
     expect(modelStatus('tiger')).toContain('Local tiger rig');
     expect(modelStatus('tiger')).toContain('polish pending');
+  });
+  it('ships an interim leopard on the same big-cat rig, with every hunting and feeding clip, and says so', () => {
+    const gltf = manifest('LeopardRigged.glb');
+    expect(gltf.skins?.length).toBeGreaterThan(0);
+    expect(gltf.images?.length).toBeGreaterThan(0);
+    for (const name of ['Idle', 'Walk', 'Run', 'Gallop', 'Pounce', 'Bite', 'Sneak', 'Eating', 'Drinking', 'Death'])
+      expect(gltf.animations?.find((a) => a.name === name)?.channels.length).toBeGreaterThan(0);
+    expect(modelStatus('leopard')).toContain('Interim leopard');
   });
 });

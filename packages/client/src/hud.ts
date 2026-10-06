@@ -71,7 +71,7 @@ export function friendlyWorldTime(worldTime: number): string {
 
 const SPECIES_NAME: Record<string, string> = {
   chital: 'chital', sambar: 'sambar', gaur: 'gaur', dhole: 'dhole', jackal: 'jackal', boar: 'wild boar',
-  tiger: 'tiger', elephant: 'elephant', langur: 'langur', squirrel: 'giant squirrel', hare: 'hare', vulture: 'vulture',
+  tiger: 'tiger', leopard: 'leopard', elephant: 'elephant', langur: 'langur', squirrel: 'giant squirrel', hare: 'hare', vulture: 'vulture',
   human: 'villager',
 };
 const speciesOf = (id: string | undefined): string | null => {
@@ -96,7 +96,7 @@ export function feedSentence(event: Record<string, unknown>): string {
       case 'hunt': return second ? (outcome === 'success' ? `${an(first)} caught ${an(second).toLowerCase()}` : `${an(first)}'s hunt for ${an(second).toLowerCase()} failed`) : `${an(first)} hunted`;
       case 'human_hunt': return outcome === 'success' ? 'Villagers brought back a catch' : 'A village hunt came back empty';
       case 'scavenged': return second ? `${an(first)} fed on ${an(second).toLowerCase()} carcass` : `${an(first)} scavenged`;
-      case 'fed': return first === 'tiger' || first === 'dhole' || first === 'jackal' ? `${an(first)} ate` : `${an(first)} grazed`;
+      case 'fed': return ['tiger', 'leopard', 'dhole', 'jackal'].includes(first) ? `${an(first)} ate` : `${an(first)} grazed`;
       case 'drank': return `${an(first)} drank water`;
       case 'rested': return actors.length > 1 && first === second ? `Two ${first === 'wild boar' ? 'wild boars' : `${first}s`} rested together` : `${an(first)} rested`;
       case 'moved': return failed ? `${an(first)} changed course` : `${an(first)} moved on`;
