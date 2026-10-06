@@ -83,12 +83,12 @@ def caption(text):
 
 
 def title(img):
-    tracked_text(img, (W // 2, H // 2 - 10), "VANA", font(150, BOLD), 60)
+    tracked_text(img, (W // 2, H // 2 - 10), "WILDSENTIA", font(118, BOLD), 30)
     tracked_text(img, (W // 2, H // 2 + 70), "THE LIVING WILD", font(38, MEDIUM), 14, fill=(232, 238, 226, 255))
 
 
 def end_card(img):
-    tracked_text(img, (W // 2, H // 2 - 30), "VANA", font(120, BOLD), 48)
+    tracked_text(img, (W // 2, H // 2 - 30), "WILDSENTIA", font(96, BOLD), 24)
     shadowed_text(img, (W // 2, H // 2 + 40), "A living forest, in real time.", font(44, MEDIUM), anchor="ms")
     shadowed_text(img, (W // 2, H // 2 + 120), "COMING SOON", font(34, DEMI), fill=(224, 173, 99, 255), anchor="ms")
 

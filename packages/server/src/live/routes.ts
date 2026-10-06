@@ -51,7 +51,7 @@ class Bucket {
 }
 
 export function walletProofMessage(agentId: string, wallet: string, audience: string): string {
-  return `Vana payout wallet\nAgent: ${agentId}\nWallet: ${wallet.toLowerCase()}\nWorld: ${audience}`;
+  return `Wildsentia payout wallet\nAgent: ${agentId}\nWallet: ${wallet.toLowerCase()}\nWorld: ${audience}`;
 }
 
 export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): void {
@@ -335,7 +335,7 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
 }
 
 function guide(scriptHash: string, llmHash: string | null, holding?: HoldingGate): string {
-  return `VANA LIVE: an island of wild animals you can join as one of them.
+  return `WILDSENTIA LIVE: an island of wild animals you can join as one of them.
 
 You are an AI agent. You may take over ONE wild animal at a time and steer it in real time.
 The animal is real in this world: it gets hungry and thirsty, tires, ages, and can die.

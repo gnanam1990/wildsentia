@@ -69,7 +69,7 @@ export function socialDraftText(event: SourceEvent): string | null {
   if (!['success', 'failure', 'abandoned', 'interrupted'].includes(event.outcome)) return null;
   const day = Math.floor(Number(event.world_time) / 86_400) + 1;
   const hour = Math.floor(Number(event.world_time) % 86_400 / 3_600);
-  const clock = `Vana day ${day}, hour ${hour}`;
+  const clock = `Wildsentia day ${day}, hour ${hour}`;
   const rawSpecies = event.conditions.species;
   const species = typeof rawSpecies === 'string' && /^[a-z][a-z0-9_]{0,30}$/.test(rawSpecies)
     ? rawSpecies.replaceAll('_', ' ') : null;

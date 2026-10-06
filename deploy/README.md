@@ -1,4 +1,4 @@
-# VANA: 30-real-day VPS handoff
+# Wildsentia: 30-real-day VPS handoff
 
 This package runs **one persistent island world** with the household, the built observer,
 PostgreSQL, and HTTPS. At 12 world-hours per real hour, an uninterrupted 30-day run advances

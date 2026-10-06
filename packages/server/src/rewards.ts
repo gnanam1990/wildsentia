@@ -393,7 +393,7 @@ export function installRewards(app: FastifyInstance, deps: {
       await db.query("update reward_drops set status='verified_paid' where id=$1 and status='reserved'", [b.dropId]);
       await db.query("update reward_claims set status='verified_paid' where id=$1 and status='reserved'", [b.claimId]);
       await db.query(`insert into reward_audit(drop_id,claim_id,action,network,note)
-        values ($1,$2,'verified_paid','base','Exact finalized native Base USDC Transfer recorded; no transfer initiated by VANA')`, keys);
+        values ($1,$2,'verified_paid','base','Exact finalized native Base USDC Transfer recorded; no transfer initiated by WILDSENTIA')`, keys);
       await db.query('commit'); committed = true;
       return { ok: true, paymentVerified: true, alreadyRecorded: false, txHash, logIndex,
         blockNumber: matched.blockNumber, blockHash: matched.blockHash };

@@ -3,7 +3,7 @@
  *
  * Jev does not write text. It answers typed questions about a state: a Choice from a set of
  * options, a Score on ordered levels, or a Noul (yes/no), each with calibrated probabilities.
- * Vana uses it only for observer insights; nothing it returns reaches the simulation.
+ * Wildsentia uses it only for observer insights; nothing it returns reaches the simulation.
  *
  * API: POST {base}/systemone with `Authorization: Bearer <key>`,
  * body { model, state, questions }, answers keyed by question id.

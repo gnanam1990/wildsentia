@@ -137,7 +137,7 @@ async function openX(item: Draft, button: HTMLButtonElement): Promise<void> {
     let publication: XPublication | null = null;
     try { publication = await api(`/admin/social/x-publications/${item.id}`) as XPublication; }
     catch (error) { if ((error as { status?: number }).status !== 404) throw error; }
-    let outgoing = `${item.body} [VANA record ${item.id}]`;
+    let outgoing = `${item.body} [WILDSENTIA record ${item.id}]`;
     if (!publication && !xAttempted.has(item.id)) {
       const plan = await api('/admin/social/x-prepare', { draftId: item.id }) as XPlan;
       if (plan.draftId !== item.id || typeof plan.request?.body?.text !== 'string')

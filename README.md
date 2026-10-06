@@ -1,4 +1,4 @@
-# Vana — The Living Wild
+# Wildsentia — The Living Wild
 
 One shared, server-authoritative wildlife simulation. You can watch it. You cannot control it.
 
