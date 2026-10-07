@@ -216,6 +216,21 @@ describe('turning the view without a right mouse button', () => {
     expect(follow.theta).not.toBe(theta);
     expect(explored).toBe(false);
   });
+  it('turns the way the mouse moves, like grabbing the scene: drag down to see it from higher up', () => {
+    const target = surface();
+    const follow = new FollowCamera(new THREE.PerspectiveCamera(), target);
+    follow.reducedMotion = true;
+    follow.follow({ x: 0, z: 0, heading: 0, moving: false }, 1);
+    const theta = follow.theta, phi = follow.phi;
+    dispatch(target, 'pointerdown', { pointerId: 1, clientX: 100, clientY: 100, button: 0 });
+    dispatch(target, 'pointermove', { pointerId: 1, clientX: 100, clientY: 160 });
+    expect(follow.phi).toBeGreaterThan(phi); // dragged down: looking from higher, as in other 3D viewers
+    dispatch(target, 'pointermove', { pointerId: 1, clientX: 100, clientY: 60 });
+    expect(follow.phi).toBeLessThan(phi);    // dragged up past the start: lower again
+    dispatch(target, 'pointermove', { pointerId: 1, clientX: 160, clientY: 60 });
+    expect(follow.theta).toBeLessThan(theta); // dragged right: the scene turns with the cursor
+    dispatch(target, 'pointerup', { pointerId: 1, clientX: 160, clientY: 60 });
+  });
   it('pans the map on a plain drag while exploring', () => {
     const target = surface();
     const follow = new FollowCamera(new THREE.PerspectiveCamera(), target);

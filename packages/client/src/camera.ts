@@ -133,8 +133,10 @@ export class FollowCamera {
       this.#lastX = e.clientX;
       this.#lastY = e.clientY;
       if (this.#mode === 'rotate') {
+        // As if grabbing the scene, the way other 3D viewers turn: it follows the cursor sideways,
+        // and dragging down lifts the view to look from higher (it used to sink toward the ground).
         this.rotateBy(-dx * 0.005);
-        this.tiltBy(-dy * 0.004);
+        this.tiltBy(dy * 0.004);
       } else {
         this.panBy(dx, dy);
       }
