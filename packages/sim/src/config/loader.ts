@@ -101,6 +101,10 @@ export const SpeciesConfigSchema = z
       dailyProbability: z.number().gt(0).max(1),
       minDaysBetween: z.number().finite().nonnegative(),
     }).optional(),
+    activity: z.object({
+      hourly: z.array(z.number().min(0).max(1)).length(24)
+        .refine(h => h.some(v => v === 1), 'activity peaks at 1'),
+    }).optional(),
     learning: z.object({
       innate: z.record(
         z.enum(['forage_efficiency', 'water_locations', 'predator_avoidance', 'stalk_technique']),

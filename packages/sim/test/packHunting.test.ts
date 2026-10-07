@@ -5,10 +5,12 @@ import { createWorld } from '../src/world.js';
 import { makeAgent, SPECIES_DIR, speciesOf } from './helpers.js';
 
 const dhole = speciesOf('dhole');
+const MORNING = 7;
 
 /** One pack of four adults standing together beside chital, every adult hungry enough to hunt. */
 function packWorld(seed: number) {
   const world = createWorld({ seed, speciesDir: SPECIES_DIR, initialAgents: { dhole: 4, chital: 12 }, minPopulation: {} });
+  world.step(MORNING); // sim_0.37.0: dholes hunt by day; start at 07:00
   const centre = patchCentre(210);
   world.agents.forEach((a, i) => {
     a.patchId = 210;
@@ -87,6 +89,7 @@ describe('dholes hunt as a pack (sim_0.36.0)', () => {
       const picks: string[] = [];
       for (let seed = 1; seed <= 30; seed++) {
         const world = createWorld({ seed, speciesDir: SPECIES_DIR, initialAgents: { dhole: 2, hare: 6, chital: 1 }, minPopulation: {} });
+        world.step(MORNING); // sim_0.37.0: dholes hunt by day; start at 07:00
         const centre = patchCentre(210);
         const [lead, mate] = world.agents.filter(a => a.speciesId === 'dhole') as [Agent, Agent];
         world.agents.forEach((a, i) => { a.patchId = 210; a.position = { x: centre.x + 30 + i * 4, z: centre.z, heading: 0 };
@@ -112,6 +115,7 @@ describe('dholes hunt as a pack (sim_0.36.0)', () => {
     let moved = 0, solo = 0;
     for (let seed = 1; seed <= 20; seed++) {
       const world = createWorld({ seed, speciesDir: SPECIES_DIR, initialAgents: { dhole: 2, hare: 6 }, minPopulation: {} });
+      world.step(MORNING); // sim_0.37.0: dholes hunt by day; start at 07:00
       const centre = patchCentre(210);
       const [lead, mate] = world.agents.filter(a => a.speciesId === 'dhole') as [Agent, Agent];
       world.agents.forEach((a, i) => { a.patchId = 210; a.position = { x: centre.x + 30 + i * 4, z: centre.z, heading: 0 };

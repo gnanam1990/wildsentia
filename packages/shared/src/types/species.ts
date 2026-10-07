@@ -158,6 +158,15 @@ export interface SpeciesConfig {
     minDaysBetween: number;
   };
   /**
+   * sim_0.37.0 daily activity cycle: relative activity for each hour of the day (index 0 is
+   * 00:00-01:00), 1 at the species' peak, from camera-trap and telemetry activity curves (sources in
+   * docs/2026-10-05-multi-year-ecology.md). An animal that is not starving starts hunts and ranges
+   * in proportion to it and otherwise rests. Omitted: active at every hour, as before.
+   */
+  activity?: {
+    hourly: number[];
+  };
+  /**
    * Innate floors for the skills this species uses (spec §8). A skill absent here is one the
    * species never uses; it reads as neutral. `learnRateFromParent` is the fraction of the gap
    * to its parent a young animal closes each time it watches her use a skill successfully.

@@ -17,6 +17,20 @@ const NOISE = 0.05;
 const DEPENDENT_WATER_SEARCH_THIRST = 0.2;
 
 /**
+ * sim_0.37.0: how active a species is at this hour of the day, 0-1 (`activity.hourly`, from field
+ * activity curves). Species without a curve are active at every hour.
+ */
+export function activityAt(species: SpeciesConfig, worldTime: number | undefined): number {
+  const hourly = species.activity?.hourly;
+  if (!hourly || worldTime === undefined || !Number.isFinite(worldTime)) return 1;
+  const hour = Math.floor((((worldTime % 86400) + 86400) % 86400) / 3600);
+  return hourly[hour] ?? 1;
+}
+
+/** Hunger at which an animal hunts at any hour: the desperation at which need outranks fear. */
+const ACTIVITY_OVERRIDE_HUNGER = 0.8;
+
+/**
  * utility = drive x opportunity, plus bounded noise so identical animals diverge.
  *
  * Only the goals the archetype allows are scored, so what an animal can want is decided by its
@@ -28,6 +42,7 @@ export function selectGoal(
   percept: Percept,
   rng: Rng,
   litterHunger = 0,
+  worldTime?: number,
 ): GoalChoice {
   const d = agent.drives;
   // sim_0.37.0: a cat mother hunts for her cubs as well as herself. Her own stomach cannot feed
@@ -63,14 +78,21 @@ export function selectGoal(
   const thirstDesperation = Math.max(0, d.thirst - 0.72) * 6;
   const hungerDesperation = Math.max(0, d.hunger - 0.80) * 4;
 
+  // sim_0.37.0 daily activity: outside its active hours an animal that is not desperate starts no
+  // hunt and does not range; it rests. Dholes hunt by day and tigers and leopards by night
+  // (activity.hourly). A dhole pack hunting round a hare's form at 20:00-22:00 two nights running
+  // kept the doe from her once-daily evening feed until the leverets died.
+  const active = activityAt(species, worldTime);
+  const huntActive = huntHunger >= ACTIVITY_OVERRIDE_HUNGER ? 1 : active;
+
   const all: Record<GoalId, number> = {
     // Linear in the drive, not squared. Now that eating a ration only offsets a day's hunger,
     // an animal has to spend most of its time feeding to stay fed — and a squared term left a
     // grazer at thirty percent hunger preferring to wander, then starving in a field of grass.
     find_food: d.hunger * (0.3 + foodOpportunity) + hungerDesperation,
     find_water: d.thirst * (0.3 + waterOpportunity) + thirstDesperation,
-    rest: d.fatigue * d.fatigue * (1 - d.hunger * 0.5) * (1 - d.thirst * 0.5),
-    wander: 0.08 + (1 - d.hunger) * (1 - d.thirst) * 0.05,
+    rest: d.fatigue * d.fatigue * (1 - d.hunger * 0.5) * (1 - d.thirst * 0.5) + (1 - active) * 0.15,
+    wander: (0.08 + (1 - d.hunger) * (1 - d.thirst) * 0.05) * active,
     // A hunt is only worth starting with prey in sight and the legs to chase it — and never
     // while there is still meat on something already dead nearby. Without this a predator
     // abandoned a carcass it had barely touched and killed again, so the world lost five
@@ -78,7 +100,7 @@ export function selectGoal(
     // A predator with meat still in its stomach is sated and does not start a hunt
     // (sim_0.35.0): its attempt rate follows its intake, not an hourly retry on any hunger.
     hunt: carrionOpportunity > 0.3 || (agent.gutKg ?? 0) > 0 && !forLitter || huntHunger < threshold
-      ? 0 : huntHunger * preyOpportunity * stamina,
+      ? 0 : huntHunger * preyOpportunity * stamina * huntActive,
     // Carrion is cheaper than a hunt, so a hungry scavenger prefers it strongly.
     scavenge: d.hunger * carrionOpportunity * 1.35,
     // Fear outranks ordinary needs but not desperate ones, and an exhausted animal cannot

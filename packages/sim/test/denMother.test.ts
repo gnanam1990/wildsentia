@@ -8,9 +8,12 @@ import { makeAgent, SPECIES_DIR, speciesOf } from './helpers.js';
 
 const dhole = speciesOf('dhole');
 
+const MORNING = 7;
+
 /** A pack with a mother whose pups are `pupDays` old, lying 40 m from her in the next patch. */
 function denWorld(seed: number, pupDays: number) {
   const world = createWorld({ seed, speciesDir: SPECIES_DIR, initialAgents: { dhole: 5, chital: 10 }, minPopulation: {} });
+  world.step(MORNING); // sim_0.37.0: dholes hunt by day; start at 07:00
   const dholes = world.agents.filter(a => a.speciesId === 'dhole');
   const mother = dholes[0]!, pups = dholes.slice(3);
   const den = patchCentre(210);
@@ -45,15 +48,20 @@ describe('dhole den mother and founding pack (sim_0.37.0)', () => {
   it('a mother of young pups stays at the den instead of hunting, and goes back to it', () => {
     for (const seed of [1, 2, 3]) {
       const { world, mother, pups } = denWorld(seed, 12);
+      let atDen = 0;
       for (let h = 0; h < 18; h++) {
         mother.drives.hunger = Math.max(mother.drives.hunger, 0.6);
         world.step(1);
         expect(world.log.all().some(e => e.type === 'hunt' && (e.actors[0] === mother.id
           || String(e.conditions.packmateIds ?? '').split(',').includes(mother.id)))).toBe(false);
+        const den = pups.find(p => p.alive)!;
+        if (mother.patchId === den.patchId) atDen++;
+        if (h === 17 && mother.patchId === den.patchId) expect(Math.hypot(mother.position!.x - den.position!.x, mother.position!.z - den.position!.z))
+          .toBeLessThanOrEqual(mother.currentGoal === 'find_water' ? 300 : careRadius(dhole) + 1e-6);
       }
-      const den = pups.find(p => p.alive)!;
-      expect(mother.patchId).toBe(den.patchId);
-      expect(Math.hypot(mother.position!.x - den.position!.x, mother.position!.z - den.position!.z)).toBeLessThanOrEqual(careRadius(dhole) + 1e-6);
+      // She stays in the den's patch, leaving the den itself only to drink at its pool (the run starts
+      // at 07:00, sim_0.37.0, and so spans her drinking hours).
+      expect(atDen).toBeGreaterThanOrEqual(16);
     }
   });
 

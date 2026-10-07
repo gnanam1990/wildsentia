@@ -18,7 +18,7 @@ import { EventLog } from './events/log.js';
 import { foundCommunity, stepCommunity } from './community.js';
 import { updateDrives } from './agents/drives.js';
 import { HUNGER_DESPERATION, perceive, perceptionRadius, type WorldView } from './agents/perception.js';
-import { selectGoal } from './agents/goals.js';
+import { activityAt, selectGoal } from './agents/goals.js';
 import { controlledAction, controlledFeed, descendPerchedAnimal, executeGoal, type ControlledAction, type WorldServices } from './agents/behaviours.js';
 import { foundingTraits } from './agents/genetics.js';
 import { Pedigree } from './agents/pedigree.js';
@@ -1290,7 +1290,7 @@ export class World {
         }
       }
 
-      const choice = selectGoal(agent, cfg, percept, this.#rng, this.#litterHunger(agent, cfg, childrenByParent.get(agent.id) ?? []));
+      const choice = selectGoal(agent, cfg, percept, this.#rng, this.#litterHunger(agent, cfg, childrenByParent.get(agent.id) ?? []), this.#time);
       // sim_0.34.0: family and pack routines yield to fear, not to the mere detection of a
       // predator. With prey now sensing predators hundreds of metres off, the old "no threat
       // in view" gate stopped piglets regrouping with the sow and left whole litters to die
@@ -1324,8 +1324,9 @@ export class World {
           const collection = beginPackCollection(agent, packRecipient, percept.carrion.carcass, cfg,
             this.patches, this.#time, hours, this.log);
           if (collection) { packCollections.push(collection); continue; }
-        } else if (percept.prey.length) {
+        } else if (percept.prey.length && (activityAt(cfg, this.#time) >= 0.5 || agent.drives.hunger >= 0.8)) {
           // Pack demand can motivate a real hunt; no bonus success or newborn hunting ability.
+          // sim_0.37.0: only in the pack's active hours, as any hunt.
           executeGoal({ agent, species: cfg, patches: this.patches, view, percept,
             choice: { goal: 'hunt', score: 1, alternative: choice.goal }, hours, worldTime: this.#time,
             log: this.log, rng: this.#rng, services });
