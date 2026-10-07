@@ -25,13 +25,15 @@ if (!out) throw new Error('usage: film.ts <out-dir> [shot ...]');
 /** distance null: the replay's own "keep both animals framed" owns the zoom, so two writers never fight. */
 interface Path { theta: [number, number] | 'behind' | 'side'; phi: [number, number]; distance: [number, number] | null;
   /** Hunts. predator: hold on the hunter. pair: the replay's midpoint, zoomed so both stay in frame. */
-  track?: 'predator' | 'pair' }
+  track?: 'predator' | 'prey' | 'pair' }
 interface Shot {
   name: string; seconds: number; path: Path;
   species?: string;
   /** A recorded hunt replayed from just before its chase. */
   /** at 'contact': start just before the catch (the kill cut) instead of before the chase. */
-  hunt?: { predator?: string; prey?: string[]; lead: number; eventId?: string; at?: 'chase' | 'contact' };
+  hunt?: { predator?: string; prey?: string[]; lead: number; eventId?: string; at?: 'chase' | 'contact';
+    /** Whose replay it is: the prey's keeps the camera on the hunted animal. */
+    subject?: 'predator' | 'prey' };
 }
 
 const shots: Shot[] = [
@@ -49,12 +51,12 @@ const shots: Shot[] = [
   { name: 'g-hunt-sambar', seconds: 6.5, hunt: { predator: 'tiger', lead: 1.2, at: 'contact', eventId: 'hunt_000000010000000000020bc8' },
     path: { theta: [3.5, 3.9], phi: [0.2, 0.24], distance: [5.5, 4.5], track: 'predator' } },
   // A short social clip of one named recorded hunt (VANA_FILM_HUNT_EVENT), in two shots: close on the
-  // hunter through the end of its stalk, then wide and side-on with both animals framed (the replay's
-  // own pair framing) from the charge through whatever the record says happened next.
+  // hunter through the end of its stalk, then alongside the hunted animal from the charge through
+  // whatever the record says happened next.
   { name: 'glimpse-stalk', seconds: 5.5, hunt: { predator: 'tiger', lead: 6.5, at: 'chase', eventId: process.env.VANA_FILM_HUNT_EVENT },
     path: { theta: 'side', phi: [0.12, 0.14], distance: [6, 5], track: 'predator' } },
-  { name: 'glimpse-chase', seconds: 9, hunt: { predator: 'tiger', lead: 0.8, at: 'chase', eventId: process.env.VANA_FILM_HUNT_EVENT },
-    path: { theta: 'side', phi: [0.17, 0.2], distance: null } },
+  { name: 'glimpse-chase', seconds: 9, hunt: { predator: 'tiger', lead: 1, at: 'chase', eventId: process.env.VANA_FILM_HUNT_EVENT, subject: 'prey' },
+    path: { theta: 'side', phi: [0.13, 0.16], distance: [9, 10], track: 'prey' } },
   { name: 'h-boar', species: 'boar', seconds: 5, path: { theta: [5.0, 5.6], phi: [0.18, 0.22], distance: [6.5, 5.5] } },
   { name: 'i-squirrel', species: 'squirrel', seconds: 5, path: { theta: [2.0, 2.6], phi: [0.2, 0.24], distance: [3.2, 2.6] } },
   { name: 'j-sambar', species: 'sambar', seconds: 6, path: { theta: [3.0, 3.6], phi: [0.16, 0.2], distance: [7.5, 6.5] } },
@@ -164,6 +166,10 @@ async function startPath(page: Page, path: Path, seconds: number, pair: [string,
           follow.distance += (want - follow.distance) * 0.04;
         }
       }
+      if (path.track === 'prey' && pair) {
+        const quarry = v.animals.root.getObjectByName(pair[1]);
+        if (quarry) { follow.target.x = quarry.position.x; follow.target.z = quarry.position.z; }
+      }
       if (path.track === 'predator' && pair) {
         const hunter = v.animals.root.getObjectByName(pair[0]);
         if (hunter) { follow.target.x = hunter.position.x; follow.target.z = hunter.position.z; }
@@ -192,9 +198,10 @@ for (const shot of shots) {
   if (shot.hunt) {
     const hunt = await pickHunt(shot.hunt.predator ?? 'tiger', usedHunts, shot.hunt.eventId);
     subject = `${hunt.predator} ${hunt.eventId}`; pair = [hunt.predator, hunt.prey];
-    await page.goto(`${viewer}/?cinema=1&maxfps=240#animal=${hunt.predator}`, { waitUntil: 'domcontentloaded' });
+    const replayOf = shot.hunt.subject === 'prey' ? hunt.prey : hunt.predator;
+    await page.goto(`${viewer}/?cinema=1&maxfps=240#animal=${replayOf}`, { waitUntil: 'domcontentloaded' });
     await waitReady(page);
-    await page.evaluate(([id, eventId]) => (window as any).__vana.startReplay(id, eventId), [hunt.predator, hunt.eventId]);
+    await page.evaluate(([id, eventId]) => (window as any).__vana.startReplay(id, eventId), [replayOf, hunt.eventId]);
     await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>('#replay-play')!.disabled, null, { timeout: 60_000 });
     await page.waitForTimeout(6000); // the two models load
     const seek = Math.max(0, (shot.hunt.at === 'contact' ? hunt.contact : hunt.from) - shot.hunt.lead) / hunt.total;
