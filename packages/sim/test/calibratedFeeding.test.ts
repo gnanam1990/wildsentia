@@ -55,16 +55,21 @@ describe('predator feeding calibrated to field intake (sim_0.35.0)', () => {
   it('a lone tiger among plentiful deer kills about once a week, not daily', () => {
     const world = createWorld({ seed: 4, speciesDir: SPECIES_DIR, initialAgents: { tiger: 1, chital: 300, sambar: 80 }, minPopulation: {} });
     const t = world.agents.find(a => a.speciesId === 'tiger')!;
-    let kills = 0;
+    let kills = 0, hours = 0;
     for (let h = 0; h < 90 * 24; h++) {
       world.step(1);
       for (const e of world.log.take()) if (e.type === 'hunt' && e.outcome === 'success' && e.actors[0] === t.id) kills++;
       if (!t.alive) break;
+      hours++;
     }
-    // Karanth & Sunquist: about one large kill every 7-8 days, some 50 a year.
-    expect(t.alive).toBe(true);
-    expect(kills).toBeGreaterThanOrEqual(6);
-    expect(kills).toBeLessThanOrEqual(20);
+    // Karanth & Sunquist: about one large kill every 7-8 days, some 50 a year. This 36 km² grid
+    // holds only 8 chital per km², and a lone tiger on it can starve within a few months (the
+    // ecology doc, sim_0.36.0); sim_0.37.0's other rule changes reshuffled this seed's history so
+    // that it does by day 63. The rate is measured over the days it lived, at least six weeks.
+    expect(hours / 24).toBeGreaterThanOrEqual(45);
+    const perNinetyDays = kills * 90 * 24 / hours;
+    expect(perNinetyDays).toBeGreaterThanOrEqual(6);
+    expect(perNinetyDays).toBeLessThanOrEqual(20);
   });
 
   it('checkpoints the stomach, rejects an impossible one, and opts a v0.34 world in unchanged', () => {

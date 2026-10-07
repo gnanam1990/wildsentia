@@ -10,7 +10,7 @@
  * unavailable (and which drive blocked it), and how much was actually provided.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
-import { ISLAND_POPULATION, SIM_VERSION, createWorld, restoreSnapshot, upgradeV31Snapshot, type Snapshot } from '@vana/sim';
+import { SIM_VERSION, createWorld, islandPopulation, restoreSnapshot, upgradeV31Snapshot, type Snapshot } from '@vana/sim';
 import type { Agent } from '@vana/shared';
 import { availableForCare, chooseCareTarget } from '../../packages/sim/src/agents/family.js';
 import { perceive } from '../../packages/sim/src/agents/perception.js';
@@ -24,8 +24,10 @@ const seed = Number(arg('seed', '1')), days = Number(arg('days', '360')), output
 // --checkpoint replays a saved window (islandCheckpoint.ts); a v0.31 save is opted into the
 // current rules exactly as the server's explicit upgrade would, for before/after comparison.
 const checkpoint = arg('checkpoint');
+// --profile island_v1 replays the smaller island (sim_0.37.0: island_v2 is the default).
+const profile = (arg('profile', 'island_v2') ?? 'island_v2') as 'island_v1' | 'island_v2';
 const options = { seed, speciesDir: new URL('../../config/species', import.meta.url).pathname,
-  terrainProfile: 'island_v1' as const, communityProfile: 'household_v1' as const, initialAgents: ISLAND_POPULATION,
+  terrainProfile: profile, communityProfile: 'household_v1' as const, initialAgents: islandPopulation(profile),
   minPopulation: {}, retainEvents: 200_000 };
 const saved = checkpoint ? JSON.parse(readFileSync(checkpoint, 'utf8')) as Snapshot : null;
 const world = saved ? restoreSnapshot(saved.simVersion === 'sim_0.31.0'

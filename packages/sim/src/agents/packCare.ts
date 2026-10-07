@@ -57,7 +57,8 @@ export interface PackDelivery { visit: CareVisit; recipient: Agent; recipientSta
 
 export function beginPackCollection(donor: Agent, recipient: Agent, carcass: Carcass, cfg: SpeciesConfig,
   patches: Patch[], start: number, hours: number, log: EventLog): PackCollection | null {
-  if (!cfg.social.cooperativeCare || donor.packFood || carcass.diedAt > start || carcass.pathogenLoad > cfg.diet.carrionTolerance) return null;
+  if (!cfg.social.cooperativeCare || donor.packFood || carcass.diedAt > start || carcass.pathogenLoad > cfg.diet.carrionTolerance
+    || carcass.cachedBy !== undefined) return null;
   const target = { patchId: carcass.patchId, position: { ...locateCarcass(carcass) } };
   return { visit: travelToFamily(donor, cfg, patches, target, 'collect_pack_food', start, hours, log, radiusFor(cfg)),
     carcass, recipient, start, end: start + hours * 3600 };

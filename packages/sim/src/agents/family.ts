@@ -24,8 +24,11 @@ export const HYDRATION_EMERGENCY_THIRST = 0.5;
  * frightened parent still cannot answer, and what she gives is still bounded by her own
  * reserves in provisionYoung (no food past the 0.8 donor ceiling, no water past hers).
  */
+/** Fear at which a parent breaks off care (and every family routine) to deal with a threat. */
+export const CARE_FEAR_BLOCK = 0.5;
+
 export function availableForCare(parent: Agent, child?: Agent): boolean {
-  if (!parent.alive || parent.drives.thirst >= 0.65 || parent.drives.fear >= 0.5) return false;
+  if (!parent.alive || parent.drives.thirst >= 0.65 || parent.drives.fear >= CARE_FEAR_BLOCK) return false;
   return parent.drives.hunger < 0.72 || child !== undefined && child.drives.thirst >= HYDRATION_EMERGENCY_THIRST;
 }
 

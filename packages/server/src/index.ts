@@ -31,7 +31,7 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
   const speciesDir =
     process.env.SPECIES_DIR ?? fileURLToPath(new URL('../../../config/species', import.meta.url));
   const terrainProfile = process.env.VANA_TERRAIN_PROFILE ?? 'mainland';
-  if (terrainProfile !== 'mainland' && terrainProfile !== 'island_v1') throw new Error('invalid VANA_TERRAIN_PROFILE');
+  if (terrainProfile !== 'mainland' && terrainProfile !== 'island_v1' && terrainProfile !== 'island_v2') throw new Error('invalid VANA_TERRAIN_PROFILE');
   const communityProfile = process.env.VANA_COMMUNITY_PROFILE ?? 'none';
   if (communityProfile !== 'none' && communityProfile !== 'household_v1') throw new Error('invalid VANA_COMMUNITY_PROFILE');
 
@@ -64,6 +64,7 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
     allowV33Upgrade: process.env.VANA_ALLOW_V33_UPGRADE === '1',
     allowV34Upgrade: process.env.VANA_ALLOW_V34_UPGRADE === '1',
     allowV35Upgrade: process.env.VANA_ALLOW_V35_UPGRADE === '1',
+    allowV36Upgrade: process.env.VANA_ALLOW_V36_UPGRADE === '1',
     allowV5Upgrade: process.env.VANA_ALLOW_V5_UPGRADE === '1',
     allowV6Upgrade: process.env.VANA_ALLOW_V6_UPGRADE === '1',
     allowV7Upgrade: process.env.VANA_ALLOW_V7_UPGRADE === '1',

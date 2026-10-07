@@ -35,7 +35,8 @@ describe('World', () => {
   });
 
   it('sustains the population and breeds rather than importing', () => {
-    const w = createWorld({ ...options, minPopulation: { sambar: 10 } });
+    // Hares as well (sim_0.37.0): sambar now die rarely of anything but predation and want.
+    const w = createWorld({ ...options, initialAgents: { sambar: 40, hare: 40 }, minPopulation: { sambar: 10 } });
     for (let h = 0; h < 400 * 24; h++) w.step(1);
     expect(w.livingCount('sambar')).toBeGreaterThanOrEqual(10);
     expect(w.births).toBeGreaterThan(0);
@@ -67,7 +68,8 @@ describe('World', () => {
   it('has mothers teach their dependent young what they do well', () => {
     // The owner's central idea (spec §8): parents teach their young, and what they teach shapes
     // who the young become. Every lesson that moves a pupil a tenth is recorded, naming both.
-    const w = createWorld({ ...options, minPopulation: { sambar: 10 } });
+    // Hares as well (sim_0.37.0): sambar now die rarely of anything but predation and want.
+    const w = createWorld({ ...options, initialAgents: { sambar: 40, hare: 40 }, minPopulation: { sambar: 10 } });
     const lessons: Array<{ pupil: string; teacher: string; skill: string }> = [];
     for (let h = 0; h < 400 * 24; h++) {
       w.step(1);
@@ -87,7 +89,8 @@ describe('World', () => {
     // A world that runs for years kept every animal that ever died in memory and in every
     // hourly snapshot. The host archives them to the database and releases them here, but only
     // once they are old enough that no pregnancy can still name them as the father.
-    const w = createWorld({ ...options, minPopulation: { sambar: 10 } });
+    // Hares as well (sim_0.37.0): sambar now die rarely of anything but predation and want.
+    const w = createWorld({ ...options, initialAgents: { sambar: 40, hare: 40 }, minPopulation: { sambar: 10 } });
     for (let h = 0; h < 200 * 24; h++) w.step(1);
     expect(w.deceased.length).toBeGreaterThan(0);
     for (const dead of w.deceased) expect(typeof dead.departedAt).toBe('number');

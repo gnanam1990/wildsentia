@@ -110,12 +110,19 @@ Stop/start with `docker compose ... stop` and `docker compose ... start`. Never 
 `docker compose down -v`: that deletes the persistent world and TLS volumes. Before a code
 upgrade, take and verify a backup; preserve the old image and database until the new build
 passes restart and health checks. Do not enable version-upgrade flags without a separate
-checkpoint migration review. To move a saved `sim_0.35.0` world to this code after a
-verified backup, add `VANA_ALLOW_V35_UPGRADE: "1"` to the server's environment in a compose
+checkpoint migration review. To move a saved `sim_0.36.0` world to this code after a
+verified backup, add `VANA_ALLOW_V36_UPGRADE: "1"` to the server's environment in a compose
 override for one start, confirm `/api/health`, then remove it. (Each flag names the saved
-world's version and moves it straight to this runtime: a `sim_0.34.0` world uses
-`VANA_ALLOW_V34_UPGRADE`, a `sim_0.33.0` world `VANA_ALLOW_V33_UPGRADE`, a `sim_0.32.0` world
-`VANA_ALLOW_V32_UPGRADE`.) An upgraded island
+world's version and moves it straight to this runtime: a `sim_0.35.0` world uses
+`VANA_ALLOW_V35_UPGRADE`, a `sim_0.34.0` world `VANA_ALLOW_V34_UPGRADE`, a `sim_0.33.0` world
+`VANA_ALLOW_V33_UPGRADE`, a `sim_0.32.0` world `VANA_ALLOW_V32_UPGRADE`.) An upgraded island
+receives a recorded leopard pair (one male, one female) at the first day boundary after the
+start, and every land patch gets its rooting food out of its own soil. A saved world never changes
+terrain: `deploy/compose.yml` now founds new worlds on `island_v2` (sim_0.37.0, about 26 km² of
+land against about 12 km² for `island_v1`), so a database that already holds an `island_v1` world
+must set `VANA_TERRAIN_PROFILE=island_v1` in the server's environment to keep booting; the server
+refuses a terrain mismatch rather than reshape a world. To launch on `island_v2`, start from a new
+database. Otherwise an upgraded island
 keeps the animals it was founded with; only new worlds get the calibrated predator cohort.
 
 ## Upgrade and rollback

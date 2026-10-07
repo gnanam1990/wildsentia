@@ -61,7 +61,7 @@ export function worldPort(world: () => World, worldId: () => string | null, play
         detectionM: cfg.escape.detectionDistanceM, flightInitiationM: cfg.escape.flightInitiationM,
         evasiveness: cfg.escape.evasiveness, shoulderHeightM: cfg.body.shoulderHeightM,
         alarmSharing: cfg.social.alarmSharing === true, packHunter: cfg.archetype === 'pack_predator',
-        climbs: cfg.id === 'langur' || cfg.id === 'squirrel', flies: cfg.id === 'vulture' };
+        climbs: cfg.locomotion.climbsTrees === true, flies: cfg.id === 'vulture' };
     },
     possessionBlock: (id) => world().possessionBlock(id),
     possess: (id, controller) => world().possess(id, controller),

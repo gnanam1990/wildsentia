@@ -38,10 +38,10 @@ describe('species config', () => {
     }
     expect(() => parseSpecies({ ...hare, lifecycle: { ...hare.lifecycle, meatFromDays: 70 } })).toThrow();
   });
-  it('loads the full twelve-species roster', () => {
-    expect(species.size).toBe(12);
+  it('loads the full thirteen-species roster', () => {
+    expect(species.size).toBe(13);
     for (const id of ['tiger', 'dhole', 'sambar', 'chital', 'gaur', 'elephant',
-                      'boar', 'langur', 'squirrel', 'hare', 'vulture', 'jackal']) {
+                      'boar', 'langur', 'squirrel', 'hare', 'vulture', 'jackal', 'leopard']) {
       expect(species.has(id)).toBe(true);
     }
   });

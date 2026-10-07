@@ -104,7 +104,7 @@ export interface PreyCandidate {
  * picks off the most vulnerable — a tired, unwary animal first.
  */
 export function choosePrey<T extends PreyCandidate>(candidates: readonly T[], rng: Rng,
-  preference: Readonly<Record<string, number>> = {}): T {
+  preference: Readonly<Record<string, number>> = {}, preferredKg?: readonly [number, number]): T {
   const bySpecies = new Map<string, T[]>();
   for (const candidate of candidates) {
     const list = bySpecies.get(candidate.agent.speciesId);
@@ -126,7 +126,12 @@ export function choosePrey<T extends PreyCandidate>(candidates: readonly T[], rn
 
   const vulnerability = (candidate: T): number =>
     (1 - candidate.agent.drives.fatigue) * (1 - candidate.agent.drives.fear * 0.5);
-  let best = chosen[0]!;
-  for (const candidate of chosen) if (vulnerability(candidate) < vulnerability(best)) best = candidate;
+  // sim_0.37.0: a hunter with a preferred prey size (leopards, 10-40 kg: Hayward et al. 2006)
+  // takes the individuals of that size within the kind where there are any: the piglet before
+  // the sow, the fawn before the stag.
+  const sized = preferredKg ? chosen.filter(c => c.agent.massKg >= preferredKg[0] && c.agent.massKg <= preferredKg[1]) : [];
+  const within = sized.length ? sized : chosen;
+  let best = within[0]!;
+  for (const candidate of within) if (vulnerability(candidate) < vulnerability(best)) best = candidate;
   return best;
 }

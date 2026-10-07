@@ -13,19 +13,56 @@ export interface SpeciesConfig {
   displayName: string;
   archetype: Archetype;
   trophicRole: TrophicRole[];
-  body: { adultMassKg: number; shoulderHeightM: number };
+  body: {
+    /** Mean adult mass; growth, needs and size ratios are measured against it. */
+    adultMassKg: number;
+    shoulderHeightM: number;
+    /**
+     * sim_0.37.0: adult mass by sex where the sexes differ markedly (leopard males 50-77 kg,
+     * females 29-34 kg). Founders start at, and young grow toward, their own sex's mass.
+     */
+    massBySexKg?: { female: number; male: number };
+  };
   locomotion: {
     walkMs: number;
     trotMs: number;
     sprintMs: number;
     sprintStaminaS: number;
     terrainCost: Record<HabitatType, number>;
+    /**
+     * sim_0.37.0: climbs its patch's tree to escape a ground predator in the same patch (langur,
+     * giant squirrel, leopard). Omitted: a ground animal.
+     */
+    climbsTrees?: boolean;
   };
   senses: { sightRangeM: number; hearingRangeM: number; smellRangeM: number };
-  escape: { detectionDistanceM: number; flightInitiationM: number; evasiveness: number };
+  escape: {
+    detectionDistanceM: number; flightInitiationM: number; evasiveness: number;
+    /**
+     * sim_0.37.0: predators this species keeps away from as prey keep away from what hunts them,
+     * though they do not hunt it (leopards avoid tigers: Odden et al. 2010; Harihar et al. 2011).
+     */
+    avoids?: string[];
+  };
   diet: {
-    eats: Array<{ target: 'grass' | 'browse' | 'meat'; preference: number }>;
+    eats: Array<{
+      /** sim_0.37.0 `roots`: the finite rooting and mast food of a patch (wild boar). */
+      target: 'grass' | 'browse' | 'meat' | 'roots';
+      preference: number;
+      /**
+       * sim_0.37.0: share of a day's food need one kilogram of this food meets (default 1). Wild
+       * boar are monogastric and digest fibrous green forage poorly: grass keeps them alive but
+       * does not replace roots, tubers, fruit and mast.
+       */
+      foodValue?: number;
+    }>;
     dailyIntakeKg: number;
+    /**
+     * sim_0.37.0: the most food (kg as eaten) the gut can process in a day. Where some food is
+     * worth less than a kilogram of need (foodValue), this is what stops an animal making up poor
+     * food by eating more of it (wild boar on fibrous grass). Omitted: no daily limit.
+     */
+    maxDailyIntakeKg?: number;
     /** sim_0.35.0: largest meal beyond the day's need, as a fraction of body mass (meat eaters). */
     gutCapacityBodyFraction?: number;
     waterNeedLPerDay: number;
@@ -71,6 +108,22 @@ export interface SpeciesConfig {
      * defended themselves escaped in 10-23.6% of filmed attacks).
      */
     subdueBreakFree?: number;
+    /**
+     * sim_0.37.0: hauls a kill into its patch's tree where there is one, out of reach of ground
+     * scavengers and other predators (leopards: Balme et al. 2017).
+     */
+    cachesKills?: boolean;
+    /**
+     * sim_0.37.0: the heaviest individual prey (kg) this hunter goes for, by the prey's own mass,
+     * so a leopard takes sambar fawns and wild pig piglets but not an adult sambar stag.
+     */
+    maxPreyKg?: number;
+    /**
+     * sim_0.37.0: the prey mass range (kg) this hunter prefers within a kind of prey (Hayward et al.
+     * 2006: leopards prefer prey of 10-40 kg): where a kind offers individuals in it, the hunter
+     * picks among those, so it takes the piglet before the sow.
+     */
+    preferredPreyKg?: [min: number, max: number];
   };
   social: {
     structure: 'solitary' | 'pair' | 'herd' | 'troop' | 'pack' | 'family';
@@ -98,11 +151,31 @@ export interface SpeciesConfig {
    * while no more than `whenLivingAtMost` of the species live on the island, at most once per
    * `minDaysBetween`, and then with `dailyProbability` from a seed-derived draw. The arriving
    * animal's body is recorded as imported in the nutrient ledger. Ignored on the mainland.
+   *
+   * sim_0.37.0: the leopard's crossing is a modelling assumption, not a field fact. Leopards swim,
+   * but no sea crossing to an island is documented; the owner chose rare arrivals so a lone leopard
+   * is eventually joined. Its rate (a daily chance of 1 in 1,095 while at most one leopard lives, and
+   * never twice within three years) is about a sixth of the tiger's: at most three arrivals a decade.
    */
   islandArrival?: {
     whenLivingAtMost: number;
     dailyProbability: number;
     minDaysBetween: number;
+    /**
+     * sim_0.37.0: when every living animal of the species is of one sex, the arrival is of the
+     * other (a modelling choice, so a lone survivor can be joined by a mate). Otherwise either sex,
+     * from the arrival's own draw.
+     */
+    preferMissingSex?: boolean;
+  };
+  /**
+   * sim_0.37.0 daily activity cycle: relative activity for each hour of the day (index 0 is
+   * 00:00-01:00), 1 at the species' peak, from camera-trap and telemetry activity curves (sources in
+   * docs/2026-10-05-multi-year-ecology.md). An animal that is not starving starts hunts and ranges
+   * in proportion to it and otherwise rests. Omitted: active at every hour, as before.
+   */
+  activity?: {
+    hourly: number[];
   };
   /**
    * Innate floors for the skills this species uses (spec §8). A skill absent here is one the
@@ -139,6 +212,12 @@ export interface SpeciesConfig {
      * or den. Omitted: the species' young do not gather (follow rules alone apply).
      */
     gatherFromDays?: number;
+    /**
+     * sim_0.37.0: a dependent younger than this clings to its mother and is carried wherever she
+     * walks or runs while it is in contact with her (grey langur infants: 100% contact in the first
+     * week, following by the fourth; Dolhinow & Murphy 1982). It does not flee on its own.
+     */
+    carriedUntilDays?: number;
     /** Earliest independent plant foraging before weaning; omitted keeps the old weaning gate. */
     forageFromDays?: number;
     /** Earliest independent route to surface water; omitted retains the previous forage/wean gate. */
@@ -147,6 +226,21 @@ export interface SpeciesConfig {
     meatFromDays?: number;
     /** Source-informed scheduled nursing policy; not milk chemistry or exact field calibration. */
     nursing?: { startHour: number; windowHours: number; dailyContactSeconds: number; locomotionFromDays: number };
+    /**
+     * sim_0.37.0: a mother whose young cannot yet follow her stays at the den for this many days
+     * after the birth, and is fed there by the pack (dholes: Fox 1984; Johnsingh 1982). She still
+     * drinks and still hunts once her hunger is desperate. Requires cooperative care.
+     */
+    denStayDays?: number;
+    /**
+     * sim_0.37.0: reproduction that tracks food. Body condition is a running mean, over
+     * `conditionDays`, of the share of daily need met by the natural diet (rooting and mast food).
+     * A female conceives at full chance at `fullBreedingCondition` or above and not at all below
+     * `minBreedingCondition`; litter size moves from the configured minimum to the maximum across
+     * the same range (wild boar: Bieber & Ruf 2005; Servanty et al. 2009). Needs a roots diet and
+     * a daily gut limit.
+     */
+    condition?: { conditionDays: number; minBreedingCondition: number; fullBreedingCondition: number };
     dispersalDays: number;
   };
 }

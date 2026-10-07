@@ -16,7 +16,7 @@ const HOUR = 3600;
 
 /** Walking pace on screen, metres per real second. */
 const WALK_MPS: Record<string, number> = {
-  elephant: 1.4, gaur: 1.3, sambar: 1.4, chital: 1.4, boar: 1.2, tiger: 1.3, dhole: 2.0,
+  elephant: 1.4, gaur: 1.3, sambar: 1.4, chital: 1.4, boar: 1.2, tiger: 1.3, leopard: 1.1, dhole: 2.0,
   jackal: 1.6, hare: 1.6, langur: 1.4, squirrel: 1.2, vulture: 12,
 };
 const RUN_FACTOR = 3.5;

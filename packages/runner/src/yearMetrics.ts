@@ -1,4 +1,5 @@
 import type { WorldEvent, WorldPosition } from '@vana/shared';
+import { ecologicalReason, type EcologicalReason, type ParentCareSummary } from './careContext.js';
 
 /** One young starvation/dehydration death whose parent was still alive when it died. */
 export interface YoungDeprivationRecord {
@@ -8,6 +9,10 @@ export interface YoungDeprivationRecord {
   parentDistanceM: number | null; careRadiusM: number;
   /** `remote` = parent beyond the care-contact radius at the end of that hour. */
   contact: 'near' | 'remote' | 'unknown';
+  /** sim_0.37.0: the parent's state over the 48 hours up to the death (careContext.ts). */
+  parentCare?: ParentCareSummary | null;
+  /** sim_0.37.0: famine or predator when the death is ecological (reported, not gated); else null. */
+  ecological?: EcologicalReason | null;
 }
 
 /** Tallies for one world-year window. Each count is accumulated from authoritative events. */
@@ -50,6 +55,8 @@ export interface ParentLookup {
   /** Current location of a living parent, or null if none. */
   locate(parentId: string): { patchId: number; position: WorldPosition } | null;
   careRadiusM(species: string): number;
+  /** sim_0.37.0: the parent's recorded state over the past 48 hours, when sampled. */
+  care?(parentId: string): ParentCareSummary | null;
 }
 
 const YOUNG_STAGES = new Set(['newborn', 'juvenile', 'subadult']);
@@ -81,7 +88,9 @@ export function recordYearEvent(year: SoakYear, event: WorldEvent, parents: Pare
   year.youngDeprivationWithParent[contact]++;
   return { worldTime: event.worldTime, species, cause, lifeStage, ageDays: Number(event.conditions.ageDays ?? NaN),
     childId, parentId, patchId: event.patchId, parentPatchId: parent?.patchId ?? null,
-    parentDistanceM: distance, careRadiusM: radius, contact };
+    parentDistanceM: distance, careRadiusM: radius, contact,
+    ...(parents.care ? (() => { const care = parentId ? parents.care!(parentId) : null;
+      return { parentCare: care, ecological: ecologicalReason(care) }; })() : {}) };
 }
 
 /** Standing grass+browse on grazeable land, as a percent of its capacity. */

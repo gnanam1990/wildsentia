@@ -349,7 +349,20 @@ of the 63 starvation deaths.
 
 ### Running an existing world on new code
 
-The current runtime identifies as `sim_0.36.0`. Its rule changes from `sim_0.35.0` are on young
+The current runtime identifies as `sim_0.37.0`. Its rule changes from `sim_0.36.0` add the
+leopard (a thirteenth species: an ambush cat that keeps away from tigers, climbs to escape
+them, caches its kills in trees and hunts for its weaned cubs), found the dholes as a pack of five
+(the smallest working pack) whose den mother stays with her pups and is fed by the pack,
+while helpers rejoin their packmates before hunting rather than hunt alone, and limit wild boar by
+food: a finite,
+regrowing rooting and mast food per land patch, a daily gut limit that grass cannot make up, and
+breeding and litter size that follow body condition. A saved 0.36 world starts on this code only
+with `VANA_ALLOW_V36_UPGRADE=1`: its land patches get their rooting food out of their own soil, and
+an island receives a recorded leopard pair at the next day boundary; its dholes and boar are kept
+as they are. `sim_0.37.0` also adds the `island_v2` terrain, a larger island (about 26 km² of land
+against about 12 km²) in the same 20 × 20 grid, with its own founding cohort; `deploy/compose.yml`
+founds new worlds on it. A saved world keeps its terrain: a database holding an `island_v1` world
+must run with `VANA_TERRAIN_PROFILE=island_v1`, and the server refuses a mismatch. `sim_0.36.0`'s rule changes from `sim_0.35.0` were on young
 care, pack hunting and the kill itself: a litter gathers to its mother's care point (piglets from
 birth, jackal pups from ten days, dhole pups from three weeks, langur infants are carried), a pup
 that cannot yet walk does not run from an attack, leverets suckle at birth and a once-daily

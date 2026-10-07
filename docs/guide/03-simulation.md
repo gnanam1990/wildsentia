@@ -1,13 +1,15 @@
 # 3. The simulation
 
 The simulation (`packages/sim`) is the whole truth of the world. It is headless, deterministic
-and conserves nutrients. The live server runs the `island_v1` terrain with the `household_v1`
-village; the current rules are **`sim_0.36.0`**.
+and conserves nutrients. New worlds run the `island_v2` terrain with the `household_v1`
+village; the current rules are **`sim_0.37.0`**. Worlds founded on `island_v1` keep it.
 
 ## The island
 
-- A 20 × 20 grid of 300 m patches (6 × 6 km), with an island of about 12 km² of land surrounded
-  by sea. Each patch has a habitat, elevation, canopy cover, grass, browse (shrubs and leaves),
+- A 20 × 20 grid of 300 m patches (6 × 6 km), with an island surrounded by sea. `island_v2`
+  (`sim_0.37.0`, the default for new worlds) has about 26 km² of land, filling the grid but for a
+  sea margin of about one patch; `island_v1` has about 12 km². Both share the same hills, habitats,
+  pools and freshwater basins rules. A saved world never changes terrain. Each patch has a habitat, elevation, canopy cover, grass, browse (shrubs and leaves),
   soil nutrients and, where there is one, a water access point (a pool).
 - Positions are exact planar coordinates in metres, not just patch numbers, so animals walk
   real routes round water and sea.
@@ -18,7 +20,7 @@ village; the current rules are **`sim_0.36.0`**.
 
 ## Species
 
-Twelve species run on seven behaviour archetypes, all defined in
+Thirteen species run on seven behaviour archetypes, all defined in
 [`config/species/`](../../config/species). The archetype decides which goals an animal can
 consider at all: a sambar cannot decide to hunt and a tiger cannot decide to graze, however
 hungry either gets.
@@ -26,6 +28,7 @@ hungry either gets.
 | Species | Archetype | Adult mass | Shoulder | Walk / sprint (m/s) |
 |---|---|---|---|---|
 | Tiger | apex predator | 190 kg | 1.0 m | 1.3 / 15 |
+| Leopard | apex predator (climbs) | 58 kg male, 34 kg female | 0.7 m | 1.0 / 16.1 |
 | Dhole | pack predator | 17 kg | 0.5 m | 1.4 / 13 |
 | Golden jackal | omnivore | 9 kg | 0.45 m | 1.2 / 12 |
 | Wild boar | omnivore | 75 kg | 0.85 m | 1.1 / 11 |
@@ -37,6 +40,12 @@ hungry either gets.
 | Grey langur | arboreal troop | 13 kg | 0.6 m | 1.0 / 8 |
 | Giant squirrel | arboreal troop | 2 kg | 0.25 m | 0.9 / 7 |
 | White-rumped vulture | scavenger (flies) | 5.5 kg | 0.8 m | 0.6 / 18 |
+
+A new `island_v2` world is founded at field densities on its 26 km²: prey at about 71 ungulates
+per km² (1,008 chital, 324 sambar, 144 gaur, 360 wild boar), three tigers (one male, two
+females; 11.5 per 100 km², as Nagarahole and Kanha), four leopards (one male, three females; 15
+per 100 km², as Mudumalai and Yala), one dhole pack of six (Tadoba's mean pack) and 29 jackals.
+An `island_v1` world was founded with half of each, and two tigers, two leopards and five dholes.
 
 ## Needs and decisions
 
@@ -63,10 +72,26 @@ continuously: drift beyond tolerance fails the build.
   opens a carcass for her cubs) and visits. Young follow their mother on the ground; nothing
   teleports. Parents also teach skills, and raised young outperform orphans.
 - Litters stay together (`sim_0.36.0`): young too small to walk gather to the sibling their
-  mother is feeding and do not scatter when she is attacked; langur infants are carried;
-  leverets are nursed from birth. Each species' following and foraging ages are in its config.
+  mother is feeding and do not scatter when she is attacked; langur infants cling to their
+  mother and go where she walks or runs for their first four weeks (`sim_0.37.0`); leverets are
+  nursed from birth. Until her young can follow her, a mother looks for food only within her
+  senses of them, unless she is starving, and cubs eat at her kills only where they lie. Each species' following and foraging ages are in its config.
 - Births carry the population. The island receives only rare, recorded arrivals of animals
-  that swim ashore (tiger, elephant, jackal), each written to a ledger.
+  that swim ashore (tiger, elephant, jackal), each written to a ledger. A leopard also comes
+  ashore, very rarely, when at most one lives on the island, and is of the sex the survivor
+  lacks (`sim_0.37.0`): about one arrival in three years of waiting, never two within three
+  years. This is a modelling assumption chosen by the owner so that a lone leopard is eventually
+  joined: leopards swim, but no sea crossing by a leopard to an island is documented. A world
+  saved before `sim_0.37.0` gains its leopard pair the same way, as a recorded arrival when it
+  is upgraded.
+- **Wild boar are limited by food** (`sim_0.37.0`). Each land patch holds a finite rooting and
+  mast food (roots, tubers, soil invertebrates, fallen fruit and seed) that regrows from the soil
+  and that boar dig out first. Grass and leaves are worth half to three-fifths of that food, and
+  its gut takes under two days' food a day, so on green forage alone a pig just holds its own
+  (van Wieren 2000: pigs live on grass only while it is low in fibre). A sow's breeding and
+  litter size follow her body condition, the share of her need met by roots and mast over the
+  past month (Servanty et al. 2009; Bergqvist et al. 2018: about one more piglet per 16 kg of
+  sow), and a hungry sow has less milk for her piglets. Nothing caps their number.
 
 ## Hunting
 
@@ -87,11 +112,33 @@ possibly wounded. Hunts recorded before `sim_0.36.0` have no hold: their prey di
 A failed hunt records the stage it reached, so it can be explained afterwards from the record.
 On the current rules a tiger succeeds in about one hunt in five.
 
-**Dholes hunt as a pack** (`sim_0.36.0`). Packmates within reach join a hunt, each adding to
+**Leopards** (`sim_0.37.0`) are ambush cats of 34-58 kg. They prefer prey of 10-40 kg (Hayward
+et al. 2006): a piglet before the sow, a fawn before the stag, and no prey over 100 kg. They do
+not spend their hunts on hares while deer are in view. A leopard kills about
+once every six days, as in Bardia (one kill every 5.6 days, Odden & Wegge 2009), and holds a
+chital by the throat for one to three minutes. Where its patch has a tree it caches the kill in
+it, out of reach of everything but itself and its cubs (Balme et al. 2017), and a mother hunts
+for her weaned cubs as well as herself. A leopard that sees no prey of its size heads for where
+it knows deer and pigs graze (range memory, as grazers remember pasture), and a tigress or
+leopardess in oestrus seeks out the male whose range she lives in. Tigers prefer prey of
+60-250 kg (Hayward et al. 2012).
+
+**Leopards keep away from tigers.** A leopard treats a tiger as prey treat a predator: it detects
+it, keeps out of its patch, does not hunt or range where it stands unless starving, keeps off a
+carcass the tiger is holding, flees it, and climbs the patch's tree when the tiger is beside it
+(Odden et al. 2010; Harihar et al. 2011). Tigers killing leopards is recorded in the field only
+anecdotally, and in the model tigers do not hunt them.
+
+**Dholes hunt as a pack** (`sim_0.36.0`). The island is founded with one pack of five
+(`sim_0.37.0`), the smallest working pack (wild packs run 5-12; Tadoba 6.4, Bhandari et al.
+2021), and its land holds five adults. For the first two months after a litter the mother stays
+at the den and the pack feeds her there (Johnsingh 1982); she hunts again only if her hunger
+becomes desperate. A dhole with packmates out of reach goes to them before it hunts, rather than
+hunting alone. Packmates within reach join a hunt, each adding to
 its chance, and all feed at the kill; weaned pups follow, and helpers carry food to the den.
 Prey choice follows field data: sambar are favoured, pigs and langur avoided, and a pack goes
-for prey of 30–235 kg unless it is starving. Pack hunts succeed in about one in seven to one in
-six.
+for prey of 30–235 kg unless it is starving. Dholes succeed in about three hunts in ten (one in
+seven to one in six under `sim_0.36.0`, when helpers often hunted alone).
 
 **Feeding is calibrated to field intake** (`sim_0.35.0`). A kill fills the predator's stomach
 (a tiger holds about 27 kg, matching the 18–35 kg a tiger eats at one sitting). The stomach is
@@ -100,6 +147,15 @@ hunting hunger. A lone tiger among plentiful deer makes about 50–56 kills a ye
 week apart, against about 50 a year at 7–8-day intervals in the field (Karanth & Sunquist).
 There is no kill cap anywhere: kill rates emerge from intake, satiety, carcass use and hunt
 success.
+
+## Daily rhythms
+
+Predators keep field hours (`sim_0.37.0`). Dholes hunt by day, with peaks after dawn and before
+dusk and a long midday rest (about three-quarters of their activity is in daylight); tigers and
+leopards are most active at dawn, dusk and through the night, leopards more by day than tigers.
+Outside its active hours a predator rests unless it is desperately hungry. The curves come from
+camera-trap and radio-tracking studies (Andheria et al. 2007; Ramesh et al. 2012; Chatterjee et
+al. 2023). Prey have no daily rhythm yet.
 
 ## Fear
 
@@ -120,9 +176,19 @@ paths and tasks are recorded and played back like the animals'.
 |---|---|
 | Unit and integration tests | Rules, conservation, determinism, checkpoints and upgrades (part of `npm run verify:ci`) |
 | Mainland 360-day gate | A full world-year without hard failures |
-| Island 3-seed × 3-year gate | 1,080 days on three seeds: every day completes, no species goes extinct, nutrients are conserved, births carry the population, and no dependent young dies of thirst while its living parent is out of reach |
+| Island gate (`island_v2`, 4 seeds × 4 years) | 1,440 days on each seed: every day completes, none of the thirteen species goes extinct, all six people live, every prey species stays above a quarter of its founding count, nutrients are conserved, births carry the population, and no dependent young dies of thirst while its living parent is out of reach, unless that parent was herself starving (hunger 0.8 or more in the hour of the death or 12 of the 48 hours before) or kept from care by a predator (frightened past 0.5, or fleeing, in 12 of those 48 hours). Those ecological deaths are reported by species and reason, not gated; any other is a care failure and fails the gate |
 
 Long gates run on request (`VANA_LONG_SOAK=1 … npx vitest run soak-long`; see
 [`docs/2026-10-05-multi-year-ecology.md`](../2026-10-05-multi-year-ecology.md) for the method,
 the before-and-after numbers and the sources). Current status is in
 [10. Status and what's next](10-status-and-roadmap.md).
+
+**On `sim_0.37.0` the island gate runs on `island_v2` for four years** (1,440 days,
+`VANA_LONG_SOAK_TERRAIN=island_v2 VANA_LONG_SOAK_DAYS=1440`), and **all four seeds pass every
+check**. No species dies out, no person dies, and no young dies of thirst through a care failure.
+Thirst deaths of young whose mother was starving or kept away by a predator are reported, not
+gated: one seed lost eleven litters of piglets in two hard dry seasons, a fawn and a litter of
+leverets to dholes. Chital hold at 66-95% of their founding count and are steady or growing in the
+fourth year in three seeds (falling 11% in the fourth). Tigers kill about 50-60 a year and breed,
+the dhole pack holds, and leopards breed; in one seed a male leopard came ashore to a lone
+female and she bred. The ecology doc has the traces and what remains open.

@@ -6,6 +6,7 @@ import { WORLD_SECONDS_PER_DAY } from '@vana/shared';
 import { inheritTraits } from './genetics.js';
 import { canBreed, stageFor } from './lifecycle.js';
 import type { Pedigree } from './pedigree.js';
+import { breedingFertility } from './needs.js';
 
 /** Above this, a pairing is refused outright. 0.25 is a full sibling or a parent. */
 export const MAX_ACCEPTABLE_RELATEDNESS = 0.25;
@@ -19,6 +20,9 @@ export function isReceptive(agent: Agent, config: SpeciesConfig, worldTime: Worl
 
   const condition = 1 - Math.max(agent.drives.hunger, agent.drives.thirst);
   if (condition < MIN_BREEDING_CONDITION) return false;
+  // sim_0.37.0: a female in poor body condition over the past weeks does not come into breeding
+  // (wild boar; Servanty et al. 2009), however well she ate today.
+  if (agent.sex === 'female' && breedingFertility(agent, config) <= 0) return false;
 
   if (agent.sex === 'female' && agent.nextOestrusAt != null && worldTime < agent.nextOestrusAt) {
     return false;
@@ -96,11 +100,13 @@ export function attemptCourtship(
   rng: Rng,
   localDensity = 1,
   crowdingThreshold = 6,
+  fertility = 1,
 ): boolean {
   const chooserCondition = 1 - Math.max(chooser.drives.hunger, chooser.drives.thirst);
   const candidateCondition = 1 - Math.max(candidate.drives.hunger, candidate.drives.thirst);
   const crowding = 1 / (1 + Math.max(0, localDensity - 1) / crowdingThreshold);
-  const chance = (0.35 + chooserCondition * 0.25 + candidateCondition * 0.25) * crowding;
+  // sim_0.37.0: `fertility` (0-1) is the female's breeding readiness from body condition.
+  const chance = (0.35 + chooserCondition * 0.25 + candidateCondition * 0.25) * crowding * fertility;
   return rng.bool(Math.min(0.92, chance));
 }
 
@@ -149,7 +155,13 @@ export function birth(
   worldTime: WorldTime,
   nextId: () => string,
 ): BirthResult {
-  const [min, max] = config.lifecycle.litterSize;
+  const [fullMin, fullMax] = config.lifecycle.litterSize;
+  // sim_0.37.0: a mother in poor condition carries a smaller litter (wild boar litter size rises
+  // with the sow's body mass, about one piglet per 16 kg: Bergqvist et al. 2018; Servanty et al.
+  // 2009). The configured range is the litter at full condition; at the least condition in which
+  // she still breeds both ends are halved.
+  const scale = config.lifecycle.condition ? 0.5 + 0.5 * breedingFertility(mother, config) : 1;
+  const min = Math.max(1, Math.round(fullMin * scale)), max = Math.max(min, Math.round(fullMax * scale));
   const wanted = min + rng.int(max - min + 1);
 
   const newbornMass = config.body.adultMassKg * config.lifecycle.stages[0]!.sizeFactor;

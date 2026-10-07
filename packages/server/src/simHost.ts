@@ -3,11 +3,12 @@ import { movementAt, paceMovement, recordedSecondAt, type Pacing } from '@vana/s
 import { randomUUID } from 'node:crypto';
 import { collectLiveEncounters, indexLiveMovements, selectLiveMovements, encounterAppearance } from './liveEncounters.js';
 import {
-  FOREST_FLOOR, FOREST_LANDSCAPE, FOREST_POPULATION, ISLAND_POPULATION, SIM_VERSION,
-  upgradeV16Snapshot, upgradeV17Snapshot, upgradeV18Snapshot, upgradeV19Snapshot, upgradeV20Snapshot, upgradeV21Snapshot, upgradeV22Snapshot, upgradeV23Snapshot, upgradeV24Snapshot, upgradeV25Snapshot, upgradeV26Snapshot, upgradeV27Snapshot, upgradeV28Snapshot, upgradeV29Snapshot, upgradeV30Snapshot, upgradeV31Snapshot, upgradeV32Snapshot, upgradeV33Snapshot, upgradeV34Snapshot, upgradeV35Snapshot,
+  FOREST_FLOOR, FOREST_LANDSCAPE, FOREST_POPULATION, SIM_VERSION, islandPopulation,
+  upgradeV16Snapshot, upgradeV17Snapshot, upgradeV18Snapshot, upgradeV19Snapshot, upgradeV20Snapshot, upgradeV21Snapshot, upgradeV22Snapshot, upgradeV23Snapshot, upgradeV24Snapshot, upgradeV25Snapshot, upgradeV26Snapshot, upgradeV27Snapshot, upgradeV28Snapshot, upgradeV29Snapshot, upgradeV30Snapshot, upgradeV31Snapshot, upgradeV32Snapshot, upgradeV33Snapshot, upgradeV34Snapshot, upgradeV35Snapshot, upgradeV36Snapshot,
   createWorld, restoreSnapshot, takeSnapshot, totalNutrients, upgradeV5Snapshot, upgradeV6Snapshot, upgradeV7Snapshot, upgradeV8Snapshot, upgradeV9Snapshot, upgradeV10Snapshot, upgradeV11Snapshot, upgradeV12Snapshot, upgradeV13Snapshot, upgradeV14Snapshot, upgradeV15Snapshot, type Snapshot, type World, type WorldOptions,
 } from '@vana/sim';
 import type { Pool } from './db/pool.js';
+import { isIslandProfile } from '@vana/shared';
 import { EventStore } from './db/eventStore.js';
 import { SnapshotStore } from './db/snapshotStore.js';
 import { LifeStore } from './db/lifeStore.js';
@@ -58,6 +59,11 @@ export interface SimHostOptions {
   allowV34Upgrade?: boolean;
   /** v0.36 gathers litters, nurses to repletion, hunts dholes as a pack; see upgradeV35Snapshot. */
   allowV35Upgrade?: boolean;
+  /**
+   * v0.37 adds the leopard (an upgraded island receives a recorded pair), a den mother and a larger
+   * founding pack for dholes, and a rooting-food limit on wild boar; see upgradeV36Snapshot.
+   */
+  allowV36Upgrade?: boolean;
   allowV15Upgrade?: boolean;
   allowV14Upgrade?: boolean;
   /** Explicit rules-change acknowledgement. Back up the database before enabling. Default false. */
@@ -286,6 +292,7 @@ export class SimHost {
       allowV33Upgrade: false,
       allowV34Upgrade: false,
       allowV35Upgrade: false,
+      allowV36Upgrade: false,
       allowV5Upgrade: false,
       allowV6Upgrade: false,
       allowV7Upgrade: false,
@@ -301,9 +308,9 @@ export class SimHost {
       housekeepingEveryWorldHours: 24,
       routineRetentionWorldDays: 3,
       archiveAfterWorldDays: 730,
-      initialAgents: options.terrainProfile === 'island_v1' ? ISLAND_POPULATION : FOREST_POPULATION,
-      minPopulation: options.terrainProfile === 'island_v1' ? {} : FOREST_FLOOR,
-      landscape: options.terrainProfile === 'island_v1' ? null : FOREST_LANDSCAPE,
+      initialAgents: isIslandProfile(options.terrainProfile) ? islandPopulation(options.terrainProfile as 'island_v1' | 'island_v2') : FOREST_POPULATION,
+      minPopulation: isIslandProfile(options.terrainProfile) ? {} : FOREST_FLOOR,
+      landscape: isIslandProfile(options.terrainProfile) ? null : FOREST_LANDSCAPE,
       ...options,
     };
     this.#writer = new WorldWriter(options.pool, () => {
@@ -406,13 +413,13 @@ export class SimHost {
     if (snapshot.simVersion !== SIM_VERSION) {
       // Wounds first existed in v0.26. Pre-v0.26 direct jumps must not smuggle them in;
       // a genuine v0.26 checkpoint may preserve its active wound across this upgrade.
-      if (!['sim_0.26.0', 'sim_0.27.0', 'sim_0.28.0', 'sim_0.29.0', 'sim_0.30.0', 'sim_0.31.0', 'sim_0.32.0', 'sim_0.33.0', 'sim_0.34.0', 'sim_0.35.0'].includes(snapshot.simVersion)
+      if (!['sim_0.26.0', 'sim_0.27.0', 'sim_0.28.0', 'sim_0.29.0', 'sim_0.30.0', 'sim_0.31.0', 'sim_0.32.0', 'sim_0.33.0', 'sim_0.34.0', 'sim_0.35.0', 'sim_0.36.0'].includes(snapshot.simVersion)
         && snapshot.agents.some(agent => agent.wound !== undefined))
         throw new Error('refusing to upgrade: old snapshot contains future wound state');
-      if (!['sim_0.27.0', 'sim_0.28.0', 'sim_0.29.0', 'sim_0.30.0', 'sim_0.31.0', 'sim_0.32.0', 'sim_0.33.0', 'sim_0.34.0', 'sim_0.35.0'].includes(snapshot.simVersion)
+      if (!['sim_0.27.0', 'sim_0.28.0', 'sim_0.29.0', 'sim_0.30.0', 'sim_0.31.0', 'sim_0.32.0', 'sim_0.33.0', 'sim_0.34.0', 'sim_0.35.0', 'sim_0.36.0'].includes(snapshot.simVersion)
         && snapshot.microEcology?.patches.some(patch => patch.fishCohort !== undefined))
         throw new Error('refusing to upgrade: old snapshot contains future fish cohort state');
-      if (!['sim_0.28.0', 'sim_0.29.0', 'sim_0.30.0', 'sim_0.31.0', 'sim_0.32.0', 'sim_0.33.0', 'sim_0.34.0', 'sim_0.35.0'].includes(snapshot.simVersion)
+      if (!['sim_0.28.0', 'sim_0.29.0', 'sim_0.30.0', 'sim_0.31.0', 'sim_0.32.0', 'sim_0.33.0', 'sim_0.34.0', 'sim_0.35.0', 'sim_0.36.0'].includes(snapshot.simVersion)
         && snapshot.patches.some(patch => patch.floweringGuild !== undefined))
         throw new Error('refusing to upgrade: old snapshot contains future flowering guild state');
       if (this.#options.allowV5Upgrade && snapshot.simVersion === 'sim_0.5.0') {
@@ -508,6 +515,9 @@ export class SimHost {
       } else if (this.#options.allowV35Upgrade && snapshot.simVersion === 'sim_0.35.0') {
         upgradedFrom = snapshot.simVersion;
         snapshot = upgradeV35Snapshot(snapshot);
+      } else if (this.#options.allowV36Upgrade && snapshot.simVersion === 'sim_0.36.0') {
+        upgradedFrom = snapshot.simVersion;
+        snapshot = upgradeV36Snapshot(snapshot);
       } else throw new Error(
         `refusing to boot: snapshot ${snapshot.simVersion} predates runtime ${SIM_VERSION}`,
       );

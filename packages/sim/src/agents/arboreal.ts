@@ -4,12 +4,16 @@ import { isMovementTrace, positionInPatch, treeAnchorForPatch, treeAnchorGeometr
 /** Explicit, uncalibrated simulation policy; not a species-specific observed climb speed. */
 export const TREE_VERTICAL_SPEED_MPS = 0.25;
 const CONTACT_EPSILON_M = 1e-6;
+
+/** Checkpoints and callers that predate the species flag (sim_0.37.0 `locomotion.climbsTrees`). */
+const legacyClimber = (speciesId: string): boolean => speciesId === 'langur' || speciesId === 'squirrel';
 const HEIGHT_EPSILON_M = 1e-9;
 
 /** Check persisted vertical fields without creating a climb or changing a living world.
  * Ground-only v0.23 snapshots need no new fields; existing vulture flight remains valid.
  * A depleted canopy may retain an occupied remnant for timed descent. */
-export function validateVerticalCheckpoint(agent: Agent, patch: TreeAnchorPatch | undefined): void {
+export function validateVerticalCheckpoint(agent: Agent, patch: TreeAnchorPatch | undefined,
+  climbs = legacyClimber(agent.speciesId)): void {
   const altitude = agent.altitudeM, mode = agent.locomotionMode, anchorId = agent.treeAnchorId;
   if (altitude === undefined && mode === undefined && anchorId === undefined) return;
   if (altitude !== undefined && (!Number.isFinite(altitude) || altitude < 0 || altitude > 2_000))
@@ -21,7 +25,7 @@ export function validateVerticalCheckpoint(agent: Agent, patch: TreeAnchorPatch 
   }
   if (mode === 'climb') {
     const geometry = treeAnchorGeometry(agent.patchId);
-    if (!geometry || (agent.speciesId !== 'langur' && agent.speciesId !== 'squirrel')
+    if (!geometry || !climbs
       || altitude === undefined || altitude <= 0 || altitude > geometry.climbHeightM
       || anchorId !== geometry.id || !patch || patch.id !== agent.patchId
       || (!treeAnchorForPatch(patch) && !treeAnchorRemnantForPatch(patch))
@@ -49,7 +53,7 @@ export interface VerticalTravel {
  */
 export function advanceTreeVertical(agent: Agent, patch: TreeAnchorPatch,
   direction: 'ascend' | 'descend', goal: GoalId, startWorldTime: number,
-  secondsAvailable: number): VerticalTravel {
+  secondsAvailable: number, climbs = legacyClimber(agent.speciesId)): VerticalTravel {
   if (!Number.isSafeInteger(startWorldTime) || startWorldTime < 0
     || !Number.isFinite(secondsAvailable) || secondsAvailable < 0 || secondsAvailable > 3600)
     throw new Error('invalid tree travel time budget');
@@ -70,7 +74,7 @@ export function advanceTreeVertical(agent: Agent, patch: TreeAnchorPatch,
   const validContact = geometry && position && positionInPatch(position, patch.id)
     && agent.patchId === patch.id
     && Math.hypot(position.x - geometry.x, position.z - geometry.z) <= CONTACT_EPSILON_M;
-  const supported = agent.alive && (agent.speciesId === 'langur' || agent.speciesId === 'squirrel');
+  const supported = agent.alive && climbs;
   const eligible = direction === 'descend' ? current > 0 : treeAnchorForPatch(patch) !== null;
   if (!validContact || !supported || !eligible) return { trace, seconds: 0, distanceM: 0, unreachable: true };
 
