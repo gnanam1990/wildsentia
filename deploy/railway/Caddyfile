@@ -1,0 +1,70 @@
+# Wildsentia web front on Railway. Railway's edge terminates HTTPS for the custom domain and
+# forwards plain HTTP to $PORT; Caddy serves the built observer and proxies the API and /live to the
+# server over Railway's private network ($SERVER_ADDR, e.g. server.railway.internal:8080).
+{
+	admin off
+	auto_https off
+	servers {
+		# Only Railway's edge can reach this service, and it sets X-Forwarded-For; trust it so the
+		# server (VANA_TRUSTED_PROXY_HOPS=2: Caddy and the edge) limits each real visitor.
+		trusted_proxies static 0.0.0.0/0 ::/0
+	}
+}
+
+:{$PORT} {
+  # 3D models are most of a first visit. Geometry compresses well (an animal GLB drops about
+  # 70%, a tree about 40%); Caddy's defaults only cover text types, so name the models too.
+  encode {
+    zstd
+    gzip
+    match {
+      header Content-Type text/*
+      header Content-Type application/json*
+      header Content-Type application/javascript*
+      header Content-Type image/svg+xml*
+      header Content-Type model/gltf-binary*
+      header Content-Type application/octet-stream*
+    }
+  }
+
+  header {
+    X-Content-Type-Options nosniff
+    Referrer-Policy no-referrer
+    X-Frame-Options DENY
+    # HTTPS only from the first visit on. No includeSubDomains: other names on the domain are not ours to decide.
+    Strict-Transport-Security "max-age=31536000"
+    # Directives that cannot break the observer's scripts, workers or WebGL; a script policy needs a browser pass first.
+    Content-Security-Policy "frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'"
+    Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+    -Server
+  }
+
+  # Operator metrics are never public. The server serves them only on its internal metrics port,
+  # which nothing here proxies; this refuses the API spelling too. Caddy sorts handle blocks by
+  # path length, so this one wins over /api/* below, and it matches the decoded path.
+  handle /api/metrics* {
+    respond 404
+  }
+
+  handle_path /api/* {
+    reverse_proxy {$SERVER_ADDR}
+  }
+
+  handle /live {
+    reverse_proxy {$SERVER_ADDR}
+  }
+
+  handle {
+    root * /srv
+    # Build output carries a content hash in its name, so it never changes under that name.
+    @hashed path_regexp ^/assets/[^/]+-[A-Za-z0-9_-]{8}\.(js|css)$
+    header @hashed Cache-Control "public, max-age=31536000, immutable"
+    # Models, textures and pages keep their names across releases: reuse, but revalidate.
+    @models path *.glb *.jpg *.png *.webp
+    header @models Cache-Control "public, max-age=3600, must-revalidate"
+    # Go has no type for .glb; name it so the compression matcher and browsers know it.
+    @glb path *.glb
+    header @glb Content-Type model/gltf-binary
+    file_server
+  }
+}
