@@ -48,12 +48,12 @@ Run it before every commit that is meant to ship. If your shell has no UTF-8 loc
 ```bash
 npm run soak -- --seed 1 --days 1000                         # quick headless run
 VANA_LONG_SOAK=1 npx vitest run soak-long                    # the mainland multi-year gate
-VANA_LONG_SOAK=1 VANA_LONG_SOAK_TERRAIN=island_v2 VANA_LONG_SOAK_DAYS=1080 \
+VANA_LONG_SOAK=1 VANA_LONG_SOAK_TERRAIN=island_v2 VANA_LONG_SOAK_DAYS=1440 \
   VANA_LONG_SOAK_SEEDS=1 VANA_LONG_SOAK_OUTPUT=.ci-artifacts/multi-year \
-  npx vitest run soak-long                                   # one island seed, three years
+  npx vitest run soak-long                                   # one island seed, four years
 ```
 
-Run one process per seed. A three-year `island_v2` seed takes about an hour on a fast machine
+Run one process per seed. A four-year `island_v2` seed takes about 70 minutes on a fast machine
 (`island_v1`, half the land, about half an hour; set `VANA_LONG_SOAK_TERRAIN=island_v1` to gate it). Method and current results:
 [`docs/2026-10-05-multi-year-ecology.md`](../2026-10-05-multi-year-ecology.md).
 

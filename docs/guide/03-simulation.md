@@ -144,6 +144,15 @@ week apart, against about 50 a year at 7–8-day intervals in the field (Karanth
 There is no kill cap anywhere: kill rates emerge from intake, satiety, carcass use and hunt
 success.
 
+## Daily rhythms
+
+Predators keep field hours (`sim_0.37.0`). Dholes hunt by day, with peaks after dawn and before
+dusk and a long midday rest (about three-quarters of their activity is in daylight); tigers and
+leopards are most active at dawn, dusk and through the night, leopards more by day than tigers.
+Outside its active hours a predator rests unless it is desperately hungry. The curves come from
+camera-trap and radio-tracking studies (Andheria et al. 2007; Ramesh et al. 2012; Chatterjee et
+al. 2023). Prey have no daily rhythm yet.
+
 ## Fear
 
 Prey live in a landscape of fear (`sim_0.34.0`). They detect and avoid the predators that hunt
@@ -170,11 +179,11 @@ Long gates run on request (`VANA_LONG_SOAK=1 … npx vitest run soak-long`; see
 the before-and-after numbers and the sources). Current status is in
 [10. Status and what's next](10-status-and-roadmap.md).
 
-**On `sim_0.37.0` the island gate runs on `island_v2`** (`VANA_LONG_SOAK_TERRAIN=island_v2`).
-Seed 1 passes every check. Seeds 2 and 3 pass every check but one: each loses one litter to
-thirst while the mother is away, seven piglets of a starving sow in the dry season and three
-leverets whose mother was kept from them two evenings running by hunting dholes. No species dies
-out, all six people live, tigers kill about 50 a year and breed, leopards breed, the dhole pack
-holds, and the lowest prey count is chital at 30-39% of founding after three years, still
-falling. On `island_v1` (12 km²) the same guild ate the chital down to 5-28% in three years. The
-ecology doc has the traces and what would fix the rest.
+**On `sim_0.37.0` the island gate runs on `island_v2` for four years** (1,440 days,
+`VANA_LONG_SOAK_TERRAIN=island_v2 VANA_LONG_SOAK_DAYS=1440`). Seeds 1, 3 and 4 pass every check.
+Seed 2 fails one: in its third dry season three starving sows foraged far from their nests and
+their piglets died of thirst, and a chital fawn's mother was kept from it by a dhole pack staying
+beside it. No species dies out, no person dies, chital hold at 66-95% of their founding count
+and are steady or growing in the fourth year in three seeds (falling 11% in the fourth), the
+dhole pack holds, tigers kill about 50-60 a year and breed, and leopards breed but end with a
+single animal in two seeds. The ecology doc has the traces and the decisions left to the owner.
