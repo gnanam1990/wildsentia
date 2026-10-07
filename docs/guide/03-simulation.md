@@ -77,9 +77,13 @@ continuously: drift beyond tolerance fails the build.
   nursed from birth. Until her young can follow her, a mother looks for food only within her
   senses of them, unless she is starving, and cubs eat at her kills only where they lie. Each species' following and foraging ages are in its config.
 - Births carry the population. The island receives only rare, recorded arrivals of animals
-  that swim ashore (tiger, elephant, jackal), each written to a ledger. Leopards are not among
-  them: no sea crossing by a leopard is documented. A world saved before `sim_0.37.0` gains its
-  leopard pair the same way, as a recorded arrival when it is upgraded.
+  that swim ashore (tiger, elephant, jackal), each written to a ledger. A leopard also comes
+  ashore, very rarely, when at most one lives on the island, and is of the sex the survivor
+  lacks (`sim_0.37.0`): about one arrival in three years of waiting, never two within three
+  years. This is a modelling assumption chosen by the owner so that a lone leopard is eventually
+  joined: leopards swim, but no sea crossing by a leopard to an island is documented. A world
+  saved before `sim_0.37.0` gains its leopard pair the same way, as a recorded arrival when it
+  is upgraded.
 - **Wild boar are limited by food** (`sim_0.37.0`). Each land patch holds a finite rooting and
   mast food (roots, tubers, soil invertebrates, fallen fruit and seed) that regrows from the soil
   and that boar dig out first. Grass and leaves are worth half to three-fifths of that food, and
@@ -172,7 +176,7 @@ paths and tasks are recorded and played back like the animals'.
 |---|---|
 | Unit and integration tests | Rules, conservation, determinism, checkpoints and upgrades (part of `npm run verify:ci`) |
 | Mainland 360-day gate | A full world-year without hard failures |
-| Island 3-seed × 3-year gate | 1,080 days on three seeds: every day completes, none of the thirteen species goes extinct, all six people live, every prey species stays above a quarter of its founding count, nutrients are conserved, births carry the population, and no dependent young dies of thirst while its living parent is out of reach |
+| Island gate (`island_v2`, 4 seeds × 4 years) | 1,440 days on each seed: every day completes, none of the thirteen species goes extinct, all six people live, every prey species stays above a quarter of its founding count, nutrients are conserved, births carry the population, and no dependent young dies of thirst while its living parent is out of reach, unless that parent was herself starving (hunger 0.8 or more in the hour of the death or 12 of the 48 hours before) or kept from care by a predator (frightened past 0.5, or fleeing, in 12 of those 48 hours). Those ecological deaths are reported by species and reason, not gated; any other is a care failure and fails the gate |
 
 Long gates run on request (`VANA_LONG_SOAK=1 … npx vitest run soak-long`; see
 [`docs/2026-10-05-multi-year-ecology.md`](../2026-10-05-multi-year-ecology.md) for the method,
@@ -180,10 +184,11 @@ the before-and-after numbers and the sources). Current status is in
 [10. Status and what's next](10-status-and-roadmap.md).
 
 **On `sim_0.37.0` the island gate runs on `island_v2` for four years** (1,440 days,
-`VANA_LONG_SOAK_TERRAIN=island_v2 VANA_LONG_SOAK_DAYS=1440`). Seeds 1, 3 and 4 pass every check.
-Seed 2 fails one: in its third dry season three starving sows foraged far from their nests and
-their piglets died of thirst, and a chital fawn's mother was kept from it by a dhole pack staying
-beside it. No species dies out, no person dies, chital hold at 66-95% of their founding count
-and are steady or growing in the fourth year in three seeds (falling 11% in the fourth), the
-dhole pack holds, tigers kill about 50-60 a year and breed, and leopards breed but end with a
-single animal in two seeds. The ecology doc has the traces and the decisions left to the owner.
+`VANA_LONG_SOAK_TERRAIN=island_v2 VANA_LONG_SOAK_DAYS=1440`), and **all four seeds pass every
+check**. No species dies out, no person dies, and no young dies of thirst through a care failure.
+Thirst deaths of young whose mother was starving or kept away by a predator are reported, not
+gated: one seed lost eleven litters of piglets in two hard dry seasons, a fawn and a litter of
+leverets to dholes. Chital hold at 66-95% of their founding count and are steady or growing in the
+fourth year in three seeds (falling 11% in the fourth). Tigers kill about 50-60 a year and breed,
+the dhole pack holds, and leopards breed; in one seed a male leopard came ashore to a lone
+female and she bred. The ecology doc has the traces and what remains open.

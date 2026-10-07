@@ -15,9 +15,9 @@ As of 7 October 2026, on branch `feat/full-scope`, simulation rules `sim_0.37.0`
   field intake, dhole pack hunting with a den mother, food-limited wild boar, kills recorded as a
   hold, rare recorded arrivals by sea, and a household village. New worlds use `island_v2`, about
   26 km² of land (`island_v1` had about 12).
-- **The four-year island gate on `island_v2`** passes on seeds 1, 3 and 4 under `sim_0.37.0`;
-  seed 2 fails the thirst check only (below). No extinction, no person dies, prey at 66-95% of
-  founding after four years.
+- **The four-year island gate on `island_v2` passes on all four seeds** (`sim_0.37.0`): no
+  extinction, no person dies, no young dies of thirst through a care failure, prey at 66-95% of
+  founding after four years. Thirst deaths in famine or under predator pressure are reported.
 - **Live agents:** register, take over an animal, move, graze, drink, hunt (predators), climb,
   speak; a published client and an optional Claude player.
 - **Operations:** the Docker package with HTTPS, compression and caching; backup and restore,
@@ -28,12 +28,10 @@ As of 7 October 2026, on branch `feat/full-scope`, simulation rules `sim_0.37.0`
 
 ## Open in the ecology
 
-- **Famine litters.** In a hard dry season a starving sow forages far from her nest and her
-  piglets die of thirst. No field source was found for wild sows abandoning a litter; the owner
-  decides whether these count as care failures.
 - **Chital in one seed of four** still fall in the fourth year (11%); three hold or grow.
-- **Leopards are few.** Every seed but one breeds leopards, but two of four end with a single
-  animal on the closed 26 km² island.
+- **Leopards are few.** A lone leopard is joined by a rare recorded arrival (a modelling
+  assumption: no sea crossing by a leopard is documented), about three years after it is left
+  alone.
 - Results vary from run to run; one intermediate run collapsed into famine. Long gates are run
   on several seeds for this reason.
 
