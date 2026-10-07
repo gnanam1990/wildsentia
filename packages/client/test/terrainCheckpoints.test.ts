@@ -12,7 +12,9 @@ const bytes = (array: ArrayBufferView) => Buffer.from(array.buffer, array.byteOf
 function sameAsRebuild(root: THREE.Group, source: PatchView[]) {
   const reference = buildTerrain(source);
   expect(root.children.map((c) => c.name).sort()).toEqual(reference.children.map((c) => c.name).sort());
-  for (const item of reference.children as THREE.Mesh[]) {
+  const meshes: THREE.Mesh[] = [];
+  reference.traverse((o) => { if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh); });
+  for (const item of meshes) {
     const actual = root.getObjectByName(item.name) as THREE.Mesh;
     for (const key of Object.keys(item.geometry.attributes)) {
       expect(bytes(actual.geometry.getAttribute(key).array).equals(bytes(item.geometry.getAttribute(key).array)), `${item.name}.${key}`).toBe(true);

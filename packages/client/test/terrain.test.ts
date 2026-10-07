@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { waterAccessPosition, waterContactPosition } from '@vana/shared';
 import { buildTerrain, countDrawCalls, hideFarFieldNear, makeHeightSampler, poolMatrix, type PatchView } from '../src/terrain.js';
+import { insidePool, islandPool } from '../src/pools.js';
 
 const patches: PatchView[] = Array.from({ length: 400 }, (_, id) => ({
   id, x: id % 20, y: Math.floor(id / 20),
@@ -46,14 +47,16 @@ describe('buildTerrain', () => {
       islandSeed: 1, water: 200 };
     const dry = { ...patches[211]!, surface: 'land' as const, islandSeed: 1, water: 0 };
     const terrain = buildTerrain([wet, dry]);
-    const water = terrain.getObjectByName('water') as THREE.InstancedMesh;
-    expect(water.count).toBe(1);
-    const matrix = new THREE.Matrix4(); water.getMatrixAt(0, matrix);
-    const access = waterAccessPosition(wet.id), contact = waterContactPosition('elephant_1', wet.id);
-    expect(matrix.elements[12]).toBeCloseTo(access.x);
-    expect(matrix.elements[14]).toBeCloseTo(access.z);
-    expect(matrix.elements[0]).toBeGreaterThanOrEqual(Math.hypot(contact.x - access.x, contact.z - access.z));
-    expect(matrix.elements[0]).toBeCloseTo(2);
+    const water = terrain.getObjectByName('water')!;
+    expect(water.userData.pools).toBe(1);
+    for (const part of ['water-surface', 'water-bank', 'water-reeds']) expect(water.getObjectByName(part)).toBeTruthy();
+    const pool = islandPool(wet)!, access = waterAccessPosition(wet.id);
+    expect(pool.x).toBeCloseTo(access.x); expect(pool.z).toBeCloseTo(access.z); expect(pool.radius).toBeCloseTo(2);
+    // Every animal's drinking spot is in the water, even at the smallest (2 m) pool.
+    for (const species of ['elephant_1', 'chital_7', 'tiger_3', 'hare_99']) {
+      const contact = waterContactPosition(species, wet.id);
+      expect(insidePool(pool, contact.x, contact.z)).toBe(true);
+    }
   });
 
   it('lays an island pool on a hillside instead of burying its uphill side', () => {

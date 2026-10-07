@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GRID_SIZE, PATCH_METRES, spatialHash } from '@vana/shared';
 import type { HeightSampler, PatchView } from './terrain.js';
 import { RENDER_BUDGETS, type RenderTier } from './renderQuality.js';
-import { islandPool } from './pools.js';
+import { BANK_CLEAR_M, insidePool, islandPool } from './pools.js';
 import { SWAY, wind } from './wind.js';
 import { standDensity } from './forestStructure.js';
 
@@ -74,7 +74,7 @@ function* visitGroundCover(
         if (!patch || patch.surface === 'ocean' || patch.surface === 'coast' || patch.habitat === 'water' || patch.grass <= 0) continue;
         // An island patch's water is its pool, not the whole patch as on the mainland plane.
         const pool = pools.get(patch.id);
-        if (pool ? Math.hypot(x - pool.x, z - pool.z) < pool.radius + 0.4 : patch.water > 20_000) continue;
+        if (pool ? insidePool(pool, x, z, BANK_CLEAR_M(pool)) : patch.water > 20_000) continue;
         const vigour = Math.min(1, patch.grass / (CAPACITY[patch.habitat] ?? 9000));
         // Under a clump of trees the floor is shaded litter; grass crowds into the light gaps.
         // Same stand pattern as the trees (forestStructure.ts); the patch biomass still caps it.
