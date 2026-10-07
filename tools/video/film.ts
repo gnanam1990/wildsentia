@@ -48,6 +48,10 @@ const shots: Shot[] = [
   // The same kill from the other side, close and low, from just before the spring: the grip and the fall.
   { name: 'g-hunt-sambar', seconds: 6.5, hunt: { predator: 'tiger', lead: 1.2, at: 'contact', eventId: 'hunt_000000010000000000020bc8' },
     path: { theta: [3.5, 3.9], phi: [0.2, 0.24], distance: [5.5, 4.5], track: 'predator' } },
+  // A short social clip of one named recorded hunt (VANA_FILM_HUNT_EVENT), side-on to the hunter
+  // from the end of its stalk through the charge to whatever the record says happened next.
+  { name: 'glimpse-hunt', seconds: 13, hunt: { predator: 'tiger', lead: 3.5, at: 'chase', eventId: process.env.VANA_FILM_HUNT_EVENT },
+    path: { theta: 'side', phi: [0.13, 0.16], distance: [6.5, 9.5], track: 'predator' } },
   { name: 'h-boar', species: 'boar', seconds: 5, path: { theta: [5.0, 5.6], phi: [0.18, 0.22], distance: [6.5, 5.5] } },
   { name: 'i-squirrel', species: 'squirrel', seconds: 5, path: { theta: [2.0, 2.6], phi: [0.2, 0.24], distance: [3.2, 2.6] } },
   { name: 'j-sambar', species: 'sambar', seconds: 6, path: { theta: [3.0, 3.6], phi: [0.16, 0.2], distance: [7.5, 6.5] } },

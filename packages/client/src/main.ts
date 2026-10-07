@@ -808,7 +808,11 @@ function frame(): void {
           ...(moment.prey.weight === undefined ? {} : { actWeight: moment.prey.weight }) },
       ], seconds);
       observerSubjects = [observerSubject(encounter.predatorSpecies, points.predator), observerSubject(encounter.preySpecies, points.prey)];
-      const x = (points.predator.x + points.prey.x) / 2; const z = (points.predator.z + points.prey.z) / 2;
+      // Keeping both framed aims between them; without it, the camera stays on the animal whose
+      // replay this is, so a long stalk is not filmed from far off, looking at the grass between.
+      const subject = replay.life.id === encounter.trace.preyId ? points.prey : predatorAt;
+      const x = replayAutoFrame.checked ? (points.predator.x + points.prey.x) / 2 : subject.x;
+      const z = replayAutoFrame.checked ? (points.predator.z + points.prey.z) / 2 : subject.z;
       if (replayAutoFrame.checked) {
         const gap = Math.hypot(points.predator.x - points.prey.x, points.predator.z - points.prey.z);
         const desired = Math.max(12, gap / (2 * Math.tan(camera.fov * Math.PI / 360) * Math.min(1, camera.aspect)) * 1.25 + 8);
