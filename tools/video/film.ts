@@ -57,6 +57,7 @@ const shots: Shot[] = [
     path: { theta: 'side', phi: [0.12, 0.14], distance: [6, 5], track: 'predator' } },
   { name: 'glimpse-chase', seconds: 9, hunt: { predator: 'tiger', lead: 1, at: 'chase', eventId: process.env.VANA_FILM_HUNT_EVENT, subject: 'prey' },
     path: { theta: 'side', phi: [0.13, 0.16], distance: [9, 10], track: 'prey' } },
+  { name: 'l-leopard', species: 'leopard', seconds: 5, path: { theta: [1.6, 2.2], phi: [0.14, 0.18], distance: [5, 4] } },
   { name: 'h-boar', species: 'boar', seconds: 5, path: { theta: [5.0, 5.6], phi: [0.18, 0.22], distance: [6.5, 5.5] } },
   { name: 'i-squirrel', species: 'squirrel', seconds: 5, path: { theta: [2.0, 2.6], phi: [0.2, 0.24], distance: [3.2, 2.6] } },
   { name: 'j-sambar', species: 'sambar', seconds: 6, path: { theta: [3.0, 3.6], phi: [0.16, 0.2], distance: [7.5, 6.5] } },
@@ -224,7 +225,7 @@ for (const shot of shots) {
       const v = (window as any).__vana, g = v.animals.root.getObjectByName(id), f = v.follow;
       return g && Math.hypot(f.target.x - g.position.x, f.target.z - g.position.z) < 1
         && v.camera.position.distanceTo(g.position) < 40;
-    }, animal, { timeout: 120_000, polling: 250 });
+    }, animal, { timeout: 600_000, polling: 250 });
   }
   await startPath(page, shot.path, shot.seconds + 1, pair);
   const stamps: number[] = [];

@@ -16,9 +16,10 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 args = [a for a in sys.argv[1:] if not a.startswith("--")]
 RAW, OUT, specs = Path(args[0]), Path(args[1]), args[2:]
+# "--tag ''" leaves the end tag off (when the last caption already names the place).
 TAG = sys.argv[sys.argv.index("--tag") + 1] if "--tag" in sys.argv else "WILDSENTIA"
-if TAG in specs:
-    specs.remove(TAG)
+if "--tag" in sys.argv:
+    specs = [a for a in specs if a != TAG]
 WORK = OUT.parent / "glimpse-work"
 WORK.mkdir(parents=True, exist_ok=True)
 W, H, FPS, FADE, PUSH = 1920, 1080, 60, 0.5, 1.22
@@ -46,7 +47,10 @@ def overlay(name, draw):
     return path
 
 
-def caption_png(i, text):
+def caption_png(i, text, closing=False):
+    # The closing line is the clip's title: larger, and higher in the frame.
+    if closing:
+        return overlay(f"cap{i}", lambda img: shadowed(img, (W // 2, int(H * 0.8)), text, font(84, BOLD), "ms"))
     return overlay(f"cap{i}", lambda img: shadowed(img, (W // 2, H - 110), text, font(54, DEMI), "ms"))
 
 
@@ -74,11 +78,11 @@ for i, spec in enumerate(specs):
     inputs = ["-f", "concat", "-safe", "0", "-i", str(listing)]
     last = "v"
     if text:
-        inputs += ["-loop", "1", "-i", str(caption_png(i, text))]
+        inputs += ["-loop", "1", "-i", str(caption_png(i, text, closing=i == len(specs) - 1))]
         chain += (f";[1:v]format=rgba,fade=in:st=0.35:d=0.45:alpha=1,fade=out:st={seconds - 0.9:.2f}:d=0.45:alpha=1[t]"
                   f";[v][t]overlay=0:0:shortest=1[c]")
         last = "c"
-    if i == len(specs) - 1:
+    if i == len(specs) - 1 and TAG:
         n = 2 if text else 1
         inputs += ["-loop", "1", "-i", str(tag_png())]
         chain += f";[{n}:v]format=rgba,fade=in:st={seconds - 2.2:.2f}:d=0.6:alpha=1[g];[{last}][g]overlay=0:0:shortest=1[e]"
