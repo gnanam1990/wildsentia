@@ -21,7 +21,7 @@ export interface Pool { x: number; z: number; radius: number; seed?: number }
  * low harmonics of the angle, then a per-pool turn and stretch. The edge stays between 0.8 and
  * 1.2 of the nominal radius, so the 1.5 m drinking spots at a 2 m pool are always in the water.
  */
-const SHORE_HARMONICS: ReadonlyArray<readonly [number, number, number]> = [[2, 0.06, 0.7], [3, 0.045, 2.1], [5, 0.025, 4.0]];
+const SHORE_HARMONICS: ReadonlyArray<readonly [number, number, number]> = [[2, 0.08, 0.7], [3, 0.055, 2.1], [5, 0.03, 4.0]];
 
 function unit(seed: number, salt: number): number {
   let h = Math.imul((seed >>> 0) ^ Math.imul(salt + 1, 0x9e3779b1), 0x85ebca6b);

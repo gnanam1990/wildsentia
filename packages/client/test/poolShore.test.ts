@@ -41,7 +41,7 @@ describe('pool shoreline', () => {
   it('stays between 0.8 and 1.2 of the nominal radius, so drinking spots stay in the water', () => {
     for (let seed = 0; seed < 200; seed++) for (let k = 0; k < 72; k++) {
       const f = shoreFactor(k / 72 * Math.PI * 2, seed);
-      expect(f).toBeGreaterThan(0.85); expect(f).toBeLessThan(1.15);
+      expect(f).toBeGreaterThan(0.8); expect(f).toBeLessThan(1.2);
     }
   });
 });

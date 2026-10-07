@@ -10,7 +10,7 @@ import { fromLocal, poolFrame, shoreFactor, type Pool } from './pools.js';
 type HeightSampler = (x: number, z: number) => number;
 
 const SEGMENTS = 64;
-const DEEP = new THREE.Color(0x1d3a35), SHALLOW = new THREE.Color(0x56694b);
+const DEEP = new THREE.Color(0x1d3a35), SHALLOW = new THREE.Color(0x4a5236);
 const WET_MUD = new THREE.Color(0x3b3024), DRY_MUD = new THREE.Color(0x6c5a40);
 
 /** The pool's water plane: centred, tilted to the slope, turned and stretched to its own frame. */
@@ -43,14 +43,15 @@ function surface(pools: readonly Pool[], groundAt: HeightSampler): THREE.Mesh {
   for (const pool of pools) {
     poolPlane(pool, groundAt, m);
     const base = positions.length / 3;
-    v.set(0, 0, 0).applyMatrix4(m); positions.push(v.x, v.y, v.z); colors.push(DEEP.r, DEEP.g, DEEP.b);
+    v.set(0, 0, 0).applyMatrix4(m); positions.push(v.x, v.y, v.z); colors.push(DEEP.r, DEEP.g, DEEP.b, 0.94);
     for (let k = 0; k < SEGMENTS; k++) {
       const a = k / SEGMENTS * Math.PI * 2, f = shoreFactor(a, pool.seed);
-      // A mid ring carries the deep colour most of the way out; the shallows lighten only near the edge.
-      for (const [t, mix] of [[0.62, 0.15], [1, 1]] as const) {
+      // Deep over the middle; toward the shore the shallows turn muddy and clear, so the bank shows
+      // through and the water meets it without a rim.
+      for (const [t, mix, alpha] of [[0.7, 0.3, 0.9], [1, 1, 0.35]] as const) {
         v.set(Math.cos(a) * f * t, 0, Math.sin(a) * f * t).applyMatrix4(m);
         positions.push(v.x, v.y, v.z);
-        c.copy(DEEP).lerp(SHALLOW, mix); colors.push(c.r, c.g, c.b);
+        c.copy(DEEP).lerp(SHALLOW, mix); colors.push(c.r, c.g, c.b, alpha);
       }
     }
     for (let k = 0; k < SEGMENTS; k++) {
@@ -60,10 +61,10 @@ function surface(pools: readonly Pool[], groundAt: HeightSampler): THREE.Mesh {
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 4));
   geometry.setIndex(index); geometry.computeVertexNormals();
   const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
-    vertexColors: true, roughness: 0.08, metalness: 0.3, transparent: true, opacity: 0.9 }));
+    vertexColors: true, roughness: 0.08, metalness: 0.3, transparent: true, depthWrite: false }));
   mesh.name = 'water-surface'; mesh.renderOrder = 2;
   return mesh;
 }
@@ -102,27 +103,33 @@ function bank(pools: readonly Pool[], groundAt: HeightSampler): THREE.Mesh {
 }
 
 function reeds(pools: readonly Pool[], groundAt: HeightSampler): THREE.InstancedMesh {
-  const counts = pools.map((p) => Math.round(Math.min(48, Math.max(6, p.radius * 1.6))));
-  const mesh = new THREE.InstancedMesh(new THREE.ConeGeometry(0.035, 1, 3).translate(0, 0.5, 0),
-    new THREE.MeshStandardMaterial({ roughness: 1, flatShading: true }), Math.max(1, counts.reduce((a, b) => a + b, 0)));
+  // A few clumps per pool along part of its shore (more round a bigger pool), each a tight
+  // bunch of thin blades: reeds and sedges, not a fence of posts.
+  const clumpsOf = (p: Pool) => Math.round(Math.min(6, Math.max(1, p.radius / 4)));
+  const BLADES = 18;
+  const total = pools.reduce((n, p) => n + clumpsOf(p) * BLADES, 0);
+  const mesh = new THREE.InstancedMesh(new THREE.ConeGeometry(0.012, 1, 3).translate(0, 0.5, 0),
+    new THREE.MeshStandardMaterial({ roughness: 1 }), Math.max(1, total));
   mesh.name = 'water-reeds'; mesh.frustumCulled = false;
-  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), c = new THREE.Color();
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), c = new THREE.Color(), e = new THREE.Euler();
   let i = 0;
   pools.forEach((pool, p) => {
     let seed = ((pool.seed ?? p) * 2654435761) >>> 0;
     const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
-    // Reeds stand in two or three clumps along the shore, not evenly round it.
-    const clumps = 2 + Math.floor(random() * 2), centres = Array.from({ length: clumps }, () => random() * Math.PI * 2);
-    for (let k = 0; k < counts[p]!; k++) {
-      const a = centres[k % clumps]! + (random() - 0.5) * 0.7;
-      const f = shoreFactor(a, pool.seed) * (0.96 + random() * 0.14);
-      const at = fromLocal(pool, Math.cos(a) * f, Math.sin(a) * f);
-      const height = 0.6 + random() * 0.9;
-      q.setFromEuler(new THREE.Euler((random() - 0.5) * 0.25, random() * Math.PI, (random() - 0.5) * 0.25));
-      m.compose(new THREE.Vector3(at.x, groundAt(at.x, at.z), at.z), q, new THREE.Vector3(1, height, 1));
-      mesh.setMatrixAt(i, m);
-      mesh.setColorAt(i, c.setHSL(0.2 + random() * 0.05, 0.35, 0.28 + random() * 0.1));
-      i++;
+    for (let k = 0; k < clumpsOf(pool); k++) {
+      const a = random() * Math.PI * 2, f = shoreFactor(a, pool.seed) * (0.97 + random() * 0.08);
+      const centre = fromLocal(pool, Math.cos(a) * f, Math.sin(a) * f);
+      const tall = 0.5 + random() * 0.5;
+      for (let b = 0; b < BLADES; b++) {
+        const r = Math.sqrt(random()) * 0.35, t = random() * Math.PI * 2;
+        const x = centre.x + Math.cos(t) * r, z = centre.z + Math.sin(t) * r;
+        e.set((random() - 0.5) * 0.45, random() * Math.PI, (random() - 0.5) * 0.45);
+        m.compose(new THREE.Vector3(x, groundAt(x, z) - 0.05, z), q.setFromEuler(e),
+          new THREE.Vector3(1, tall * (0.6 + random() * 0.6), 1));
+        mesh.setMatrixAt(i, m);
+        mesh.setColorAt(i, c.setHSL(0.18 + random() * 0.06, 0.4, 0.16 + random() * 0.08));
+        i++;
+      }
     }
   });
   mesh.count = i;
