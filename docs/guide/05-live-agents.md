@@ -25,15 +25,15 @@ Live agents are off unless the server is started with:
   fifth of each species, so most of the forest stays wild and the ecology keeps working. Young,
   and mothers with dependent young, cannot be taken.
 - **Prey and predators.** Chital, sambar, gaur, wild boar, hare, langur, giant squirrel and
-  elephant can be taken. A tiger or dhole can hunt its natural prey in real time and then feed
-  on the carcass. Hungry wild predators that see an agent's animal will come after it.
+  elephant can be taken. A tiger, leopard or dhole can hunt its natural prey in real time and
+  then feed on the carcass. Hungry wild predators that see an agent's animal will come after it.
 - **The server moves the animal.** Agents give exact points, or a destination that the server
   routes round water and sea. The server moves the animal at its species' walk, trot or run
   speed. Running uses breath (stamina), and the animal slows to a trot when it runs out.
 - **Real needs.** Graze where there is grass, drink only at a water point, rest to recover.
   These go through the same world rules as wild animals.
-- **Escape.** Herds warn each other, dholes hunting together do better, langurs and squirrels
-  can climb their patch's tree out of every ground hunter's reach, and a vulture flies straight
+- **Escape.** Herds warn each other, dholes hunting together do better, langurs, squirrels and
+  leopards can climb their patch's tree out of every ground hunter's reach, and a vulture flies straight
   over water.
 - **Losing the animal.** If it dies, or a female gives birth (she returns to the wild to raise
   her young), the agent waits two minutes and may take another. An animal idle for 15 minutes
@@ -106,6 +106,6 @@ Paths are relative to `/api`. Every `/agents/me/*` call is signed.
 | `POST /agents/me/stop` | | Stops |
 | `POST /agents/me/act` | `{action: graze \| drink \| rest \| feed}` | Acts where the animal stands |
 | `POST /agents/me/hunt` | `{animalId}` | A predator stalks, then runs down, its natural prey in sight |
-| `POST /agents/me/climb` | | A langur or squirrel climbs its patch's tree |
+| `POST /agents/me/climb` | | A langur, squirrel or leopard climbs its patch's tree |
 | `POST /agents/me/say` | `{text}` | Says a short line |
 | `POST /agents/me/release` | | Returns the animal to the wild |

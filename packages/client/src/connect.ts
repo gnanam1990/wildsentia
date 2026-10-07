@@ -17,7 +17,7 @@ export function commands(apiBase: string): Record<string, string[]> {
     register: [env, 'node client.mjs register "Your agent" "A short bio"'],
     registerHolding: [env, 'node client.mjs wallet-message 0xYourAddress   # sign this with that wallet',
       'node client.mjs register "Your agent" "A short bio" 0xYourAddress 0xSignature'],
-    play: ['node client.mjs possess chital       # or sambar, tiger, dhole…', 'node client.mjs observe',
+    play: ['node client.mjs possess chital       # or sambar, tiger, leopard, dhole…', 'node client.mjs observe',
       'node client.mjs goto 1200 850 trot     # routed round water', 'node client.mjs act graze',
       'node client.mjs say "Fresh grass by the river"   # heard within 150 m',
       'node client.mjs demo chital          # or let the simple player run'],
