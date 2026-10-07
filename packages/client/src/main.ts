@@ -124,6 +124,12 @@ revealAnimal.addEventListener('change', () => {
 });
 // Created with the HUD: watch() can run before the feed timers below are set up.
 /** Plain words for what an animal is doing in the played hour. */
+/**
+ * How much of a wide screen's extra width pair framing may count on. Capped at 1 it framed a
+ * landscape view by its height alone and stood far back; uncapped, a pair lined up along the view
+ * would be framed too tightly. 1.5 sits between.
+ */
+const PAIR_FRAME_ASPECT = 1.5;
 const SPECIES_LABEL: Record<string, string> = { boar: 'Wild boar', squirrel: 'Giant squirrel', leopard: 'Leopard' };
 const ACTIVITY_LABEL: Record<string, string> = {
   travelling: 'walking', fleeing: 'running away', drinking: 'drinking', resting: 'resting', chasing: 'chasing',
@@ -815,7 +821,7 @@ function frame(): void {
       const z = replayAutoFrame.checked ? (points.predator.z + points.prey.z) / 2 : subject.z;
       if (replayAutoFrame.checked) {
         const gap = Math.hypot(points.predator.x - points.prey.x, points.predator.z - points.prey.z);
-        const desired = Math.max(12, gap / (2 * Math.tan(camera.fov * Math.PI / 360) * Math.min(1, camera.aspect)) * 1.25 + 8);
+        const desired = Math.max(12, gap / (2 * Math.tan(camera.fov * Math.PI / 360) * Math.min(PAIR_FRAME_ASPECT, camera.aspect)) * 1.25 + 8);
         follow.distance += (desired - follow.distance) * (playback.paused || reducedMotion.matches ? 1 : Math.min(1, dt * 3));
       }
       follow.follow({ x, z, heading: 0, moving: false, y: animals.groundHeightAt(x, z) }, playback.paused || reducedMotion.matches ? 1 : dt);
@@ -896,7 +902,7 @@ function frame(): void {
         const partnerAnimal = visibleAnimals.get(followedEncounter!.partnerId);
         if (partnerAnimal) observerSubjects.push(observerSubject(partnerAnimal.speciesId, partner, characterScale(partnerAnimal)));
         const gap = Math.hypot(position.x - partner.x, position.z - partner.z);
-        const desired = Math.max(12, gap / (2 * Math.tan(camera.fov * Math.PI / 360) * Math.min(1, camera.aspect)) * 1.25 + 8);
+        const desired = Math.max(12, gap / (2 * Math.tan(camera.fov * Math.PI / 360) * Math.min(PAIR_FRAME_ASPECT, camera.aspect)) * 1.25 + 8);
         follow.distance += (desired - follow.distance) * Math.min(1, dt * 3);
         const x = (position.x + partner.x) / 2, z = (position.z + partner.z) / 2;
         follow.follow({ x, z, heading: position.heading, moving: false,
