@@ -23,3 +23,4 @@ export * from './agents/pedigree.js';
 export * from './forest.js';
 export * from './agents/learning.js';
 export { careRadius, locomotionFactor } from './agents/needs.js';
+export { CARE_FEAR_BLOCK } from './agents/family.js';

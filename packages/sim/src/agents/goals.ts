@@ -1,7 +1,7 @@
 import { type Agent, type GoalId, type Rng, type SpeciesConfig } from '@vana/shared';
 import { edibleMass } from '../fields/decomposition.js';
 import { goalsFor } from './archetypes.js';
-import type { Percept } from './perception.js';
+import { HUNGER_DESPERATION, type Percept } from './perception.js';
 import { isCarried, allowsDependentGoal, canDrinkIndependently, canFollowParent, canEatMaternalMeat, canForageIndependently, canHuntIndependently, needsOf, needsProvisioning } from './needs.js';
 
 export interface GoalChoice {
@@ -27,8 +27,6 @@ export function activityAt(species: SpeciesConfig, worldTime: number | undefined
   return hourly[hour] ?? 1;
 }
 
-/** Hunger at which an animal hunts at any hour: the desperation at which need outranks fear. */
-const ACTIVITY_OVERRIDE_HUNGER = 0.8;
 
 /**
  * utility = drive x opportunity, plus bounded noise so identical animals diverge.
@@ -83,7 +81,8 @@ export function selectGoal(
   // (activity.hourly). A dhole pack hunting round a hare's form at 20:00-22:00 two nights running
   // kept the doe from her once-daily evening feed until the leverets died.
   const active = activityAt(species, worldTime);
-  const huntActive = huntHunger >= ACTIVITY_OVERRIDE_HUNGER ? 1 : active;
+  // A starving animal (HUNGER_DESPERATION) hunts at any hour.
+  const huntActive = huntHunger >= HUNGER_DESPERATION ? 1 : active;
 
   const all: Record<GoalId, number> = {
     // Linear in the drive, not squared. Now that eating a ration only offsets a day's hunger,

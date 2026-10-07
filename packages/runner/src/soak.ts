@@ -3,6 +3,7 @@ import { writeFileSync } from 'node:fs';
 import { FOREST_FLOOR, FOREST_LANDSCAPE, FOREST_POPULATION, SIM_VERSION, islandPopulation, careRadius, createWorld, waterBudgetResidual, surfaceWaterL } from '@vana/sim';
 import type { WaterBudget } from '@vana/shared';
 import { recordPopulationPeaks } from './populationMetrics.js';
+import { ParentCareHistory } from './careContext.js';
 import { emptySoakYear, foragePercent, recordYearEvent, sampleYearForage, unreconciledPopulations, type ParentLookup, type SoakYear, type YoungDeprivationRecord } from './yearMetrics.js';
 import { recordHunt, type HuntMetrics } from './huntMetrics.js';
 import { emptyHumanFamilyMetrics, recordHumanFamily, validHumanFamilyMetrics } from './communityMetrics.js';
@@ -103,6 +104,11 @@ export interface SoakResult {
   years: SoakYear[];
   /** Unweaned starvation/dehydration deaths with a living parent (first 500 kept). */
   youngDeprivationWithParent: YoungDeprivationRecord[];
+  /**
+   * sim_0.37.0: dependents dead of thirst beside a living parent out of reach whose deaths were
+   * ecological (careContext.ts), reported and not gated: `species/reason` counts.
+   */
+  ecologicalYoungThirst: Record<string, number>;
   failures: string[];
   /** Balance observations requiring review, separate from hard invariant failures. */
   warnings: string[];
@@ -110,6 +116,24 @@ export interface SoakResult {
 }
 
 const MAX_RECORDED_FAILURES = 40;
+
+/**
+ * The island gate's care check: dependents dead of thirst beside a living parent out of reach whose
+ * deaths were not ecological (or could not be classified). Each one is a care failure.
+ */
+export function gatedYoungThirst(records: readonly YoungDeprivationRecord[]): YoungDeprivationRecord[] {
+  return records.filter(r => r.cause === 'dehydration' && r.contact !== 'near' && !r.ecological);
+}
+
+/** `species/reason` counts of ecological thirst deaths beside a living parent out of reach. */
+export function ecologicalTally(records: readonly YoungDeprivationRecord[]): Record<string, number> {
+  const tally: Record<string, number> = {};
+  for (const r of records) if (r.cause === 'dehydration' && r.contact !== 'near' && r.ecological) {
+    const key = `${r.species}/${r.ecological}`;
+    tally[key] = (tally[key] ?? 0) + 1;
+  }
+  return tally;
+}
 
 /** One authoritative death event contributes to exactly one species/cause/care-state cell. */
 export function recordDeprivationBySpeciesCare(tally: Record<string, number>, event: WorldEvent): void {
@@ -192,7 +216,11 @@ export function runSoak({ seed, days, speciesDir, terrainProfile = 'mainland', c
   let year = emptySoakYear(1, 0);
   for (const speciesId of world.species.keys()) year.populationStart[speciesId] = world.livingCount(speciesId);
   const youngWithParent: YoungDeprivationRecord[] = [];
+  const parentCare = new ParentCareHistory();
+  let starvationRecords = 0;
+  let hourIndex = 0;
   const parents: ParentLookup = {
+    care: (id) => parentCare.summary(id),
     dependentOn: (id) => world.agents.find(agent => agent.id === id)?.dependentOn ?? null,
     locate: (id) => {
       const parent = world.agents.find(agent => agent.id === id);
@@ -204,7 +232,10 @@ export function runSoak({ seed, days, speciesDir, terrainProfile = 'mainland', c
   const tally = (): void => {
     for (const event of world.log.take()) {
       const withParent = recordYearEvent(year, event, parents);
-      if (withParent && youngWithParent.length < 500) youngWithParent.push(withParent);
+      // Every thirst record is kept: the gate reads them. Before sim_0.37.0 all with-parent records
+      // shared one cap of 500, which piglet starvation alone filled within three years, so a later
+      // thirst death would have gone unseen by the gate. Starvation records stay capped.
+      if (withParent && (withParent.cause === 'dehydration' || starvationRecords++ < 500)) youngWithParent.push(withParent);
       recordHumanFamily(humanFamily, event);
       recordIllnessEvent(diseaseEvents, event);
       recordWoundEvent(woundEvents, event);
@@ -320,7 +351,7 @@ export function runSoak({ seed, days, speciesDir, terrainProfile = 'mainland', c
 
   for (let day = 0; day < days; day++) {
     for (let hour = 0; hour < 24; hour++) {
-      world.step(1); tally(); samplePeaks();
+      world.step(1); parentCare.sample(world.agents, hourIndex++); tally(); samplePeaks();
       if (failures.length < MAX_RECORDED_FAILURES) {
         const invalid = world.agents.find(a => a.alive && !positionInPatch(a.position, a.patchId));
         if (invalid) failures.push(`day ${day} hour ${hour}: ${invalid.id} position/patch disagreement`);
@@ -493,6 +524,7 @@ export function runSoak({ seed, days, speciesDir, terrainProfile = 'mainland', c
     yearDays,
     years,
     youngDeprivationWithParent: youngWithParent,
+    ecologicalYoungThirst: ecologicalTally(youngWithParent),
     failures,
     warnings,
     wallClockMs: Date.now() - started,

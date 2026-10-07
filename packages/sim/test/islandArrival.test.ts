@@ -98,3 +98,51 @@ describe('rare recorded island arrivals (sim_0.33.0)', () => {
     expect(() => upgradeV32Snapshot(upgraded)).toThrow(/only sim_0.32.0/);
   });
 });
+
+describe('rare recorded leopard arrivals (sim_0.37.0)', () => {
+  it('are configured rare: a lone leopard waits about three years, never twice in three', () => {
+    const world = createWorld(island({ leopard: 1 }));
+    expect(world.species.get('leopard')!.islandArrival).toEqual({ whenLivingAtMost: 1, dailyProbability: 1 / 1095,
+      minDaysBetween: 1095, preferMissingSex: true });
+  });
+
+  /** Test-only: certain each eligible day, keeping the leopard's sex rule. */
+  const certainLeopard = (world: World) => {
+    world.species.get('leopard')!.islandArrival = { whenLivingAtMost: 1, dailyProbability: 1, minDaysBetween: 1095, preferMissingSex: true };
+  };
+
+  it('brings a lone leopard a mate of the other sex, ashore and ledgered, and nothing while two live', () => {
+    for (const sex of ['female', 'male'] as const) {
+      const world = createWorld(island({ leopard: 1 }, 5));
+      world.agents.find(a => a.speciesId === 'leopard')!.sex = sex;
+      certainLeopard(world);
+      const nutrients = world.totalNutrients();
+      days(world, 1);
+      const [event] = arrivals(world);
+      expect(arrivals(world)).toHaveLength(1);
+      expect(event).toMatchObject({ confidence: 'authoritative',
+        conditions: { species: 'leopard', route: 'island_crossing', trigger: 'small_population', livingBefore: 1, sexRule: 'missing_sex' } });
+      const arrived = world.agents.find(a => a.id === event!.actors[0])!;
+      expect(arrived.sex).toBe(sex === 'female' ? 'male' : 'female');
+      expect(arrived.massKg).toBe(world.species.get('leopard')!.body.massBySexKg![arrived.sex]);
+      expect(positionInPatch(event!.position, event!.patchId)).toBe(true);
+      expect(world.ledger.imported).toBeCloseTo(arrived.massKg * NUTRIENT_PER_KG_BIOMASS, 9);
+      expect(world.totalNutrients()).toBeCloseTo(nutrients, 6);
+      // Two leopards now live: no further crossing, however certain the draw.
+      days(world, 3);
+      expect(arrivals(world)).toHaveLength(1);
+    }
+  });
+
+  it('is deterministic: the same seed brings the same leopard ashore on the same day', () => {
+    const run = () => {
+      const world = createWorld(island({ leopard: 1 }, 9));
+      certainLeopard(world);
+      days(world, 2);
+      return arrivals(world);
+    };
+    const [a, b] = [run(), run()];
+    expect(a).toHaveLength(1);
+    expect(a).toEqual(b);
+  });
+});

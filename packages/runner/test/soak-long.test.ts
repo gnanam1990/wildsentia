@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { NUTRIENT_PER_KG_BIOMASS, isIslandProfile, type CommunityProfile, type TerrainProfile } from '@vana/shared';
 import { islandPopulation, loadSpeciesDir } from '@vana/sim';
-import { SOAK_FLOOR, SOAK_POPULATION, runSoak, type SoakResult } from '../src/soak.js';
+import { SOAK_FLOOR, SOAK_POPULATION, gatedYoungThirst, runSoak, type SoakResult } from '../src/soak.js';
 
 const speciesDir = fileURLToPath(new URL('../../../config/species', import.meta.url));
 
@@ -104,10 +104,12 @@ describe.skipIf(env.VANA_LONG_SOAK !== '1')(`long soak gate (${TERRAIN}, ${DAYS}
   // A dependent may starve with its mother in a famine, or die when she is killed. What it
   // should not do is die of thirst while a living, watered parent is out of reach (the care
   // failure sim_0.32.0 removed). Starvation with a living parent is reported, not gated.
-  it.skipIf(!ISLAND)('loses no dependent young to thirst while its parent is alive but out of reach', () => {
+  // sim_0.37.0 (owner's decision): so is a thirst death whose parent was herself starving, or kept
+  // from care by a predator, over the hours before it (careContext.ts). Those are listed in
+  // `ecologicalYoungThirst`; every other one is a care failure and fails here.
+  it.skipIf(!ISLAND)('loses no dependent young to thirst while its fed, unthreatened parent is alive but out of reach', () => {
     for (const result of results) {
-      const remote = result.youngDeprivationWithParent
-        .filter(record => record.cause === 'dehydration' && record.contact !== 'near');
+      const remote = gatedYoungThirst(result.youngDeprivationWithParent);
       expect(remote.map(r => `${r.species}/${r.cause} ${r.childId} at ${r.parentDistanceM?.toFixed(0)} m`),
         `seed ${result.seed}`).toEqual([]);
     }

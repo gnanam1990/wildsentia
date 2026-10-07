@@ -100,6 +100,7 @@ export const SpeciesConfigSchema = z
       whenLivingAtMost: z.number().int().nonnegative(),
       dailyProbability: z.number().gt(0).max(1),
       minDaysBetween: z.number().finite().nonnegative(),
+      preferMissingSex: z.boolean().optional(),
     }).optional(),
     activity: z.object({
       hourly: z.array(z.number().min(0).max(1)).length(24)

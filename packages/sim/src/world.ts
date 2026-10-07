@@ -561,7 +561,8 @@ export class World {
 
   /**
    * sim_0.33.0: rare arrivals onto the closed island, for species configured with
-   * `islandArrival` (tiger, elephant and jackal swim channels; see the ecology doc). Once per
+   * `islandArrival` (tiger, elephant and jackal swim channels; sim_0.37.0 leopards, a modelling
+   * assumption with no documented crossing; see the ecology doc). Once per
    * world day, and only while no more than `whenLivingAtMost` of the species live here and the
    * last arrival is at least `minDaysBetween` old, a draw derived from the seed, species and day
    * (not the world's random stream, which an arrival never perturbs unless one happens) admits
@@ -594,9 +595,13 @@ export class World {
       if (!shore.length) return;
       const patchId = shore[spatialHash(`island-arrival-shore:${this.#options.seed}:${speciesId}:${day}`) % shore.length]!;
       this.islandArrivals[speciesId] = at;
+      // sim_0.37.0: a species whose survivors are all of one sex receives the other (leopards).
+      const sexes = new Set(this.agents.filter(a => a.alive && a.speciesId === speciesId).map(a => a.sex));
+      const missing = policy.preferMissingSex && sexes.size === 1 ? (sexes.has('male') ? 'female' : 'male') : undefined;
       this.#spawn(speciesId, true, false, { patchId, at, conditions: {
         route: 'island_crossing', trigger: living === 0 ? 'locally_extinct' : 'small_population',
-        livingBefore: living, whenLivingAtMost: policy.whenLivingAtMost, dailyProbability: policy.dailyProbability, draw } });
+        livingBefore: living, whenLivingAtMost: policy.whenLivingAtMost, dailyProbability: policy.dailyProbability, draw,
+        ...(missing ? { sexRule: 'missing_sex' } : {}) } }, missing);
     }
   }
 
@@ -1324,7 +1329,7 @@ export class World {
           const collection = beginPackCollection(agent, packRecipient, percept.carrion.carcass, cfg,
             this.patches, this.#time, hours, this.log);
           if (collection) { packCollections.push(collection); continue; }
-        } else if (percept.prey.length && (activityAt(cfg, this.#time) >= 0.5 || agent.drives.hunger >= 0.8)) {
+        } else if (percept.prey.length && (activityAt(cfg, this.#time) >= 0.5 || agent.drives.hunger >= HUNGER_DESPERATION)) {
           // Pack demand can motivate a real hunt; no bonus success or newborn hunting ability.
           // sim_0.37.0: only in the pack's active hours, as any hunt.
           executeGoal({ agent, species: cfg, patches: this.patches, view, percept,

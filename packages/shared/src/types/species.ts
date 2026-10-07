@@ -151,11 +151,22 @@ export interface SpeciesConfig {
    * while no more than `whenLivingAtMost` of the species live on the island, at most once per
    * `minDaysBetween`, and then with `dailyProbability` from a seed-derived draw. The arriving
    * animal's body is recorded as imported in the nutrient ledger. Ignored on the mainland.
+   *
+   * sim_0.37.0: the leopard's crossing is a modelling assumption, not a field fact. Leopards swim,
+   * but no sea crossing to an island is documented; the owner chose rare arrivals so a lone leopard
+   * is eventually joined. Its rate (a daily chance of 1 in 1,095 while at most one leopard lives, and
+   * never twice within three years) is about a sixth of the tiger's: at most three arrivals a decade.
    */
   islandArrival?: {
     whenLivingAtMost: number;
     dailyProbability: number;
     minDaysBetween: number;
+    /**
+     * sim_0.37.0: when every living animal of the species is of one sex, the arrival is of the
+     * other (a modelling choice, so a lone survivor can be joined by a mate). Otherwise either sex,
+     * from the arrival's own draw.
+     */
+    preferMissingSex?: boolean;
   };
   /**
    * sim_0.37.0 daily activity cycle: relative activity for each hour of the day (index 0 is
