@@ -3,7 +3,8 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { networkKey } from '../network.js';
 import { createDraft, DEADLINE_DAYS, draftTypedData, formatUsdc, relayDraft, type DraftConfig } from './drafts.js';
 import type { Attempt, Challenge, ChallengeStore } from './store.js';
-import { describeTerms, ESCAPE_COUNTS, SURVIVE_DAYS, type SpeciesCatalog } from './terms.js';
+import { BRIEFING_MAX_CHARS, COUNTS, describeTerms, HERD_DISTANCE_M, MAX_RULES, REACH_MIN_START_M, REACH_WITHIN_M, SURVIVE_DAYS,
+  ZONE_RADIUS_M, type SpeciesCatalog } from './terms.js';
 
 /**
  * Public challenge pages, the attempt logs anyone can check against the on-chain result hash,
@@ -61,7 +62,10 @@ export function installChallenges(app: FastifyInstance, deps: ChallengeRouteDeps
     chainId: deps.drafts.chainId, contract: deps.drafts.contract, usdc: deps.drafts.usdc, explorerUrl: deps.explorerUrl,
     prizeUsdc: { min: formatUsdc(deps.drafts.minPrizeAtomic), max: formatUsdc(deps.drafts.maxPrizeAtomic) },
     deadlineDays: DEADLINE_DAYS,
-    templates: { survive: { days: SURVIVE_DAYS }, hunt: {}, escape: { count: ESCAPE_COUNTS } },
+    templates: { survive: { days: SURVIVE_DAYS }, hunt: { count: COUNTS }, escape: { count: COUNTS },
+      reach: { withinM: REACH_WITHIN_M, minStartM: REACH_MIN_START_M } },
+    rules: { max: MAX_RULES, zone: { radiusM: ZONE_RADIUS_M }, noRun: {}, herd: { maxDistanceM: HERD_DISTANCE_M } },
+    briefingMaxChars: BRIEFING_MAX_CHARS,
   }));
 
   app.get('/challenges', async () => ({ challenges: (await store.listChallenges(100)).map(view) }));

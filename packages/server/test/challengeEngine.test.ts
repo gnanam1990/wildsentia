@@ -71,7 +71,7 @@ maybe('challenge engine', () => {
   const wildChital = () => world.agents.find((a) => a.alive && a.speciesId === 'chital' && !a.controller && a.lifeStage === 'adult')!;
 
   it('refuses players who cannot take part', async () => {
-    const id = await challenge({ template: 'hunt', version: 1, speciesId: 'tiger' });
+    const id = await challenge({ template: 'hunt', version: 1, speciesId: 'tiger', count: 1, rules: [], briefing: '' });
     expect(await engine.accept(player('ag_000000000000000a', { walletProven: false }), id)).toMatchObject({ ok: false, error: 'payout_wallet_required' });
     expect(await engine.accept(player('ag_000000000000000a', { wallet: CREATOR }), id)).toMatchObject({ ok: false, error: 'creator_cannot_play' });
     expect(await engine.accept(player('ag_000000000000000a'), 999)).toMatchObject({ ok: false, status: 404, error: 'not_found' });
@@ -79,7 +79,7 @@ maybe('challenge engine', () => {
     await store.recordCreated(CONTRACT, { id: 50, creator: CREATOR, prizeAtomic: '10000000', deadline: (T0 + 86_400_000) / 1000,
       rulesHash: hex('9'), authNonce: hex('0'), txHash: hex('9'), blockNumber: 50 }, { challenge: '0x' + 'e'.repeat(40), ours: '0x' + 'e'.repeat(40) });
     expect(await engine.accept(player('ag_000000000000000a'), 50)).toMatchObject({ ok: false, error: 'not_open' });
-    const late = await challenge({ template: 'hunt', version: 1, speciesId: 'tiger' }, T0 - 1);
+    const late = await challenge({ template: 'hunt', version: 1, speciesId: 'tiger', count: 1, rules: [], briefing: '' }, T0 - 1);
     expect(await engine.accept(player('ag_000000000000000a'), late)).toMatchObject({ ok: false, error: 'deadline_passed' });
     live.possess('ag_000000000000000a', 'a', { speciesId: 'chital' });
     expect(await engine.accept(player('ag_000000000000000a'), id)).toMatchObject({ ok: false, error: 'release_your_animal_first' });
@@ -90,7 +90,7 @@ maybe('challenge engine', () => {
   });
 
   it('pays the first kill: the attempt is met with a verifiable record and the payout is queued', async () => {
-    const id = await challenge({ template: 'hunt', version: 1, speciesId: 'tiger' });
+    const id = await challenge({ template: 'hunt', version: 1, speciesId: 'tiger', count: 1, rules: [], briefing: '' });
     const accepted = await engine.accept(player('ag_000000000000000a'), id);
     if (!accepted.ok) throw new Error(accepted.error);
     expect(engine.progressOf('ag_000000000000000a')).toMatchObject({ challengeId: id, progress: { done: 0, of: 1, unit: 'kills' } });
@@ -112,7 +112,7 @@ maybe('challenge engine', () => {
 
   it('counts an escape for prey a hunter failed to catch', async () => {
     random = 0.999; // every catch fails
-    const id = await challenge({ template: 'escape', version: 1, speciesId: 'chital', count: 1 });
+    const id = await challenge({ template: 'escape', version: 1, speciesId: 'chital', count: 1, rules: [], briefing: '' });
     const accepted = await engine.accept(player('ag_000000000000000a'), id);
     if (!accepted.ok) throw new Error(accepted.error);
     const tiger = world.agents.find((a) => a.alive && a.speciesId === 'tiger' && !a.controller)!;
@@ -124,7 +124,7 @@ maybe('challenge engine', () => {
   });
 
   it('fails an attempt whose animal is caught, and voids one that gives birth', async () => {
-    const id = await challenge({ template: 'escape', version: 1, speciesId: 'chital', count: 3 });
+    const id = await challenge({ template: 'escape', version: 1, speciesId: 'chital', count: 3, rules: [], briefing: '' });
     const accepted = await engine.accept(player('ag_000000000000000a'), id);
     if (!accepted.ok) throw new Error(accepted.error);
     const tiger = world.agents.find((a) => a.alive && a.speciesId === 'tiger' && !a.controller)!;
@@ -144,7 +144,7 @@ maybe('challenge engine', () => {
   });
 
   it('meets a survive goal after the forest days pass, and fails at the deadline otherwise', async () => {
-    const id = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 1 });
+    const id = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 1, rules: [], briefing: '' });
     const a = await engine.accept(player('ag_000000000000000a'), id);
     if (!a.ok) throw new Error(a.error);
     worldNow += WORLD_DAY_SECONDS - 3600;
@@ -154,7 +154,7 @@ maybe('challenge engine', () => {
     await run(1);
     expect((await store.attempt(a.attemptId))!.status).toBe('met');
 
-    const other = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 7 }, T0 + 60_000);
+    const other = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 7, rules: [], briefing: '' }, T0 + 60_000);
     const b = await engine.accept(player('ag_000000000000000b'), other);
     if (!b.ok) throw new Error(b.error);
     now = T0 + 60_000;
@@ -163,7 +163,7 @@ maybe('challenge engine', () => {
   });
 
   it('refunds an unwon challenge after deadline and grace, ending its attempts', async () => {
-    const id = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 7 }, T0 + 60_000);
+    const id = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 7, rules: [], briefing: '' }, T0 + 60_000);
     const a = await engine.accept(player('ag_000000000000000a'), id);
     if (!a.ok) throw new Error(a.error);
     now = T0 + 60_000 + (GRACE_SECONDS + REFUND_MARGIN_SECONDS) * 1000;
@@ -179,7 +179,7 @@ maybe('challenge engine', () => {
   });
 
   it('picks running attempts up after a restart, and voids one whose animal was lost', async () => {
-    const id = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 3 });
+    const id = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 3, rules: [], briefing: '' });
     const a = await engine.accept(player('ag_000000000000000a'), id);
     const b = await engine.accept(player('ag_000000000000000b'), id);
     if (!a.ok || !b.ok) throw new Error('accept failed');
@@ -192,14 +192,14 @@ maybe('challenge engine', () => {
   });
 
   it('refuses to accept before it has started', async () => {
-    const id = await challenge({ template: 'hunt', version: 1, speciesId: 'tiger' });
+    const id = await challenge({ template: 'hunt', version: 1, speciesId: 'tiger', count: 1, rules: [], briefing: '' });
     const cold = new ChallengeEngine(store, live, { ...worldPort(() => world, () => 'w'), now: () => worldNow }, () => now);
     expect(await cold.accept(player('ag_000000000000000a'), id)).toMatchObject({ ok: false, status: 503, error: 'challenges_starting' });
     expect(live.avatars.size).toBe(0);
   });
 
   it('cannot win a survive goal after the animal was let go while the attempt was being saved', async () => {
-    const id = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 1 });
+    const id = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 1, rules: [], briefing: '' });
     const save = store.startAttempt.bind(store);
     store.startAttempt = async (a) => { const saved = await save(a); live.release(a.agentId); return saved; };
     const result = await engine.accept(player('ag_000000000000000a'), id);
@@ -213,7 +213,7 @@ maybe('challenge engine', () => {
   });
 
   it('fails an attempt whose animal is no longer the player\'s, even if no hook said so', async () => {
-    const id = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 1 });
+    const id = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 1, rules: [], briefing: '' });
     const a = await engine.accept(player('ag_000000000000000a'), id);
     if (!a.ok) throw new Error(a.error);
     live.avatars.delete('ag_000000000000000a'); // a missed onEnded
@@ -224,7 +224,7 @@ maybe('challenge engine', () => {
   });
 
   it('counts only kills made by the attempt\'s own animal', async () => {
-    const id = await challenge({ template: 'hunt', version: 1, speciesId: 'tiger' });
+    const id = await challenge({ template: 'hunt', version: 1, speciesId: 'tiger', count: 1, rules: [], briefing: '' });
     const a = await engine.accept(player('ag_000000000000000a'), id);
     if (!a.ok) throw new Error(a.error);
     engine.onHunt({ predatorId: 'tiger_other', preyId: 'chital_x', predatorAgentId: 'ag_000000000000000a', preyAgentId: null, killed: true, at: now });
@@ -233,7 +233,7 @@ maybe('challenge engine', () => {
   });
 
   it('keeps a win it failed to write, and records it on the next tick', async () => {
-    const id = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 1 });
+    const id = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 1, rules: [], briefing: '' });
     const a = await engine.accept(player('ag_000000000000000a'), id);
     if (!a.ok) throw new Error(a.error);
     const win = store.win.bind(store);

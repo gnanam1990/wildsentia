@@ -18,7 +18,7 @@ type Hex = `0x${string}`;
 const CONTRACT = '0x' + 'c'.repeat(40) as Hex, CREATOR = '0x' + 'a'.repeat(40), WINNER = '0x' + 'b'.repeat(40) as Hex;
 const EVALUATOR = '0x' + 'e'.repeat(40);
 const hex = (c: string) => `0x${c.repeat(64)}` as Hex;
-const terms: ChallengeTerms = { template: 'hunt', version: 1, speciesId: 'tiger' };
+const terms: ChallengeTerms = { template: 'hunt', version: 1, speciesId: 'tiger', count: 1, rules: [], briefing: '' };
 const GWEI = 1_000_000_000n;
 
 /** An in-memory contract with switchable failures, standing in for the chain client. */

@@ -18,11 +18,16 @@ const ADDRESS_OR_KEY = /(?:0x[0-9a-f]{16,}|[A-Za-z0-9_\-+/=]{32,})/i;
 export type ChatResult = { ok: true; text: string } | { ok: false; error: 'bad_text' | 'no_links' | 'no_addresses_or_keys' };
 
 export function cleanChat(raw: unknown): ChatResult {
+  return cleanText(raw, CHAT_MAX_CHARS);
+}
+
+/** The same cleaning for any short public text (a challenge's briefing too), up to `max` characters. */
+export function cleanText(raw: unknown, max: number): ChatResult {
   if (typeof raw !== 'string') return { ok: false, error: 'bad_text' };
   // Compatibility forms folded (full-width letters and the like), then every control, format
   // (zero-width, bidi override) and unassigned character dropped, and runs of space collapsed.
   const text = raw.normalize('NFKC').replace(/[\p{C}]/gu, ' ').replace(/\s+/g, ' ').trim();
-  if (text.length === 0 || [...text].length > CHAT_MAX_CHARS) return { ok: false, error: 'bad_text' };
+  if (text.length === 0 || [...text].length > max) return { ok: false, error: 'bad_text' };
   if (LINK.test(text)) return { ok: false, error: 'no_links' };
   if (ADDRESS_OR_KEY.test(text)) return { ok: false, error: 'no_addresses_or_keys' };
   return { ok: true, text };

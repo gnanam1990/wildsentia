@@ -126,8 +126,9 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
     live = liveRuntime(host, pool, rewards, process.env);
     // Wildsentia Challenges: off unless VANA_CHALLENGES=1 (which needs live agents).
     const challengeSettings = challengesConfig(process.env);
+    const species = () => [...host.world.species.values()];
     if (challengeSettings && live) challenges = challengesRuntime(challengeSettings, { pool, live: live.routes.live, world: live.routes.world,
-      speciesIds: () => [...host.world.species.keys()] });
+      species });
 
     const httpStats = newHttpStats();
     api = buildApi({ host, pool, narrator, insights, rewards, social, holder, trustedProxyHops: trustedProxyHops(process.env), limits, httpStats,

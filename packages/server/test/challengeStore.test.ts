@@ -13,7 +13,7 @@ afterAll(async () => { await pool?.end(); });
 const EVALUATOR = '0x' + 'e'.repeat(40), OURS = { challenge: EVALUATOR, ours: EVALUATOR };
 const CONTRACT = '0x' + 'c'.repeat(40), CREATOR = '0x' + 'a'.repeat(40), WINNER = '0x' + 'b'.repeat(40);
 const hex = (c: string) => `0x${c.repeat(64)}` as `0x${string}`;
-const terms: ChallengeTerms = { template: 'hunt', version: 1, speciesId: 'tiger' };
+const terms: ChallengeTerms = { template: 'hunt', version: 1, speciesId: 'tiger', count: 1, rules: [], briefing: '' };
 
 maybe('challenge store', () => {
   let store: ChallengeStore;

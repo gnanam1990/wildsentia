@@ -1,4 +1,5 @@
 import { getAddress, isAddress, type Hex } from 'viem';
+import type { SpeciesConfig } from '@vana/shared';
 import type { Pool } from '../db/pool.js';
 import type { LiveLayer, WorldPort } from '../live/liveLayer.js';
 import { viemChallengeChain, type ChallengeChain } from './chain.js';
@@ -64,14 +65,19 @@ export interface ChallengesRuntime {
   stop(): void;
 }
 
-export function challengesRuntime(config: ChallengesConfig, deps: { pool: Pool; live: LiveLayer; world: WorldPort; speciesIds: () => string[] },
+export function challengesRuntime(config: ChallengesConfig,
+  deps: { pool: Pool; live: LiveLayer; world: WorldPort; species: () => readonly SpeciesConfig[] },
   chain: ChallengeChain = viemChallengeChain(config)): ChallengesRuntime {
   const store = new ChallengeStore(deps.pool);
   const engine = new ChallengeEngine(store, deps.live, deps.world);
   const ops = new ChainOps(store, chain);
   const indexer = new ChallengeIndexer(store, chain, config.fromBlock);
-  const catalog: SpeciesCatalog = { ids: deps.speciesIds, preyOf: (id) => deps.world.species(id)?.preferredPrey ?? [],
-    displayName: (id) => deps.world.species(id)?.displayName ?? id };
+  const configOf = (id: string) => deps.species().find((s) => s.id === id);
+  const catalog: SpeciesCatalog = { ids: () => deps.species().map((s) => s.id), preyOf: (id) => deps.world.species(id)?.preferredPrey ?? [],
+    displayName: (id) => deps.world.species(id)?.displayName ?? id,
+    // Herds, packs, families and troops: the herd rule can be set for these.
+    social: (id) => ['herd', 'pack', 'family', 'troop'].includes(configOf(id)?.social.structure ?? 'solitary'),
+    onLand: (x, z) => deps.world.patchAt(x, z)?.land === true };
   // Limits come from the contract when it starts; until then nothing can be drafted.
   const drafts = { chainId: config.chainId, contract: config.contract, usdc: config.usdc, usdcDomain: config.usdcDomain,
     minPrizeAtomic: 1n, maxPrizeAtomic: 0n };

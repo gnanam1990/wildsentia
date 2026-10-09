@@ -74,7 +74,8 @@ maybe('challenge routes', () => {
 
   it('publishes the contract, limits and templates', async () => {
     expect((await app.inject('/challenges/info')).json()).toMatchObject({ chainId: 5042002, contract: drafts.contract,
-      prizeUsdc: { min: '1', max: '100' }, explorerUrl: 'https://explorer.testnet.arc.io', templates: { survive: { days: [1, 3, 7] } } });
+      prizeUsdc: { min: '1', max: '100' }, explorerUrl: 'https://explorer.testnet.arc.io', templates: { survive: { days: [1, 3, 7, 14] }, hunt: { count: [1, 2, 3, 4, 5] }, reach: { withinM: 25, minStartM: 1000 } },
+      rules: { max: 3, zone: { radiusM: { min: 200, max: 3000 } }, herd: { maxDistanceM: { min: 30, max: 200 } } }, briefingMaxChars: 280 });
   });
 
   it('drafts only for the operator, and returns the typed data to sign', async () => {
@@ -84,7 +85,7 @@ maybe('challenge routes', () => {
     expect((await draft({ ...body, prizeUsdc: '500' })).json()).toEqual({ error: 'bad_prize' });
     expect((await draft({ ...body, terms: { template: 'hunt', speciesId: 'chital' } })).json()).toEqual({ error: 'not_a_hunter' });
     const made = (await draft(body)).json();
-    expect(made).toMatchObject({ description: 'Make a kill as a tiger', rulesHash: rulesHash({ template: 'hunt', version: 1, speciesId: 'tiger' }),
+    expect(made).toMatchObject({ description: 'Make a kill as a tiger', rulesHash: rulesHash({ template: 'hunt', version: 1, speciesId: 'tiger', count: 1, rules: [], briefing: '' }),
       typedData: { primaryType: 'ReceiveWithAuthorization', domain: { name: 'USDC', version: '2', chainId: 5042002 },
         message: { from: creator.address, to: drafts.contract, value: '12500000', validAfter: '0' } } });
 
@@ -102,7 +103,7 @@ maybe('challenge routes', () => {
   });
 
   it('shows a challenge, its attempts with names, and an attempt log; hides unrecognised ones', async () => {
-    const terms = { template: 'hunt', version: 1, speciesId: 'tiger' } as const;
+    const terms = { template: 'hunt', version: 1, speciesId: 'tiger', count: 1, rules: [], briefing: '' } as const;
     await store.insertDraft({ creatorWallet: '0x' + 'a'.repeat(40), terms, rulesHash: rulesHash(terms), prizeAtomic: '10000000',
       deadline: new Date('2026-10-20T00:00:00Z'), salt: `0x${'1'.repeat(64)}`, authNonce: `0x${'2'.repeat(64)}` });
     await store.recordCreated(drafts.contract, { id: 1, creator: '0x' + 'a'.repeat(40), prizeAtomic: '10000000', deadline: 1_792_454_400,
@@ -145,7 +146,7 @@ maybe('agent challenge route', () => {
     const port = worldPort(() => world, () => 'w1');
     const agents = new AgentStore(pool!);
     const accept = vi.fn(async () => ({ ok: true as const, attemptId: 'att-1', animalId: 'chital_1' }));
-    const progressOf = vi.fn(() => ({ challengeId: 7, attemptId: 'att-1', goal: { template: 'hunt' as const, version: 1 as const, speciesId: 'tiger' },
+    const progressOf = vi.fn(() => ({ challengeId: 7, attemptId: 'att-1', goal: { template: 'hunt' as const, version: 1 as const, speciesId: 'tiger', count: 1, rules: [], briefing: '' },
       progress: { done: 0, of: 1, unit: 'kills' }, deadline: '2026-10-20T00:00:00.000Z' }));
     const app = Fastify();
     installLiveAgents(app, { live: new LiveLayer(port), world: port, store: agents, ledger: null, limits: { slots: 5, perNetworkPerDay: 5 },
@@ -177,7 +178,7 @@ maybe('challenges runtime', () => {
     await pool!.query('truncate challenge_attempt_log, challenge_chain_ops, challenge_attempts, challenges, challenge_drafts, challenge_index_cursor cascade');
     const chain = (appointed: string) => ({ contract: drafts.contract, evaluator: '0x' + 'e'.repeat(40), chainId: 1,
       appointedEvaluator: async () => appointed, prizeLimits: async () => ({ min: 2_000_000n, max: 50_000_000n }) }) as unknown as ChallengeChain;
-    const deps = { pool: pool!, live: new LiveLayer(port), world: port, speciesIds: () => [...world.species.keys()] };
+    const deps = { pool: pool!, live: new LiveLayer(port), world: port, species: () => [...world.species.values()] };
     await expect(challengesRuntime(config, deps, chain('0x' + 'f'.repeat(40))).start()).rejects.toThrow("not the contract's evaluator");
     const ok = challengesRuntime(config, deps, chain('0x' + 'E'.repeat(40)));
     await ok.start();
@@ -187,7 +188,7 @@ maybe('challenges runtime', () => {
     // A database that holds another contract's challenges is refused; ours, by an old evaluator, become unplayable.
     await pool!.query('truncate challenge_attempt_log, challenge_chain_ops, challenge_attempts, challenges, challenge_drafts, challenge_index_cursor cascade');
     const store = new ChallengeStore(pool!);
-    const terms = { template: 'hunt', version: 1, speciesId: 'tiger' } as const;
+    const terms = { template: 'hunt', version: 1, speciesId: 'tiger', count: 1, rules: [], briefing: '' } as const;
     await store.insertDraft({ creatorWallet: '0x' + 'a'.repeat(40), terms, rulesHash: rulesHash(terms), prizeAtomic: '10000000',
       deadline: new Date('2026-10-20T00:00:00Z'), salt: `0x${'1'.repeat(64)}`, authNonce: `0x${'2'.repeat(64)}` });
     await store.recordCreated(drafts.contract, { id: 1, creator: '0x' + 'a'.repeat(40), prizeAtomic: '10000000', deadline: 1_792_454_400,
