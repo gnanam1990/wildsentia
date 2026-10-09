@@ -273,7 +273,10 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
       if (!/^[0-9]{1,15}$/.test(req.params.id)) return reply.code(404).send({ error: 'not_found' });
       const result = await deps.challenges.accept({ agentId: ctx.agent.id, name: ctx.agent.name, wallet: ctx.agent.wallet,
         walletProven: ctx.agent.walletProven }, Number(req.params.id));
-      return result.ok ? { attemptId: result.attemptId, animalId: result.animalId } : reply.code(result.status).send({ error: result.error });
+      if (!result.ok) return reply.code(result.status).send({ error: result.error });
+      // No free animal yet: the agent waits on the challenge's list and is told when its attempt starts.
+      return result.queued ? { queued: true, position: result.position, until: result.until }
+        : { queued: false, attemptId: result.attemptId, animalId: result.animalId };
     });
 
     scope.post('/agents/me/open', async (req, reply) => {

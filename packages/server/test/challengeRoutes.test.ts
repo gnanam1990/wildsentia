@@ -6,6 +6,7 @@ import { createWorld } from '@vana/sim';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { createPool } from '../src/db/pool.js';
 import { migrate } from '../src/db/migrate.js';
+import type { AcceptResult } from '../src/challenges/engine.js';
 import { ChallengeStore } from '../src/challenges/store.js';
 import { installChallenges } from '../src/challenges/routes.js';
 import { challengesConfig, challengesRuntime, type ChallengesConfig } from '../src/challenges/runtime.js';
@@ -145,7 +146,7 @@ maybe('agent challenge route', () => {
     const world = createWorld({ seed: 3, speciesDir, terrainProfile: 'island_v1', initialAgents: { chital: 10 }, minPopulation: {} });
     const port = worldPort(() => world, () => 'w1');
     const agents = new AgentStore(pool!);
-    const accept = vi.fn(async () => ({ ok: true as const, attemptId: 'att-1', animalId: 'chital_1' }));
+    const accept = vi.fn(async (): Promise<AcceptResult> => ({ ok: true, queued: false, attemptId: 'att-1', animalId: 'chital_1' }));
     const progressOf = vi.fn(() => ({ challengeId: 7, attemptId: 'att-1', goal: { template: 'hunt' as const, version: 1 as const, speciesId: 'tiger', count: 1, rules: [], briefing: '' },
       progress: { done: 0, of: 1, unit: 'kills' }, deadline: '2026-10-20T00:00:00.000Z' }));
     const app = Fastify();
@@ -159,7 +160,9 @@ maybe('agent challenge route', () => {
     };
     expect((await call('POST', '/agents/register', { name: 'Stripe' })).statusCode).toBe(200);
     const res = await call('POST', '/agents/me/challenges/7/accept');
-    expect(res.json()).toEqual({ attemptId: 'att-1', animalId: 'chital_1' });
+    expect(res.json()).toEqual({ queued: false, attemptId: 'att-1', animalId: 'chital_1' });
+    accept.mockResolvedValueOnce({ ok: true, queued: true, position: 2, until: '2026-10-10T00:30:00.000Z' });
+    expect((await call('POST', '/agents/me/challenges/7/accept')).json()).toEqual({ queued: true, position: 2, until: '2026-10-10T00:30:00.000Z' });
     expect(accept).toHaveBeenCalledWith(expect.objectContaining({ name: 'Stripe', wallet: null, walletProven: false }), 7);
     expect((await call('POST', '/agents/me/challenges/x/accept')).statusCode).toBe(404);
     expect((await call('GET', '/agents/me/observe')).json().challenge).toMatchObject({ challengeId: 7, progress: { unit: 'kills' } });

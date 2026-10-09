@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fileURLToPath } from 'node:url';
 import { keccak256, toBytes } from 'viem';
 import { landWalkable, patchCentre } from '@vana/shared';
@@ -8,7 +8,8 @@ import { migrate } from '../src/db/migrate.js';
 import { LiveLayer } from '../src/live/liveLayer.js';
 import { worldPort } from '../src/live/worldPort.js';
 import { ChallengeStore } from '../src/challenges/store.js';
-import { ChallengeEngine, GRACE_SECONDS, REFUND_MARGIN_SECONDS, type Player } from '../src/challenges/engine.js';
+import { ChallengeEngine, GRACE_SECONDS, MAX_ATTEMPTS_PER_CHALLENGE, REFUND_MARGIN_SECONDS, WAIT_MS, type Player } from '../src/challenges/engine.js';
+import { HERD_GRACE_MS } from '../src/challenges/rules.js';
 import { WORLD_DAY_SECONDS } from '../src/challenges/goals.js';
 import { rulesHash, type ChallengeTerms } from '../src/challenges/terms.js';
 import { testDatabaseUrl } from './testDatabase.js';
@@ -28,11 +29,12 @@ maybe('challenge engine', () => {
   let now: number, worldNow: number, random: number, nextId: number;
   let centre: { x: number; z: number };
   let openPatch: number;
+  let port: ReturnType<typeof worldPort>;
 
   beforeEach(async () => {
     await migrate(pool!);
     await pool!.query('truncate challenge_attempt_log, challenge_chain_ops, challenge_attempts, challenges, challenge_drafts, challenge_index_cursor, live_agents cascade');
-    for (const id of ['ag_000000000000000a', 'ag_000000000000000b', 'ag_000000000000000c']) {
+    for (const id of ['ag_000000000000000a', 'ag_000000000000000b', 'ag_000000000000000c', 'ag_000000000000000d']) {
       await pool!.query(`insert into live_agents (id, public_key, name, name_key, network_hash) values ($1, $2, $1, $1, 'n')`,
         [id, id.replace('ag_', '').padEnd(43, 'A')]);
     }
@@ -40,10 +42,10 @@ maybe('challenge engine', () => {
     const open = world.patches.find((p) => landWalkable(p) && p.neighbours.every((n) => landWalkable(world.patches[n])))!;
     openPatch = open.id; centre = patchCentre(open.id);
     now = T0; worldNow = 1_000_000; random = 0; nextId = 0;
-    const port = { ...worldPort(() => world, () => 'w'), now: () => worldNow };
+    port = { ...worldPort(() => world, () => 'w'), now: () => worldNow };
     live = new LiveLayer(port, null, () => now, () => random);
     store = new ChallengeStore(pool!);
-    engine = new ChallengeEngine(store, live, port, () => now);
+    engine = new ChallengeEngine(store, live, port, () => now, { recordOnChain: true });
     live.onHunt = (h) => engine.onHunt(h);
     live.onCommand = (c) => engine.onCommand(c);
     live.onEnded = (l) => engine.onEnded(l);
@@ -83,9 +85,11 @@ maybe('challenge engine', () => {
     expect(await engine.accept(player('ag_000000000000000a'), late)).toMatchObject({ ok: false, error: 'deadline_passed' });
     live.possess('ag_000000000000000a', 'a', { speciesId: 'chital' });
     expect(await engine.accept(player('ag_000000000000000a'), id)).toMatchObject({ ok: false, error: 'release_your_animal_first' });
-    expect((await engine.accept(player('ag_000000000000000b'), id)).ok).toBe(true);
-    // With two tigers on the island only one may be steered: no free animal, and no silent place in the species queue.
-    expect(await engine.accept(player('ag_000000000000000c'), id)).toMatchObject({ ok: false, error: 'no_free_animal' });
+    expect(await engine.accept(player('ag_000000000000000b'), id)).toMatchObject({ ok: true, queued: false });
+    // With two tigers on the island only one may be steered: the next player waits on the challenge's own list,
+    // never in the species queue.
+    expect(await engine.accept(player('ag_000000000000000c'), id)).toMatchObject({ ok: true, queued: true, position: 1 });
+    expect(live.avatars.has('ag_000000000000000c')).toBe(false);
     expect(await engine.accept(player('ag_000000000000000b'), id)).toMatchObject({ ok: false, error: 'already_in_a_challenge' });
   });
 
@@ -245,5 +249,200 @@ maybe('challenge engine', () => {
     await engine.tick();
     expect((await store.attempt(a.attemptId))!.status).toBe('met');
     expect((await store.challenge(id))!.status).toBe('won');
+  });
+  const avatarOf = (agentId: string) => live.avatars.get(agentId)!;
+  const ended = async (attemptId: string) => (await store.attempt(attemptId))!;
+  const accepted = async (agentId: string, id: number) => {
+    const r = await engine.accept(player(agentId), id);
+    if (!r.ok || r.queued) throw new Error(`not started: ${JSON.stringify(r)}`);
+    return r;
+  };
+
+  it('fails an attempt that leaves its zone, and leaves the animal with the player', async () => {
+    const at = wildChital().position;
+    const id = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 1, briefing: '',
+      rules: [{ type: 'zone', x: Math.round(at.x), z: Math.round(at.z), radiusM: 200 }] });
+    const a = await accepted('ag_000000000000000a', id);
+    const start = avatarOf('ag_000000000000000a');
+    expect(Math.hypot(start.x - Math.round(at.x), start.z - Math.round(at.z))).toBeLessThanOrEqual(200);
+    expect(engine.progressOf('ag_000000000000000a')).toMatchObject({ rules: [`stay within 200 m of (${Math.round(at.x)}, ${Math.round(at.z)})`] });
+    await engine.tick();
+    expect((await ended(a.attemptId)).status).toBe('running');
+    start.x = Math.round(at.x) + 201; start.z = Math.round(at.z);
+    await engine.tick();
+    expect(await ended(a.attemptId)).toMatchObject({ status: 'failed', endReason: 'rule_zone' });
+    expect(live.avatars.has('ag_000000000000000a')).toBe(true);
+    expect(live.notices('ag_000000000000000a').map((n) => n.text).join(' ')).toMatch(/broke a rule/);
+  });
+
+  it('fails "never run" on a command to run, judged on the next tick', async () => {
+    const id = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 1, briefing: '', rules: [{ type: 'noRun' }] });
+    const a = await accepted('ag_000000000000000a', id);
+    const me = avatarOf('ag_000000000000000a');
+    expect(live.moveTo('ag_000000000000000a', [{ x: me.x + 5, z: me.z }], 'trot')).toBeNull();
+    await engine.tick();
+    expect((await ended(a.attemptId)).status).toBe('running');
+    expect(live.moveTo('ag_000000000000000a', [{ x: me.x - 5, z: me.z }], 'run')).toBeNull();
+    live.stop('ag_000000000000000a'); // stopped at once: the command alone breaks the rule
+    await engine.tick();
+    expect(await ended(a.attemptId)).toMatchObject({ status: 'failed', endReason: 'rule_no_run' });
+  });
+
+  it("fails \"never run\" when a predator charges in a hunt", async () => {
+    const id = await challenge({ template: 'survive', version: 1, speciesId: 'tiger', days: 1, briefing: '', rules: [{ type: 'noRun' }] });
+    const a = await accepted('ag_000000000000000a', id);
+    const prey = wildChital();
+    put(a.animalId, 0); put(prey.id, 20);
+    expect(live.hunt('ag_000000000000000a', prey.id)).toBeNull();
+    await run(5);
+    expect(await ended(a.attemptId)).toMatchObject({ status: 'failed', endReason: 'rule_no_run' });
+  });
+
+  it('fails the herd rule after a minute apart from its own kind, and not before', async () => {
+    const id = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 7, briefing: '',
+      rules: [{ type: 'herd', maxDistanceM: 50 }] });
+    const a = await accepted('ag_000000000000000a', id);
+    put(a.animalId, 0);
+    const kin = world.agents.filter((x) => x.alive && x.speciesId === 'chital' && x.id !== a.animalId);
+    const away = () => { for (const k of kin) k.position = { x: centre.x + 5000, z: centre.z, heading: 0 }; };
+    const near = () => { kin[0]!.patchId = openPatch; kin[0]!.position = { x: centre.x + 30, z: centre.z, heading: 0 }; };
+    near();
+    await run(70);
+    expect((await ended(a.attemptId)).status).toBe('running');
+    away();
+    await run(59);
+    expect((await ended(a.attemptId)).status).toBe('running');
+    near();
+    await run(5);
+    away();
+    await run(Math.ceil(HERD_GRACE_MS / 1000) - 2);
+    expect((await ended(a.attemptId)).status).toBe('running');
+    await run(4);
+    expect(await ended(a.attemptId)).toMatchObject({ status: 'failed', endReason: 'rule_herd' });
+  });
+
+  it('starts a reach attempt at least a kilometre from its target, and wins it within 25 m', async () => {
+    // A spot on land 1.2-2 km from a chital, with a chital right beside it that must not be chosen.
+    const herd = wildChital();
+    const spot = world.patches.map((p) => patchCentre(p.id)).find((c, i) => landWalkable(world.patches[i]!)
+      && Math.hypot(c.x - herd.position!.x, c.z - herd.position!.z) > 1200 && Math.hypot(c.x - herd.position!.x, c.z - herd.position!.z) < 2000)!;
+    const tx = Math.round(spot.x), tz = Math.round(spot.z);
+    const near = world.agents.find((x) => x.alive && x.speciesId === 'chital' && x.id !== herd.id && !x.controller)!;
+    near.position = { x: tx + 10, z: tz, heading: 0 };
+    const id = await challenge({ template: 'reach', version: 1, speciesId: 'chital', x: tx, z: tz, rules: [], briefing: '' });
+    const a = await accepted('ag_000000000000000a', id);
+    const me = avatarOf('ag_000000000000000a');
+    expect(Math.hypot(me.x - tx, me.z - tz)).toBeGreaterThanOrEqual(1000);
+    expect(engine.progressOf('ag_000000000000000a')!.progress.unit).toBe('metres to go');
+    me.x = tx + 26; me.z = tz;
+    await engine.tick();
+    expect((await ended(a.attemptId)).status).toBe('running');
+    me.x = tx + 24;
+    await engine.tick();
+    expect((await ended(a.attemptId)).status).toBe('met');
+    expect((await store.challenge(id))!.status).toBe('won');
+  });
+
+  it('allows three attempts per agent at a challenge', async () => {
+    const id = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 7, rules: [], briefing: '' });
+    for (let i = 0; i < MAX_ATTEMPTS_PER_CHALLENGE; i++) {
+      await accepted('ag_000000000000000a', id);
+      live.release('ag_000000000000000a');
+      await engine.tick();
+    }
+    expect(await engine.accept(player('ag_000000000000000a'), id)).toMatchObject({ ok: false, status: 409, error: 'no_attempts_left' });
+    expect((await engine.accept(player('ag_000000000000000b'), id)).ok).toBe(true);
+  });
+
+  describe('waiting list', () => {
+    it('serves agents in order and never lets a newcomer jump the list', async () => {
+      const id = await challenge({ template: 'hunt', version: 1, speciesId: 'tiger', count: 1, rules: [], briefing: '' });
+      const other = await challenge({ template: 'hunt', version: 1, speciesId: 'tiger', count: 1, rules: [], briefing: '' });
+      await accepted('ag_000000000000000a', id);
+      expect(await engine.accept(player('ag_000000000000000b'), id)).toMatchObject({ ok: true, queued: true, position: 1 });
+      expect(await engine.accept(player('ag_000000000000000c'), id)).toMatchObject({ ok: true, queued: true, position: 2 });
+      expect(await engine.accept(player('ag_000000000000000b'), id)).toMatchObject({ ok: true, queued: true, position: 1 });
+      expect(await engine.accept(player('ag_000000000000000b'), other)).toMatchObject({ ok: false, error: 'already_waiting' });
+      expect(engine.waitingOf('ag_000000000000000c')).toMatchObject({ challengeId: id, position: 2 });
+      // The tiger comes free; a newcomer accepting before the next tick still goes to the back.
+      live.release('ag_000000000000000a');
+      expect(await engine.accept(player('ag_000000000000000d'), id)).toMatchObject({ ok: true, queued: true, position: 3 });
+      await engine.tick();
+      expect(engine.progressOf('ag_000000000000000b')).toMatchObject({ challengeId: id });
+      expect(engine.waitingOf('ag_000000000000000b')).toBeNull();
+      expect(engine.waitingOf('ag_000000000000000c')).toMatchObject({ position: 1 });
+      expect(engine.waitingOf('ag_000000000000000d')).toMatchObject({ position: 2 });
+      expect(live.notices('ag_000000000000000b').map((n) => n.text).join(' ')).toMatch(/came free/);
+    });
+
+    it('keeps an agent who joined while the list was being served', async () => {
+      const id = await challenge({ template: 'hunt', version: 1, speciesId: 'tiger', count: 1, rules: [], briefing: '' });
+      await accepted('ag_000000000000000a', id);
+      await engine.accept(player('ag_000000000000000b'), id);
+      // Someone accepts while the tick is reading the challenge for the waiting list.
+      const read = store.challenge.bind(store);
+      let once = true;
+      vi.spyOn(store, 'challenge').mockImplementation(async (n) => {
+        if (once) { once = false; await engine.accept(player('ag_000000000000000c'), id); }
+        return read(n);
+      });
+      await engine.tick();
+      expect(engine.waitingOf('ag_000000000000000b')).toMatchObject({ position: 1 });
+      expect(engine.waitingOf('ag_000000000000000c')).toMatchObject({ position: 2 });
+    });
+
+    it('drops waits that run out, close, or are left, and agents who took another animal', async () => {
+      const id = await challenge({ template: 'hunt', version: 1, speciesId: 'tiger', count: 1, rules: [], briefing: '' });
+      await accepted('ag_000000000000000a', id);
+      await engine.accept(player('ag_000000000000000b'), id);
+      await engine.accept(player('ag_000000000000000c'), id);
+      await engine.accept(player('ag_000000000000000d'), id);
+      expect(engine.leave('ag_000000000000000d')).toBe(true);
+      expect(engine.leave('ag_000000000000000d')).toBe(false);
+      live.possess('ag_000000000000000c', 'c', { speciesId: 'chital' });
+      await engine.tick();
+      expect(engine.waitingOf('ag_000000000000000c')).toBeNull();
+      now += WAIT_MS - 1;
+      await engine.tick();
+      expect(engine.waitingOf('ag_000000000000000b')).toMatchObject({ position: 1 });
+      now += 1;
+      await engine.tick();
+      expect(engine.waitingOf('ag_000000000000000b')).toBeNull();
+      expect(live.notices('ag_000000000000000b').map((n) => n.text).join(' ')).toMatch(/off its waiting list/);
+
+      const closing = await challenge({ template: 'hunt', version: 1, speciesId: 'tiger', count: 1, rules: [], briefing: '' }, now + 86_400_000);
+      await engine.accept(player('ag_000000000000000b'), closing);
+      await store.setStatus(closing, ['open'], 'refunding');
+      await engine.tick();
+      expect(engine.waitingOf('ag_000000000000000b')).toBeNull();
+    });
+  });
+
+  it('gives every ended attempt a hashed record, and queues its start and end for the chain', async () => {
+    const id = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 7, rules: [], briefing: '' });
+    const a = await accepted('ag_000000000000000a', id);
+    await engine.recordAttempts();
+    expect((await store.opsOf({ attemptId: a.attemptId })).map((o) => [o.kind, o.payload])).toEqual([['record_start', { player: PAYOUT }]]);
+    live.release('ag_000000000000000a');
+    await engine.tick();
+    await engine.recordAttempts();
+    const done = await ended(a.attemptId);
+    expect(done.resultHash).toBe(keccak256(toBytes(done.resultRecord!)));
+    expect(JSON.parse(done.resultRecord!)).toMatchObject({ kind: 'wildsentia-challenge-result', challengeId: id, attemptId: a.attemptId,
+      outcome: 'failed', reason: 'released', log: [{ kind: 'start' }, { kind: 'command', data: { command: 'release' } }, { kind: 'end' }] });
+    expect((await store.opsOf({ attemptId: a.attemptId })).map((o) => [o.kind, o.payload])).toEqual([
+      ['record_start', { player: PAYOUT }], ['record_end', { outcome: 2, logHash: done.resultHash }]]);
+    await engine.recordAttempts();
+    expect(await store.opsOf({ attemptId: a.attemptId })).toHaveLength(2);
+
+    // Without the attempts contract the record is still kept, and nothing is queued for the chain.
+    const offChain = new ChallengeEngine(store, live, port, () => now);
+    const b = await accepted('ag_000000000000000b', id);
+    live.release('ag_000000000000000b');
+    await engine.tick();
+    await pool!.query('delete from challenge_chain_ops where attempt_id = $1', [b.attemptId]);
+    await offChain.recordAttempts();
+    expect((await ended(b.attemptId)).resultHash).not.toBeNull();
+    expect(await store.opsOf({ attemptId: b.attemptId })).toEqual([]);
   });
 });
