@@ -8,14 +8,18 @@ import type { Avatar, DropLedger, EndedLife, PlaceDrop } from './liveLayer.js';
  * place drops in the shared reward ledger (docs/2026-09-26-live-agents-design.md).
  */
 
-export interface AgentRecord { id: string; publicKey: string; name: string; bio: string; wallet: string | null; walletProven: boolean; muted: boolean }
-interface AgentRow { id: string; public_key: string; name: string; bio: string; wallet: string | null; wallet_proven: boolean; muted: boolean }
-const record = (r: AgentRow): AgentRecord => ({ id: r.id, publicKey: r.public_key, name: r.name, bio: r.bio, wallet: r.wallet,
+/** An outside agent (with its signing key), or a person's own identity in the live world (no key). */
+export type AgentKind = 'agent' | 'human';
+export interface AgentRecord { id: string; kind: AgentKind; publicKey: string | null; name: string; bio: string; wallet: string | null; walletProven: boolean; muted: boolean }
+interface AgentRow { id: string; kind: AgentKind; public_key: string | null; name: string; bio: string; wallet: string | null; wallet_proven: boolean; muted: boolean }
+const record = (r: AgentRow): AgentRecord => ({ id: r.id, kind: r.kind, publicKey: r.public_key, name: r.name, bio: r.bio, wallet: r.wallet,
   walletProven: r.wallet_proven, muted: r.muted });
 
 export const NAME_RE = /^[A-Za-z][A-Za-z0-9 _-]{1,19}$/;
 const RESERVED = /^(admin|vana|system|server|moderator|official|support|staff)/i;
 export const agentIdFor = (publicKey: string) => `ag_${createHash('sha256').update(publicKey).digest('hex').slice(0, 16)}`;
+/** A person's live identity, from their X user id. */
+export const humanAgentId = (xUserId: string) => `ag_${createHash('sha256').update(`human:${xUserId}`).digest('hex').slice(0, 16)}`;
 
 export interface LeaderRow { agentId: string; name: string; drops: number; usdcMicro: string; longestLifeSeconds: number; animalsLost: number; playing: boolean }
 export interface RegistrationLimits { slots: number; perNetworkPerDay: number }
@@ -29,7 +33,7 @@ export class AgentStore {
   async byKey(publicKey: string): Promise<AgentRecord | null> {
     const cached = this.#byKey.get(publicKey);
     if (cached) return cached;
-    const row = (await this.pool.query<AgentRow>('select * from live_agents where public_key=$1', [publicKey])).rows[0];
+    const row = (await this.pool.query<AgentRow>("select * from live_agents where public_key=$1 and kind = 'agent'", [publicKey])).rows[0];
     if (!row) return null;
     const agent = record(row);
     if (this.#byKey.size > 5000) this.#byKey.clear();
@@ -55,7 +59,8 @@ export class AgentStore {
       await db.query('begin');
       await db.query("select pg_advisory_xact_lock(hashtext('live-agent-registration'))");
       const counts = (await db.query<{ total: number; network: number }>(`select count(*)::int as total,
-        count(*) filter (where network_hash=$1 and created_at > now() - interval '24 hours')::int as network from live_agents`, [p.networkHash])).rows[0]!;
+        count(*) filter (where network_hash=$1 and created_at > now() - interval '24 hours')::int as network from live_agents
+        where kind = 'agent'`, [p.networkHash])).rows[0]!;
       if (counts.total >= limits.slots) { await db.query('rollback'); return { ok: false, reason: 'slots_full' }; }
       if (counts.network >= limits.perNetworkPerDay) { await db.query('rollback'); return { ok: false, reason: 'network_daily_limit' }; }
       if (p.wallet && (await db.query('select 1 from live_agents where wallet=$1', [p.wallet])).rowCount) { await db.query('rollback'); return { ok: false, reason: 'wallet_taken' }; }
@@ -67,6 +72,26 @@ export class AgentStore {
       return { ok: true, agent: record(inserted.rows[0]!), created: true };
     } catch (error) { await db.query('rollback'); throw error; }
     finally { db.release(); }
+  }
+
+  /**
+   * A person's own identity in the live world, made the first time they sign in. Its name is
+   * their X handle where that is a valid, free live name; otherwise "X <handle>", then a number.
+   */
+  async ensureHuman(p: { xUserId: string; handle: string; networkHash: string }): Promise<AgentRecord> {
+    const id = humanAgentId(p.xUserId);
+    const existing = await this.byId(id);
+    if (existing) return existing;
+    const handle = p.handle.replace(/[^A-Za-z0-9_]/g, '').slice(0, 15) || 'player';
+    const base = NAME_RE.test(handle) && !RESERVED.test(handle) ? handle : `X ${handle}`;
+    for (const name of [base, ...[2, 3, 4, 5, 6, 7, 8, 9].map((n) => `${base} ${n}`), `${base} ${id.slice(3, 7)}`]) {
+      const inserted = await this.pool.query<AgentRow>(`insert into live_agents (id, kind, public_key, name, name_key, network_hash, wallet_proven)
+        values ($1, 'human', null, $2, $3, $4, false) on conflict do nothing returning *`, [id, name, name.toLowerCase(), p.networkHash]);
+      if (inserted.rowCount) return record(inserted.rows[0]!);
+      const raced = await this.byId(id);
+      if (raced) return raced;
+    }
+    throw new Error('no free name for this player');
   }
 
   /** Sets a proven payout wallet. One agent per wallet, checked on every change. */
@@ -111,9 +136,9 @@ export class AgentStore {
     return row?.id ?? null;
   }
 
-  /** Registered agents, each holding one of the slots. */
+  /** Registered agents, each holding one of the slots (people's own identities do not). */
   async count(): Promise<number> {
-    return Number((await this.pool.query<{ n: string }>('select count(*) as n from live_agents')).rows[0]!.n);
+    return Number((await this.pool.query<{ n: string }>("select count(*) as n from live_agents where kind = 'agent'")).rows[0]!.n);
   }
 
   /** One finished possession. */
@@ -153,7 +178,7 @@ export class AgentStore {
   /** Frees the slot of an agent unseen for `days`, so slots cannot be squatted forever. */
   async reapInactive(days = 14): Promise<number> {
     // An agent that has played a challenge is kept: its attempts, logs and on-chain records refer to it.
-    const result = await this.pool.query(`delete from live_agents where last_seen_at < now() - make_interval(days => $1)
+    const result = await this.pool.query(`delete from live_agents where kind = 'agent' and last_seen_at < now() - make_interval(days => $1)
       and id not in (select agent_id from live_possessions) and id not in (select agent_id from challenge_attempts)`, [days]);
     this.#byKey.clear();
     return result.rowCount ?? 0;
