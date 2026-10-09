@@ -15,11 +15,13 @@ remappings = [
 
 [fuzz]
 runs = 512
+# Pinned so the regression gate is reproducible; change it deliberately to explore new inputs.
+seed = "0x5743484c"
 
 [invariant]
 runs = 128
 depth = 64
-fail_on_revert = false
+fail_on_revert = true
 
 [fmt]
 line_length = 120

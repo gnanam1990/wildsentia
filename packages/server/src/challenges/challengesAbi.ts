@@ -167,6 +167,11 @@ export const challengesAbi = [
             "name": "resultHash",
             "type": "bytes32",
             "internalType": "bytes32"
+          },
+          {
+            "name": "evaluator",
+            "type": "address",
+            "internalType": "address"
           }
         ]
       }
@@ -505,6 +510,12 @@ export const challengesAbi = [
         "name": "rulesHash",
         "type": "bytes32",
         "indexed": false,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "authNonce",
+        "type": "bytes32",
+        "indexed": true,
         "internalType": "bytes32"
       }
     ],

@@ -32,6 +32,15 @@ contract AuthorizationTest is ChallengesBase {
         assertEq(usdc.balanceOf(creator), 990e6);
     }
 
+    function test_createWithAuthorization_emitsItsNonce() public {
+        uint64 deadline = _deadline(2 days);
+        bytes32 nonce = challenges.authorizationNonce(creator, RULES, 10e6, deadline, SALT);
+        bytes memory sig = _signed(10e6, deadline, SALT);
+        vm.expectEmit(address(challenges));
+        emit WildsentiaChallenges.ChallengeCreated(1, creator, 10e6, deadline, RULES, nonce);
+        challenges.createWithAuthorization(creator, RULES, 10e6, deadline, SALT, 0, block.timestamp + 1 hours, sig);
+    }
+
     function test_createWithAuthorization_rejectsChangedTerms() public {
         uint64 deadline = _deadline(2 days);
         bytes memory sig = _signed(10e6, deadline, SALT);

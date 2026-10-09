@@ -121,15 +121,21 @@ function setPrizeLimits(uint96 minPrize, uint96 maxPrize);            // owner o
   every term plus a salt, so a relayer cannot open the challenge with other terms. The creator
   signs once and pays no gas; the server's relayer submits it. `create` (approve, then create) is
   the fallback if Arc's USDC lacks `receiveWithAuthorization`.
-- **Payout:** `resolve` only while `Open`, only before `deadline + GRACE` (1 hour, for an attempt
-  met just before the deadline), only to `winner != creator` and `winner != address(0)` (Arc
+- **Payout:** `resolve` only while `Open`, only by the evaluator recorded on that challenge when
+  it was created, only before `deadline + GRACE` (1 hour, for an attempt met just before the
+  deadline), only to a winner that is not the creator, the escrow itself or `address(0)` (Arc
   reverts zero-address sends). It records `resultHash`, the hash of the attempt's published log.
+  Because the evaluator is fixed per challenge, an owner (or a stolen owner key) appointing a new
+  evaluator cannot take prizes already locked.
+- **Matching relayed creations:** `ChallengeCreated` emits the authorization nonce (zero for
+  `create`), so the server can match a creation even when someone else relayed the signature first.
 - **Refund:** after `deadline + GRACE`, any caller can return the prize to the creator. Pausing
   never touches refunds.
 - **Invariants:**
   - The contract's USDC balance always equals the sum of `Open` prizes.
   - Each challenge pays out exactly once, to its winner or its creator.
-  - The owner can change the evaluator and pause payouts. The owner can never move escrowed funds.
+  - The owner can appoint the evaluator for new challenges and pause payouts. The owner can never
+    move escrowed funds, including by appointing a new evaluator.
 - **Limits on chain:** owner-set minimum and maximum prize (1 and 100 USDC on testnet), and deadline
   rails of 12 hours to 15 days from creation; the server offers 1 to 14 days inside them, so a
   signature that takes a while to land never falls outside the rails. Ownership is two-step and

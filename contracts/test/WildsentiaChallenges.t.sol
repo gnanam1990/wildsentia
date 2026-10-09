@@ -10,7 +10,7 @@ contract CreateTest is ChallengesBase {
     function test_create_locksPrizeAndRecordsTerms() public {
         uint64 deadline = _deadline(3 days);
         vm.expectEmit(address(challenges));
-        emit WildsentiaChallenges.ChallengeCreated(1, creator, 10e6, deadline, RULES);
+        emit WildsentiaChallenges.ChallengeCreated(1, creator, 10e6, deadline, RULES, bytes32(0));
         vm.prank(creator);
         uint256 id = challenges.create(RULES, 10e6, deadline);
 
@@ -21,6 +21,7 @@ contract CreateTest is ChallengesBase {
         assertEq(c.deadline, deadline);
         assertEq(uint8(c.status), uint8(WildsentiaChallenges.Status.Open));
         assertEq(c.rulesHash, RULES);
+        assertEq(c.evaluator, evaluator);
         assertEq(usdc.balanceOf(address(challenges)), 10e6);
         assertEq(challenges.totalOpen(), 10e6);
     }
@@ -112,6 +113,13 @@ contract ResolveTest is ChallengesBase {
         vm.expectRevert(WildsentiaChallenges.BadWinner.selector);
         challenges.resolve(id, address(0), bytes32(0));
         vm.stopPrank();
+    }
+
+    function test_resolve_rejectsTheEscrowItselfAsWinner() public {
+        uint256 id = _create(10e6);
+        vm.prank(evaluator);
+        vm.expectRevert(WildsentiaChallenges.BadWinner.selector);
+        challenges.resolve(id, address(challenges), bytes32(0));
     }
 
     function test_resolve_rejectsUnknownChallenge() public {
@@ -224,6 +232,31 @@ contract OwnerTest is ChallengesBase {
         vm.expectRevert(WildsentiaChallenges.NotEvaluator.selector);
         challenges.resolve(id, player, bytes32(0));
         vm.prank(stranger);
+        challenges.resolve(id, player, bytes32(0));
+    }
+
+    function test_setEvaluator_cannotTakeExistingPrizes() public {
+        uint256 id = _create(10e6);
+        vm.prank(owner);
+        challenges.setEvaluator(stranger);
+        vm.prank(stranger);
+        vm.expectRevert(WildsentiaChallenges.NotEvaluator.selector);
+        challenges.resolve(id, stranger, bytes32(0));
+        // The evaluator recorded when the challenge was created still decides it.
+        vm.prank(evaluator);
+        challenges.resolve(id, player, bytes32(0));
+        assertEq(usdc.balanceOf(player), 10e6);
+        assertEq(usdc.balanceOf(stranger), 0);
+    }
+
+    function test_pause_stopsTheRecordedEvaluator() public {
+        uint256 id = _create(10e6);
+        vm.startPrank(owner);
+        challenges.setEvaluator(stranger);
+        challenges.setResolvePaused(true);
+        vm.stopPrank();
+        vm.prank(evaluator);
+        vm.expectRevert(WildsentiaChallenges.ResolveIsPaused.selector);
         challenges.resolve(id, player, bytes32(0));
     }
 

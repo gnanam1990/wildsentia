@@ -23,7 +23,8 @@ interface IReceiveWithAuthorization {
 /// @notice A creator locks a USDC prize behind a goal. The evaluator pays it to the first player
 /// to meet the goal; if nobody does by the deadline, anyone can return it to the creator.
 /// A locked prize can only ever go to a winner who is not the creator, or back to the creator.
-/// The owner can change the evaluator, pause payouts and set prize limits, never move funds.
+/// Each challenge keeps the evaluator it was created under. The owner can appoint the evaluator
+/// for new challenges, pause payouts and set prize limits, but cannot move escrowed funds.
 contract WildsentiaChallenges is Ownable2Step, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -42,6 +43,8 @@ contract WildsentiaChallenges is Ownable2Step, ReentrancyGuard {
         Status status;
         bytes32 rulesHash;
         bytes32 resultHash;
+        /// @notice The evaluator when the challenge was created; only it can pay this prize.
+        address evaluator;
     }
 
     /// @notice Time after the deadline in which an attempt met just before it can still be paid.
@@ -61,7 +64,12 @@ contract WildsentiaChallenges is Ownable2Step, ReentrancyGuard {
     mapping(uint256 id => Challenge) private _challenges;
 
     event ChallengeCreated(
-        uint256 indexed id, address indexed creator, uint96 prize, uint64 deadline, bytes32 rulesHash
+        uint256 indexed id,
+        address indexed creator,
+        uint96 prize,
+        uint64 deadline,
+        bytes32 rulesHash,
+        bytes32 indexed authNonce
     );
     event ChallengeResolved(uint256 indexed id, address indexed winner, uint96 prize, bytes32 resultHash);
     event ChallengeRefunded(uint256 indexed id, address indexed creator, uint96 prize);
@@ -95,7 +103,7 @@ contract WildsentiaChallenges is Ownable2Step, ReentrancyGuard {
 
     /// @notice Creates a challenge funded from the caller's approved USDC.
     function create(bytes32 rulesHash, uint96 prize, uint64 deadline) external nonReentrant returns (uint256 id) {
-        id = _open(msg.sender, rulesHash, prize, deadline);
+        id = _open(msg.sender, rulesHash, prize, deadline, bytes32(0));
         uint256 before = usdc.balanceOf(address(this));
         usdc.safeTransferFrom(msg.sender, address(this), prize);
         if (usdc.balanceOf(address(this)) - before != prize) revert AmountMismatch();
@@ -125,7 +133,7 @@ contract WildsentiaChallenges is Ownable2Step, ReentrancyGuard {
     ) external nonReentrant returns (uint256 id) {
         if (creator == address(0)) revert ZeroAddress();
         bytes32 nonce = authorizationNonce(creator, rulesHash, prize, deadline, salt);
-        id = _open(creator, rulesHash, prize, deadline);
+        id = _open(creator, rulesHash, prize, deadline, nonce);
         uint256 before = usdc.balanceOf(address(this));
         IReceiveWithAuthorization(address(usdc))
             .receiveWithAuthorization(creator, address(this), prize, validAfter, validBefore, nonce, signature);
@@ -134,14 +142,17 @@ contract WildsentiaChallenges is Ownable2Step, ReentrancyGuard {
 
     // ---------------------------------------------------------------- settle
 
-    /// @notice Pays the prize to the first player who met the goal.
+    /// @notice Pays the prize to the first player who met the goal. Only the challenge's own
+    /// evaluator (recorded at creation) may call it.
     function resolve(uint256 id, address winner, bytes32 resultHash) external nonReentrant {
-        if (msg.sender != evaluator) revert NotEvaluator();
-        if (resolvePaused) revert ResolveIsPaused();
         Challenge storage c = _challenges[id];
         if (c.status != Status.Open) revert NotOpen();
+        // Only the evaluator recorded at creation: a new owner-set evaluator cannot take prizes
+        // that were locked before it was appointed.
+        if (msg.sender != c.evaluator) revert NotEvaluator();
+        if (resolvePaused) revert ResolveIsPaused();
         if (block.timestamp > uint256(c.deadline) + GRACE) revert ResolveWindowClosed();
-        if (winner == address(0) || winner == c.creator) revert BadWinner();
+        if (winner == address(0) || winner == c.creator || winner == address(this)) revert BadWinner();
         uint96 prize = c.prize;
         c.status = Status.Resolved;
         c.winner = winner;
@@ -166,6 +177,8 @@ contract WildsentiaChallenges is Ownable2Step, ReentrancyGuard {
 
     // ---------------------------------------------------------------- owner
 
+    /// @notice Appoints the evaluator for challenges created from now on. Existing challenges keep
+    /// theirs; if that key is compromised, pause payouts and let those prizes refund.
     function setEvaluator(address next) external onlyOwner {
         if (next == address(0)) revert ZeroAddress();
         emit EvaluatorChanged(evaluator, next);
@@ -194,7 +207,10 @@ contract WildsentiaChallenges is Ownable2Step, ReentrancyGuard {
 
     // ---------------------------------------------------------------- internal
 
-    function _open(address creator, bytes32 rulesHash, uint96 prize, uint64 deadline) private returns (uint256 id) {
+    function _open(address creator, bytes32 rulesHash, uint96 prize, uint64 deadline, bytes32 authNonce)
+        private
+        returns (uint256 id)
+    {
         if (rulesHash == bytes32(0)) revert EmptyRules();
         if (prize < minPrize || prize > maxPrize) revert PrizeOutOfRange();
         if (deadline < block.timestamp + MIN_DURATION || deadline > block.timestamp + MAX_DURATION) {
@@ -208,10 +224,11 @@ contract WildsentiaChallenges is Ownable2Step, ReentrancyGuard {
             deadline: deadline,
             status: Status.Open,
             rulesHash: rulesHash,
-            resultHash: bytes32(0)
+            resultHash: bytes32(0),
+            evaluator: evaluator
         });
         totalOpen += prize;
-        emit ChallengeCreated(id, creator, prize, deadline, rulesHash);
+        emit ChallengeCreated(id, creator, prize, deadline, rulesHash, authNonce);
     }
 
     function _setPrizeLimits(uint96 minPrize_, uint96 maxPrize_) private {
