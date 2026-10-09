@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { challengeOutcome, challengePanel, driveBars, pickTarget, projection, shouldPing, stateMessage, type PlayObservation } from '../src/playModel.js';
+import { attemptEnded, challengeOutcome, challengePanel, driveBars, gaitsAllowed, pickTarget, possessMessage, projection, shouldPing, stateMessage,
+  type PlayObservation } from '../src/playModel.js';
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const animal = { id: 'chital_1', speciesId: 'chital', displayName: 'Chital deer', position: { x: 1000, z: 2000 }, gait: 'walk', moving: false,
@@ -14,7 +15,8 @@ describe('play page', () => {
     const html = read('play.html');
     expect(html).toContain('src="/src/play.ts"');
     for (const id of ['play-state', 'play-map', 'play-species', 'play-possess', 'play-gait', 'play-stop', 'play-graze', 'play-drink', 'play-rest',
-      'play-feed', 'play-climb', 'play-release', 'play-say', 'play-drives', 'play-challenge', 'play-briefing', 'play-notices', 'play-forest'])
+      'play-feed', 'play-climb', 'play-release', 'play-say', 'play-drives', 'play-challenge', 'play-briefing', 'play-notices', 'play-forest',
+      'play-feedback', 'play-leave', 'play-outcome'])
       expect(html, id).toContain(`id="${id}"`);
   });
 
@@ -34,7 +36,7 @@ describe('play page', () => {
     expect(challengeOutcome(n('You won challenge 7! The prize is being paid to 0xabc.'))).toEqual({ kind: 'met', text: 'You won challenge 7! The prize is being paid to 0xabc.' });
     expect(challengeOutcome(n('You broke a rule of challenge 7, so this attempt is over. The animal is still yours.'))?.kind).toBe('failed');
     expect(challengeOutcome(n('Challenge 7 ran out of time.'))?.kind).toBe('failed');
-    expect(challengeOutcome(n('Challenge 7 was won by another player.'))?.kind).toBe('failed');
+    expect(challengeOutcome(n('Challenge 7 was won by another player.'))?.kind).toBe('void');
     expect(challengeOutcome(n('You met the goal of challenge 7, but it had already closed.'))?.kind).toBe('void');
     expect(challengeOutcome(n('Now steering chital_1'))).toBeNull();
   });
@@ -75,5 +77,38 @@ describe('play page', () => {
     expect(challengePanel({ challengeId: 8, attemptId: 'b', goal: { template: 'hunt' }, rules: [], briefing: '',
       progress: { done: 1, of: 2, unit: 'kills' }, deadline: '2026-10-11T00:00:00.000Z' }, Date.parse('2026-10-10T00:00:00Z')))
       .toMatchObject({ progress: '1 of 2 kills', briefing: null });
+  });
+
+  describe('review fixes', () => {
+    it('makes prey easy to tap on a phone: the hit area is given in canvas pixels', () => {
+      const o = obs({ huntable: ['chital'], nearby: [{ id: 'c2', speciesId: 'chital', x: 1050, z: 2000, distance: 50, predator: false, huntsYou: false, chasingYou: false }] });
+      const p = projection({ x: 1000, z: 2000 }, 200, 400);
+      expect(pickTarget(o, p, 270, 200)).toMatchObject({ kind: 'go' });
+      expect(pickTarget(o, p, 270, 200, 38)).toEqual({ kind: 'hunt', id: 'c2' });
+    });
+
+    it('shows how an attempt ended, even when the animal simply died', () => {
+      const playing = obs({ challenge: { challengeId: 7, attemptId: 'a', goal: {}, rules: [], briefing: '', progress: { done: 0, of: 1, unit: 'kills' }, deadline: '' } });
+      expect(attemptEnded(playing, obs({ notices: [{ at: 2, text: 'You won challenge 7! The prize is being paid to 0xabc.' }] })))
+        .toEqual({ kind: 'met', text: 'You won challenge 7! The prize is being paid to 0xabc.' });
+      expect(attemptEnded(playing, obs({ animal: null, notices: [{ at: 2, text: 'Your chital deer was caught by a tiger.' }] })))
+        .toEqual({ kind: 'failed', text: 'Your attempt at challenge 7 is over: Your chital deer was caught by a tiger.' });
+      expect(attemptEnded(playing, playing)).toBeNull();
+      expect(attemptEnded(obs(), obs())).toBeNull();
+      expect(stateMessage(obs({ animal: null }), true, { outcome: { kind: 'met', text: 'You won challenge 7!' } })).toBe('You won challenge 7!');
+    });
+
+    it('tells someone in line for a species where they are', () => {
+      expect(possessMessage({ queued: 2, speciesId: 'tiger' })).toBe('No tiger is free: you are number 2 in line, and the page takes it when your turn comes.');
+      expect(possessMessage({ animalId: 'chital_1', speciesId: 'chital' })).toBeNull();
+      expect(stateMessage(obs({ animal: null }), true, { queue: 'No tiger is free: you are number 2 in line.' })).toBe('No tiger is free: you are number 2 in line.');
+    });
+
+    it('offers no running on a "never run" challenge', () => {
+      const ruled = obs({ challenge: { challengeId: 7, attemptId: 'a', goal: { rules: [{ type: 'noRun' }] }, rules: ['never run'], briefing: '',
+        progress: { done: 0, of: 1, unit: 'days' }, deadline: '' } });
+      expect(gaitsAllowed(ruled)).toEqual(['walk', 'trot']);
+      expect(gaitsAllowed(obs())).toEqual(['walk', 'trot', 'run']);
+    });
   });
 });

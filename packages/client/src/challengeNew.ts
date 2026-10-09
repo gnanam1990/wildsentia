@@ -1,6 +1,7 @@
 import { api, mountAccountBox, wallet } from './account.js';
 import type { AccountView } from './accountModel.js';
-import { checkTypedData, draftError, HABITAT_COLOURS, termsFrom, toMetres, toPixel, typedDataForWallet, type FormValues } from './challengeNewModel.js';
+import { checkTypedData, draftError, draftKey, HABITAT_COLOURS, signError, termsFrom, toMetres, toPixel, typedDataForWallet, usdcAtomic,
+  type FormValues } from './challengeNewModel.js';
 
 /** Creating a challenge: the goal, rules and briefing, then the creator signs the USDC authorization (spec §8, §14). */
 interface Info {
@@ -18,7 +19,8 @@ const say = (text: string) => { $('new-status').textContent = text; };
 const options = (sel: HTMLSelectElement, values: Array<[string, string]>) =>
   sel.replaceChildren(...values.map(([value, label]) => { const o = document.createElement('option'); o.value = value; o.textContent = label; return o; }));
 
-let info: Info | null = null, account: AccountView | null = null, draft: Draft | null = null;
+let info: Info | null = null, account: AccountView | null = null, draft: (Draft & { key: string; value: string | null }) | null = null;
+let signing = false;
 let patches: Array<{ x: number; y: number; habitat: string }> = [];
 
 function values(): FormValues {
@@ -67,11 +69,15 @@ function onMapClick(event: MouseEvent): void {
 
 async function review(event: Event): Promise<void> {
   event.preventDefault();
+  if (signing) return;
+  const body = { terms: termsFrom(values()), prizeUsdc: input('new-prize').value, days: Number(select('new-deadline').value) };
+  const key = draftKey(body);
+  // The same form keeps its draft: reviewing again does not make another one.
+  if (draft?.key === key) { $('new-review').hidden = false; return; }
   draft = null; $('new-review').hidden = true;
   say('Checking the challenge…');
   try {
-    draft = await api<Draft>('/challenges/drafts', { method: 'POST', body: { terms: termsFrom(values()), prizeUsdc: input('new-prize').value,
-      days: Number(select('new-deadline').value) } });
+    draft = { ...await api<Draft>('/challenges/drafts', { method: 'POST', body }), key, value: usdcAtomic(body.prizeUsdc) };
     $('new-description').textContent = draft.description;
     $('new-terms').textContent = `Prize ${input('new-prize').value} USDC, taken from ${account?.wallet ?? 'your wallet'}. Deadline ${new Date(draft.deadline).toLocaleString()}. `
       + 'If nobody meets the goal by then, the prize comes back to you an hour later.';
@@ -81,24 +87,26 @@ async function review(event: Event): Promise<void> {
 }
 
 async function sign(): Promise<void> {
-  if (!draft || !info) return;
-  const button = $<HTMLButtonElement>('new-sign');
-  button.disabled = true;
+  // The draft being signed is fixed now, whatever happens to the form meanwhile.
+  const d = draft;
+  if (!d || !info || signing) return;
+  const button = $<HTMLButtonElement>('new-sign'), submit = document.querySelector<HTMLButtonElement>('#new-form button[type="submit"]')!;
+  signing = true; button.disabled = true; submit.disabled = true;
   try {
     const eth = wallet();
     const accounts = await eth.request({ method: 'eth_requestAccounts' });
     const from = Array.isArray(accounts) && typeof accounts[0] === 'string' ? accounts[0] : '';
     const chain = await eth.request({ method: 'eth_chainId' });
     if (typeof chain !== 'string' || Number.parseInt(chain, 16) !== info.chainId) throw new Error('wrong_chain');
-    const problem = checkTypedData(draft.typedData, from, info);
+    const problem = checkTypedData(d.typedData, from, info, d.value);
     if (problem) throw new Error(problem);
     say('Check your wallet: it asks you to authorize the prize transfer into the challenge contract.');
-    const signature = await eth.request({ method: 'eth_signTypedData_v4', params: [from, JSON.stringify(typedDataForWallet(draft.typedData))] });
-    await api(`/challenges/drafts/${encodeURIComponent(draft.draftId)}/relay`, { method: 'POST', body: { signature } });
+    const signature = await eth.request({ method: 'eth_signTypedData_v4', params: [from, JSON.stringify(typedDataForWallet(d.typedData))] });
+    await api(`/challenges/drafts/${encodeURIComponent(d.draftId)}/relay`, { method: 'POST', body: { signature } });
     say('Sent to Arc. Your challenge appears on the challenges page in about a minute, once it is confirmed.');
-    $('new-review').hidden = true; draft = null;
-  } catch (e) { say(draftError((e as Error).message)); }
-  finally { button.disabled = false; }
+    $('new-review').hidden = true; if (draft === d) draft = null;
+  } catch (e) { say(signError(e)); }
+  finally { signing = false; button.disabled = false; submit.disabled = false; }
 }
 
 async function main(): Promise<void> {

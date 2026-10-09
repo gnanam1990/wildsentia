@@ -60,7 +60,7 @@ export function draftTypedData(config: DraftConfig, draft: Draft) {
 }
 
 export async function createDraft(store: ChallengeStore, catalog: SpeciesCatalog, config: DraftConfig,
-  input: { creatorWallet: unknown; terms: unknown; prizeUsdc: unknown; days: unknown; accountId?: string; dailyLimit?: number }, now: number):
+  input: { creatorWallet: unknown; terms: unknown; prizeUsdc: unknown; days: unknown; accountId?: string; limits?: { sent: number; total: number } }, now: number):
   Promise<{ ok: true; draft: Draft; description: string } | { ok: false; error: string }> {
   if (typeof input.creatorWallet !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(input.creatorWallet)) return { ok: false, error: 'bad_wallet' };
   const parsed = parseTerms(input.terms, catalog);
@@ -74,7 +74,7 @@ export async function createDraft(store: ChallengeStore, catalog: SpeciesCatalog
   const rules = rulesHash(parsed.terms);
   const draft = await store.insertDraft({ creatorWallet: creator, terms: parsed.terms, rulesHash: rules, prizeAtomic: prize.toString(),
     deadline: new Date(Number(deadline) * 1000), salt, authNonce: authorizationNonce(config, creator, rules, prize, deadline, salt),
-    accountId: input.accountId ?? null }, input.dailyLimit);
+    accountId: input.accountId ?? null }, input.limits);
   if (!draft) return { ok: false, error: 'daily_limit' };
   return { ok: true, draft, description: describeTerms(parsed.terms, catalog) };
 }
@@ -83,11 +83,14 @@ export async function createDraft(store: ChallengeStore, catalog: SpeciesCatalog
  * Checks the creator's signature before spending any gas, then queues the relay. A draft is
  * relayed once; a second signature for it is refused.
  */
-export async function relayDraft(store: ChallengeStore, config: DraftConfig, draftId: string, signature: unknown, now: number):
-  Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+export async function relayDraft(store: ChallengeStore, config: DraftConfig, draftId: string, signature: unknown, now: number,
+  sentPerDay?: number): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
   const draft = await store.draft(draftId);
   if (!draft) return { ok: false, status: 404, error: 'not_found' };
   if (draft.relayedAt) return { ok: false, status: 409, error: 'already_created' };
+  // A signed-in creator sends at most `sentPerDay` challenges a day, however many drafts they reviewed.
+  if (draft.accountId && sentPerDay !== undefined && await store.sentDraftsToday(draft.accountId, draft.id) >= sentPerDay)
+    return { ok: false, status: 429, error: 'daily_limit' };
   if (typeof signature !== 'string' || !/^0x[0-9a-fA-F]{130}$/.test(signature)) return { ok: false, status: 400, error: 'bad_signature' };
   const typed = draftTypedData(config, draft);
   if (Number(typed.message.validBefore) * 1000 <= now + 60_000) return { ok: false, status: 409, error: 'draft_expired' };

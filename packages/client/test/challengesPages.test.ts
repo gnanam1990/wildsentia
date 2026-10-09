@@ -12,7 +12,7 @@ describe('pages', () => {
     const html = read('challenges.html');
     expect(html).toContain('src="/src/challenges.ts"');
     for (const id of ['account-box', 'account-status', 'account-signin', 'account-wallet', 'account-signout', 'challenge-list', 'challenge-detail',
-      'challenge-status', 'detail-briefing', 'detail-attempts', 'detail-accept'])
+      'challenge-status', 'detail-briefing', 'detail-attempts', 'detail-accept', 'detail-feedback', 'detail-play-link'])
       expect(html).toContain(`id="${id}"`);
     expect(html).toMatch(/Written by the challenge's creator/);
   });

@@ -1,20 +1,36 @@
 import { api, mountAccountBox } from './account.js';
-import { challengeOutcome, challengePanel, driveBars, pickTarget, projection, shouldPing, stateMessage, type PlayObservation } from './playModel.js';
+import { attemptEnded, challengePanel, driveBars, gaitsAllowed, pickTarget, possessMessage, projection, shouldPing, stateMessage,
+  type PlayObservation } from './playModel.js';
 
 /** A signed-in person steering an animal, from a phone or a desktop (spec §8, §14). */
 const $ = <T extends HTMLElement>(id: string) => document.querySelector<T>(`#${id}`)!;
 const RADIUS_M = 200;
-let latest: PlayObservation | null = null, connected = true, lastCommand = Date.now(), lastPing = 0, signedIn = false;
+/** How big a tap on prey may be, in CSS pixels, whatever size the map is drawn at. */
+const TAP_CSS_PX = 22;
+let latest: PlayObservation | null = null, connected = true, signedIn = false, polling = false;
+let lastCommand = Date.now(), lastPing = 0, shownState = '';
+let outcome: { kind: 'met' | 'failed' | 'void'; text: string } | null = null, queue: string | null = null;
+let feedbackTimer: ReturnType<typeof setTimeout> | undefined;
 
 const gait = () => document.querySelector<HTMLInputElement>('input[name="gait"]:checked')?.value ?? 'walk';
 const commandErrors: Record<string, string> = { not_possessing: 'You have no animal.', not_a_hunter: 'Your animal does not hunt.',
   not_prey: 'That is not prey your animal hunts.', no_tree: 'There is no tree to climb here.', not_on_land: 'You cannot go there: it is not land.',
   no_land_route: 'There is no way over land to there.', cooldown: 'Wait a little before taking another animal.', rate_limited: 'Slow down a moment.',
-  signed_out: 'Sign in with X to play.', too_soon: 'Wait a few seconds before speaking again.' };
+  signed_out: 'Sign in with X to play.', too_soon: 'Wait a few seconds before speaking again.', no_links: 'No links in what your animal says.',
+  no_addresses_or_keys: 'No addresses or keys in what your animal says.', bad_text: 'Say something short (up to 140 characters).',
+  muted: 'Your animal has been silenced.', already_possessing: 'You already have an animal.', in_a_chase: 'That animal is in a chase right now.',
+  no_free_animal: 'No animal of that species is free.' };
 
-async function command(path: string, body?: unknown): Promise<void> {
-  try { await api(`/play/${path}`, { method: 'POST', body }); lastCommand = Date.now(); }
-  catch (e) { $('play-state').textContent = commandErrors[(e as Error).message] ?? `That did not work (${(e as Error).message}).`; }
+/** A command's problem stays on screen for a few seconds, apart from the state line the poll rewrites. */
+function feedback(text: string): void {
+  $('play-feedback').textContent = text;
+  clearTimeout(feedbackTimer);
+  feedbackTimer = setTimeout(() => { $('play-feedback').textContent = ''; }, 6000);
+}
+
+async function command<T = unknown>(path: string, body?: unknown): Promise<T | null> {
+  try { const r = await api<T>(`/play/${path}`, { method: 'POST', body }); lastCommand = Date.now(); return r; }
+  catch (e) { feedback(commandErrors[(e as Error).message] ?? `That did not work (${(e as Error).message}).`); return null; }
 }
 
 function draw(o: PlayObservation): void {
@@ -33,10 +49,24 @@ function draw(o: PlayObservation): void {
   ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(size / 2, size / 2, 8, 0, Math.PI * 2); ctx.fill();
 }
 
+function setState(text: string): void {
+  // Written only when it changes, so a screen reader does not repeat it every poll.
+  if (text !== shownState) { $('play-state').textContent = text; shownState = text; }
+}
+
 function render(o: PlayObservation | null): void {
-  const idleMinutes = Math.floor((Date.now() - lastCommand) / 60_000);
-  $('play-state').textContent = stateMessage(o, connected, { idleMinutes });
+  setState(stateMessage(o, connected, { idleMinutes: Math.floor((Date.now() - lastCommand) / 60_000), outcome, queue }));
   $('play-pick').hidden = !(signedIn && connected && o && !o.animal && !o.waiting);
+  $('play-leave').hidden = !o?.waiting;
+  const banner = $('play-outcome');
+  banner.hidden = !outcome;
+  banner.className = `play-outcome ${outcome?.kind ?? ''}`;
+  banner.textContent = outcome?.text ?? '';
+  const allowed = gaitsAllowed(o);
+  for (const r of document.querySelectorAll<HTMLInputElement>('input[name="gait"]')) {
+    r.disabled = !allowed.includes(r.value);
+    if (r.disabled && r.checked) document.querySelector<HTMLInputElement>('input[name="gait"][value="walk"]')!.checked = true;
+  }
   if (!o) return;
   if (o.animal) { draw(o); $<HTMLAnchorElement>('play-forest').href = `/#animal=${encodeURIComponent(o.animal.id)}`; }
   $('play-drives').replaceChildren(...(o.animal ? driveBars(o.animal.drives, o.animal.stamina) : []).map((b) => {
@@ -55,33 +85,41 @@ function render(o: PlayObservation | null): void {
     $('play-briefing-label').textContent = panel.briefing?.label ?? '';
     $('play-briefing-text').textContent = panel.briefing?.text ?? '';
   }
-  const outcome = challengeOutcome(o.notices);
-  $('play-notices').replaceChildren(...[...o.notices].reverse().slice(0, 8).map((n) => {
-    const li = document.createElement('li'); li.textContent = n.text;
-    if (outcome && n.text === outcome.text) li.className = `outcome ${outcome.kind}`;
-    return li;
-  }));
+  $('play-notices').replaceChildren(...[...o.notices].reverse().slice(0, 8).map((n) => { const li = document.createElement('li'); li.textContent = n.text; return li; }));
 }
 
 async function poll(): Promise<void> {
-  try { latest = await api<PlayObservation>('/play/observe'); connected = true; signedIn = true; }
-  catch (e) {
-    if ((e as Error).message === 'signed_out') { signedIn = false; latest = null; connected = true; $('play-state').textContent = 'Sign in with X to play.'; return; }
-    connected = false;
-  }
-  render(latest);
-  const now = Date.now();
-  if (shouldPing({ visible: document.visibilityState === 'visible', hasAnimal: !!latest?.animal, lastPing, now })) {
-    lastPing = now;
-    void api('/play/presence', { method: 'POST' }).catch(() => undefined);
-  }
+  if (polling) return; // a slow answer is never overtaken by the next one
+  polling = true;
+  try {
+    const previous = latest;
+    try { latest = await api<PlayObservation>('/play/observe'); connected = true; signedIn = true; }
+    catch (e) {
+      if ((e as Error).message === 'signed_out') { signedIn = false; latest = null; connected = true; render(null); setState('Sign in with X to play.'); return; }
+      connected = false;
+    }
+    if (latest) {
+      const ended = attemptEnded(previous, latest);
+      if (ended) outcome = ended;
+      if (latest.challenge) outcome = null;
+      if (latest.animal) queue = null;
+    }
+    render(latest);
+    const now = Date.now();
+    if (shouldPing({ visible: document.visibilityState === 'visible', hasAnimal: !!latest?.animal, lastPing, now })) {
+      lastPing = now;
+      // A presence ping keeps the animal from going idle, so it counts as a command here too.
+      void api('/play/presence', { method: 'POST' }).then(() => { lastCommand = Date.now(); }, () => undefined);
+    }
+  } finally { polling = false; }
 }
 
 function onMapTap(event: MouseEvent): void {
   if (!latest?.animal) return;
   const canvas = $<HTMLCanvasElement>('play-map'), box = canvas.getBoundingClientRect();
+  const perCss = canvas.width / box.width;
   const p = projection(latest.animal.position, RADIUS_M, canvas.width);
-  const target = pickTarget(latest, p, (event.clientX - box.left) / box.width * canvas.width, (event.clientY - box.top) / box.height * canvas.height);
+  const target = pickTarget(latest, p, (event.clientX - box.left) * perCss, (event.clientY - box.top) * perCss, TAP_CSS_PX * perCss);
   void (target.kind === 'hunt' ? command('hunt', { animalId: target.id }) : command('move', { to: { x: target.x, z: target.z }, gait: gait() }));
 }
 
@@ -91,7 +129,11 @@ async function main(): Promise<void> {
     const { species } = await api<{ species: Array<{ id: string; displayName: string }> }>('/agents/species');
     $<HTMLSelectElement>('play-species').replaceChildren(...species.map((s) => { const o = document.createElement('option'); o.value = s.id; o.textContent = s.displayName; return o; }));
   } catch { /* the list stays empty; the page still plays an animal already held */ }
-  $('play-possess').addEventListener('click', () => { void command('possess', { speciesId: $<HTMLSelectElement>('play-species').value }); });
+  $('play-possess').addEventListener('click', () => {
+    void command<{ queued?: number; speciesId?: string }>('possess', { speciesId: $<HTMLSelectElement>('play-species').value })
+      .then((r) => { queue = r ? possessMessage(r) : queue; outcome = null; render(latest); });
+  });
+  $('play-leave').addEventListener('click', () => { void command('challenges/leave').then(() => poll()); });
   $('play-map').addEventListener('click', onMapTap);
   $('play-stop').addEventListener('click', () => { void command('stop'); });
   for (const action of ['graze', 'drink', 'rest', 'feed']) $(`play-${action}`).addEventListener('click', () => { void command('act', { action }); });
@@ -102,7 +144,7 @@ async function main(): Promise<void> {
   $('play-say').addEventListener('submit', (e) => {
     e.preventDefault();
     const box = $<HTMLInputElement>('play-say-text');
-    if (box.value.trim()) void command('say', { text: box.value.trim() }).then(() => { box.value = ''; });
+    if (box.value.trim()) void command('say', { text: box.value.trim() }).then((r) => { if (r) box.value = ''; });
   });
   await poll();
   setInterval(() => { void poll(); }, 2000);

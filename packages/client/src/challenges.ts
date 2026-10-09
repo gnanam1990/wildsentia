@@ -12,6 +12,8 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, classN
 };
 let account: AccountView | null = null;
 let explorer: string | null = null;
+let shown: ChallengeView | null = null;
+const showAccept = () => { $('detail-accept').hidden = !(shown?.status === 'open' && account?.canPlay); };
 
 function listCard(c: ChallengeView): HTMLElement {
   const card = el('a', undefined, 'challenge-card');
@@ -56,15 +58,17 @@ async function showDetail(id: string): Promise<void> {
     return tr;
   }));
   $('detail-no-attempts').hidden = attempts.length > 0;
+  shown = c;
+  showAccept();
   const accept = $<HTMLButtonElement>('detail-accept');
-  accept.hidden = !(c.status === 'open' && account?.canPlay);
   accept.onclick = async () => {
     accept.disabled = true;
     const say = $('detail-feedback');
     try {
       const r = await api<{ queued: boolean; position?: number }>(`/play/challenges/${c.id}/accept`, { method: 'POST' });
-      if (r.queued) say.textContent = `No animal is free yet: you are number ${r.position} on the waiting list. Keep the play page open.`;
-      location.href = '/play.html';
+      if (!r.queued) { location.href = '/play.html'; return; }
+      say.textContent = `No animal is free yet: you are number ${r.position} on the waiting list. Your attempt starts on its own when one comes free.`;
+      $('detail-play-link').hidden = false;
     } catch (e) { say.textContent = acceptErrors[(e as Error).message] ?? 'Could not accept the challenge. Try again.'; }
     finally { accept.disabled = false; }
   };
@@ -73,11 +77,17 @@ async function showDetail(id: string): Promise<void> {
 async function main(): Promise<void> {
   const notice = signinMessage(location.search);
   if (notice) $('page-notice').textContent = notice;
-  account = await mountAccountBox((a) => { account = a; $('create-link').hidden = !a?.canCreate; });
+  account = await mountAccountBox((a) => { account = a; $('create-link').hidden = !a?.canCreate; showAccept(); });
   try { explorer = (await api<{ explorerUrl: string | null }>('/challenges/info')).explorerUrl; } catch { explorer = null; }
   const id = new URLSearchParams(location.search).get('id');
-  try { if (id && /^[0-9]{1,15}$/.test(id)) await showDetail(id); else await showList(); }
-  catch (e) { $('challenge-status').textContent = (e as Error).message === 'not_found' ? 'There is no such challenge.' : 'Challenges are not available right now.'; }
+  const detail = !!id && /^[0-9]{1,15}$/.test(id);
+  try { if (detail) await showDetail(id); else await showList(); }
+  catch (e) {
+    const text = (e as Error).message === 'not_found' ? 'There is no such challenge.' : 'Challenges are not available right now.';
+    // Errors go where they can be seen: the detail view hides the list's status line.
+    $(detail ? 'detail-feedback' : 'challenge-status').textContent = text;
+    if (detail) $('detail-attempts-card').hidden = true;
+  }
 }
 
 void main();

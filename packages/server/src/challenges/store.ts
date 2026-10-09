@@ -68,18 +68,20 @@ export class ChallengeStore {
   // ---- drafts ----------------------------------------------------------------------------
 
   /**
-   * Saves a draft. A signed-in creator's draft is counted against `dailyLimit` under a lock on their
-   * account, so drafts sent all at once cannot pass the limit together; null when it is reached.
+   * Saves a draft. A signed-in creator's drafts are counted under a lock on their account, so drafts
+   * sent all at once cannot pass the limits together: `sent` challenges a day (relayed, or on their
+   * way) and `total` drafts a day, reviewed or not. Null when either is reached.
    */
-  async insertDraft(d: Omit<Draft, 'id' | 'createdAt' | 'relayedAt'>, dailyLimit?: number): Promise<Draft | null> {
-    if (d.accountId && dailyLimit !== undefined) {
+  async insertDraft(d: Omit<Draft, 'id' | 'createdAt' | 'relayedAt'>, limits?: { sent: number; total: number }): Promise<Draft | null> {
+    if (d.accountId && limits) {
       const db = await this.pool.connect();
       try {
         await db.query('begin');
         await db.query('select pg_advisory_xact_lock(hashtext($1))', [`challenge-drafts:${d.accountId}`]);
-        const { rows: [count] } = await db.query(`select count(*)::int as n from challenge_drafts
-          where account_id = $1 and created_at > now() - interval '24 hours'`, [d.accountId]);
-        if (count.n >= dailyLimit) { await db.query('rollback'); return null; }
+        const { rows: [count] } = await db.query(`select count(*)::int as total, count(*) filter (where d.relayed_at is not null or exists (select 1 from challenge_chain_ops o
+          where o.draft_id = d.id and o.kind = 'relay_create' and o.status <> 'failed'))::int as sent
+          from challenge_drafts d where d.account_id = $1 and d.created_at > now() - interval '24 hours'`, [d.accountId]);
+        if (count.sent >= limits.sent || count.total >= limits.total) { await db.query('rollback'); return null; }
         const { rows } = await db.query(`insert into challenge_drafts
           (id, creator_wallet, terms, rules_hash, prize_atomic, deadline, salt, auth_nonce, account_id) values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning *`,
         [randomUUID(), d.creatorWallet.toLowerCase(), JSON.stringify(d.terms), d.rulesHash.toLowerCase(), d.prizeAtomic, d.deadline,
@@ -94,6 +96,14 @@ export class ChallengeStore {
     [randomUUID(), d.creatorWallet.toLowerCase(), JSON.stringify(d.terms), d.rulesHash.toLowerCase(), d.prizeAtomic, d.deadline,
       d.salt.toLowerCase(), d.authNonce.toLowerCase(), d.accountId ?? null]);
     return draft(rows[0]);
+  }
+
+  /** Challenges the account sent in the last day (relayed, or on their way), other than `except`. */
+  async sentDraftsToday(accountId: string, except: string): Promise<number> {
+    const { rows } = await this.pool.query(`select count(*) filter (where d.relayed_at is not null or exists (select 1 from challenge_chain_ops o
+          where o.draft_id = d.id and o.kind = 'relay_create' and o.status <> 'failed'))::int as n from challenge_drafts d
+      where d.account_id = $1 and d.id <> $2 and d.created_at > now() - interval '24 hours'`, [accountId, except]);
+    return rows[0].n;
   }
 
   async draft(id: string): Promise<Draft | null> {

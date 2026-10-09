@@ -377,7 +377,8 @@ router, and a social outbox whose drafts must each match a simulation event.
   - The linked wallet is the account's payout wallet, and the wallet it creates challenges from.
 - **Rate limits (spec §6):**
   - an X account younger than 30 days can neither create nor accept;
-  - an account may create 3 challenges a day.
+  - an account may create 3 challenges a day. Only challenges actually sent (relayed, or on their way) count, so
+    reviewing a draft again does not use one up; drafts themselves are capped at 20 a day.
 
 ### Humans in the live world
 - **Identity:** each account gets one live-layer identity, a `live_agents` row with `kind = 'human'`.

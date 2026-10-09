@@ -17,3 +17,9 @@
 .drives .critical i { background: #e0664e; }
 .notices { list-style: none; padding: 0; display: grid; gap: 6px; color: var(--ink-2); font-size: .92rem; }
 #play-briefing blockquote { margin: 6px 0 0; padding: 8px 12px; border-left: 3px solid var(--line); overflow-wrap: anywhere; }
+.play-outcome { padding: 14px 16px; border-radius: 10px; font-weight: 700; }
+.play-outcome.met { background: #1f4a2c; border: 1px solid var(--moss); }
+.play-outcome.failed { background: #4a2a1f; border: 1px solid #e0664e; }
+.play-outcome.void { background: #2c3440; border: 1px solid var(--mist); }
+.play-feedback:not(:empty) { padding: 10px 14px; border-left: 3px solid #e0b84e; background: #2a2716; }
+.gait label:has(input:disabled) { opacity: .45; }

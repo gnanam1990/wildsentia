@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { checkTypedData, draftError, termsFrom, toMetres, toPixel, typedDataForWallet, type FormValues } from '../src/challengeNewModel.js';
+import { checkTypedData, draftError, draftKey, signError, termsFrom, toMetres, toPixel, typedDataForWallet, usdcAtomic, type FormValues } from '../src/challengeNewModel.js';
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const form = (over: Partial<FormValues> = {}): FormValues => ({ template: 'survive', speciesId: 'chital', days: 3, count: 1, x: 0, z: 0,
@@ -46,7 +46,9 @@ describe('create flow', () => {
 
   it('refuses to sign typed data for another wallet, chain or token', () => {
     const info = { chainId: 5042002, usdc: '0x3600000000000000000000000000000000000000', contract: '0x' + 'c'.repeat(40) };
-    const typed = { domain: { chainId: 5042002, verifyingContract: '0x3600000000000000000000000000000000000000' }, primaryType: 'ReceiveWithAuthorization',
+    const types = { ReceiveWithAuthorization: [{ name: 'from', type: 'address' }, { name: 'to', type: 'address' }, { name: 'value', type: 'uint256' },
+      { name: 'validAfter', type: 'uint256' }, { name: 'validBefore', type: 'uint256' }, { name: 'nonce', type: 'bytes32' }] };
+    const typed = { domain: { chainId: 5042002, verifyingContract: '0x3600000000000000000000000000000000000000' }, types, primaryType: 'ReceiveWithAuthorization',
       message: { from: '0x' + 'A'.repeat(40), to: '0x' + 'c'.repeat(40) } };
     const account = '0x' + 'a'.repeat(40);
     expect(checkTypedData(typed, account, info)).toBeNull();
@@ -63,5 +65,36 @@ describe('create flow', () => {
     expect(draftError('daily_limit')).toMatch(/three/);
     expect(draftError('briefing_no_links')).toMatch(/links/);
     expect(draftError('something_else')).toBe('The server refused this challenge (something_else).');
+  });
+
+  describe('review fixes', () => {
+    const canonical = [{ name: 'from', type: 'address' }, { name: 'to', type: 'address' }, { name: 'value', type: 'uint256' },
+      { name: 'validAfter', type: 'uint256' }, { name: 'validBefore', type: 'uint256' }, { name: 'nonce', type: 'bytes32' }];
+    const info = { chainId: 5042002, usdc: '0x3600000000000000000000000000000000000000', contract: '0x' + 'c'.repeat(40) };
+    const typed = { domain: { name: 'USDC', version: '2', chainId: 5042002, verifyingContract: info.usdc }, types: { ReceiveWithAuthorization: canonical },
+      primaryType: 'ReceiveWithAuthorization', message: { from: '0x' + 'a'.repeat(40), to: info.contract, value: '5000000' } };
+
+    it('signs only the canonical authorization, for the prize the creator typed', () => {
+      expect(checkTypedData(typed, '0x' + 'a'.repeat(40), info, '5000000')).toBeNull();
+      expect(checkTypedData(typed, '0x' + 'a'.repeat(40), info, '6000000')).toBe('wrong_amount');
+      expect(checkTypedData({ ...typed, types: { ReceiveWithAuthorization: canonical.slice(0, 5) } }, '0x' + 'a'.repeat(40), info, '5000000')).toBe('wrong_types');
+      expect(checkTypedData({ ...typed, types: { ...typed.types, EIP712Domain: [] } }, '0x' + 'a'.repeat(40), info, '5000000')).toBe('wrong_types');
+      // The domain type the wallet hashes is always the one built here.
+      expect(typedDataForWallet({ ...typed, types: { ...typed.types, EIP712Domain: [] } }).types.EIP712Domain).toHaveLength(4);
+      expect([usdcAtomic('5'), usdcAtomic('2.5'), usdcAtomic('0.000001'), usdcAtomic('1.0000001'), usdcAtomic('x')]).toEqual(['5000000', '2500000', '1', null, null]);
+    });
+
+    it('says plainly when the creator cancelled in their wallet, and names the relay refusals', () => {
+      expect(signError({ code: 4001, message: 'MetaMask Tx Signature: User denied' })).toBe('You cancelled in your wallet; nothing was signed or sent.');
+      expect(signError(new Error('signature_does_not_match'))).toMatch(/did not match/);
+      expect(signError(new Error('already_queued'))).toMatch(/already/);
+      expect(signError(new TypeError('x is undefined'))).toBe('Something went wrong in the browser; nothing was sent. Try again.');
+    });
+
+    it('reuses the reviewed draft while the form is unchanged', () => {
+      const a = draftKey({ terms: termsFrom(form()), prizeUsdc: '5', days: 3 });
+      expect(draftKey({ terms: termsFrom(form()), prizeUsdc: '5', days: 3 })).toBe(a);
+      expect(draftKey({ terms: termsFrom(form({ briefing: 'x' })), prizeUsdc: '5', days: 3 })).not.toBe(a);
+    });
   });
 });

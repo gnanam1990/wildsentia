@@ -55,4 +55,6 @@ export const acceptErrors: Record<string, string> = {
   release_your_animal_first: 'Let your current animal go first (on the play page).',
   no_attempts_left: 'You have used your three attempts at this challenge.',
   deadline_passed: 'This challenge has ended.', not_open: 'This challenge is not open.', signed_out: 'Sign in with X first.',
+  challenges_starting: 'Challenges are starting up. Try again in a moment.', animal_lost: 'The animal was lost as the attempt started. Try again.',
+  cooldown: 'Wait a little after losing an animal before taking another.', no_free_animal: 'No animal of that species is free right now.',
 };

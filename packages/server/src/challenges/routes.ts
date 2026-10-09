@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { sameOriginJson } from '../accounts/cookies.js';
-import { CREATES_PER_DAY, MIN_X_ACCOUNT_DAYS } from '../accounts/store.js';
+import { CREATES_PER_DAY, DRAFTS_PER_DAY, MIN_X_ACCOUNT_DAYS } from '../accounts/store.js';
 import { networkKey } from '../network.js';
 import { createDraft, DEADLINE_DAYS, draftTypedData, formatUsdc, relayDraft, type DraftConfig } from './drafts.js';
 import type { Attempt, Challenge, ChallengeStore } from './store.js';
@@ -114,7 +114,7 @@ export function installChallenges(app: FastifyInstance, deps: ChallengeRouteDeps
       creatorWallet = who.wallet; accountId = who.accountId;
     }
     const made = await createDraft(store, catalog, deps.drafts, { creatorWallet, terms: body.terms,
-      prizeUsdc: body.prizeUsdc, days: body.days, ...(accountId ? { accountId, dailyLimit: CREATES_PER_DAY } : {}) }, clock());
+      prizeUsdc: body.prizeUsdc, days: body.days, ...(accountId ? { accountId, limits: { sent: CREATES_PER_DAY, total: DRAFTS_PER_DAY } } : {}) }, clock());
     if (!made.ok) return reply.code(made.error === 'daily_limit' ? 429 : 400).send({ error: made.error });
     return { draftId: made.draft.id, description: made.description, rulesHash: made.draft.rulesHash,
       deadline: made.draft.deadline.toISOString(), typedData: plain(draftTypedData(deps.drafts, made.draft)) };
@@ -123,7 +123,7 @@ export function installChallenges(app: FastifyInstance, deps: ChallengeRouteDeps
   app.post<{ Params: { id: string } }>('/challenges/drafts/:id/relay', async (req, reply) => {
     if (!relays.take(networkKey(req.ip), clock())) return reply.code(429).send({ error: 'rate_limited' });
     const body = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<string, unknown>;
-    const result = await relayDraft(store, deps.drafts, req.params.id, body.signature, clock());
+    const result = await relayDraft(store, deps.drafts, req.params.id, body.signature, clock(), CREATES_PER_DAY);
     if (!result.ok) return reply.code(result.status).send({ error: result.error });
     return reply.code(202).send({ queued: true });
   });

@@ -31,16 +31,34 @@ interface TypedData { domain: Record<string, unknown>; types?: Record<string, un
 export function typedDataForWallet<T extends TypedData>(t: T): T & { types: Record<string, unknown> & { EIP712Domain: Array<{ name: string; type: string }> } } {
   const fields: Array<[string, string]> = [['name', 'string'], ['version', 'string'], ['chainId', 'uint256'], ['verifyingContract', 'address']];
   const EIP712Domain = fields.filter(([name]) => t.domain[name] !== undefined).map(([name, type]) => ({ name, type }));
-  return { ...t, types: { EIP712Domain, ...(t.types ?? {}) } };
+  // Built here, last: a domain type sent by the server never replaces it.
+  return { ...t, types: { ...(t.types ?? {}), EIP712Domain } };
 }
+
+/** EIP-3009's ReceiveWithAuthorization, field for field: nothing else is ever signed. */
+const RECEIVE = [['from', 'address'], ['to', 'address'], ['value', 'uint256'], ['validAfter', 'uint256'], ['validBefore', 'uint256'], ['nonce', 'bytes32']];
+
+/** A USDC amount typed by a person, as 6-decimal units; null if it is not one. */
+export function usdcAtomic(text: string): string | null {
+  const m = /^(\d{1,12})(?:\.(\d{1,6}))?$/.exec(text.trim());
+  return m ? (BigInt(m[1]!) * 1_000_000n + BigInt((m[2] ?? '').padEnd(6, '0'))).toString() : null;
+}
+
+/** The same form gives the same draft: a review is not repeated (each draft counts while it waits). */
+export const draftKey = (body: { terms: unknown; prizeUsdc: string; days: number }) => JSON.stringify(body);
 
 /**
  * Nothing is signed unless it is a USDC receive authorization from the connected wallet, on the
  * challenge chain, for the USDC token and the challenge contract the server names.
  */
-export function checkTypedData(t: TypedData, account: string, info: { chainId: number; usdc: string; contract: string }): string | null {
+export function checkTypedData(t: TypedData, account: string, info: { chainId: number; usdc: string; contract: string }, expectedValue?: string | null): string | null {
   const same = (a: unknown, b: string) => typeof a === 'string' && a.toLowerCase() === b.toLowerCase();
   if (t.primaryType !== 'ReceiveWithAuthorization') return 'wrong_kind';
+  const types = t.types ?? {};
+  const fields = types.ReceiveWithAuthorization as Array<{ name: string; type: string }> | undefined;
+  if (Object.keys(types).length !== 1 || !Array.isArray(fields) || fields.length !== RECEIVE.length
+    || fields.some((f, i) => f.name !== RECEIVE[i]![0] || f.type !== RECEIVE[i]![1])) return 'wrong_types';
+  if (expectedValue !== undefined && String(t.message.value) !== expectedValue) return 'wrong_amount';
   if (!same(t.message.from, account)) return 'wrong_wallet';
   if (Number(t.domain.chainId) !== info.chainId) return 'wrong_chain';
   if (!same(t.domain.verifyingContract, info.usdc)) return 'wrong_token';
@@ -66,7 +84,20 @@ const DRAFT_ERRORS: Record<string, string> = {
   wrong_chain: 'Your wallet is on another network. Switch it to the challenge network.', wrong_token: 'The authorization was not for USDC, so nothing was signed.',
   wrong_contract: 'The authorization was not for the challenge contract, so nothing was signed.', wrong_kind: 'The request was not a USDC authorization, so nothing was signed.',
   no_wallet: 'No browser wallet was found.',
+  wrong_types: 'The authorization was not the standard USDC one, so nothing was signed.',
+  wrong_amount: 'The authorization was not for the prize you typed, so nothing was signed.',
+  signature_does_not_match: 'The signature did not match this draft. Review it again and sign once more.',
+  not_found: 'That draft no longer exists. Review the challenge again.', already_queued: 'This challenge is already on its way to Arc.',
+  rate_limited: 'Too many requests just now. Wait a minute and try again.',
 };
+
+/** What went wrong while signing: the person cancelling, the browser, or the server's refusal. */
+export function signError(e: unknown): string {
+  if (e && typeof e === 'object' && (e as { code?: unknown }).code === 4001) return 'You cancelled in your wallet; nothing was signed or sent.';
+  const code = e instanceof Error ? e.message : '';
+  if (!(e instanceof Error) || e.constructor !== Error || !/^[a-z_]+$/.test(code)) return 'Something went wrong in the browser; nothing was sent. Try again.';
+  return draftError(code);
+}
 export const draftError = (code: string) => DRAFT_ERRORS[code] ?? `The server refused this challenge (${code}).`;
 
 export const HABITAT_COLOURS: Record<string, string> = { shola: '#2f5d3a', grassland: '#8aa65a', riparian: '#4f8f6f', rock: '#8c8478',

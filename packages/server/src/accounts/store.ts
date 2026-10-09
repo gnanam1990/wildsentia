@@ -9,6 +9,8 @@ export const SESSION_DAYS = 30;
 /** An X account younger than this can neither create nor accept a challenge (spec §6). */
 export const MIN_X_ACCOUNT_DAYS = 30;
 export const CREATES_PER_DAY = 3;
+/** Drafts a day, reviewed or not: only sent ones count toward CREATES_PER_DAY, this caps the rest. */
+export const DRAFTS_PER_DAY = 20;
 
 const hash = (token: string) => createHash('sha256').update(token).digest('hex');
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -46,10 +48,11 @@ export class AccountStore {
     if (token) await this.pool.query('delete from account_sessions where token_hash = $1', [hash(token)]);
   }
 
-  /** Challenges drafted by the account in the last day. */
+  /** Challenges the account sent in the last day (relayed, or on their way); drafts only reviewed do not count. */
   async draftsToday(accountId: string): Promise<number> {
-    const { rows } = await this.pool.query(`select count(*)::int as n from challenge_drafts
-      where account_id = $1 and created_at > $2`, [accountId, new Date(this.clock() - 86_400_000)]);
+    const { rows } = await this.pool.query(`select count(*) filter (where d.relayed_at is not null or exists (select 1 from challenge_chain_ops o
+          where o.draft_id = d.id and o.kind = 'relay_create' and o.status <> 'failed'))::int as n from challenge_drafts d
+      where d.account_id = $1 and d.created_at > $2`, [accountId, new Date(this.clock() - 86_400_000)]);
     return rows[0].n;
   }
 

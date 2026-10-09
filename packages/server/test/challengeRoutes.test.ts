@@ -198,16 +198,46 @@ maybe('creator drafts', () => {
     expect((await draft()).statusCode).toBe(401);
   });
 
-  it('holds the daily limit even against drafts sent all at once', async () => {
+  it('counts only challenges actually sent toward the three a day, and caps drafts at twenty a day even when sent all at once', async () => {
     const real = new AccountStore(pool!, new AgentStore(pool!));
     await app.close();
     app = Fastify();
     installChallenges(app, { store, catalog, drafts, adminToken: ADMIN, explorerUrl: null,
       creators: { origin: ORIGIN, account: async () => who, draftsToday: (accountId) => real.draftsToday(accountId) } });
     await app.ready();
-    const results = await Promise.all(Array.from({ length: 8 }, () => draft()));
-    expect(results.filter((r) => r.statusCode === 200)).toHaveLength(3);
-    expect(results.filter((r) => r.statusCode === 429).map((r) => r.json().error)).toEqual(Array(5).fill('daily_limit'));
+    // Reviewing again and again without signing uses up nothing.
+    const results = await Promise.all(Array.from({ length: 25 }, () => draft()));
+    expect(results.filter((r) => r.statusCode === 200)).toHaveLength(20);
+    expect(results.filter((r) => r.statusCode === 429)).toHaveLength(5);
+    expect(await real.draftsToday(who!.accountId)).toBe(0);
+    // The day's cap on drafts holds in the store itself, under its lock.
+    const terms = { template: 'hunt', version: 1, speciesId: 'tiger', count: 1, rules: [], briefing: '' } as const;
+    const more = { creatorWallet: WALLET, terms, rulesHash: rulesHash(terms), prizeAtomic: '1000000', deadline: new Date(Date.now() + 86_400_000),
+      salt: `0x${'1'.repeat(64)}` as `0x${string}`, authNonce: `0x${'9'.repeat(64)}` as `0x${string}`, accountId: who!.accountId };
+    expect(await store.insertDraft(more, { sent: 3, total: 20 })).toBeNull();
+    expect(await store.insertDraft(more, { sent: 3, total: 21 })).not.toBeNull();
+    // Three sent (relayed, or on their way) use the day's three.
+    await pool!.query(`update challenge_drafts set created_at = now() - interval '25 hours' where id not in
+      (select id from challenge_drafts order by created_at desc limit 3)`);
+    const ids = (await pool!.query('select id from challenge_drafts where created_at > now() - interval \'1 day\'')).rows.map((r) => r.id);
+    await pool!.query('update challenge_drafts set relayed_at = now() where id = any($1)', [ids.slice(0, 2)]);
+    await store.enqueueOp('relay_create', { draftId: ids[2] }, {});
+    expect(await real.draftsToday(who!.accountId)).toBe(3);
+    await app.close();
+    app = Fastify(); // a fresh per-network limiter: this refusal is the daily limit's
+    installChallenges(app, { store, catalog, drafts, adminToken: ADMIN, explorerUrl: null,
+      creators: { origin: ORIGIN, account: async () => who, draftsToday: (accountId) => real.draftsToday(accountId) } });
+    await app.ready();
+    expect((await draft()).json()).toEqual({ error: 'daily_limit' });
+  });
+
+  it('refuses to relay a fourth challenge in a day from one creator', async () => {
+    const made = [];
+    for (let i = 0; i < 4; i++) made.push((await draft()).json().draftId as string);
+    await pool!.query('update challenge_drafts set relayed_at = now() where id = any($1)', [made.slice(0, 3)]);
+    const relay = await app.inject({ method: 'POST', url: `/challenges/drafts/${made[3]}/relay`, headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify({ signature: '0x' + '1'.repeat(130) }) });
+    expect(relay.json()).toEqual({ error: 'daily_limit' });
   });
 
   it('refuses cross-site drafts, and still lets the operator draft with the token', async () => {
