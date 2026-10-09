@@ -22,8 +22,10 @@ export const MAX_LOG_ENTRIES = 5000;
 export const MAX_ATTEMPTS_PER_CHALLENGE = 3;
 /** How long an agent waits on a challenge's list for a free animal before it is dropped. */
 export const WAIT_MS = 30 * 60_000;
-/** At most this many nearby animals are looked through for kin (the herd rule). */
-const KIN_SEARCH_LIMIT = 80;
+/** At most this many nearby animals are looked through for kin (the herd rule)... */
+const KIN_SEARCH_LIMIT = 400;
+/** ...as far beyond the herd distance as observe looks: how far an animal's shown position can be from its saved one. */
+const KIN_SEARCH_SLACK_M = 900;
 
 export interface Player { agentId: string; name: string; wallet: string | null; walletProven: boolean }
 export type AcceptResult =
@@ -34,6 +36,8 @@ export type AcceptResult =
 interface Running {
   attempt: Attempt; terms: ChallengeTerms; deadline: number; kills: number; escapes: number; logged: number; finishing: boolean;
   watch: RuleWatch;
+  /** When the rules were last checked (ms): a sprint since then breaks "never run". */
+  checkedAt: number;
   /** A rule a command broke, judged on the next tick. */
   broken?: string;
   /** The goal-met entry is logged once, even if recording the win has to be retried. */
@@ -71,7 +75,8 @@ export class ChallengeEngine {
       }
       const logged = (await this.store.log(attempt.id)).length;
       this.#running.set(attempt.agentId, { attempt, terms: challenge.terms, deadline: challenge.deadline.getTime(),
-        kills: attempt.kills, escapes: attempt.escapes, logged, finishing: false, watch: new RuleWatch(challenge.terms.rules) });
+        kills: attempt.kills, escapes: attempt.escapes, logged, finishing: false, watch: new RuleWatch(challenge.terms.rules),
+        checkedAt: this.clock() });
     }
     this.#ready = true;
   }
@@ -122,9 +127,10 @@ export class ChallengeEngine {
   /** A free animal of the challenge's species that may start it: inside its zone, far enough from its target. */
   #freeAnimal(terms: ChallengeTerms): string | null {
     const zone = terms.rules.find((r) => r.type === 'zone');
-    for (const a of this.world.candidates(terms.speciesId, 200)) {
+    // Judged where possess places the animal (its saved position), over every free one of the species.
+    for (const a of this.world.candidates(terms.speciesId, Number.MAX_SAFE_INTEGER)) {
       if (this.live.wild.has(a.id)) continue;
-      const at = this.live.positionOf(a.id) ?? a.position;
+      const at = a.position;
       if (zone && zone.type === 'zone' && Math.hypot(at.x - zone.x, at.z - zone.z) > zone.radiusM) continue;
       if (terms.template === 'reach' && Math.hypot(at.x - terms.x, at.z - terms.z) < REACH_MIN_START_M) continue;
       return a.id;
@@ -155,7 +161,7 @@ export class ChallengeEngine {
       return { ok: false, status: 409, error: 'animal_lost' };
     }
     const run: Running = { attempt, terms, deadline: c.deadline.getTime(), kills: 0, escapes: 0, logged: 0, finishing: false,
-      watch: new RuleWatch(terms.rules) };
+      watch: new RuleWatch(terms.rules), checkedAt: this.clock() };
     this.#running.set(player.agentId, run);
     this.#log(run, 'start', { challengeId: c.id, ...startState, worldTime: attempt.startedWorld });
     const rules = terms.rules.length ? ` Rules: ${terms.rules.map(describeRule).join('; ')}.` : '';
@@ -164,12 +170,14 @@ export class ChallengeEngine {
   }
 
   /** The player's current attempt, for observe. */
-  progressOf(agentId: string): { challengeId: number; attemptId: string; goal: ChallengeTerms; rules: string[]; briefing: string;
+  progressOf(agentId: string): { challengeId: number; attemptId: string; goal: Omit<ChallengeTerms, 'briefing'>; rules: string[]; briefing: string;
     progress: { done: number; of: number; unit: string }; deadline: string } | null {
     const run = this.#running.get(agentId);
     if (!run) return null;
     const position = this.live.avatars.get(agentId) ?? null;
-    return { challengeId: run.attempt.challengeId, attemptId: run.attempt.id, goal: run.terms,
+    // The creator's briefing is given apart from the goal, so it can be labelled as theirs.
+    const { briefing: _briefing, ...goal } = run.terms;
+    return { challengeId: run.attempt.challengeId, attemptId: run.attempt.id, goal,
       rules: run.terms.rules.map(describeRule), briefing: run.terms.briefing,
       progress: progressOf(run.terms, { startedWorld: run.attempt.startedWorld, kills: run.kills, escapes: run.escapes,
         position: position && { x: position.x, z: position.z } }, this.world.now()),
@@ -230,6 +238,7 @@ export class ChallengeEngine {
         continue;
       }
       const broken = run.broken ?? run.watch.check(this.#view(agentId), this.clock());
+      run.checkedAt = this.clock();
       if (broken) {
         run.finishing = true;
         this.#running.delete(agentId);
@@ -277,15 +286,29 @@ export class ChallengeEngine {
         continue;
       }
       // An agent that took another animal meanwhile has stopped waiting.
-      for (const w of queue()) if (this.#running.has(w.player.agentId) || this.live.avatars.has(w.player.agentId)) this.#dropWaiter(challengeId, w.player.agentId);
+      for (const w of queue()) {
+        if (!this.#running.has(w.player.agentId) && !this.live.avatars.has(w.player.agentId)) continue;
+        this.#dropWaiter(challengeId, w.player.agentId);
+        this.live.notify(w.player.agentId, `You took another animal, so you are off the waiting list for challenge ${challengeId}.`);
+      }
       const head = queue()[0];
       const free = head ? this.#freeAnimal(c.terms) : null;
       if (!head || !free) continue;
       this.#dropWaiter(challengeId, head.player.agentId);
-      try {
-        const started = await this.#start(head.player, c, free);
-        if (started.ok && !started.queued) this.live.notify(head.player.agentId, `An animal came free: your attempt at challenge ${challengeId} has started.`);
-      } catch (error) { console.error('[challenges] starting a waiting attempt failed', (error as Error).message); }
+      let started: AcceptResult;
+      try { started = await this.#start(head.player, c, free); }
+      catch (error) {
+        console.error('[challenges] starting a waiting attempt failed', (error as Error).message);
+        started = { ok: false, status: 500, error: 'could_not_start' };
+      }
+      if (started.ok) {
+        this.live.notify(head.player.agentId, `An animal came free: your attempt at challenge ${challengeId} has started.`);
+      } else if (started.error === 'cooldown') {
+        // Too soon after a death to take an animal: keep its place at the front and try again.
+        this.#waiting.set(challengeId, [head, ...queue()]);
+      } else {
+        this.live.notify(head.player.agentId, `Your attempt at challenge ${challengeId} could not start (${started.error}); you are off its waiting list.`);
+      }
     }
   }
 
@@ -375,7 +398,8 @@ export class ChallengeEngine {
     let nearestKinM: number | null = null;
     const herd = run.watch.herdDistance();
     if (herd !== null) {
-      for (const a of this.world.nearby(avatar.x, avatar.z, herd * 2, KIN_SEARCH_LIMIT)) {
+      // Saved positions can be an hour's travel from where animals are shown: search wide, then judge where they are now.
+      for (const a of this.world.nearby(avatar.x, avatar.z, herd + KIN_SEARCH_SLACK_M, KIN_SEARCH_LIMIT)) {
         if (a.id === avatar.animalId || a.speciesId !== avatar.speciesId || !a.alive) continue;
         // Where it is now (an agent's animal, a live chase or the route as played), as observe shows it.
         const at = this.live.positionOf(a.id) ?? a.position;
@@ -383,7 +407,8 @@ export class ChallengeEngine {
         if (nearestKinM === null || d < nearestKinM) nearestKinM = d;
       }
     }
-    return { position: { x: avatar.x, z: avatar.z }, gait: avatar.gait, moving: avatar.moving, nearestKinM };
+    return { position: { x: avatar.x, z: avatar.z }, gait: avatar.gait, moving: avatar.moving, nearestKinM,
+      sprinted: (avatar.sprintedAt ?? -Infinity) >= run.checkedAt };
   }
 
   #holds(agentId: string, animalId: string): boolean {
@@ -391,8 +416,10 @@ export class ChallengeEngine {
   }
 
   #log(run: Running, kind: string, data: Record<string, unknown>): void {
-    // Commands beyond the cap are dropped; hunts, starts and ends are always kept.
+    // Commands beyond the cap are dropped; hunts, starts and ends are always kept. Once an attempt is
+    // finishing only its end is logged, so the hashed record and the public log stay the same.
     if (run.logged >= MAX_LOG_ENTRIES && kind === 'command') return;
+    if (run.finishing && kind !== 'end') return;
     run.logged++;
     this.#pending.push({ attemptId: run.attempt.id, entry: { at: new Date(this.clock()), kind, data } });
   }

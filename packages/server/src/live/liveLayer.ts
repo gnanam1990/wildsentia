@@ -99,6 +99,8 @@ export interface Avatar {
   perched?: boolean;
   /** In the air (vulture): straight over anything, landing only on land. */
   flying?: boolean;
+  /** When it last moved at sprint speed (a run, or a hunt's charge): challenge rules judge this. */
+  sprintedAt?: number;
   alarmedAt?: number;
 }
 export interface Notice { at: number; text: string }
@@ -417,7 +419,7 @@ export class LiveLayer {
     const reach = this.#contact(motion, prey);
     if (gap <= reach) { this.#reach(avatar.animalId, targetId, at); return; }
     const gait: Gait = committed && avatar.stamina > 0 ? 'run' : committed ? 'trot' : 'walk';
-    if (gait === 'run') avatar.stamina = Math.max(0, avatar.stamina - dt / motion.sprintStaminaS);
+    if (gait === 'run') { avatar.stamina = Math.max(0, avatar.stamina - dt / motion.sprintStaminaS); avatar.sprintedAt = this.clock(); }
     const speed = (gait === 'run' ? motion.sprintMs : gait === 'trot' ? motion.trotMs : motion.walkMs) * this.world.speedFactor(avatar.animalId, avatar.x, avatar.z);
     const next = this.#stepToward(avatar.animalId, avatar, at, Math.min(speed * dt, Math.max(0, gap - reach * 0.5)), false, false);
     if (!next) return stop('Blocked: the way to your prey is not walkable land.');
@@ -572,6 +574,7 @@ export class LiveLayer {
       : gait === 'run' ? motion.sprintMs : gait === 'trot' ? motion.trotMs : motion.walkMs;
     // Rough ground slows walkers, not a bird overhead.
     let budget = base * (avatar.flying ? 1 : this.world.speedFactor(avatar.animalId, avatar.x, avatar.z)) * dt;
+    if (gait === 'run' && avatar.path.length) avatar.sprintedAt = this.clock();
     while (budget > 1e-6 && avatar.path.length) {
       const next = avatar.path[0]!, dx = next.x - avatar.x, dz = next.z - avatar.z, gap = Math.hypot(dx, dz);
       const step = Math.min(gap, budget);

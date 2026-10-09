@@ -445,4 +445,101 @@ maybe('challenge engine', () => {
     expect((await ended(b.attemptId)).resultHash).not.toBeNull();
     expect(await store.opsOf({ attemptId: b.attemptId })).toEqual([]);
   });
+  describe('review fixes', () => {
+    it('judges a zone start on where the animal will actually be placed, not where it is shown', async () => {
+      const a = wildChital();
+      const at = { x: Math.round(a.position!.x), z: Math.round(a.position!.z) };
+      // Every chital is being shown far from its saved position (the hour's route as played).
+      port.playedPosition = (id) => { const x = world.animal(id)!; return { x: x.position.x + 5000, z: x.position.z, heading: 0 }; };
+      const id = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 1, briefing: '',
+        rules: [{ type: 'zone', ...at, radiusM: 200 }] });
+      const r = await accepted('ag_000000000000000a', id);
+      const me = avatarOf('ag_000000000000000a');
+      expect(Math.hypot(me.x - at.x, me.z - at.z)).toBeLessThanOrEqual(200);
+      await engine.tick();
+      expect((await ended(r.attemptId)).status).toBe('running');
+    });
+
+    it('finds a free animal in a zone however far down the island\'s list it is', async () => {
+      world = createWorld({ seed: 6, speciesDir, terrainProfile: 'island_v1', initialAgents: { tiger: 2, chital: 260 }, minPopulation: {} });
+      const last = world.agents.filter((x) => x.speciesId === 'chital' && x.alive && !x.dependentOn).at(-1)!;
+      const lone = world.patches.find((p) => landWalkable(p) && world.agents.every((x) => x === last || !x.position
+        || Math.hypot(x.position.x - patchCentre(p.id).x, x.position.z - patchCentre(p.id).z) > 600))!;
+      const c = patchCentre(lone.id);
+      last.patchId = lone.id; last.position = { x: c.x, z: c.z, heading: 0 };
+      const id = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 1, briefing: '',
+        rules: [{ type: 'zone', x: Math.round(c.x), z: Math.round(c.z), radiusM: 200 }] });
+      const r = await accepted('ag_000000000000000a', id);
+      expect(r.animalId).toBe(last.id);
+    });
+
+    it('finds kin for the herd rule where they are shown, even far from their saved spots', async () => {
+      const id = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 7, briefing: '',
+        rules: [{ type: 'herd', maxDistanceM: 30 }] });
+      const a = await accepted('ag_000000000000000a', id);
+      put(a.animalId, 0);
+      const kin = world.agents.filter((x) => x.alive && x.speciesId === 'chital' && x.id !== a.animalId);
+      for (const k of kin) { k.patchId = openPatch; k.position = { x: centre.x + 400, z: centre.z, heading: 0 }; }
+      // Saved 400 m away, but shown 10 m from the player's animal right now.
+      port.playedPosition = (pid) => (kin.some((k) => k.id === pid) ? { x: avatarOf('ag_000000000000000a').x + 10, z: centre.z, heading: 0 } : null);
+      await run(90);
+      expect((await ended(a.attemptId)).status).toBe('running');
+    });
+
+    it('catches a predator\'s charge that ends before the next check', async () => {
+      const id = await challenge({ template: 'survive', version: 1, speciesId: 'tiger', days: 1, briefing: '', rules: [{ type: 'noRun' }] });
+      const a = await accepted('ag_000000000000000a', id);
+      const prey = wildChital();
+      put(a.animalId, 0); put(prey.id, 20);
+      expect(live.hunt('ag_000000000000000a', prey.id)).toBeNull();
+      for (let i = 0; i < 4; i++) { now += 100; live.tick(0.1); } // a short charge, no engine tick
+      live.stop('ag_000000000000000a');
+      await engine.tick();
+      expect(await ended(a.attemptId)).toMatchObject({ status: 'failed', endReason: 'rule_no_run' });
+    });
+
+    it('keeps the creator\'s briefing out of the goal it shows, and labels it', async () => {
+      const id = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 1, rules: [], briefing: 'Go to the river.' });
+      await accepted('ag_000000000000000a', id);
+      const p = engine.progressOf('ag_000000000000000a')!;
+      expect(p.goal).not.toHaveProperty('briefing');
+      expect(p.briefing).toBe('Go to the river.');
+    });
+
+    it('tells a waiter why it was dropped, and keeps it on the list through a cooldown', async () => {
+      const id = await challenge({ template: 'hunt', version: 1, speciesId: 'tiger', count: 1, rules: [], briefing: '' });
+      await accepted('ag_000000000000000a', id);
+      await engine.accept(player('ag_000000000000000b'), id);
+      await engine.accept(player('ag_000000000000000c'), id);
+      live.possess('ag_000000000000000c', 'c', { speciesId: 'chital' });
+      live.release('ag_000000000000000a');
+      const possess = vi.spyOn(live, 'possess').mockReturnValueOnce({ ok: false, reason: 'cooldown' });
+      await engine.tick();
+      expect(live.notices('ag_000000000000000c').map((n) => n.text).join(' ')).toMatch(/off the waiting list/);
+      expect(engine.waitingOf('ag_000000000000000b')).toMatchObject({ position: 1 });
+      possess.mockRestore();
+      await engine.tick();
+      expect(engine.progressOf('ag_000000000000000b')).toMatchObject({ challengeId: id });
+    });
+
+    it('hashes a winning record that matches its public log exactly', async () => {
+      const id = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 1, rules: [], briefing: '' });
+      const a = await accepted('ag_000000000000000a', id);
+      // A command arrives while the win is being written.
+      const read = store.log.bind(store);
+      let once = true;
+      vi.spyOn(store, 'log').mockImplementation(async (attemptId) => {
+        const rows = await read(attemptId);
+        if (once) { once = false; live.stop('ag_000000000000000a'); }
+        return rows;
+      });
+      worldNow += WORLD_DAY_SECONDS;
+      await engine.tick();
+      await engine.tick();
+      vi.restoreAllMocks();
+      const done = await ended(a.attemptId);
+      expect(done.status).toBe('met');
+      expect(JSON.parse(done.resultRecord!).log).toHaveLength((await store.log(a.attemptId)).length);
+    });
+  });
 });

@@ -152,8 +152,9 @@ export class AgentStore {
 
   /** Frees the slot of an agent unseen for `days`, so slots cannot be squatted forever. */
   async reapInactive(days = 14): Promise<number> {
+    // An agent that has played a challenge is kept: its attempts, logs and on-chain records refer to it.
     const result = await this.pool.query(`delete from live_agents where last_seen_at < now() - make_interval(days => $1)
-      and id not in (select agent_id from live_possessions)`, [days]);
+      and id not in (select agent_id from live_possessions) and id not in (select agent_id from challenge_attempts)`, [days]);
     this.#byKey.clear();
     return result.rowCount ?? 0;
   }

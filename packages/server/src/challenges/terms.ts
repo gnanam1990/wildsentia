@@ -114,6 +114,8 @@ export function parseTerms(input: unknown, catalog: SpeciesCatalog):
     case 'reach': {
       if (!wholeIn(raw.x, -1e6, 1e6) || !wholeIn(raw.z, -1e6, 1e6) || !catalog.onLand(raw.x, raw.z)) return { ok: false, error: 'target_not_on_land' };
       if (zone && Math.hypot(raw.x - zone.x, raw.z - zone.z) > zone.radiusM - REACH_WITHIN_M) return { ok: false, error: 'target_outside_zone' };
+      // The start must be inside the zone and a kilometre from the target: the zone has to reach that far.
+      if (zone && Math.hypot(raw.x - zone.x, raw.z - zone.z) + zone.radiusM < REACH_MIN_START_M) return { ok: false, error: 'zone_too_small_for_reach' };
       return { ok: true, terms: { template: 'reach', ...base, x: raw.x, z: raw.z } };
     }
     default:

@@ -40,10 +40,12 @@ export interface CreatedEvent {
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-const draft = (r: any): Draft => ({ id: r.id, creatorWallet: r.creator_wallet, terms: r.terms, rulesHash: r.rules_hash,
+/** Terms saved before rules and briefings existed read as having none. */
+const termsOf = (t: any): ChallengeTerms | null => (t ? { rules: [], briefing: '', ...t } : null);
+const draft = (r: any): Draft => ({ id: r.id, creatorWallet: r.creator_wallet, terms: termsOf(r.terms)!, rulesHash: r.rules_hash,
   prizeAtomic: String(r.prize_atomic), deadline: r.deadline, salt: r.salt, authNonce: r.auth_nonce, createdAt: r.created_at, relayedAt: r.relayed_at });
 const challenge = (r: any): Challenge => ({ id: Number(r.id), contract: r.contract, draftId: r.draft_id, creatorWallet: r.creator_wallet, evaluator: r.evaluator,
-  terms: r.terms, rulesHash: r.rules_hash, prizeAtomic: String(r.prize_atomic), deadline: r.deadline, authNonce: r.auth_nonce,
+  terms: termsOf(r.terms), rulesHash: r.rules_hash, prizeAtomic: String(r.prize_atomic), deadline: r.deadline, authNonce: r.auth_nonce,
   status: r.status, winnerAttempt: r.winner_attempt, createdTx: r.created_tx, createdBlock: Number(r.created_block), settledTx: r.settled_tx });
 const attempt = (r: any): Attempt => ({ id: r.id, challengeId: Number(r.challenge_id), agentId: r.agent_id, animalId: r.animal_id,
   payoutWallet: r.payout_wallet, startedAt: r.started_at, startedWorld: Number(r.started_world), startState: r.start_state,
@@ -194,10 +196,10 @@ export class ChallengeStore {
     return rows.map(attempt);
   }
 
-  /** How many attempts the agent has made at the challenge. */
+  /** How many attempts the agent has used at the challenge: those the server voided (a restart, a birth) do not count. */
   async attemptCount(challengeId: number, agentId: string): Promise<number> {
-    const { rows } = await this.pool.query('select count(*)::int as n from challenge_attempts where challenge_id = $1 and agent_id = $2',
-      [challengeId, agentId]);
+    const { rows } = await this.pool.query(`select count(*)::int as n from challenge_attempts where challenge_id = $1 and agent_id = $2
+      and status in ('running', 'met', 'failed')`, [challengeId, agentId]);
     return rows[0].n;
   }
 

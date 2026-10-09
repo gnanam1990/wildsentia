@@ -13,6 +13,8 @@ export interface RuleView {
   moving: boolean;
   /** Distance to the nearest live animal of the same species, or null if none is near. */
   nearestKinM: number | null;
+  /** True if the animal moved at sprint speed at any moment since the last check (a charge may start and end between two). */
+  sprinted?: boolean;
 }
 
 export class RuleWatch {
@@ -27,7 +29,7 @@ export class RuleWatch {
           if (Math.hypot(view.position.x - rule.x, view.position.z - rule.z) > rule.radiusM) return 'rule_zone';
           break;
         case 'noRun':
-          if (view.moving && view.gait === 'run') return 'rule_no_run';
+          if ((view.moving && view.gait === 'run') || view.sprinted) return 'rule_no_run';
           break;
         case 'herd':
           if (view.nearestKinM === null || view.nearestKinM > rule.maxDistanceM) {

@@ -67,7 +67,13 @@ describe('challenge terms', () => {
     // A reach target must leave room inside the zone to be reached.
     expect(parseTerms({ template: 'reach', speciesId: 'chital', x: 1480, z: 1000, rules: [zone] }, catalog))
       .toEqual({ ok: false, error: 'target_outside_zone' });
-    expect(parseTerms({ template: 'reach', speciesId: 'chital', x: 1475, z: 1000, rules: [zone] }, catalog).ok).toBe(true);
+    // ...and a start inside the zone must be able to lie a kilometre from it (500 m zone: never).
+    expect(parseTerms({ template: 'reach', speciesId: 'chital', x: 1475, z: 1000, rules: [zone] }, catalog))
+      .toEqual({ ok: false, error: 'zone_too_small_for_reach' });
+    const big = { type: 'zone', x: 1000, z: 1000, radiusM: 800 };
+    expect(parseTerms({ template: 'reach', speciesId: 'chital', x: 1100, z: 1000, rules: [big] }, catalog))
+      .toEqual({ ok: false, error: 'zone_too_small_for_reach' });
+    expect(parseTerms({ template: 'reach', speciesId: 'chital', x: 1200, z: 1000, rules: [big] }, catalog).ok).toBe(true);
   });
 
   it('keeps a cleaned briefing and refuses one with links, keys or too many characters', () => {

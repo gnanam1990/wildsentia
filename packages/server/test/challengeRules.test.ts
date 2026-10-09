@@ -24,6 +24,12 @@ describe('rule watch', () => {
     expect(w.check({ position: { x: 5, z: 5 }, gait: 'run', moving: true, nearestKinM: null }, 0)).toBe('rule_no_run');
   });
 
+  it('catches a sprint that began and ended between two checks', () => {
+    const w = new RuleWatch([{ type: 'noRun' }]);
+    expect(w.check(view({ gait: 'walk', moving: false, sprinted: true }), 0)).toBe('rule_no_run');
+    expect(new RuleWatch([]).check(view({ sprinted: true }), 0)).toBeNull();
+  });
+
   it('catches a command to run under "never run" the moment it is given', () => {
     expect(new RuleWatch([{ type: 'noRun' }]).commandBreaks('move', { gait: 'run' })).toBe('rule_no_run');
     expect(new RuleWatch([{ type: 'noRun' }]).commandBreaks('move', { gait: 'trot' })).toBeNull();

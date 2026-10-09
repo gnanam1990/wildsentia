@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createPool } from '../src/db/pool.js';
 import { migrate } from '../src/db/migrate.js';
 import { ChallengeStore, type CreatedEvent } from '../src/challenges/store.js';
+import { AgentStore } from '../src/live/liveStore.js';
 import { rulesHash, type ChallengeTerms } from '../src/challenges/terms.js';
 import { testDatabaseUrl } from './testDatabase.js';
 
@@ -168,7 +169,7 @@ maybe('challenge store', () => {
     const b = await attemptOf('ag_0000000000000001', 'tiger_2');
     await store.endAttempt(b.id, 'void', 'birth', 200, { text: '{"b":1}', hash: hex('c') });
     expect(await store.attempt(b.id)).toMatchObject({ status: 'void', resultRecord: '{"b":1}', resultHash: hex('c') });
-    expect(await store.attemptCount(1, 'ag_0000000000000001')).toBe(2);
+    expect(await store.attemptCount(1, 'ag_0000000000000001')).toBe(1); // a birth is not the player's loss
   });
 
   it('lists attempts whose start, or recorded end, is not queued for the chain yet', async () => {
@@ -186,6 +187,39 @@ maybe('challenge store', () => {
     await store.saveRecord(a.id, '{}', hex('d'));
     expect(await pending()).toEqual([[a.id, true, false], [b.id, false, false]]);
     expect((await store.attemptsToRecord(1))).toHaveLength(1);
+  });
+
+  it('reads terms saved without rules or briefing as having none', async () => {
+    const old = { template: 'hunt', version: 1, speciesId: 'tiger' } as unknown as ChallengeTerms;
+    await store.insertDraft({ creatorWallet: CREATOR, terms: old, rulesHash: hex('7'), prizeAtomic: '10000000',
+      deadline: new Date('2026-10-20T00:00:00Z'), salt: hex('1'), authNonce: hex('3') });
+    await store.recordCreated(CONTRACT, created(1, hex('3'), { rulesHash: hex('7') }), OURS);
+    expect((await store.challenge(1))!.terms).toMatchObject({ rules: [], briefing: '' });
+    expect((await store.listChallenges())[0]!.terms).toMatchObject({ rules: [], briefing: '' });
+  });
+
+  it('does not count attempts the server voided against the player', async () => {
+    await draftFor('2');
+    await store.recordCreated(CONTRACT, created(1, hex('2')), OURS);
+    for (const reason of ['lost_in_restart', 'birth']) {
+      const a = await attemptOf('ag_0000000000000001', `tiger_${reason}`);
+      await store.endAttempt(a.id, 'void', reason, 1);
+    }
+    expect(await store.attemptCount(1, 'ag_0000000000000001')).toBe(0);
+    const failed = await attemptOf('ag_0000000000000001', 'tiger_x');
+    expect(await store.attemptCount(1, 'ag_0000000000000001')).toBe(1);
+    await store.endAttempt(failed.id, 'failed', 'caught', 2);
+    expect(await store.attemptCount(1, 'ag_0000000000000001')).toBe(1);
+  });
+
+  it('never reaps an inactive agent who has played a challenge (its attempts and records stay)', async () => {
+    await draftFor('2');
+    await store.recordCreated(CONTRACT, created(1, hex('2')), OURS);
+    const a = await attemptOf('ag_0000000000000001', 'tiger_1');
+    await store.enqueueOp('record_start', { attemptId: a.id, challengeId: 1 }, { player: WINNER });
+    await pool!.query("update live_agents set last_seen_at = now() - interval '30 days'");
+    expect(await new AgentStore(pool!).reapInactive(14)).toBe(1); // only the agent who never played
+    expect(await store.attempt(a.id)).not.toBeNull();
   });
 
   it('finds open challenges whose deadline and grace have passed', async () => {
