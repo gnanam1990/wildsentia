@@ -1,9 +1,10 @@
-import type { ChainCall, ChallengeChain, PrepareOptions } from './chain.js';
+import type { AttemptOutcome, ChainCall, ChallengeChain, PrepareOptions } from './chain.js';
 import { GRACE_SECONDS } from './engine.js';
 import type { ChainOp, ChallengeStore, Hex } from './store.js';
 
 /**
- * Sends the queued chain operations (resolve, refund, relayed create) one at a time, durably:
+ * Sends the queued chain operations (resolve, refund, relayed create, then attempt records) one
+ * at a time, durably:
  * the signed transaction's hash, nonce and fee cap are stored before it is broadcast, and before
  * every send the contract's own state is read, so a restart never pays twice or forgets a
  * payment. The contract makes a double payout impossible anyway; this keeps the database in
@@ -47,6 +48,9 @@ export class ChainOps {
     const wait = Math.min(MAX_BACKOFF_MS, 10_000 * 2 ** Math.max(0, op.tries - 1));
     if (op.tries > 0 && this.clock() - op.updatedAt.getTime() < wait) return;
     if (await this.#alreadyDone(op)) return;
+    // An attempt's end is written only once its start has landed (or been given up).
+    if (op.kind === 'record_end' && (await this.store.opsOf({ attemptId: op.attemptId! }))
+      .some((o) => o.kind === 'record_start' && (o.status === 'pending' || o.status === 'sent'))) return;
     if (op.kind === 'resolve') {
       // A winner is paid for as long as the contract allows: only a closed window ends it.
       if (await this.#windowClosed(op)) return this.#fail(op, 'window_closed');
@@ -77,6 +81,11 @@ export class ChainOps {
       if (draft?.relayedAt) { await this.store.markOpConfirmed(op.id); return true; }
       return false;
     }
+    if (op.kind === 'record_start' || op.kind === 'record_end') {
+      const stage = await this.chain.attemptStage(op.attemptId!);
+      if (stage >= (op.kind === 'record_start' ? 1 : 2)) { await this.store.markOpConfirmed(op.id); return true; }
+      return false;
+    }
     const onChain = await this.chain.status(op.challengeId!);
     if (onChain.status === 'resolved') {
       await this.store.setStatus(op.challengeId!, ['open', 'unrecognised', 'unpaid', 'refunding', 'won'], 'paid');
@@ -102,6 +111,9 @@ export class ChainOps {
     switch (op.kind) {
       case 'resolve': return { fn: 'resolve', id: op.challengeId!, winner: p.winner as Hex, resultHash: p.resultHash as Hex };
       case 'refund': return { fn: 'refund', id: op.challengeId! };
+      case 'record_start': return { fn: 'recordStart', attemptId: op.attemptId!, challengeId: op.challengeId!, player: p.player as Hex };
+      case 'record_end': return { fn: 'recordEnd', attemptId: op.attemptId!, challengeId: op.challengeId!,
+        outcome: Number(p.outcome) as AttemptOutcome, logHash: p.logHash as Hex };
       case 'relay_create':
         if (Number(p.validBefore) * 1000 <= this.clock()) { await this.#fail(op, 'authorization_expired'); return null; }
         return { fn: 'createWithAuthorization', creator: p.creator as Hex, rulesHash: p.rulesHash as Hex, prize: BigInt(p.prize!),

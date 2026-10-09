@@ -23,8 +23,9 @@ const GWEI = 1_000_000_000n;
 
 /** An in-memory contract with switchable failures, standing in for the chain client. */
 class FakeChain implements ChallengeChain {
-  readonly contract = CONTRACT; readonly evaluator = EVALUATOR as Hex; readonly chainId = 1;
+  readonly contract = CONTRACT; readonly evaluator = EVALUATOR as Hex; readonly chainId = 1; readonly attempts = ('0x' + 'd'.repeat(40)) as Hex;
   state = new Map<number, OnChainStatus>();
+  stages = new Map<string, 0 | 1 | 2>();
   sent: ChainCall[] = []; mined = new Map<Hex, 'success' | 'reverted'>(); pool = new Set<Hex>(); prepared: Array<PrepareOptions | undefined> = [];
   failPrepare: string | null = null; failBroadcast = false; dropNext = false; revertNext = false; stuck = false;
   #n = 0; #nonce = 0; #calls = new Map<Hex, ChainCall>();
@@ -34,6 +35,8 @@ class FakeChain implements ChallengeChain {
   async appointedEvaluator() { return this.evaluator; }
   async prizeLimits() { return { min: 1n, max: 100n }; }
   async challengeCount(_atBlock: number) { return this.state.size; }
+  async attemptStage(attemptId: string) { return this.stages.get(attemptId) ?? 0; }
+  async attemptsRecorder() { return this.evaluator; }
   async prepare(call: ChainCall, options?: PrepareOptions) {
     this.prepared.push(options);
     if (this.failPrepare) throw new Error(this.failPrepare);
@@ -54,6 +57,8 @@ class FakeChain implements ChallengeChain {
     this.mined.set(hash, 'success');
     if (call.fn === 'resolve') this.state.set(call.id, 'resolved');
     if (call.fn === 'refund') this.state.set(call.id, 'refunded');
+    if (call.fn === 'recordStart') this.stages.set(call.attemptId, 1);
+    if (call.fn === 'recordEnd') this.stages.set(call.attemptId, 2);
   }
   async receipt(hash: Hex) { return this.mined.get(hash) ?? null; }
   async known(hash: Hex) { return this.pool.has(hash); }
@@ -64,7 +69,9 @@ maybe('chain operations', () => {
   const deadline = Date.now() + 86_400_000;
   beforeEach(async () => {
     await migrate(pool!);
-    await pool!.query('truncate challenge_attempt_log, challenge_chain_ops, challenge_attempts, challenges, challenge_drafts, challenge_index_cursor cascade');
+    await pool!.query('truncate challenge_attempt_log, challenge_chain_ops, challenge_attempts, challenges, challenge_drafts, challenge_index_cursor, live_agents cascade');
+    await pool!.query(`insert into live_agents (id, public_key, name, name_key, network_hash) values ($1, $2, $1, $1, 'n')`,
+      ['ag_0000000000000001', '0000000000000001'.padEnd(43, 'A')]);
     store = new ChallengeStore(pool!);
     await store.insertDraft({ creatorWallet: CREATOR, terms, rulesHash: rulesHash(terms), prizeAtomic: '1', deadline: new Date(deadline),
       salt: hex('1'), authNonce: hex('2') });
@@ -81,6 +88,45 @@ maybe('chain operations', () => {
   };
   /** Moves both clocks: the app's, and the database's view of the op's last update. */
   const later = async (ms: number) => { now += ms; await pool!.query("update challenge_chain_ops set updated_at = updated_at - make_interval(secs => $1)", [ms / 1000]); };
+
+  const recorded = async () => {
+    const a = await store.startAttempt({ challengeId: 1, agentId: 'ag_0000000000000001', animalId: 'chital_1', payoutWallet: WINNER,
+      startedWorld: 0, startState: {} });
+    const target = { attemptId: a.id, challengeId: 1 };
+    await store.enqueueOp('record_start', target, { player: WINNER });
+    await store.enqueueOp('record_end', target, { outcome: 2, logHash: hex('9') });
+    return a.id;
+  };
+
+  it("records an attempt's start and end once, even after a crash", async () => {
+    const id = await recorded();
+    await ops.processOnce();
+    expect(chain.sent).toEqual([{ fn: 'recordStart', attemptId: id, challengeId: 1, player: WINNER }]);
+    await ops.processOnce();
+    expect(chain.sent.at(-1)).toEqual({ fn: 'recordEnd', attemptId: id, challengeId: 1, outcome: 2, logHash: hex('9') });
+    await ops.processOnce();
+    expect((await store.opsOf({ attemptId: id })).map((o) => o.status)).toEqual(['confirmed', 'confirmed']);
+    // A second attempt whose records the contract already shows (sent before a crash): nothing is sent.
+    await pool!.query("update challenge_attempts set status = 'failed', ended_at = now() where id = $1", [id]);
+    const again = await recorded();
+    chain.stages.set(again, 2);
+    const before = chain.sent.length;
+    await ops.processOnce();
+    expect(chain.sent.length).toBe(before);
+    expect((await store.opsOf({ attemptId: again })).map((o) => o.status)).toEqual(['confirmed', 'confirmed']);
+  });
+
+  it('pays before recording, and never ends an attempt on chain before its start is recorded', async () => {
+    const id = await recorded();
+    now = deadline + (GRACE_SECONDS + 600) * 1000;
+    await store.enqueueOp('refund', { challengeId: 1 }, {});
+    await ops.processOnce();
+    // The refund goes first; the end waits while the start is still on its way.
+    expect(chain.sent.map((c) => c.fn)).toEqual(['refund', 'recordStart']);
+    expect((await store.opsOf({ attemptId: id })).map((o) => o.status)).toEqual(['sent', 'pending']);
+    await ops.processOnce();
+    expect(chain.sent.map((c) => c.fn)).toEqual(['refund', 'recordStart', 'recordEnd']);
+  });
 
   it('pays a winner: hash stored, sent, then confirmed and the challenge marked paid', async () => {
     await won();

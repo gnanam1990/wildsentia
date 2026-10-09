@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createPublicClient, createWalletClient, http, parseAbi, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { ARC_MIN_FEE_PER_GAS, viemChallengeChain, type ChallengeChain } from '../src/challenges/chain.js';
+import { ARC_MIN_FEE_PER_GAS, attemptKey, viemChallengeChain, type ChallengeChain } from '../src/challenges/chain.js';
 import { ANVIL_KEYS, CHAIN_ID, anvilAvailable, signReceive, startLocalChain, usdcBalance, type LocalChain } from './anvil.js';
 
 const maybe = anvilAvailable() ? describe : describe.skip;
@@ -13,7 +13,8 @@ maybe('challenge chain client (local anvil)', () => {
   let local: LocalChain, chain: ChallengeChain;
   beforeAll(async () => {
     local = await startLocalChain();
-    chain = viemChallengeChain({ rpcUrl: local.url, chainId: CHAIN_ID, contract: local.contract, evaluatorKey: ANVIL_KEYS.evaluator });
+    chain = viemChallengeChain({ rpcUrl: local.url, chainId: CHAIN_ID, contract: local.contract, evaluatorKey: ANVIL_KEYS.evaluator,
+      attemptsContract: local.attempts });
   });
   afterAll(() => local?.stop());
 
@@ -69,6 +70,30 @@ maybe('challenge chain client (local anvil)', () => {
     expect(fee.maxFeePerGas! >= ARC_MIN_FEE_PER_GAS).toBe(true);
     const events = await chain.createdEvents(0, await chain.head());
     expect(events.at(-1)).toMatchObject({ id: 2, authNonce: nonce, prizeAtomic: '5000000' });
+  });
+
+  it("writes an attempt's start and end to the attempts contract, keyed by its uuid", async () => {
+    const id = '0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0';
+    expect(attemptKey(id)).toBe(`0x0f1e2d3c4b5a69788796a5b4c3d2e1f0${'0'.repeat(32)}`);
+    expect(attemptKey(id.toUpperCase())).toBe(attemptKey(id));
+    expect(chain.attempts?.toLowerCase()).toBe(local.attempts.toLowerCase());
+    expect(await chain.attemptsRecorder()).toBe(local.addresses.evaluator);
+    expect(await chain.attemptStage(id)).toBe(0);
+    expect((await send({ fn: 'recordStart', attemptId: id, challengeId: 1, player: local.addresses.player })).outcome).toBe('success');
+    expect(await chain.attemptStage(id)).toBe(1);
+    expect((await send({ fn: 'recordEnd', attemptId: id, challengeId: 1, outcome: 2, logHash: `0x${'7'.repeat(64)}` })).outcome).toBe('success');
+    expect(await chain.attemptStage(id)).toBe(2);
+    const logs = await createPublicClient({ transport: http(local.url) }).getLogs({ address: local.attempts, fromBlock: 0n,
+      event: parseAbi(['event AttemptEnded(bytes32 indexed attemptId, uint256 indexed challengeId, uint8 outcome, bytes32 logHash)'])[0] });
+    expect(logs.map((l) => [l.args.attemptId, l.args.challengeId, l.args.outcome, l.args.logHash]))
+      .toEqual([[attemptKey(id), 1n, 2, `0x${'7'.repeat(64)}`]]);
+    await expect(chain.prepare({ fn: 'recordEnd', attemptId: id, challengeId: 1, outcome: 1, logHash: `0x${'7'.repeat(64)}` }))
+      .rejects.toThrow(/AlreadyEnded|revert/i);
+    // Without an attempts contract the client refuses record calls and reads nothing.
+    const bare = viemChallengeChain({ rpcUrl: local.url, chainId: CHAIN_ID, contract: local.contract, evaluatorKey: ANVIL_KEYS.evaluator });
+    expect(bare.attempts).toBeNull();
+    expect(await bare.attemptStage(id)).toBe(0);
+    await expect(bare.prepare({ fn: 'recordStart', attemptId: id, challengeId: 1, player: local.addresses.player })).rejects.toThrow(/not configured/);
   });
 
   it('cannot prepare a transaction the contract would refuse', async () => {

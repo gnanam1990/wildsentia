@@ -7,7 +7,9 @@ import type { ChallengeTerms } from './terms.js';
 export type Hex = `0x${string}`;
 export type ChallengeStatus = 'open' | 'won' | 'paid' | 'unpaid' | 'refunding' | 'refunded' | 'unrecognised';
 export type AttemptStatus = 'running' | 'met' | 'failed' | 'void';
-export type ChainOpKind = 'relay_create' | 'resolve' | 'refund';
+export type ChainOpKind = 'relay_create' | 'resolve' | 'refund' | 'record_start' | 'record_end';
+/** What an operation acts on: a challenge (resolve, refund), a draft (relay) or an attempt (its on-chain record). */
+export type OpTarget = { challengeId: number } | { draftId: string } | { attemptId: string; challengeId: number };
 export type ChainOpStatus = 'pending' | 'sent' | 'confirmed' | 'failed';
 
 export interface Draft {
@@ -28,7 +30,7 @@ export interface Attempt {
 }
 export interface LogEntry { at: Date; kind: string; data: Record<string, unknown> }
 export interface ChainOp {
-  id: string; kind: ChainOpKind; challengeId: number | null; draftId: string | null; payload: Record<string, unknown>;
+  id: string; kind: ChainOpKind; challengeId: number | null; draftId: string | null; attemptId: string | null; payload: Record<string, unknown>;
   status: ChainOpStatus; txHash: Hex | null; sentNonce: number | null; sentMaxFee: string | null; tries: number; lastError: string | null;
   updatedAt: Date;
 }
@@ -48,7 +50,7 @@ const attempt = (r: any): Attempt => ({ id: r.id, challengeId: Number(r.challeng
   kills: r.kills, escapes: r.escapes, status: r.status, endedAt: r.ended_at, endedWorld: r.ended_world === null ? null : Number(r.ended_world),
   endReason: r.end_reason, resultRecord: r.result_record, resultHash: r.result_hash, ...(r.agent_name ? { agentName: r.agent_name } : {}) });
 const op = (r: any): ChainOp => ({ id: r.id, kind: r.kind, challengeId: r.challenge_id === null ? null : Number(r.challenge_id),
-  draftId: r.draft_id, payload: r.payload, status: r.status, txHash: r.tx_hash, sentNonce: r.sent_nonce === null ? null : Number(r.sent_nonce),
+  draftId: r.draft_id, attemptId: r.attempt_id, payload: r.payload, status: r.status, txHash: r.tx_hash, sentNonce: r.sent_nonce === null ? null : Number(r.sent_nonce),
   sentMaxFee: r.sent_max_fee === null ? null : String(r.sent_max_fee), tries: r.tries, lastError: r.last_error, updatedAt: r.updated_at });
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
@@ -192,14 +194,47 @@ export class ChallengeStore {
     return rows.map(attempt);
   }
 
+  /** How many attempts the agent has made at the challenge. */
+  async attemptCount(challengeId: number, agentId: string): Promise<number> {
+    const { rows } = await this.pool.query('select count(*)::int as n from challenge_attempts where challenge_id = $1 and agent_id = $2',
+      [challengeId, agentId]);
+    return rows[0].n;
+  }
+
+  /** Ended attempts that have no record yet (a winner's is written as it wins). */
+  async endedWithoutRecord(limit: number): Promise<Attempt[]> {
+    const { rows } = await this.pool.query(`select * from challenge_attempts where status <> 'running' and result_hash is null
+      order by ended_at, id limit $1`, [limit]);
+    return rows.map(attempt);
+  }
+
+  /** Keeps an ended attempt's record, unless it already has one. */
+  async saveRecord(id: string, text: string, hash: Hex): Promise<void> {
+    await this.pool.query(`update challenge_attempts set result_record = $2, result_hash = $3
+      where id = $1 and status <> 'running' and result_hash is null`, [id, text, hash.toLowerCase()]);
+  }
+
+  /** Attempts whose start, or (once ended and recorded) end, is not yet queued for the chain. */
+  async attemptsToRecord(limit: number): Promise<Array<Attempt & { startQueued: boolean; endQueued: boolean }>> {
+    const { rows } = await this.pool.query(`select * from (select a.*,
+        exists (select 1 from challenge_chain_ops o where o.kind = 'record_start' and o.attempt_id = a.id) as start_queued,
+        exists (select 1 from challenge_chain_ops o where o.kind = 'record_end' and o.attempt_id = a.id) as end_queued
+      from challenge_attempts a) x
+      where not start_queued or (status <> 'running' and result_hash is not null and not end_queued)
+      order by started_at, id limit $1`, [limit]);
+    return rows.map((r: { start_queued: boolean; end_queued: boolean }) => ({ ...attempt(r), startQueued: r.start_queued, endQueued: r.end_queued }));
+  }
+
   async saveProgress(id: string, kills: number, escapes: number): Promise<void> {
     await this.pool.query("update challenge_attempts set kills = $2, escapes = $3 where id = $1 and status = 'running'", [id, kills, escapes]);
   }
 
-  /** Ends a running attempt; false if it had already ended. */
-  async endAttempt(id: string, status: 'failed' | 'void', reason: string, endedWorld: number): Promise<boolean> {
+  /** Ends a running attempt, keeping its log record and hash when given; false if it had already ended. */
+  async endAttempt(id: string, status: 'failed' | 'void', reason: string, endedWorld: number,
+    record?: { text: string; hash: Hex }): Promise<boolean> {
     const { rowCount } = await this.pool.query(`update challenge_attempts set status = $2, end_reason = $3, ended_at = now(),
-      ended_world = $4 where id = $1 and status = 'running'`, [id, status, reason, Math.floor(endedWorld)]);
+      ended_world = $4, result_record = $5, result_hash = $6 where id = $1 and status = 'running'`,
+    [id, status, reason, Math.floor(endedWorld), record?.text ?? null, record?.hash.toLowerCase() ?? null]);
     return rowCount === 1;
   }
 
@@ -256,22 +291,28 @@ export class ChallengeStore {
   // ---- chain operations --------------------------------------------------------------------
 
   /** Queues an operation unless a live one of that kind exists; returns whether it was queued. */
-  async enqueueOp(kind: ChainOpKind, target: { challengeId: number } | { draftId: string }, payload: Record<string, unknown>): Promise<boolean> {
-    const { rowCount } = await this.pool.query(`insert into challenge_chain_ops (id, kind, challenge_id, draft_id, payload, status)
-      values ($1, $2, $3, $4, $5, 'pending') on conflict do nothing`,
-    [randomUUID(), kind, 'challengeId' in target ? target.challengeId : null, 'draftId' in target ? target.draftId : null, JSON.stringify(payload)]);
+  async enqueueOp(kind: ChainOpKind, target: OpTarget, payload: Record<string, unknown>): Promise<boolean> {
+    const { rowCount } = await this.pool.query(`insert into challenge_chain_ops (id, kind, challenge_id, draft_id, attempt_id, payload, status)
+      values ($1, $2, $3, $4, $5, $6, 'pending') on conflict do nothing`,
+    [randomUUID(), kind, 'challengeId' in target ? target.challengeId : null, 'draftId' in target ? target.draftId : null,
+      'attemptId' in target ? target.attemptId : null, JSON.stringify(payload)]);
     return rowCount === 1;
   }
 
   async activeOps(): Promise<ChainOp[]> {
-    const { rows } = await this.pool.query(`select * from challenge_chain_ops where status in ('pending', 'sent') order by created_at`);
+    // Money first: payouts, refunds and relays go before attempt records.
+    const { rows } = await this.pool.query(`select * from challenge_chain_ops where status in ('pending', 'sent')
+      order by kind in ('record_start', 'record_end'), created_at`);
     return rows.map(op);
   }
 
-  async opsOf(target: { challengeId: number } | { draftId: string }): Promise<ChainOp[]> {
-    const { rows } = 'challengeId' in target
-      ? await this.pool.query('select * from challenge_chain_ops where challenge_id = $1 order by created_at', [target.challengeId])
-      : await this.pool.query('select * from challenge_chain_ops where draft_id = $1 order by created_at', [target.draftId]);
+  /** A challenge's own operations (resolve, refund), a draft's relay, or an attempt's records. */
+  async opsOf(target: { challengeId: number } | { draftId: string } | { attemptId: string }): Promise<ChainOp[]> {
+    const { rows } = 'attemptId' in target
+      ? await this.pool.query('select * from challenge_chain_ops where attempt_id = $1 order by created_at', [target.attemptId])
+      : 'challengeId' in target
+        ? await this.pool.query('select * from challenge_chain_ops where challenge_id = $1 and attempt_id is null order by created_at', [target.challengeId])
+        : await this.pool.query('select * from challenge_chain_ops where draft_id = $1 order by created_at', [target.draftId]);
     return rows.map(op);
   }
 

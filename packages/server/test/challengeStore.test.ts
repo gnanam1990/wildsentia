@@ -113,6 +113,81 @@ maybe('challenge store', () => {
     expect(await store.enqueueOp('refund', { challengeId: 1 }, {})).toBe(true);
   });
 
+  const attemptOf = (agent: string, animalId: string) => store.startAttempt({ challengeId: 1, agentId: agent, animalId,
+    payoutWallet: WINNER, startedWorld: 0, startState: {} });
+
+  it('queues one record of each kind per attempt, kept apart from its challenge\'s own operations', async () => {
+    await draftFor('2');
+    await store.recordCreated(CONTRACT, created(1, hex('2')), OURS);
+    const a = await attemptOf('ag_0000000000000001', 'tiger_1');
+    const target = { attemptId: a.id, challengeId: 1 };
+    expect(await store.enqueueOp('record_start', target, { player: WINNER })).toBe(true);
+    expect(await store.enqueueOp('record_start', target, { player: WINNER })).toBe(false);
+    expect(await store.enqueueOp('record_end', target, { outcome: 2, logHash: hex('9') })).toBe(true);
+    // A failed record is not queued again: each attempt is recorded at most once.
+    const [start] = await store.opsOf({ attemptId: a.id });
+    await store.markOpFailed(start!.id, 'reverted');
+    expect(await store.enqueueOp('record_start', target, { player: WINNER })).toBe(false);
+    expect((await store.opsOf({ attemptId: a.id })).map((o) => [o.kind, o.attemptId, o.challengeId])).toEqual([
+      ['record_start', a.id, 1], ['record_end', a.id, 1]]);
+    // The challenge's refund is still allowed: record ops do not count as the challenge's own.
+    expect(await store.opsOf({ challengeId: 1 })).toEqual([]);
+    expect(await store.enqueueOp('refund', { challengeId: 1 }, {})).toBe(true);
+    // The database refuses a record op without its attempt.
+    await expect(pool!.query(`insert into challenge_chain_ops (id, kind, challenge_id, payload, status)
+      values (gen_random_uuid(), 'record_end', 1, '{}', 'pending')`)).rejects.toThrow();
+  });
+
+  it('lists money operations before attempt records', async () => {
+    await draftFor('2');
+    await store.recordCreated(CONTRACT, created(1, hex('2')), OURS);
+    const a = await attemptOf('ag_0000000000000001', 'tiger_1');
+    await store.enqueueOp('record_start', { attemptId: a.id, challengeId: 1 }, { player: WINNER });
+    await store.enqueueOp('refund', { challengeId: 1 }, {});
+    expect((await store.activeOps()).map((o) => o.kind)).toEqual(['refund', 'record_start']);
+  });
+
+  it('counts attempts, and gives each ended attempt one record that is never overwritten', async () => {
+    await draftFor('2');
+    await store.recordCreated(CONTRACT, created(1, hex('2')), OURS);
+    const a = await attemptOf('ag_0000000000000001', 'tiger_1');
+    expect(await store.attemptCount(1, 'ag_0000000000000001')).toBe(1);
+    expect(await store.attemptCount(1, 'ag_0000000000000002')).toBe(0);
+    expect(await store.endedWithoutRecord(10)).toEqual([]);
+    // A running attempt is never given a record.
+    await store.saveRecord(a.id, '{"early":true}', hex('1'));
+    expect((await store.attempt(a.id))!.resultHash).toBeNull();
+    expect(await store.endAttempt(a.id, 'failed', 'caught', 100)).toBe(true);
+    expect((await store.endedWithoutRecord(10)).map((x) => x.id)).toEqual([a.id]);
+    await store.saveRecord(a.id, '{"n":1}', hex('A'));
+    await store.saveRecord(a.id, '{"n":2}', hex('b'));
+    expect(await store.attempt(a.id)).toMatchObject({ resultRecord: '{"n":1}', resultHash: hex('a') });
+    expect(await store.endedWithoutRecord(10)).toEqual([]);
+    expect(await store.attemptCount(1, 'ag_0000000000000001')).toBe(1);
+    // An attempt can end with its record in one step.
+    const b = await attemptOf('ag_0000000000000001', 'tiger_2');
+    await store.endAttempt(b.id, 'void', 'birth', 200, { text: '{"b":1}', hash: hex('c') });
+    expect(await store.attempt(b.id)).toMatchObject({ status: 'void', resultRecord: '{"b":1}', resultHash: hex('c') });
+    expect(await store.attemptCount(1, 'ag_0000000000000001')).toBe(2);
+  });
+
+  it('lists attempts whose start, or recorded end, is not queued for the chain yet', async () => {
+    await draftFor('2');
+    await store.recordCreated(CONTRACT, created(1, hex('2')), OURS);
+    const a = await attemptOf('ag_0000000000000001', 'tiger_1');
+    const b = await attemptOf('ag_0000000000000002', 'tiger_2');
+    const pending = async () => (await store.attemptsToRecord(10)).map((x) => [x.id, x.startQueued, x.endQueued]);
+    expect(await pending()).toEqual([[a.id, false, false], [b.id, false, false]]);
+    await store.enqueueOp('record_start', { attemptId: a.id, challengeId: 1 }, { player: WINNER });
+    expect(await pending()).toEqual([[b.id, false, false]]);
+    // Ended without a record: its end waits for the record.
+    await store.endAttempt(a.id, 'failed', 'deadline', 50);
+    expect(await pending()).toEqual([[b.id, false, false]]);
+    await store.saveRecord(a.id, '{}', hex('d'));
+    expect(await pending()).toEqual([[a.id, true, false], [b.id, false, false]]);
+    expect((await store.attemptsToRecord(1))).toHaveLength(1);
+  });
+
   it('finds open challenges whose deadline and grace have passed', async () => {
     await draftFor('2');
     await store.recordCreated(CONTRACT, created(1, hex('2')), OURS);

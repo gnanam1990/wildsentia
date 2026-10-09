@@ -1,5 +1,6 @@
 import { createPublicClient, encodeFunctionData, getAddress, http, keccak256, parseEventLogs, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
+import { attemptsAbi } from './attemptsAbi.js';
 import { challengesAbi } from './challengesAbi.js';
 import type { CreatedEvent } from './store.js';
 
@@ -17,7 +18,14 @@ export type ChainCall =
   | { fn: 'resolve'; id: number; winner: Hex; resultHash: Hex }
   | { fn: 'refund'; id: number }
   | { fn: 'createWithAuthorization'; creator: Hex; rulesHash: Hex; prize: bigint; deadline: bigint; salt: Hex;
-      validAfter: bigint; validBefore: bigint; signature: Hex };
+      validAfter: bigint; validBefore: bigint; signature: Hex }
+  | { fn: 'recordStart'; attemptId: string; challengeId: number; player: Hex }
+  | { fn: 'recordEnd'; attemptId: string; challengeId: number; outcome: AttemptOutcome; logHash: Hex };
+
+/** WildsentiaAttempts.Outcome: 1 met, 2 failed, 3 void. */
+export type AttemptOutcome = 1 | 2 | 3;
+/** An attempt's uuid as the bytes32 the attempts contract keys it by: its 16 bytes, then zeros. */
+export const attemptKey = (attemptId: string): Hex => `0x${attemptId.replace(/-/g, '').toLowerCase()}${'0'.repeat(32)}`;
 
 export type OnChainStatus = 'none' | 'open' | 'resolved' | 'refunded';
 /** Re-signing a stuck transaction: the same nonce, and at least this fee cap. */
@@ -27,6 +35,8 @@ const STATUS: OnChainStatus[] = ['none', 'open', 'resolved', 'refunded'];
 
 export interface ChallengeChain {
   readonly contract: Hex;
+  /** The WildsentiaAttempts contract, if attempts are recorded on chain. */
+  readonly attempts: Hex | null;
   readonly evaluator: Hex;
   readonly chainId: number;
   head(): Promise<number>;
@@ -38,6 +48,10 @@ export interface ChallengeChain {
   prizeLimits(): Promise<{ min: bigint; max: bigint }>;
   /** How many challenges the contract had created as of a block. */
   challengeCount(atBlock: number): Promise<number>;
+  /** An attempt's stage in the attempts contract: 0 unknown, 1 started, 2 ended. */
+  attemptStage(attemptId: string): Promise<0 | 1 | 2>;
+  /** The address the attempts contract lets write records. */
+  attemptsRecorder(): Promise<Hex>;
   /** Signs the call with the evaluator key at the current fees; nothing is sent. */
   prepare(call: ChainCall, options?: PrepareOptions): Promise<Prepared>;
   broadcast(raw: Hex): Promise<void>;
@@ -47,15 +61,26 @@ export interface ChallengeChain {
   known(hash: Hex): Promise<boolean>;
 }
 
-export interface ChainConfig { rpcUrl: string; chainId: number; contract: Hex; evaluatorKey: Hex }
+export interface ChainConfig { rpcUrl: string; chainId: number; contract: Hex; evaluatorKey: Hex; attemptsContract?: Hex | null }
 
 export function viemChallengeChain(config: ChainConfig): ChallengeChain {
   // No cached block number: the indexer and the fee check must see the chain as it is now.
   const client = createPublicClient({ cacheTime: 0, transport: http(config.rpcUrl, { timeout: 15_000, retryCount: 2 }) });
   const account = privateKeyToAccount(config.evaluatorKey);
   const contract = getAddress(config.contract);
+  const attempts = config.attemptsContract ? getAddress(config.attemptsContract) : null;
+  /** The contract a call goes to. */
+  const target = (call: ChainCall): Hex => {
+    if (call.fn !== 'recordStart' && call.fn !== 'recordEnd') return contract;
+    if (!attempts) throw new Error('attempts contract not configured');
+    return attempts;
+  };
   const encode = (call: ChainCall): Hex => {
     switch (call.fn) {
+      case 'recordStart': return encodeFunctionData({ abi: attemptsAbi, functionName: 'recordStart',
+        args: [attemptKey(call.attemptId), BigInt(call.challengeId), call.player] });
+      case 'recordEnd': return encodeFunctionData({ abi: attemptsAbi, functionName: 'recordEnd',
+        args: [attemptKey(call.attemptId), BigInt(call.challengeId), call.outcome, call.logHash] });
       case 'resolve': return encodeFunctionData({ abi: challengesAbi, functionName: 'resolve', args: [BigInt(call.id), call.winner, call.resultHash] });
       case 'refund': return encodeFunctionData({ abi: challengesAbi, functionName: 'refund', args: [BigInt(call.id)] });
       case 'createWithAuthorization': return encodeFunctionData({ abi: challengesAbi, functionName: 'createWithAuthorization',
@@ -63,7 +88,7 @@ export function viemChallengeChain(config: ChainConfig): ChallengeChain {
     }
   };
   return {
-    contract, evaluator: account.address, chainId: config.chainId,
+    contract, attempts, evaluator: account.address, chainId: config.chainId,
     async head() { return Number(await client.getBlockNumber()); },
     async createdEvents(fromBlock, toBlock) {
       if (toBlock < fromBlock) return [];
@@ -83,6 +108,14 @@ export function viemChallengeChain(config: ChainConfig): ChallengeChain {
     async challengeCount(atBlock) {
       return Number(await client.readContract({ address: contract, abi: challengesAbi, functionName: 'challengeCount', blockNumber: BigInt(atBlock) }));
     },
+    async attemptsRecorder() {
+      if (!attempts) throw new Error('attempts contract not configured');
+      return getAddress(await client.readContract({ address: attempts, abi: attemptsAbi, functionName: 'recorder' }));
+    },
+    async attemptStage(attemptId) {
+      if (!attempts) return 0;
+      return Number(await client.readContract({ address: attempts, abi: attemptsAbi, functionName: 'stage', args: [attemptKey(attemptId)] })) as 0 | 1 | 2;
+    },
     async prizeLimits() {
       const [min, max] = await Promise.all([
         client.readContract({ address: contract, abi: challengesAbi, functionName: 'minPrize' }),
@@ -91,11 +124,11 @@ export function viemChallengeChain(config: ChainConfig): ChallengeChain {
       return { min, max };
     },
     async prepare(call, options) {
-      const data = encode(call);
+      const data = encode(call), to = target(call);
       const [nonce, block, gas] = await Promise.all([
         options?.nonce ?? client.getTransactionCount({ address: account.address, blockTag: 'pending' }),
         client.getBlock({ blockTag: 'latest' }),
-        client.estimateGas({ account: account.address, to: contract, data }),
+        client.estimateGas({ account: account.address, to, data }),
       ]);
       // Fresh fees for every transaction, never cached; at least Arc's floor.
       const base = block.baseFeePerGas ?? 0n;
@@ -103,7 +136,7 @@ export function viemChallengeChain(config: ChainConfig): ChallengeChain {
       const maxFeePerGas = options?.minMaxFeePerGas && options.minMaxFeePerGas > fresh ? options.minMaxFeePerGas : fresh;
       // A replacement must also raise the tip, or nodes refuse it as underpriced.
       const maxPriorityFeePerGas = options?.minMaxFeePerGas ? PRIORITY_FEE_PER_GAS * 2n : PRIORITY_FEE_PER_GAS;
-      const raw = await account.signTransaction({ type: 'eip1559', chainId: config.chainId, to: contract, data, nonce,
+      const raw = await account.signTransaction({ type: 'eip1559', chainId: config.chainId, to, data, nonce,
         gas: gas + gas / 5n, maxFeePerGas, maxPriorityFeePerGas });
       return { hash: keccak256(raw), raw, nonce, maxFeePerGas };
     },
