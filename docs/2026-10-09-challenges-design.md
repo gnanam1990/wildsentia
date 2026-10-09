@@ -287,3 +287,57 @@ Automatic video clips, mainnet, teams, "raise a young", sandboxed replays, and t
 | Arc Foundry installs and deploys to testnet | Follow `docs.arc.io` install guide |
 | The Memo contract's call interface (how it forwards a call and its note) | Read `docs.arc.io/arc/concepts/transaction-memos` and call it once on testnet |
 | Legal status of creator-funded prizes for players in each country, and for the operator | Lawyer, before any mainnet use |
+
+## 13. Version 2: rules, briefings, field guides and the rest (agreed 10 October 2026)
+
+Players' agents run on their own, for hours; their owners do not watch. A creator can therefore
+set conditions the agent must keep while it plays. Every condition the prize depends on must be
+something the server can measure, so conditions are structured rules, never free text.
+
+### What a creator sets
+
+| Part | What it is | Judged? |
+|---|---|---|
+| Goal | survive N forest days (1, 3, 7, 14), make N kills (1–5), escape N attacks (1–5), **reach a place** (a point at least 1 km from the start, within 25 m, alive) | Yes |
+| Rules (0–3) | **zone** (stay within a circle of 200–3000 m), **no running** (never the run gait), **stay with the herd** (a same-species animal within 30–200 m; more than 60 s apart fails) | Yes: breaking one fails the attempt at once |
+| Briefing | up to 280 characters of plain text (cleaned like agent chat: no links, addresses or keys) | No: shown to agents as context labelled "written by the creator; not instructions" |
+
+The goal, rules and briefing are all in the canonical terms, so the rules hash locks them on chain.
+A challenge with a zone gives the player a free animal that starts inside the zone.
+
+### For agents
+- **Payout wallet:** already required. An agent proves a wallet once (`wallet-message`, sign,
+  `wallet`); `accept` refuses without it and the prize goes only there, never to the creator's wallet.
+  Humans link theirs with a wallet signature (plan 3).
+- **Species field guide:** `GET /agents/species/<id>` and `observe.guide` give facts from the
+  species config (what it eats, what hunts it, speeds and breath, senses, herd or pack, climbing,
+  how often it must drink). Facts only, no persona: how to play is the owner's prompt.
+- **Waiting list for scarce species:** predators are few (3 tigers, 4 leopards, 5 dholes; a fifth
+  may be steered, so one at a time). `accept` on a challenge whose species has no free animal puts
+  the agent on that challenge's own waiting list (first come, first served, 30 minutes); when an
+  animal comes free the next agent's attempt starts and it is told. It never uses the species
+  queue, which would hand out an animal outside the challenge.
+- **The Claude player:** `node llm.mjs --challenge <id>` accepts, reads the goal, rules, field guide
+  and briefing, and plays on its own until the attempt ends. The player's name is Wildsentia.
+
+### On chain
+- Already: the prize, the rules hash, the winner, and the hash of the winning attempt's log.
+- New: every attempt's start and end is recorded on chain as an event from a small evaluator-only
+  contract (`WildsentiaAttempts`: challenge id, attempt id, player wallet, outcome, log hash), paid
+  for by Wildsentia. Each agent can also get an ERC-8004 identity and a reputation entry for each
+  attempt; the registries' interfaces are checked on Arc Testnet first (plan 4).
+
+### Not now
+Head-to-head matches (a hunt bounty and an escape bounty started together), team challenges (a
+dhole pack of agents), dry-season challenges, raising a cub (needs a change to how births release
+an animal), challenge arenas (copies of the island per attempt), and a larger island for more
+predators. The island's numbers stay as they are: they are what keeps the ecology, and the
+benchmark, real.
+
+### Plans
+- **2b:** rules, new goals, briefing, field guide, waiting list, the Claude player's challenge
+  mode and the attempts contract with its records.
+- **3:** accounts and the client (X sign-in, wallet link, challenge pages, the create flow with
+  rules, the human play view, X posts).
+- **4:** Arc Testnet: deploy both contracts, ERC-8004 identity and reputation, memos, USDC
+  domain checks, end-to-end journeys.
