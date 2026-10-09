@@ -47,7 +47,10 @@ used only by the tests.
 
 `script/Deploy.s.sol` reads every setting from the environment (`CHALLENGES_USDC`,
 `CHALLENGES_OWNER`, `CHALLENGES_EVALUATOR`, `CHALLENGES_MIN_PRIZE`, `CHALLENGES_MAX_PRIZE`) and
-refuses an owner that is also the evaluator. `script/DeployAttempts.s.sol` deploys
+refuses an owner that is also the evaluator. It also refuses:
+- a token that does not have 6 decimals;
+- prize limits that do not fit or look like 18-decimal amounts (above 1,000,000 USDC);
+- any chain but Arc Testnet (5042002), unless `CHALLENGES_MAINNET_APPROVED=true`. `script/DeployAttempts.s.sol` deploys
 `WildsentiaAttempts` from `CHALLENGES_OWNER` and `CHALLENGES_EVALUATOR` (the recorder), with the
 same refusal. Deploy to Arc Testnet with Arc Foundry; mainnet only after a legal review and the
 owner's explicit approval.

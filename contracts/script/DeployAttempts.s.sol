@@ -9,6 +9,7 @@ import {WildsentiaAttempts} from "../src/WildsentiaAttempts.sol";
 ///   CHALLENGES_EVALUATOR  the server's key, which records attempts (the same key that pays winners)
 contract DeployAttempts is Script {
     function run() external returns (WildsentiaAttempts) {
+        require(block.chainid == 5042002 || vm.envOr("CHALLENGES_MAINNET_APPROVED", false), "not Arc Testnet");
         address owner = vm.envAddress("CHALLENGES_OWNER");
         address recorder = vm.envAddress("CHALLENGES_EVALUATOR");
         vm.startBroadcast();
