@@ -273,6 +273,14 @@ export class LiveLayer {
     return this.moveTo(agentId, route.points, gait);
   }
 
+  /** A person's play page is open: that keeps the animal from going idle, without being a command. */
+  presence(agentId: string): boolean {
+    const avatar = this.avatars.get(agentId);
+    if (!avatar) return false;
+    avatar.lastCommand = this.clock();
+    return true;
+  }
+
   stop(agentId: string): string | null {
     const avatar = this.avatars.get(agentId);
     if (!avatar) return 'not_possessing';

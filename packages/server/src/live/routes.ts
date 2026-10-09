@@ -11,6 +11,8 @@ import { agentIdFor, type AgentRecord, type AgentStore, type PlaceDropLedger, ty
 import { displayAmount } from '../rewards.js';
 import { networkKey } from '../network.js';
 import type { AcceptResult, ChallengeEngine, Player } from '../challenges/engine.js';
+import { sameOriginJson } from '../accounts/cookies.js';
+import { MIN_X_ACCOUNT_DAYS } from '../accounts/store.js';
 
 /**
  * The agent API (docs/2026-09-26-live-agents-design.md). Everything under /agents/me is
@@ -33,6 +35,8 @@ export interface LiveRouteDeps {
   /** Keyed hash for registration limits; never stored raw. */
   networkSecret: string;
   clientScriptPath: string;
+  /** Signed-in people, when accounts are on: they steer animals at /play/* (docs/2026-10-09-challenges-design.md §14). */
+  humans?: HumanSessions | undefined;
   /** The species configs the simulation runs on, for the field guide. */
   species?: (() => readonly SpeciesConfig[]) | undefined;
   /** Wildsentia Challenges, when configured: agents accept a challenge, wait for an animal and see their progress. */
@@ -41,6 +45,15 @@ export interface LiveRouteDeps {
     waitingOf: ChallengeEngine['waitingOf']; leave: ChallengeEngine['leave'];
   } | undefined;
 }
+
+export interface HumanSessions {
+  /** The site's origin: commands from anywhere else are refused. */
+  origin: string;
+  /** The signed-in person behind a request (their live identity and X account age), or null. */
+  account(req: FastifyRequest): Promise<{ agentId: string; xAccountDays: number } | null>;
+}
+type Ctx = { agent: AgentRecord; json: Record<string, unknown>; xAccountDays?: number };
+type Resolve = (req: FastifyRequest, reply: FastifyReply, bucket: Bucket) => Promise<Ctx | null>;
 
 const EVM = /^0x[0-9a-fA-F]{40}$/;
 const GAITS = new Set<Gait>(['walk', 'trot', 'run']);
@@ -120,13 +133,25 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
       const json = body.json && typeof body.json === 'object' && !Array.isArray(body.json) ? body.json as Record<string, unknown> : {};
       return { key: result.key, json };
     };
-    const me = async (req: FastifyRequest, reply: FastifyReply, bucket: Bucket): Promise<{ agent: AgentRecord; json: Record<string, unknown> } | null> => {
+    const me: Resolve = async (req, reply, bucket) => {
       const auth = await signed(req, reply, false);
       if (!auth) return null;
       const agent = (await store.byKey(auth.key))!;
       if (!bucket.take(agent.id)) { reply.code(429).send({ error: 'rate_limited' }); return null; }
       void store.touch(agent.id).catch(() => undefined);
       return { agent, json: auth.json };
+    };
+    /** A signed-in person, by their session cookie: same-origin JSON only, with an agent's rate limits. */
+    const person = (humans: HumanSessions): Resolve => async (req, reply, bucket) => {
+      if (!sameOriginJson(req, reply, humans.origin)) return null;
+      const who = await humans.account(req);
+      const agent = who ? await store.byId(who.agentId) : null;
+      if (!who || !agent) { reply.code(401).send({ error: 'signed_out' }); return null; }
+      if (!bucket.take(agent.id)) { reply.code(429).send({ error: 'rate_limited' }); return null; }
+      void store.touch(agent.id).catch(() => undefined);
+      const body = (req.body as { json?: unknown } | undefined)?.json;
+      const json = body && typeof body === 'object' && !Array.isArray(body) ? body as Record<string, unknown> : {};
+      return { agent, json, xAccountDays: who.xAccountDays };
     };
 
     scope.get('/agents/info', async () => ({
@@ -194,113 +219,128 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
       return { wallet: wallet.toLowerCase(), proven: true };
     });
 
-    scope.get('/agents/me/observe', async (req, reply) => {
-      const ctx = await me(req, reply, observes); if (!ctx) return reply;
-      return observation(ctx.agent);
-    });
+    /**
+     * The commands an animal is steered with. Agents send them signed to /agents/me/*; people send
+     * them from the play page to /play/*, with their session cookie.
+     */
+    const commandRoutes = (prefix: string, resolve: Resolve) => {
+      scope.get(`${prefix}/observe`, async (req, reply) => {
+        const ctx = await resolve(req, reply, observes); if (!ctx) return reply;
+        return observation(ctx.agent);
+      });
 
-    scope.post('/agents/me/possess', async (req, reply) => {
-      const ctx = await me(req, reply, commands); if (!ctx) return reply;
-      const animalId = typeof ctx.json.animalId === 'string' ? ctx.json.animalId : undefined;
-      const speciesId = typeof ctx.json.speciesId === 'string' ? ctx.json.speciesId : undefined;
-      if (!animalId && !speciesId) return reply.code(400).send({ error: 'animalId_or_speciesId_required' });
-      if (deps.holding) {
-        if (!ctx.agent.wallet || !ctx.agent.walletProven) return reply.code(403).send({ error: 'holding_wallet_required' });
-        try { if (!(await holds(ctx.agent.wallet))) return reply.code(403).send({ error: 'holding_below_minimum' }); }
-        catch { return reply.code(503).send({ error: 'holding_check_unavailable' }); }
-      }
-      const result = live.possess(ctx.agent.id, ctx.agent.name, { ...(animalId ? { animalId } : {}), ...(speciesId ? { speciesId } : {}) });
-      if (result.ok) return { animalId: result.avatar.animalId, speciesId: result.avatar.speciesId };
-      // Waiting in line for a species with none free: the agent is told its place and notified when its turn comes.
-      if (result.reason.startsWith('queued:')) return reply.code(202).send({ queued: Number(result.reason.slice(7)), speciesId });
-      return reply.code(409).send({ error: result.reason });
-    });
+      scope.post(`${prefix}/possess`, async (req, reply) => {
+        const ctx = await resolve(req, reply, commands); if (!ctx) return reply;
+        const animalId = typeof ctx.json.animalId === 'string' ? ctx.json.animalId : undefined;
+        const speciesId = typeof ctx.json.speciesId === 'string' ? ctx.json.speciesId : undefined;
+        if (!animalId && !speciesId) return reply.code(400).send({ error: 'animalId_or_speciesId_required' });
+        if (deps.holding && ctx.agent.kind === 'agent') {
+          if (!ctx.agent.wallet || !ctx.agent.walletProven) return reply.code(403).send({ error: 'holding_wallet_required' });
+          try { if (!(await holds(ctx.agent.wallet))) return reply.code(403).send({ error: 'holding_below_minimum' }); }
+          catch { return reply.code(503).send({ error: 'holding_check_unavailable' }); }
+        }
+        const result = live.possess(ctx.agent.id, ctx.agent.name, { ...(animalId ? { animalId } : {}), ...(speciesId ? { speciesId } : {}) });
+        if (result.ok) return { animalId: result.avatar.animalId, speciesId: result.avatar.speciesId };
+        // Waiting in line for a species with none free: the agent is told its place and notified when its turn comes.
+        if (result.reason.startsWith('queued:')) return reply.code(202).send({ queued: Number(result.reason.slice(7)), speciesId });
+        return reply.code(409).send({ error: result.reason });
+      });
 
-    scope.post('/agents/me/release', async (req, reply) => {
-      const ctx = await me(req, reply, commands); if (!ctx) return reply;
-      return live.release(ctx.agent.id) ? { ok: true } : reply.code(409).send({ error: 'not_possessing' });
-    });
+      scope.post(`${prefix}/release`, async (req, reply) => {
+        const ctx = await resolve(req, reply, commands); if (!ctx) return reply;
+        return live.release(ctx.agent.id) ? { ok: true } : reply.code(409).send({ error: 'not_possessing' });
+      });
 
-    scope.post('/agents/me/move', async (req, reply) => {
-      const ctx = await me(req, reply, commands); if (!ctx) return reply;
-      const gait = (ctx.json.gait ?? 'walk') as Gait;
-      if (!GAITS.has(gait)) return reply.code(400).send({ error: 'bad_gait' });
-      // `to` asks the server for the land route; `points` are followed exactly as given.
-      if (ctx.json.to && typeof ctx.json.to === 'object') {
-        const to = ctx.json.to as { x?: unknown; z?: unknown };
-        const error = live.goTo(ctx.agent.id, { x: Number(to.x), z: Number(to.z) }, gait);
-        return error ? reply.code(409).send({ error }) : { ok: true, routed: true, waypoints: live.avatars.get(ctx.agent.id)?.path.length ?? 0 };
-      }
-      const raw = Array.isArray(ctx.json.points) ? ctx.json.points : [{ x: ctx.json.x, z: ctx.json.z }];
-      const points = raw.map((p) => ({ x: Number((p as { x?: unknown })?.x), z: Number((p as { z?: unknown })?.z) }));
-      const error = live.moveTo(ctx.agent.id, points, gait);
-      return error ? reply.code(409).send({ error }) : { ok: true };
-    });
+      scope.post(`${prefix}/move`, async (req, reply) => {
+        const ctx = await resolve(req, reply, commands); if (!ctx) return reply;
+        const gait = (ctx.json.gait ?? 'walk') as Gait;
+        if (!GAITS.has(gait)) return reply.code(400).send({ error: 'bad_gait' });
+        // `to` asks the server for the land route; `points` are followed exactly as given.
+        if (ctx.json.to && typeof ctx.json.to === 'object') {
+          const to = ctx.json.to as { x?: unknown; z?: unknown };
+          const error = live.goTo(ctx.agent.id, { x: Number(to.x), z: Number(to.z) }, gait);
+          return error ? reply.code(409).send({ error }) : { ok: true, routed: true, waypoints: live.avatars.get(ctx.agent.id)?.path.length ?? 0 };
+        }
+        const raw = Array.isArray(ctx.json.points) ? ctx.json.points : [{ x: ctx.json.x, z: ctx.json.z }];
+        const points = raw.map((p) => ({ x: Number((p as { x?: unknown })?.x), z: Number((p as { z?: unknown })?.z) }));
+        const error = live.moveTo(ctx.agent.id, points, gait);
+        return error ? reply.code(409).send({ error }) : { ok: true };
+      });
 
-    scope.get<{ Querystring: { x?: string; z?: string } }>('/agents/me/route', async (req, reply) => {
-      const ctx = await me(req, reply, observes); if (!ctx) return reply;
-      const avatar = live.avatars.get(ctx.agent.id);
-      if (!avatar) return reply.code(409).send({ error: 'not_possessing' });
-      const to = { x: Number(req.query.x), z: Number(req.query.z) };
-      if (!Number.isFinite(to.x) || !Number.isFinite(to.z)) return reply.code(400).send({ error: 'x_and_z_required' });
-      const route = world.route(avatar.speciesId, avatar, to);
-      if (!route) return reply.code(409).send({ error: 'no_land_route' });
-      const motion = world.species(avatar.speciesId)!;
-      return { points: route.points.map((p) => ({ x: Math.round(p.x * 10) / 10, z: Math.round(p.z * 10) / 10 })),
-        metres: Math.round(route.metres), minutes: { walk: Math.round(route.metres / motion.walkMs / 6) / 10,
-          trot: Math.round(route.metres / motion.trotMs / 6) / 10 } };
-    });
+      scope.get<{ Querystring: { x?: string; z?: string } }>(`${prefix}/route`, async (req, reply) => {
+        const ctx = await resolve(req, reply, observes); if (!ctx) return reply;
+        const avatar = live.avatars.get(ctx.agent.id);
+        if (!avatar) return reply.code(409).send({ error: 'not_possessing' });
+        const to = { x: Number(req.query.x), z: Number(req.query.z) };
+        if (!Number.isFinite(to.x) || !Number.isFinite(to.z)) return reply.code(400).send({ error: 'x_and_z_required' });
+        const route = world.route(avatar.speciesId, avatar, to);
+        if (!route) return reply.code(409).send({ error: 'no_land_route' });
+        const motion = world.species(avatar.speciesId)!;
+        return { points: route.points.map((p) => ({ x: Math.round(p.x * 10) / 10, z: Math.round(p.z * 10) / 10 })),
+          metres: Math.round(route.metres), minutes: { walk: Math.round(route.metres / motion.walkMs / 6) / 10,
+            trot: Math.round(route.metres / motion.trotMs / 6) / 10 } };
+      });
 
-    scope.post('/agents/me/stop', async (req, reply) => {
-      const ctx = await me(req, reply, commands); if (!ctx) return reply;
-      const error = live.stop(ctx.agent.id);
-      return error ? reply.code(409).send({ error }) : { ok: true };
-    });
+      scope.post(`${prefix}/stop`, async (req, reply) => {
+        const ctx = await resolve(req, reply, commands); if (!ctx) return reply;
+        const error = live.stop(ctx.agent.id);
+        return error ? reply.code(409).send({ error }) : { ok: true };
+      });
 
-    scope.post('/agents/me/act', async (req, reply) => {
-      const ctx = await me(req, reply, commands); if (!ctx) return reply;
-      const action = ctx.json.action;
-      if (action !== 'graze' && action !== 'drink' && action !== 'rest' && action !== 'feed') return reply.code(400).send({ error: 'bad_action' });
-      const error = live.act(ctx.agent.id, action);
-      return error ? reply.code(409).send({ error }) : { ok: true };
-    });
+      scope.post(`${prefix}/act`, async (req, reply) => {
+        const ctx = await resolve(req, reply, commands); if (!ctx) return reply;
+        const action = ctx.json.action;
+        if (action !== 'graze' && action !== 'drink' && action !== 'rest' && action !== 'feed') return reply.code(400).send({ error: 'bad_action' });
+        const error = live.act(ctx.agent.id, action);
+        return error ? reply.code(409).send({ error }) : { ok: true };
+      });
 
-    scope.post('/agents/me/say', async (req, reply) => {
-      const ctx = await me(req, reply, commands); if (!ctx) return reply;
-      const error = live.say(ctx.agent.id, ctx.json.text, ctx.agent.muted);
-      return error ? reply.code(error === 'not_possessing' || error === 'too_soon' || error === 'muted' ? 409 : 400).send({ error }) : { ok: true };
-    });
+      scope.post(`${prefix}/say`, async (req, reply) => {
+        const ctx = await resolve(req, reply, commands); if (!ctx) return reply;
+        const error = live.say(ctx.agent.id, ctx.json.text, ctx.agent.muted);
+        return error ? reply.code(error === 'not_possessing' || error === 'too_soon' || error === 'muted' ? 409 : 400).send({ error }) : { ok: true };
+      });
 
-    scope.post('/agents/me/climb', async (req, reply) => {
-      const ctx = await me(req, reply, commands); if (!ctx) return reply;
-      const error = live.climb(ctx.agent.id);
-      return error ? reply.code(409).send({ error }) : { ok: true };
-    });
+      scope.post(`${prefix}/climb`, async (req, reply) => {
+        const ctx = await resolve(req, reply, commands); if (!ctx) return reply;
+        const error = live.climb(ctx.agent.id);
+        return error ? reply.code(409).send({ error }) : { ok: true };
+      });
 
-    scope.post('/agents/me/hunt', async (req, reply) => {
-      const ctx = await me(req, reply, commands); if (!ctx) return reply;
-      const animalId = typeof ctx.json.animalId === 'string' ? ctx.json.animalId : '';
-      const error = live.hunt(ctx.agent.id, animalId);
-      return error ? reply.code(409).send({ error }) : { ok: true };
-    });
+      scope.post(`${prefix}/hunt`, async (req, reply) => {
+        const ctx = await resolve(req, reply, commands); if (!ctx) return reply;
+        const animalId = typeof ctx.json.animalId === 'string' ? ctx.json.animalId : '';
+        const error = live.hunt(ctx.agent.id, animalId);
+        return error ? reply.code(409).send({ error }) : { ok: true };
+      });
 
-    scope.post<{ Params: { id: string } }>('/agents/me/challenges/:id/accept', async (req, reply) => {
-      const ctx = await me(req, reply, commands); if (!ctx) return reply;
-      if (!deps.challenges) return reply.code(503).send({ error: 'challenges_not_configured' });
-      if (!/^[0-9]{1,15}$/.test(req.params.id)) return reply.code(404).send({ error: 'not_found' });
-      const result = await deps.challenges.accept({ agentId: ctx.agent.id, name: ctx.agent.name, wallet: ctx.agent.wallet,
-        walletProven: ctx.agent.walletProven }, Number(req.params.id));
-      if (!result.ok) return reply.code(result.status).send({ error: result.error });
-      // No free animal yet: the agent waits on the challenge's list and is told when its attempt starts.
-      return result.queued ? { queued: true, position: result.position, until: result.until }
-        : { queued: false, attemptId: result.attemptId, animalId: result.animalId };
-    });
+      scope.post<{ Params: { id: string } }>(`${prefix}/challenges/:id/accept`, async (req, reply) => {
+        const ctx = await resolve(req, reply, commands); if (!ctx) return reply;
+        if (!deps.challenges) return reply.code(503).send({ error: 'challenges_not_configured' });
+        if (!/^[0-9]{1,15}$/.test(req.params.id)) return reply.code(404).send({ error: 'not_found' });
+        // A person's X account must be at least 30 days old to play for a prize (spec §6).
+        if (ctx.xAccountDays !== undefined && ctx.xAccountDays < MIN_X_ACCOUNT_DAYS) return reply.code(403).send({ error: 'x_account_too_new' });
+        const result = await deps.challenges.accept({ agentId: ctx.agent.id, name: ctx.agent.name, wallet: ctx.agent.wallet,
+          walletProven: ctx.agent.walletProven }, Number(req.params.id));
+        if (!result.ok) return reply.code(result.status).send({ error: result.error });
+        // No free animal yet: the agent waits on the challenge's list and is told when its attempt starts.
+        return result.queued ? { queued: true, position: result.position, until: result.until }
+          : { queued: false, attemptId: result.attemptId, animalId: result.animalId };
+      });
 
-    scope.post('/agents/me/challenges/leave', async (req, reply) => {
-      const ctx = await me(req, reply, commands); if (!ctx) return reply;
-      if (!deps.challenges) return reply.code(503).send({ error: 'challenges_not_configured' });
-      return { left: deps.challenges.leave(ctx.agent.id) };
-    });
+      scope.post(`${prefix}/challenges/leave`, async (req, reply) => {
+        const ctx = await resolve(req, reply, commands); if (!ctx) return reply;
+        if (!deps.challenges) return reply.code(503).send({ error: 'challenges_not_configured' });
+        return { left: deps.challenges.leave(ctx.agent.id) };
+      });
+
+      scope.post(`${prefix}/presence`, async (req, reply) => {
+        const ctx = await resolve(req, reply, commands); if (!ctx) return reply;
+        return live.presence(ctx.agent.id) ? { ok: true } : reply.code(409).send({ error: 'not_possessing' });
+      });
+    };
+    commandRoutes('/agents/me', me);
+    if (deps.humans) commandRoutes('/play', person(deps.humans));
 
     scope.post('/agents/me/open', async (req, reply) => {
       const ctx = await me(req, reply, commands); if (!ctx) return reply;
