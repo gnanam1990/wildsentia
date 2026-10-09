@@ -92,6 +92,12 @@ export function challengesRuntime(config: ChallengesConfig, deps: { pool: Pool; 
       const appointed = await chain.appointedEvaluator();
       if (appointed.toLowerCase() !== chain.evaluator.toLowerCase())
         throw new Error(`VANA_CHALLENGES_EVALUATOR_KEY is not the contract's evaluator (${appointed})`);
+      // One database serves one contract: ids are the contract's own.
+      const others = await store.otherContracts(config.contract);
+      if (others.length) throw new Error(`The database holds challenges of another contract (${others[0]}); use a fresh database`);
+      // Challenges recorded under an evaluator that is not ours can never be paid by us: they refund.
+      const foreign = await store.unrecogniseOtherEvaluators(config.contract, chain.evaluator);
+      if (foreign) console.error(`[challenges] ${foreign} open challenges belong to another evaluator; they will refund`);
       const limits = await chain.prizeLimits();
       drafts.minPrizeAtomic = limits.min; drafts.maxPrizeAtomic = limits.max;
       await engine.restore();

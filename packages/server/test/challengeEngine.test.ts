@@ -47,6 +47,7 @@ maybe('challenge engine', () => {
     live.onHunt = (h) => engine.onHunt(h);
     live.onCommand = (c) => engine.onCommand(c);
     live.onEnded = (l) => engine.onEnded(l);
+    await engine.restore(); // also marks the engine ready to accept
   });
 
   const challenge = async (terms: ChallengeTerms, deadlineMs = T0 + 3 * 86_400_000) => {
@@ -54,7 +55,7 @@ maybe('challenge engine', () => {
     await store.insertDraft({ creatorWallet: CREATOR, terms, rulesHash: rulesHash(terms), prizeAtomic: '10000000',
       deadline: new Date(deadlineMs), salt: hex('1'), authNonce: hex(String(id)) });
     await store.recordCreated(CONTRACT, { id, creator: CREATOR, prizeAtomic: '10000000', deadline: deadlineMs / 1000,
-      rulesHash: rulesHash(terms), authNonce: hex(String(id)), txHash: hex(String(id)), blockNumber: id });
+      rulesHash: rulesHash(terms), authNonce: hex(String(id)), txHash: hex(String(id)), blockNumber: id }, { challenge: '0x' + 'e'.repeat(40), ours: '0x' + 'e'.repeat(40) });
     return id;
   };
   const player = (agentId: string, over: Partial<Player> = {}): Player => ({ agentId, name: agentId, wallet: PAYOUT, walletProven: true, ...over });
@@ -76,7 +77,7 @@ maybe('challenge engine', () => {
     expect(await engine.accept(player('ag_000000000000000a'), 999)).toMatchObject({ ok: false, status: 404, error: 'not_found' });
     // A challenge opened straight on the contract (no draft of ours) cannot be played.
     await store.recordCreated(CONTRACT, { id: 50, creator: CREATOR, prizeAtomic: '10000000', deadline: (T0 + 86_400_000) / 1000,
-      rulesHash: hex('9'), authNonce: hex('0'), txHash: hex('9'), blockNumber: 50 });
+      rulesHash: hex('9'), authNonce: hex('0'), txHash: hex('9'), blockNumber: 50 }, { challenge: '0x' + 'e'.repeat(40), ours: '0x' + 'e'.repeat(40) });
     expect(await engine.accept(player('ag_000000000000000a'), 50)).toMatchObject({ ok: false, error: 'not_open' });
     const late = await challenge({ template: 'hunt', version: 1, speciesId: 'tiger' }, T0 - 1);
     expect(await engine.accept(player('ag_000000000000000a'), late)).toMatchObject({ ok: false, error: 'deadline_passed' });
@@ -188,5 +189,61 @@ maybe('challenge engine', () => {
     await restarted.restore();
     expect(restarted.progressOf('ag_000000000000000a')).toMatchObject({ attemptId: a.attemptId });
     expect((await store.attempt(b.attemptId))!).toMatchObject({ status: 'void', endReason: 'lost_in_restart' });
+  });
+
+  it('refuses to accept before it has started', async () => {
+    const id = await challenge({ template: 'hunt', version: 1, speciesId: 'tiger' });
+    const cold = new ChallengeEngine(store, live, { ...worldPort(() => world, () => 'w'), now: () => worldNow }, () => now);
+    expect(await cold.accept(player('ag_000000000000000a'), id)).toMatchObject({ ok: false, status: 503, error: 'challenges_starting' });
+    expect(live.avatars.size).toBe(0);
+  });
+
+  it('cannot win a survive goal after the animal was let go while the attempt was being saved', async () => {
+    const id = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 1 });
+    const save = store.startAttempt.bind(store);
+    store.startAttempt = async (a) => { const saved = await save(a); live.release(a.agentId); return saved; };
+    const result = await engine.accept(player('ag_000000000000000a'), id);
+    expect(result).toMatchObject({ ok: false, error: 'animal_lost' });
+    store.startAttempt = save;
+    const [attempt] = await store.attemptsOf(id);
+    expect(attempt).toMatchObject({ status: 'void', endReason: 'animal_lost' });
+    worldNow += WORLD_DAY_SECONDS;
+    await run(1);
+    expect((await store.challenge(id))!.status).toBe('open');
+  });
+
+  it('fails an attempt whose animal is no longer the player\'s, even if no hook said so', async () => {
+    const id = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 1 });
+    const a = await engine.accept(player('ag_000000000000000a'), id);
+    if (!a.ok) throw new Error(a.error);
+    live.avatars.delete('ag_000000000000000a'); // a missed onEnded
+    worldNow += WORLD_DAY_SECONDS;
+    await engine.tick();
+    expect((await store.attempt(a.attemptId))!).toMatchObject({ status: 'failed', endReason: 'animal_lost' });
+    expect((await store.challenge(id))!.status).toBe('open');
+  });
+
+  it('counts only kills made by the attempt\'s own animal', async () => {
+    const id = await challenge({ template: 'hunt', version: 1, speciesId: 'tiger' });
+    const a = await engine.accept(player('ag_000000000000000a'), id);
+    if (!a.ok) throw new Error(a.error);
+    engine.onHunt({ predatorId: 'tiger_other', preyId: 'chital_x', predatorAgentId: 'ag_000000000000000a', preyAgentId: null, killed: true, at: now });
+    await engine.tick();
+    expect((await store.attempt(a.attemptId))!).toMatchObject({ status: 'running', kills: 0 });
+  });
+
+  it('keeps a win it failed to write, and records it on the next tick', async () => {
+    const id = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 1 });
+    const a = await engine.accept(player('ag_000000000000000a'), id);
+    if (!a.ok) throw new Error(a.error);
+    const win = store.win.bind(store);
+    let failures = 1;
+    store.win = async (w) => { if (failures-- > 0) throw new Error('database unavailable'); return win(w); };
+    worldNow += WORLD_DAY_SECONDS;
+    await expect(engine.tick()).resolves.toBeUndefined();
+    expect((await store.attempt(a.attemptId))!.status).toBe('running');
+    await engine.tick();
+    expect((await store.attempt(a.attemptId))!.status).toBe('met');
+    expect((await store.challenge(id))!.status).toBe('won');
   });
 });

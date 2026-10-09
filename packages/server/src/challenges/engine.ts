@@ -25,6 +25,8 @@ export type AcceptResult =
 
 interface Running {
   attempt: Attempt; terms: ChallengeTerms; deadline: number; kills: number; escapes: number; logged: number; finishing: boolean;
+  /** The goal-met entry is logged once, even if recording the win has to be retried. */
+  endLogged?: boolean;
 }
 
 export class ChallengeEngine {
@@ -32,6 +34,8 @@ export class ChallengeEngine {
   #pending: Array<{ attemptId: string; entry: LogEntry }> = [];
   /** Attempts ended by a live-layer hook, still being written; the next tick waits for them. */
   #ending: Array<Promise<void>> = [];
+  /** False until restore() has run (and the hooks are wired): no attempt starts before then. */
+  #ready = false;
 
   constructor(private readonly store: ChallengeStore, private readonly live: LiveLayer, private readonly world: WorldPort,
     private readonly clock: () => number = Date.now) {}
@@ -49,9 +53,11 @@ export class ChallengeEngine {
       this.#running.set(attempt.agentId, { attempt, terms: challenge.terms, deadline: challenge.deadline.getTime(),
         kills: attempt.kills, escapes: attempt.escapes, logged, finishing: false });
     }
+    this.#ready = true;
   }
 
   async accept(player: Player, challengeId: number): Promise<AcceptResult> {
+    if (!this.#ready) return { ok: false, status: 503, error: 'challenges_starting' };
     const c = await this.store.challenge(challengeId);
     if (!c) return { ok: false, status: 404, error: 'not_found' };
     if (c.status !== 'open' || !c.terms) return { ok: false, status: 409, error: 'not_open' };
@@ -75,6 +81,12 @@ export class ChallengeEngine {
     } catch (error) {
       this.live.release(player.agentId, 'The challenge could not start, so your animal went back to the wild.', 'idle');
       throw error;
+    }
+    // The animal may have been let go while the attempt was being saved (a release in between
+    // reached onEnded before this run existed): then the attempt never really started.
+    if (!this.#holds(player.agentId, animal.id)) {
+      await this.store.endAttempt(attempt.id, 'void', 'animal_lost', this.world.now());
+      return { ok: false, status: 409, error: 'animal_lost' };
     }
     const run: Running = { attempt, terms: c.terms, deadline: c.deadline.getTime(), kills: 0, escapes: 0, logged: 0, finishing: false };
     this.#running.set(player.agentId, run);
@@ -101,13 +113,14 @@ export class ChallengeEngine {
   }
 
   onHunt(hunt: HuntOutcome): void {
+    // Only the attempt's own animal counts, whoever steers it now.
     const hunter = hunt.predatorAgentId ? this.#running.get(hunt.predatorAgentId) : undefined;
-    if (hunter) {
+    if (hunter && hunter.attempt.animalId === hunt.predatorId) {
       if (hunt.killed) hunter.kills++;
       this.#log(hunter, 'hunt', { as: 'predator', predatorId: hunt.predatorId, preyId: hunt.preyId, killed: hunt.killed });
     }
     const prey = hunt.preyAgentId ? this.#running.get(hunt.preyAgentId) : undefined;
-    if (prey) {
+    if (prey && prey.attempt.animalId === hunt.preyId) {
       if (!hunt.killed) prey.escapes++;
       this.#log(prey, 'hunt', { as: 'prey', predatorId: hunt.predatorId, preyId: hunt.preyId, killed: hunt.killed });
     }
@@ -134,6 +147,14 @@ export class ChallengeEngine {
     const worldNow = this.world.now();
     for (const [agentId, run] of [...this.#running]) {
       if (run.finishing) continue;
+      // Never judge a goal for an animal the player no longer holds, whatever the hooks said.
+      if (!this.#holds(agentId, run.attempt.animalId)) {
+        run.finishing = true;
+        this.#running.delete(agentId);
+        this.#log(run, 'end', { how: 'animal_lost' });
+        await this.#finish(run, 'failed', 'animal_lost');
+        continue;
+      }
       if (run.kills !== run.attempt.kills || run.escapes !== run.attempt.escapes) {
         await this.store.saveProgress(run.attempt.id, run.kills, run.escapes);
         run.attempt = { ...run.attempt, kills: run.kills, escapes: run.escapes };
@@ -165,14 +186,21 @@ export class ChallengeEngine {
 
   async #win(agentId: string, run: Running, worldNow: number): Promise<void> {
     run.finishing = true;
+    if (!run.endLogged) { this.#log(run, 'end', { how: 'goal_met', worldTime: worldNow }); run.endLogged = true; }
+    let challenge: Challenge, won: boolean;
+    try {
+      await this.#flush();
+      challenge = (await this.store.challenge(run.attempt.challengeId))!;
+      const record = resultRecord(challenge, run.attempt, await this.store.log(run.attempt.id), worldNow);
+      won = await this.store.win({ challengeId: challenge.id, attemptId: run.attempt.id, endedWorld: worldNow, resultRecord: record,
+        resultHash: keccak256(toBytes(record)), winner: run.attempt.payoutWallet });
+    } catch (error) {
+      // Keep the win: the next tick tries to record it again.
+      run.finishing = false;
+      console.error('[challenges] recording a win failed; retrying', (error as Error).message);
+      return;
+    }
     this.#running.delete(agentId);
-    this.#log(run, 'end', { how: 'goal_met', worldTime: worldNow });
-    await this.#flush();
-    const challenge = (await this.store.challenge(run.attempt.challengeId))!;
-    const record = resultRecord(challenge, run.attempt, await this.store.log(run.attempt.id), worldNow);
-    const resultHash = keccak256(toBytes(record));
-    const won = await this.store.win({ challengeId: challenge.id, attemptId: run.attempt.id, endedWorld: worldNow, resultRecord: record,
-      resultHash, winner: run.attempt.payoutWallet });
     if (!won) {
       await this.store.endAttempt(run.attempt.id, 'void', 'challenge_closed', worldNow);
       this.live.notify(agentId, `You met the goal of challenge ${challenge.id}, but it had already closed.`);
@@ -193,6 +221,10 @@ export class ChallengeEngine {
       await this.#flush();
       await this.store.endAttempt(run.attempt.id, status, reason, this.world.now());
     } catch (error) { console.error('[challenges] ending an attempt failed', (error as Error).message); }
+  }
+
+  #holds(agentId: string, animalId: string): boolean {
+    return this.live.avatars.get(agentId)?.animalId === animalId;
   }
 
   #log(run: Running, kind: string, data: Record<string, unknown>): void {

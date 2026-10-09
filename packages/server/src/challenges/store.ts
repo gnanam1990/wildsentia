@@ -15,7 +15,7 @@ export interface Draft {
   salt: Hex; authNonce: Hex; createdAt: Date; relayedAt: Date | null;
 }
 export interface Challenge {
-  id: number; contract: string; draftId: string | null; creatorWallet: string; terms: ChallengeTerms | null; rulesHash: Hex;
+  id: number; contract: string; draftId: string | null; creatorWallet: string; evaluator: string; terms: ChallengeTerms | null; rulesHash: Hex;
   prizeAtomic: string; deadline: Date; authNonce: Hex; status: ChallengeStatus; winnerAttempt: string | null;
   createdTx: Hex; createdBlock: number; settledTx: Hex | null;
 }
@@ -29,7 +29,8 @@ export interface Attempt {
 export interface LogEntry { at: Date; kind: string; data: Record<string, unknown> }
 export interface ChainOp {
   id: string; kind: ChainOpKind; challengeId: number | null; draftId: string | null; payload: Record<string, unknown>;
-  status: ChainOpStatus; txHash: Hex | null; tries: number; lastError: string | null; updatedAt: Date;
+  status: ChainOpStatus; txHash: Hex | null; sentNonce: number | null; sentMaxFee: string | null; tries: number; lastError: string | null;
+  updatedAt: Date;
 }
 /** A ChallengeCreated event as the indexer read it. */
 export interface CreatedEvent {
@@ -39,7 +40,7 @@ export interface CreatedEvent {
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const draft = (r: any): Draft => ({ id: r.id, creatorWallet: r.creator_wallet, terms: r.terms, rulesHash: r.rules_hash,
   prizeAtomic: String(r.prize_atomic), deadline: r.deadline, salt: r.salt, authNonce: r.auth_nonce, createdAt: r.created_at, relayedAt: r.relayed_at });
-const challenge = (r: any): Challenge => ({ id: Number(r.id), contract: r.contract, draftId: r.draft_id, creatorWallet: r.creator_wallet,
+const challenge = (r: any): Challenge => ({ id: Number(r.id), contract: r.contract, draftId: r.draft_id, creatorWallet: r.creator_wallet, evaluator: r.evaluator,
   terms: r.terms, rulesHash: r.rules_hash, prizeAtomic: String(r.prize_atomic), deadline: r.deadline, authNonce: r.auth_nonce,
   status: r.status, winnerAttempt: r.winner_attempt, createdTx: r.created_tx, createdBlock: Number(r.created_block), settledTx: r.settled_tx });
 const attempt = (r: any): Attempt => ({ id: r.id, challengeId: Number(r.challenge_id), agentId: r.agent_id, animalId: r.animal_id,
@@ -47,7 +48,8 @@ const attempt = (r: any): Attempt => ({ id: r.id, challengeId: Number(r.challeng
   kills: r.kills, escapes: r.escapes, status: r.status, endedAt: r.ended_at, endedWorld: r.ended_world === null ? null : Number(r.ended_world),
   endReason: r.end_reason, resultRecord: r.result_record, resultHash: r.result_hash, ...(r.agent_name ? { agentName: r.agent_name } : {}) });
 const op = (r: any): ChainOp => ({ id: r.id, kind: r.kind, challengeId: r.challenge_id === null ? null : Number(r.challenge_id),
-  draftId: r.draft_id, payload: r.payload, status: r.status, txHash: r.tx_hash, tries: r.tries, lastError: r.last_error, updatedAt: r.updated_at });
+  draftId: r.draft_id, payload: r.payload, status: r.status, txHash: r.tx_hash, sentNonce: r.sent_nonce === null ? null : Number(r.sent_nonce),
+  sentMaxFee: r.sent_max_fee === null ? null : String(r.sent_max_fee), tries: r.tries, lastError: r.last_error, updatedAt: r.updated_at });
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
 export class ChallengeStore {
@@ -87,10 +89,11 @@ export class ChallengeStore {
   }
 
   /**
-   * Records a ChallengeCreated event once. It is matched to our draft by the authorization nonce
-   * (a creation someone else relayed still matches), or else by nothing: then it is unrecognised.
+   * Records a ChallengeCreated event once. It is ours to judge only if it matches one of our drafts
+   * by the authorization nonce (a creation someone else relayed still matches) and the contract
+   * recorded our evaluator for it; otherwise it is unrecognised, unplayable, and simply refunds.
    */
-  async recordCreated(contract: string, e: CreatedEvent): Promise<Challenge> {
+  async recordCreated(contract: string, e: CreatedEvent, evaluators: { challenge: string; ours: string }): Promise<Challenge> {
     const db = await this.pool.connect();
     try {
       await db.query('begin');
@@ -99,15 +102,41 @@ export class ChallengeStore {
       const zero = /^0x0{64}$/.test(e.authNonce);
       const d = zero ? null : (await db.query(`select * from challenge_drafts where auth_nonce = $1 and creator_wallet = $2
         and rules_hash = $3 and prize_atomic = $4`, [e.authNonce.toLowerCase(), e.creator.toLowerCase(), e.rulesHash.toLowerCase(), e.prizeAtomic])).rows[0];
-      const { rows } = await db.query(`insert into challenges (id, contract, draft_id, creator_wallet, terms, rules_hash, prize_atomic,
-        deadline, auth_nonce, status, created_tx, created_block) values ($1,$2,$3,$4,$5,$6,$7,to_timestamp($8),$9,$10,$11,$12) returning *`,
-      [e.id, contract.toLowerCase(), d?.id ?? null, e.creator.toLowerCase(), d ? JSON.stringify(d.terms) : null, e.rulesHash.toLowerCase(),
-        e.prizeAtomic, e.deadline, e.authNonce.toLowerCase(), d ? 'open' : 'unrecognised', e.txHash.toLowerCase(), e.blockNumber]);
+      const ours = !!d && evaluators.challenge.toLowerCase() === evaluators.ours.toLowerCase();
+      const { rows } = await db.query(`insert into challenges (id, contract, draft_id, creator_wallet, evaluator, terms, rules_hash, prize_atomic,
+        deadline, auth_nonce, status, created_tx, created_block) values ($1,$2,$3,$4,$5,$6,$7,$8,to_timestamp($9),$10,$11,$12,$13) returning *`,
+      [e.id, contract.toLowerCase(), d?.id ?? null, e.creator.toLowerCase(), evaluators.challenge.toLowerCase(), d ? JSON.stringify(d.terms) : null,
+        e.rulesHash.toLowerCase(), e.prizeAtomic, e.deadline, e.authNonce.toLowerCase(), ours ? 'open' : 'unrecognised', e.txHash.toLowerCase(), e.blockNumber]);
       if (d) await db.query('update challenge_drafts set relayed_at = coalesce(relayed_at, now()) where id = $1', [d.id]);
       await db.query('commit');
       return challenge(rows[0]);
     } catch (error) { await db.query('rollback'); throw error; }
     finally { db.release(); }
+  }
+
+  /** Rewinds the indexer, to read again from an earlier block. */
+  async resetCursor(contract: string, nextBlock: number): Promise<void> {
+    await this.pool.query(`insert into challenge_index_cursor (contract, next_block) values ($1, $2)
+      on conflict (contract) do update set next_block = excluded.next_block`, [contract.toLowerCase(), nextBlock]);
+  }
+
+  async maxChallengeId(contract: string): Promise<number> {
+    const { rows } = await this.pool.query('select coalesce(max(id), 0) as max from challenges where contract = $1', [contract.toLowerCase()]);
+    return Number(rows[0].max);
+  }
+
+  /** Contracts other than this one with challenges or an indexer cursor here: one database serves one contract. */
+  async otherContracts(contract: string): Promise<string[]> {
+    const { rows } = await this.pool.query(`select contract from challenges where contract <> $1
+      union select contract from challenge_index_cursor where contract <> $1 order by contract`, [contract.toLowerCase()]);
+    return rows.map((r: { contract: string }) => r.contract);
+  }
+
+  /** Open challenges recorded under another evaluator cannot be paid by ours: they become unplayable and refund. */
+  async unrecogniseOtherEvaluators(contract: string, ours: string): Promise<number> {
+    const { rowCount } = await this.pool.query(`update challenges set status = 'unrecognised'
+      where contract = $1 and status = 'open' and evaluator <> $2`, [contract.toLowerCase(), ours.toLowerCase()]);
+    return rowCount ?? 0;
   }
 
   async challenge(id: number): Promise<Challenge | null> {
@@ -246,10 +275,15 @@ export class ChallengeStore {
     return rows.map(op);
   }
 
-  /** Records the hash of a transaction about to be broadcast (before the broadcast). */
-  async markOpSent(id: string, txHash: Hex): Promise<void> {
-    await this.pool.query(`update challenge_chain_ops set status = 'sent', tx_hash = $2, updated_at = now()
-      where id = $1 and status in ('pending', 'sent')`, [id, txHash.toLowerCase()]);
+  /** Records the transaction about to be broadcast (before the broadcast): its hash, nonce and fee cap. */
+  async markOpSent(id: string, txHash: Hex, nonce: number, maxFeePerGas: bigint): Promise<void> {
+    await this.pool.query(`update challenge_chain_ops set status = 'sent', tx_hash = $2, sent_nonce = $3, sent_max_fee = $4,
+      updated_at = now() where id = $1 and status in ('pending', 'sent')`, [id, txHash.toLowerCase(), nonce, maxFeePerGas.toString()]);
+  }
+
+  /** Notes an error without changing the operation's state or its clock. */
+  async noteOpError(id: string, error: string): Promise<void> {
+    await this.pool.query('update challenge_chain_ops set last_error = $2 where id = $1', [id, error.slice(0, 500)]);
   }
 
   async markOpConfirmed(id: string): Promise<void> {

@@ -20,6 +20,9 @@ export type ChainCall =
       validAfter: bigint; validBefore: bigint; signature: Hex };
 
 export type OnChainStatus = 'none' | 'open' | 'resolved' | 'refunded';
+/** Re-signing a stuck transaction: the same nonce, and at least this fee cap. */
+export interface PrepareOptions { nonce?: number; minMaxFeePerGas?: bigint }
+export interface Prepared { hash: Hex; raw: Hex; nonce: number; maxFeePerGas: bigint }
 const STATUS: OnChainStatus[] = ['none', 'open', 'resolved', 'refunded'];
 
 export interface ChallengeChain {
@@ -33,8 +36,10 @@ export interface ChallengeChain {
   appointedEvaluator(): Promise<Hex>;
   /** The contract's prize limits, in 6-decimal USDC units. */
   prizeLimits(): Promise<{ min: bigint; max: bigint }>;
+  /** How many challenges the contract had created as of a block. */
+  challengeCount(atBlock: number): Promise<number>;
   /** Signs the call with the evaluator key at the current fees; nothing is sent. */
-  prepare(call: ChainCall): Promise<{ hash: Hex; raw: Hex }>;
+  prepare(call: ChainCall, options?: PrepareOptions): Promise<Prepared>;
   broadcast(raw: Hex): Promise<void>;
   /** The receipt's outcome, or null while the transaction is not yet mined. */
   receipt(hash: Hex): Promise<'success' | 'reverted' | null>;
@@ -75,6 +80,9 @@ export function viemChallengeChain(config: ChainConfig): ChallengeChain {
     async appointedEvaluator() {
       return client.readContract({ address: contract, abi: challengesAbi, functionName: 'evaluator' });
     },
+    async challengeCount(atBlock) {
+      return Number(await client.readContract({ address: contract, abi: challengesAbi, functionName: 'challengeCount', blockNumber: BigInt(atBlock) }));
+    },
     async prizeLimits() {
       const [min, max] = await Promise.all([
         client.readContract({ address: contract, abi: challengesAbi, functionName: 'minPrize' }),
@@ -82,19 +90,22 @@ export function viemChallengeChain(config: ChainConfig): ChallengeChain {
       ]);
       return { min, max };
     },
-    async prepare(call) {
+    async prepare(call, options) {
       const data = encode(call);
       const [nonce, block, gas] = await Promise.all([
-        client.getTransactionCount({ address: account.address, blockTag: 'pending' }),
+        options?.nonce ?? client.getTransactionCount({ address: account.address, blockTag: 'pending' }),
         client.getBlock({ blockTag: 'latest' }),
         client.estimateGas({ account: account.address, to: contract, data }),
       ]);
       // Fresh fees for every transaction, never cached; at least Arc's floor.
       const base = block.baseFeePerGas ?? 0n;
-      const maxFeePerGas = base * 2n + PRIORITY_FEE_PER_GAS > ARC_MIN_FEE_PER_GAS ? base * 2n + PRIORITY_FEE_PER_GAS : ARC_MIN_FEE_PER_GAS;
+      const fresh = base * 2n + PRIORITY_FEE_PER_GAS > ARC_MIN_FEE_PER_GAS ? base * 2n + PRIORITY_FEE_PER_GAS : ARC_MIN_FEE_PER_GAS;
+      const maxFeePerGas = options?.minMaxFeePerGas && options.minMaxFeePerGas > fresh ? options.minMaxFeePerGas : fresh;
+      // A replacement must also raise the tip, or nodes refuse it as underpriced.
+      const maxPriorityFeePerGas = options?.minMaxFeePerGas ? PRIORITY_FEE_PER_GAS * 2n : PRIORITY_FEE_PER_GAS;
       const raw = await account.signTransaction({ type: 'eip1559', chainId: config.chainId, to: contract, data, nonce,
-        gas: gas + gas / 5n, maxFeePerGas, maxPriorityFeePerGas: PRIORITY_FEE_PER_GAS });
-      return { hash: keccak256(raw), raw };
+        gas: gas + gas / 5n, maxFeePerGas, maxPriorityFeePerGas });
+      return { hash: keccak256(raw), raw, nonce, maxFeePerGas };
     },
     async broadcast(raw) {
       try { await client.request({ method: 'eth_sendRawTransaction', params: [raw] }); }

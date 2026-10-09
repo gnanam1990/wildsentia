@@ -1,16 +1,28 @@
-import type { ChainCall, ChallengeChain } from './chain.js';
+import type { ChainCall, ChallengeChain, PrepareOptions } from './chain.js';
+import { GRACE_SECONDS } from './engine.js';
 import type { ChainOp, ChallengeStore, Hex } from './store.js';
 
 /**
  * Sends the queued chain operations (resolve, refund, relayed create) one at a time, durably:
- * the signed transaction's hash is stored before it is broadcast, and before every send the
- * contract's own state is read, so a restart never pays twice or forgets a payment. The
- * contract makes a double payout impossible anyway; this keeps the database in step with it.
+ * the signed transaction's hash, nonce and fee cap are stored before it is broadcast, and before
+ * every send the contract's own state is read, so a restart never pays twice or forgets a
+ * payment. The contract makes a double payout impossible anyway; this keeps the database in
+ * step with it and makes sure a winner is paid whenever the contract still allows it.
  */
-/** Failed tries (a transaction the contract refuses to estimate) before an operation is given up. */
+
+/** Refused refunds and relays (the contract reverts) before an operation is given up. */
 export const MAX_TRIES = 6;
 /** A sent transaction the node no longer knows after this long was dropped: sign it again. */
 export const DROPPED_AFTER_MS = 120_000;
+/** A sent transaction the node knows but has not mined after this long is replaced with a higher fee. */
+export const STUCK_AFTER_MS = 90_000;
+/** The longest wait between tries. */
+const MAX_BACKOFF_MS = 5 * 60_000;
+
+/** Reverts that mean this payout can never succeed, whatever is retried. */
+const PERMANENT_RESOLVE = /BadWinner|NotEvaluator|ResolveWindowClosed/;
+/** A contract refusal, as opposed to the RPC endpoint failing (timeouts, rate limits, outages). */
+const isRevert = (message: string) => /revert/i.test(message);
 
 export class ChainOps {
   #busy = false;
@@ -30,19 +42,32 @@ export class ChainOps {
   }
 
   async #step(op: ChainOp): Promise<void> {
-    // Back off after failed tries: 10 s, 20 s, 40 s...
-    if (op.tries > 0 && op.status === 'pending' && this.clock() - op.updatedAt.getTime() < 10_000 * 2 ** (op.tries - 1)) return;
     if (op.status === 'sent') return this.#checkSent(op);
+    // Back off after refused tries: 10 s, 20 s, 40 s... up to five minutes.
+    const wait = Math.min(MAX_BACKOFF_MS, 10_000 * 2 ** Math.max(0, op.tries - 1));
+    if (op.tries > 0 && this.clock() - op.updatedAt.getTime() < wait) return;
     if (await this.#alreadyDone(op)) return;
-    if (op.tries >= MAX_TRIES) return this.#fail(op, op.lastError ?? 'too_many_tries');
+    if (op.kind === 'resolve') {
+      // A winner is paid for as long as the contract allows: only a closed window ends it.
+      if (await this.#windowClosed(op)) return this.#fail(op, 'window_closed');
+    } else if (op.tries >= MAX_TRIES) return this.#fail(op, op.lastError ?? 'too_many_tries');
     const call = await this.#call(op);
-    if (!call) return;
-    let tx: { hash: Hex; raw: Hex };
-    try { tx = await this.chain.prepare(call); }
-    catch (error) { return this.store.retryOp(op.id, `prepare: ${(error as Error).message}`, true); }
-    await this.store.markOpSent(op.id, tx.hash);
+    if (call) await this.#send(op, call);
+  }
+
+  async #send(op: ChainOp, call: ChainCall, options?: PrepareOptions): Promise<void> {
+    let tx;
+    try { tx = await this.chain.prepare(call, options); }
+    catch (error) {
+      const message = (error as Error).message;
+      if (op.kind === 'resolve' && PERMANENT_RESOLVE.test(message)) return this.#fail(op, `prepare: ${message}`);
+      // The contract refused (counts towards giving up refunds and relays), or the RPC failed (does not).
+      return this.store.retryOp(op.id, `prepare: ${message}`, isRevert(message));
+    }
+    await this.store.markOpSent(op.id, tx.hash, tx.nonce, tx.maxFeePerGas);
+    // A failed broadcast may still have reached the node: keep the hash and let the receipt check decide.
     try { await this.chain.broadcast(tx.raw); }
-    catch (error) { return this.store.retryOp(op.id, `broadcast: ${(error as Error).message}`, false); }
+    catch (error) { await this.store.noteOpError(op.id, `broadcast: ${(error as Error).message}`); }
   }
 
   /** What the contract already shows: if the work is done (by us before a restart, or anyone), record it. */
@@ -54,8 +79,7 @@ export class ChainOps {
     }
     const onChain = await this.chain.status(op.challengeId!);
     if (onChain.status === 'resolved') {
-      if (op.kind === 'resolve') await this.store.setStatus(op.challengeId!, ['won'], 'paid');
-      else await this.store.setStatus(op.challengeId!, ['open', 'unrecognised', 'unpaid', 'refunding', 'won'], 'paid');
+      await this.store.setStatus(op.challengeId!, ['open', 'unrecognised', 'unpaid', 'refunding', 'won'], 'paid');
       await this.store.markOpConfirmed(op.id);
       return true;
     }
@@ -66,6 +90,11 @@ export class ChainOps {
       return true;
     }
     return false;
+  }
+
+  async #windowClosed(op: ChainOp): Promise<boolean> {
+    const challenge = await this.store.challenge(op.challengeId!);
+    return !challenge || this.clock() > challenge.deadline.getTime() + GRACE_SECONDS * 1000;
   }
 
   async #call(op: ChainOp): Promise<ChainCall | null> {
@@ -90,13 +119,25 @@ export class ChainOps {
       return;
     }
     if (outcome === 'reverted') {
-      // Someone else may have settled it first; otherwise it is a real failure.
+      // Someone else may have settled it first; otherwise try again (a payout until its window closes).
       if (await this.#alreadyDone(op)) return;
-      if (op.tries >= MAX_TRIES || op.kind === 'resolve') return this.#fail(op, 'reverted');
-      return this.store.retryOp(op.id, 'reverted', false);
+      if (op.kind !== 'resolve' && op.tries >= MAX_TRIES) return this.#fail(op, 'reverted');
+      return this.store.retryOp(op.id, 'reverted', true);
     }
-    if (this.clock() - op.updatedAt.getTime() > DROPPED_AFTER_MS && !(await this.chain.known(op.txHash!))) {
-      await this.store.retryOp(op.id, 'dropped', false);
+    const age = this.clock() - op.updatedAt.getTime();
+    if (!(await this.chain.known(op.txHash!))) {
+      // Not even pending: dropped. Only after a while, in case the node is just slow to show it.
+      if (age > DROPPED_AFTER_MS) await this.store.retryOp(op.id, 'dropped', false);
+      return;
+    }
+    if (age > STUCK_AFTER_MS && op.sentNonce !== null) {
+      // Pending too long at its fee: replace it at the same nonce, 12.5% dearer at least (the
+      // usual replacement rule). If the old one is mined meanwhile, the state check above records it.
+      if (await this.#alreadyDone(op)) return;
+      const call = await this.#call(op);
+      if (!call) return;
+      const minMaxFeePerGas = BigInt(op.sentMaxFee ?? '0') * 1125n / 1000n + 1n;
+      await this.#send(op, call, { nonce: op.sentNonce, minMaxFeePerGas });
     }
   }
 

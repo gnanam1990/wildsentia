@@ -44,6 +44,11 @@ stops the server. Use Arc Testnet until the mainnet review is done.
 | `VANA_CHALLENGES_ADMIN_TOKEN` | a random 64-character token for drafting challenges |
 | `VANA_CHALLENGES_EXPLORER_URL` | optional, e.g. `https://explorer.testnet.arc.io` |
 
+One database serves one contract: the server refuses to start if the database already holds
+another contract's challenges (moving from testnet to mainnet, or redeploying, needs a fresh
+database). At start it also checks that the key is the contract's evaluator, and marks any open
+challenge recorded under a different evaluator as unplayable, so it refunds.
+
 `web`:
 
 | Variable | Value |

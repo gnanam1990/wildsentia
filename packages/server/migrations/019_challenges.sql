@@ -22,6 +22,8 @@ create table challenges (
   contract text not null check (contract ~ '^0x[0-9a-f]{40}$'),
   draft_id uuid references challenge_drafts(id),
   creator_wallet text not null check (creator_wallet ~ '^0x[0-9a-f]{40}$'),
+  -- The evaluator the contract recorded for this challenge: only it can pay the prize.
+  evaluator text not null check (evaluator ~ '^0x[0-9a-f]{40}$'),
   -- Terms are known only when the rules hash is one of ours; otherwise the challenge is
   -- 'unrecognised' and nobody can play it (its prize simply refunds after the deadline).
   terms jsonb,
@@ -82,6 +84,9 @@ create table challenge_chain_ops (
   payload jsonb not null,
   status text not null check (status in ('pending', 'sent', 'confirmed', 'failed')),
   tx_hash text check (tx_hash is null or tx_hash ~ '^0x[0-9a-f]{64}$'),
+  -- The nonce and fee cap the stored transaction was signed with, to replace it if it gets stuck.
+  sent_nonce bigint check (sent_nonce is null or sent_nonce >= 0),
+  sent_max_fee numeric(40, 0),
   tries integer not null default 0,
   last_error text,
   created_at timestamptz not null default now(),

@@ -10,6 +10,7 @@ const maybe = url ? describe : describe.skip;
 const pool = url ? createPool(url) : null;
 afterAll(async () => { await pool?.end(); });
 
+const EVALUATOR = '0x' + 'e'.repeat(40), OURS = { challenge: EVALUATOR, ours: EVALUATOR };
 const CONTRACT = '0x' + 'c'.repeat(40), CREATOR = '0x' + 'a'.repeat(40), WINNER = '0x' + 'b'.repeat(40);
 const hex = (c: string) => `0x${c.repeat(64)}` as `0x${string}`;
 const terms: ChallengeTerms = { template: 'hunt', version: 1, speciesId: 'tiger' };
@@ -34,16 +35,33 @@ maybe('challenge store', () => {
 
   it('matches a created challenge to its draft by nonce, once, and marks unknown ones unrecognised', async () => {
     const d = await draftFor('2');
-    const c = await store.recordCreated(CONTRACT, created(1, hex('2')));
+    const c = await store.recordCreated(CONTRACT, created(1, hex('2')), OURS);
     expect(c).toMatchObject({ id: 1, draftId: d.id, status: 'open', terms, prizeAtomic: '10000000', creatorWallet: CREATOR });
     expect(c.deadline.toISOString()).toBe('2026-10-20T00:00:00.000Z');
     expect((await store.draft(d.id))!.relayedAt).not.toBeNull();
     // The same event read twice changes nothing.
-    expect(await store.recordCreated(CONTRACT, created(1, hex('2')))).toEqual(c);
+    expect(await store.recordCreated(CONTRACT, created(1, hex('2')), OURS)).toEqual(c);
     // A challenge opened with `create` (zero nonce), or whose terms do not match its draft, is not ours to judge.
-    expect((await store.recordCreated(CONTRACT, created(2, hex('0')))).status).toBe('unrecognised');
+    expect((await store.recordCreated(CONTRACT, created(2, hex('0')), OURS)).status).toBe('unrecognised');
     await draftFor('3');
-    expect((await store.recordCreated(CONTRACT, created(3, hex('3'), { prizeAtomic: '99000000' }))).status).toBe('unrecognised');
+    expect((await store.recordCreated(CONTRACT, created(3, hex('3'), { prizeAtomic: '99000000' }), OURS)).status).toBe('unrecognised');
+  });
+
+  it('leaves unplayable a challenge whose own evaluator is not ours', async () => {
+    await draftFor('4');
+    const c = await store.recordCreated(CONTRACT, created(4, hex('4')), { challenge: '0x' + 'f'.repeat(40), ours: EVALUATOR });
+    expect(c).toMatchObject({ status: 'unrecognised', evaluator: '0x' + 'f'.repeat(40) });
+  });
+
+  it('turns open challenges of an old evaluator unrecognised, and names other contracts in the database', async () => {
+    await draftFor('2');
+    await store.recordCreated(CONTRACT, created(1, hex('2')), OURS);
+    expect(await store.otherContracts(CONTRACT)).toEqual([]);
+    expect(await store.unrecogniseOtherEvaluators(CONTRACT, '0x' + 'f'.repeat(40))).toBe(1);
+    expect((await store.challenge(1))!.status).toBe('unrecognised');
+    await store.setCursor('0x' + 'd'.repeat(40), 5);
+    expect(await store.otherContracts(CONTRACT)).toEqual(['0x' + 'd'.repeat(40)]);
+    expect(await store.maxChallengeId(CONTRACT)).toBe(1);
   });
 
   it('keeps the indexer cursor moving forward only', async () => {
@@ -55,7 +73,7 @@ maybe('challenge store', () => {
 
   it('lets one running attempt per agent, and only the first goal met wins', async () => {
     await draftFor('2');
-    await store.recordCreated(CONTRACT, created(1, hex('2')));
+    await store.recordCreated(CONTRACT, created(1, hex('2')), OURS);
     const a = await store.startAttempt({ challengeId: 1, agentId: 'ag_0000000000000001', animalId: 'tiger_1', payoutWallet: WINNER,
       startedWorld: 3600, startState: { x: 1 } });
     await expect(store.startAttempt({ challengeId: 1, agentId: 'ag_0000000000000001', animalId: 'tiger_2', payoutWallet: WINNER,
@@ -74,7 +92,7 @@ maybe('challenge store', () => {
 
   it('keeps an ordered log per attempt', async () => {
     await draftFor('2');
-    await store.recordCreated(CONTRACT, created(1, hex('2')));
+    await store.recordCreated(CONTRACT, created(1, hex('2')), OURS);
     const a = await store.startAttempt({ challengeId: 1, agentId: 'ag_0000000000000001', animalId: 'tiger_1', payoutWallet: WINNER,
       startedWorld: 0, startState: {} });
     await store.appendLog(a.id, [{ at: new Date(1000), kind: 'start', data: { animalId: 'tiger_1' } },
@@ -85,19 +103,19 @@ maybe('challenge store', () => {
 
   it('allows one live operation per kind and challenge, and a new one after a failure', async () => {
     await draftFor('2');
-    await store.recordCreated(CONTRACT, created(1, hex('2')));
+    await store.recordCreated(CONTRACT, created(1, hex('2')), OURS);
     expect(await store.enqueueOp('refund', { challengeId: 1 }, {})).toBe(true);
     expect(await store.enqueueOp('refund', { challengeId: 1 }, {})).toBe(false);
     const [first] = await store.activeOps();
-    await store.markOpSent(first!.id, hex('d'));
-    expect((await store.activeOps())[0]).toMatchObject({ status: 'sent', txHash: hex('d'), tries: 0 });
+    await store.markOpSent(first!.id, hex('d'), 3, 20_000_000_000n);
+    expect((await store.activeOps())[0]).toMatchObject({ status: 'sent', txHash: hex('d'), tries: 0, sentNonce: 3, sentMaxFee: '20000000000' });
     await store.markOpFailed(first!.id, 'reverted');
     expect(await store.enqueueOp('refund', { challengeId: 1 }, {})).toBe(true);
   });
 
   it('finds open challenges whose deadline and grace have passed', async () => {
     await draftFor('2');
-    await store.recordCreated(CONTRACT, created(1, hex('2')));
+    await store.recordCreated(CONTRACT, created(1, hex('2')), OURS);
     const deadline = Date.parse('2026-10-20T00:00:00Z');
     expect(await store.dueRefunds(new Date(deadline + 3600_000), 3600)).toHaveLength(0);
     expect((await store.dueRefunds(new Date(deadline + 3600_001), 3600)).map((c) => c.id)).toEqual([1]);

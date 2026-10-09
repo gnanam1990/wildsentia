@@ -3,9 +3,13 @@ import type { ChallengeStore } from './store.js';
 
 /**
  * Reads the contract's ChallengeCreated events into the database, in block ranges, resuming
- * from a stored cursor. Arc's finality is deterministic, so a mined block is never rolled back.
+ * from a stored cursor. Arc's finality is deterministic, but an RPC endpoint behind a load
+ * balancer can answer getLogs from a node a block or two behind the head it reported. So the
+ * indexer stays a few blocks back, and if the contract has created more challenges than were
+ * indexed, it reads again from the start (recording an event twice changes nothing).
  */
 export const MAX_BLOCK_RANGE = 2000;
+export const INDEX_LAG_BLOCKS = 3;
 
 export class ChallengeIndexer {
   #busy = false;
@@ -17,13 +21,24 @@ export class ChallengeIndexer {
     this.#busy = true;
     try {
       const from = (await this.store.cursor(this.chain.contract)) ?? this.fromBlock;
-      const head = await this.chain.head();
-      if (head < from) return 0;
-      const to = Math.min(head, from + MAX_BLOCK_RANGE - 1);
-      const events = await this.chain.createdEvents(from, to);
-      for (const e of events) await this.store.recordCreated(this.chain.contract, e);
-      await this.store.setCursor(this.chain.contract, to + 1);
-      return events.length;
+      const safeHead = (await this.chain.head()) - INDEX_LAG_BLOCKS;
+      let recorded = 0;
+      if (safeHead >= from) {
+        const to = Math.min(safeHead, from + MAX_BLOCK_RANGE - 1);
+        for (const e of await this.chain.createdEvents(from, to)) {
+          const { evaluator } = await this.chain.status(e.id);
+          await this.store.recordCreated(this.chain.contract, e, { challenge: evaluator, ours: this.chain.evaluator });
+          recorded++;
+        }
+        await this.store.setCursor(this.chain.contract, to + 1);
+        if (to < safeHead) return recorded; // more to read before checking for gaps
+      }
+      // Caught up: if the contract had more challenges by the safe head than are indexed, a node skipped some.
+      if (safeHead >= 0 && (await this.chain.challengeCount(safeHead)) > (await this.store.maxChallengeId(this.chain.contract))) {
+        console.error('[challenges] indexer found a gap; reading again from the start');
+        await this.store.resetCursor(this.chain.contract, this.fromBlock);
+      }
+      return recorded;
     } finally { this.#busy = false; }
   }
 }

@@ -69,7 +69,8 @@ maybe('a challenge from draft to paid winner (local anvil, LOCAL TEST STAND-IN U
     expect((await store.opsOf({ draftId: made.draft.id }))[0]!.status).toBe('confirmed');
     expect(await usdcBalance(local, local.contract)).toBe(10_000_000n);
 
-    // 3. The indexer recognises it as ours.
+    // 3. The indexer recognises it as ours (it reads a few blocks behind the head).
+    for (let i = 0; i < 3; i++) await local.mine(1);
     expect(await new ChallengeIndexer(store, chain, 0).pollOnce()).toBe(1);
     const challenge = (await store.challenge(1))!;
     expect(challenge).toMatchObject({ status: 'open', draftId: made.draft.id, terms: { template: 'hunt', speciesId: 'tiger' } });
@@ -79,6 +80,7 @@ maybe('a challenge from draft to paid winner (local anvil, LOCAL TEST STAND-IN U
     const live = new LiveLayer(port, null, () => now, () => 0);
     const engine = new ChallengeEngine(store, live, port);
     live.onHunt = (h) => engine.onHunt(h); live.onCommand = (c) => engine.onCommand(c); live.onEnded = (l) => engine.onEnded(l);
+    await engine.restore();
     const accepted = await engine.accept({ agentId: 'ag_00000000000000f1', name: 'Stripe', wallet: local.addresses.player.toLowerCase(),
       walletProven: true }, 1);
     if (!accepted.ok) throw new Error(accepted.error);

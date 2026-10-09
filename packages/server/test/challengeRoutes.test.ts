@@ -106,9 +106,9 @@ maybe('challenge routes', () => {
     await store.insertDraft({ creatorWallet: '0x' + 'a'.repeat(40), terms, rulesHash: rulesHash(terms), prizeAtomic: '10000000',
       deadline: new Date('2026-10-20T00:00:00Z'), salt: `0x${'1'.repeat(64)}`, authNonce: `0x${'2'.repeat(64)}` });
     await store.recordCreated(drafts.contract, { id: 1, creator: '0x' + 'a'.repeat(40), prizeAtomic: '10000000', deadline: 1_792_454_400,
-      rulesHash: rulesHash(terms), authNonce: `0x${'2'.repeat(64)}`, txHash: `0x${'3'.repeat(64)}`, blockNumber: 5 });
+      rulesHash: rulesHash(terms), authNonce: `0x${'2'.repeat(64)}`, txHash: `0x${'3'.repeat(64)}`, blockNumber: 5 }, { challenge: '0x' + 'e'.repeat(40), ours: '0x' + 'e'.repeat(40) });
     await store.recordCreated(drafts.contract, { id: 2, creator: '0x' + 'a'.repeat(40), prizeAtomic: '10000000', deadline: 1_792_454_400,
-      rulesHash: `0x${'9'.repeat(64)}`, authNonce: `0x${'0'.repeat(64)}`, txHash: `0x${'4'.repeat(64)}`, blockNumber: 6 });
+      rulesHash: `0x${'9'.repeat(64)}`, authNonce: `0x${'0'.repeat(64)}`, txHash: `0x${'4'.repeat(64)}`, blockNumber: 6 }, { challenge: '0x' + 'e'.repeat(40), ours: '0x' + 'e'.repeat(40) });
     await pool!.query(`insert into live_agents (id, public_key, name, name_key, network_hash) values ('ag_0000000000000001', $1, 'Stripe', 'stripe', 'n')`, ['1'.padEnd(43, 'A')]);
     const a = await store.startAttempt({ challengeId: 1, agentId: 'ag_0000000000000001', animalId: 'tiger_1', payoutWallet: '0x' + 'b'.repeat(40),
       startedWorld: 0, startState: {} });
@@ -174,6 +174,7 @@ maybe('challenges runtime', () => {
     const port = worldPort(() => world, () => 'w1');
     const config: ChallengesConfig = { rpcUrl: 'http://127.0.0.1:1', chainId: 1, contract: drafts.contract, usdc: drafts.usdc,
       evaluatorKey: `0x${'a'.repeat(64)}`, fromBlock: 0, adminToken: ADMIN, usdcDomain: { name: 'USDC', version: '2' }, explorerUrl: null };
+    await pool!.query('truncate challenge_attempt_log, challenge_chain_ops, challenge_attempts, challenges, challenge_drafts, challenge_index_cursor cascade');
     const chain = (appointed: string) => ({ contract: drafts.contract, evaluator: '0x' + 'e'.repeat(40), chainId: 1,
       appointedEvaluator: async () => appointed, prizeLimits: async () => ({ min: 2_000_000n, max: 50_000_000n }) }) as unknown as ChallengeChain;
     const deps = { pool: pool!, live: new LiveLayer(port), world: port, speciesIds: () => [...world.species.keys()] };
@@ -182,5 +183,21 @@ maybe('challenges runtime', () => {
     await ok.start();
     ok.stop();
     expect(ok.routes.drafts).toMatchObject({ minPrizeAtomic: 2_000_000n, maxPrizeAtomic: 50_000_000n });
+
+    // A database that holds another contract's challenges is refused; ours, by an old evaluator, become unplayable.
+    await pool!.query('truncate challenge_attempt_log, challenge_chain_ops, challenge_attempts, challenges, challenge_drafts, challenge_index_cursor cascade');
+    const store = new ChallengeStore(pool!);
+    const terms = { template: 'hunt', version: 1, speciesId: 'tiger' } as const;
+    await store.insertDraft({ creatorWallet: '0x' + 'a'.repeat(40), terms, rulesHash: rulesHash(terms), prizeAtomic: '10000000',
+      deadline: new Date('2026-10-20T00:00:00Z'), salt: `0x${'1'.repeat(64)}`, authNonce: `0x${'2'.repeat(64)}` });
+    await store.recordCreated(drafts.contract, { id: 1, creator: '0x' + 'a'.repeat(40), prizeAtomic: '10000000', deadline: 1_792_454_400,
+      rulesHash: rulesHash(terms), authNonce: `0x${'2'.repeat(64)}`, txHash: `0x${'3'.repeat(64)}`, blockNumber: 5 },
+    { challenge: '0x' + '7'.repeat(40), ours: '0x' + '7'.repeat(40) });
+    const again = challengesRuntime(config, deps, chain('0x' + 'E'.repeat(40)));
+    await again.start();
+    again.stop();
+    expect((await store.challenge(1))!.status).toBe('unrecognised');
+    await store.setCursor('0x' + '5'.repeat(40), 1);
+    await expect(challengesRuntime(config, deps, chain('0x' + 'E'.repeat(40))).start()).rejects.toThrow('another contract');
   });
 });
