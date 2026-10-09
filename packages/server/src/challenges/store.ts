@@ -15,6 +15,8 @@ export type ChainOpStatus = 'pending' | 'sent' | 'confirmed' | 'failed';
 export interface Draft {
   id: string; creatorWallet: string; terms: ChallengeTerms; rulesHash: Hex; prizeAtomic: string; deadline: Date;
   salt: Hex; authNonce: Hex; createdAt: Date; relayedAt: Date | null;
+  /** The signed-in creator's account, or null for an operator's draft. */
+  accountId?: string | null;
 }
 export interface Challenge {
   id: number; contract: string; draftId: string | null; creatorWallet: string; evaluator: string; terms: ChallengeTerms | null; rulesHash: Hex;
@@ -43,7 +45,8 @@ export interface CreatedEvent {
 /** Terms saved before rules and briefings existed read as having none. */
 const termsOf = (t: any): ChallengeTerms | null => (t ? { rules: [], briefing: '', ...t } : null);
 const draft = (r: any): Draft => ({ id: r.id, creatorWallet: r.creator_wallet, terms: termsOf(r.terms)!, rulesHash: r.rules_hash,
-  prizeAtomic: String(r.prize_atomic), deadline: r.deadline, salt: r.salt, authNonce: r.auth_nonce, createdAt: r.created_at, relayedAt: r.relayed_at });
+  prizeAtomic: String(r.prize_atomic), deadline: r.deadline, salt: r.salt, authNonce: r.auth_nonce, createdAt: r.created_at, relayedAt: r.relayed_at,
+  accountId: r.account_id ?? null });
 const challenge = (r: any): Challenge => ({ id: Number(r.id), contract: r.contract, draftId: r.draft_id, creatorWallet: r.creator_wallet, evaluator: r.evaluator,
   terms: termsOf(r.terms), rulesHash: r.rules_hash, prizeAtomic: String(r.prize_atomic), deadline: r.deadline, authNonce: r.auth_nonce,
   status: r.status, winnerAttempt: r.winner_attempt, createdTx: r.created_tx, createdBlock: Number(r.created_block), settledTx: r.settled_tx });
@@ -63,9 +66,9 @@ export class ChallengeStore {
 
   async insertDraft(d: Omit<Draft, 'id' | 'createdAt' | 'relayedAt'>): Promise<Draft> {
     const { rows } = await this.pool.query(`insert into challenge_drafts
-      (id, creator_wallet, terms, rules_hash, prize_atomic, deadline, salt, auth_nonce) values ($1,$2,$3,$4,$5,$6,$7,$8) returning *`,
+      (id, creator_wallet, terms, rules_hash, prize_atomic, deadline, salt, auth_nonce, account_id) values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning *`,
     [randomUUID(), d.creatorWallet.toLowerCase(), JSON.stringify(d.terms), d.rulesHash.toLowerCase(), d.prizeAtomic, d.deadline,
-      d.salt.toLowerCase(), d.authNonce.toLowerCase()]);
+      d.salt.toLowerCase(), d.authNonce.toLowerCase(), d.accountId ?? null]);
     return draft(rows[0]);
   }
 

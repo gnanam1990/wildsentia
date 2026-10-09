@@ -7,6 +7,7 @@ import { AgentStore, humanAgentId } from '../src/live/liveStore.js';
 import { accountsConfig } from '../src/accounts/config.js';
 import { AccountStore } from '../src/accounts/store.js';
 import { installAccounts } from '../src/accounts/routes.js';
+import { accountsRuntime } from '../src/accounts/runtime.js';
 import { xAuth, type XAuth, type XUser } from '../src/accounts/xAuth.js';
 import { privateKeyToAccount } from 'viem/accounts';
 import { testDatabaseUrl } from './testDatabase.js';
@@ -232,5 +233,18 @@ maybe('accounts', () => {
       const { session } = await signIn();
       expect((await (await link(session)).verify()).json()).toEqual({ error: 'wallet_taken' });
     });
+  });
+
+  it('gives the live routes and the challenge drafts the signed-in person behind a request', async () => {
+    const { session } = await signIn();
+    const runtime = accountsRuntime(accountsConfig(env)!, { pool: pool!, agents: new AgentStore(pool!), chainId: 5042002, clock: () => now });
+    expect(runtime.routes.wallet).toEqual({ chainId: 5042002 });
+    expect(runtime.humans.origin).toBe(ORIGIN);
+    const req = (cookie: string) => ({ headers: { cookie } }) as never;
+    expect(await runtime.humans.account(req(`ws_session=${session}`))).toEqual({ agentId: humanAgentId('777'), xAccountDays: 647 });
+    expect(await runtime.humans.account(req('ws_session=nope'))).toBeNull();
+    const creator = await runtime.creators.account(req(`a=1; ws_session=${session}`));
+    expect(creator).toMatchObject({ wallet: null, xAccountDays: 647 });
+    expect(await runtime.creators.draftsToday(creator!.accountId)).toBe(0);
   });
 });

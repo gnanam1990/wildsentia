@@ -16,6 +16,7 @@ import { floweringGuildSummary } from './floweringObservation.js';
 import { installHolder, type HolderChain, type HolderConfig } from './holder.js';
 import { Insights } from './insights/insights.js';
 import { installLiveAgents, type LiveRouteDeps } from './live/routes.js';
+import { installAccounts, type AccountRouteDeps } from './accounts/routes.js';
 import { installChallenges, type ChallengeRouteDeps } from './challenges/routes.js';
 import type { PlaceDropLedger } from './live/liveStore.js';
 import { GENERAL_LIMIT_DEFAULTS, NetworkRateLimit, type GeneralLimits } from './limits.js';
@@ -47,13 +48,15 @@ export interface ApiDeps {
   httpStats?: HttpStats;
   /** Wildsentia Challenges (docs/2026-10-09-challenges-design.md); absent unless configured. */
   challenges?: ChallengeRouteDeps | undefined;
+  /** People's accounts: X sign-in and wallet link (spec §14); absent unless configured. */
+  accounts?: AccountRouteDeps | undefined;
 }
 
 /**
  * Routes outside the general public-read limit: health checks (monitors poll them), and routes
  * with limits of their own (rewards, admin and holder per network; signed agent calls per agent).
  */
-const OWN_LIMITS = /^\/(health|rewards|admin|holder|agents\/me|challenges\/drafts)(\/|$)/;
+const OWN_LIMITS = /^\/(health|rewards|admin|holder|agents\/me|play|challenges\/drafts)(\/|$)/;
 
 /** VANA_TRUSTED_PROXY_HOPS: how many proxies (e.g. 1 for Caddy in deploy/) to trust. */
 export function trustedProxyHops(env: NodeJS.ProcessEnv): number {
@@ -67,7 +70,7 @@ export function trustedProxyHops(env: NodeJS.ProcessEnv): number {
  * World routes are read-only. The optional reward ledger has independent write routes and
  * receives only a read-only subject visibility adapter, never a simulation mutation capability.
  */
-export function buildApi({ host, pool, narrator, insights: insightDeps, live, rewards, receiptRpc, social, holder, holderChain, trustedProxyHops: hops = 0, limits, httpStats, challenges }: ApiDeps): FastifyInstance {
+export function buildApi({ host, pool, narrator, insights: insightDeps, live, rewards, receiptRpc, social, holder, holderChain, trustedProxyHops: hops = 0, limits, httpStats, challenges, accounts }: ApiDeps): FastifyInstance {
   // Without this, behind Caddy every visitor has the proxy's address and shares one rate limit.
   const app = Fastify({ logger: false, trustProxy: hops > 0 ? (_address: string, hop: number) => hop < hops : false });
   if (httpStats) app.addHook('onResponse', async (_req, reply) => { countResponse(httpStats, reply.statusCode); });
@@ -103,6 +106,7 @@ export function buildApi({ host, pool, narrator, insights: insightDeps, live, re
     } } } : {}) });
   if (live) installLiveAgents(app, live);
   if (challenges) installChallenges(app, challenges);
+  if (accounts) installAccounts(app, accounts);
   installSocialOutbox(app, { pool, config: social, boundary: () => {
     const view = host.observation();
     return view ? { worldTime: view.worldTime, nextSequence: view.nextSequence } : null;

@@ -7,6 +7,8 @@ import { Narrator } from './narration/narrator.js';
 import { claudeRephraser } from './narration/claude.js';
 import { Insights } from './insights/insights.js';
 import { liveRuntime, type LiveRuntime } from './live/runtime.js';
+import { accountsConfig } from './accounts/config.js';
+import { accountsRuntime } from './accounts/runtime.js';
 import { challengesConfig, challengesRuntime, type ChallengesRuntime } from './challenges/runtime.js';
 import { typesafeConfig, typesafeDailyCalls, typesafeSystemOne } from './insights/typesafe.js';
 import { Gateway } from './gateway.js';
@@ -129,11 +131,19 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
     const species = () => [...host.world.species.values()];
     if (challengeSettings && live) challenges = challengesRuntime(challengeSettings, { pool, live: live.routes.live, world: live.routes.world,
       species });
+    // People's accounts (X sign-in): off unless VANA_X_* are set; they play through the live layer.
+    const accountSettings = accountsConfig(process.env);
+    if (accountSettings && !live) throw new Error('VANA_X_* (accounts) needs VANA_LIVE_AGENTS=1');
+    const accounts = accountSettings && live
+      ? accountsRuntime(accountSettings, { pool, agents: live.routes.store, chainId: challengeSettings?.chainId }) : null;
+    if (accountSettings) console.log(`accounts: X sign-in on (${accountSettings.origin})`);
 
     const httpStats = newHttpStats();
     api = buildApi({ host, pool, narrator, insights, rewards, social, holder, trustedProxyHops: trustedProxyHops(process.env), limits, httpStats,
-      ...(live ? { live: { ...live.routes, spot: live.spot, species, ...(challenges ? { challenges: challenges.agent } : {}) } } : {}),
-      ...(challenges ? { challenges: challenges.routes } : {}) });
+      ...(live ? { live: { ...live.routes, spot: live.spot, species, ...(challenges ? { challenges: challenges.agent } : {}),
+        ...(accounts ? { humans: accounts.humans } : {}) } } : {}),
+      ...(challenges ? { challenges: { ...challenges.routes, ...(accounts ? { creators: accounts.creators } : {}) } } : {}),
+      ...(accounts ? { accounts: accounts.routes } : {}) });
     await api.ready();
 
     server = createServer((req, res) => { api!.server.emit('request', req, res); });

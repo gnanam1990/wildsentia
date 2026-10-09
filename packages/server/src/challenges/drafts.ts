@@ -60,7 +60,7 @@ export function draftTypedData(config: DraftConfig, draft: Draft) {
 }
 
 export async function createDraft(store: ChallengeStore, catalog: SpeciesCatalog, config: DraftConfig,
-  input: { creatorWallet: unknown; terms: unknown; prizeUsdc: unknown; days: unknown }, now: number):
+  input: { creatorWallet: unknown; terms: unknown; prizeUsdc: unknown; days: unknown; accountId?: string }, now: number):
   Promise<{ ok: true; draft: Draft; description: string } | { ok: false; error: string }> {
   if (typeof input.creatorWallet !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(input.creatorWallet)) return { ok: false, error: 'bad_wallet' };
   const parsed = parseTerms(input.terms, catalog);
@@ -73,7 +73,8 @@ export async function createDraft(store: ChallengeStore, catalog: SpeciesCatalog
   const salt = `0x${randomBytes(32).toString('hex')}` as Hex;
   const rules = rulesHash(parsed.terms);
   const draft = await store.insertDraft({ creatorWallet: creator, terms: parsed.terms, rulesHash: rules, prizeAtomic: prize.toString(),
-    deadline: new Date(Number(deadline) * 1000), salt, authNonce: authorizationNonce(config, creator, rules, prize, deadline, salt) });
+    deadline: new Date(Number(deadline) * 1000), salt, authNonce: authorizationNonce(config, creator, rules, prize, deadline, salt),
+    accountId: input.accountId ?? null });
   return { ok: true, draft, description: describeTerms(parsed.terms, catalog) };
 }
 

@@ -1,5 +1,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { sameOriginJson } from '../accounts/cookies.js';
+import { CREATES_PER_DAY, MIN_X_ACCOUNT_DAYS } from '../accounts/store.js';
 import { networkKey } from '../network.js';
 import { createDraft, DEADLINE_DAYS, draftTypedData, formatUsdc, relayDraft, type DraftConfig } from './drafts.js';
 import type { Attempt, Challenge, ChallengeStore } from './store.js';
@@ -19,6 +21,15 @@ export interface ChallengeRouteDeps {
   /** Block explorer base URL for transaction links, e.g. https://explorer.testnet.arc.io */
   explorerUrl: string | null;
   clock?: () => number;
+  /** Signed-in creators, when accounts are on: they draft from their own linked wallet (spec §6, §14). */
+  creators?: Creators | undefined;
+}
+
+export interface Creators {
+  origin: string;
+  /** The signed-in creator behind a request, or null. */
+  account(req: FastifyRequest): Promise<{ accountId: string; wallet: string | null; xAccountDays: number } | null>;
+  draftsToday(accountId: string): Promise<number>;
 }
 
 class PerNetwork {
@@ -88,10 +99,22 @@ export function installChallenges(app: FastifyInstance, deps: ChallengeRouteDeps
 
   app.post('/challenges/drafts', async (req, reply) => {
     if (!drafts.take(networkKey(req.ip), clock())) return reply.code(429).send({ error: 'rate_limited' });
-    if (!deps.adminToken || !sameToken(bearer(req), deps.adminToken)) return reply.code(401).send({ error: 'unauthorized' });
     const body = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<string, unknown>;
-    const made = await createDraft(store, catalog, deps.drafts, { creatorWallet: body.creatorWallet, terms: body.terms,
-      prizeUsdc: body.prizeUsdc, days: body.days }, clock());
+    // The operator drafts with the token, for any wallet; a signed-in creator only from their own.
+    let creatorWallet: unknown = body.creatorWallet, accountId: string | undefined;
+    if (req.headers.authorization || !deps.creators) {
+      if (!deps.adminToken || !sameToken(bearer(req), deps.adminToken)) return reply.code(401).send({ error: 'unauthorized' });
+    } else {
+      if (!sameOriginJson(req, reply, deps.creators.origin)) return reply;
+      const who = await deps.creators.account(req);
+      if (!who) return reply.code(401).send({ error: 'signed_out' });
+      if (who.xAccountDays < MIN_X_ACCOUNT_DAYS) return reply.code(403).send({ error: 'x_account_too_new' });
+      if (!who.wallet) return reply.code(403).send({ error: 'wallet_required' });
+      if (await deps.creators.draftsToday(who.accountId) >= CREATES_PER_DAY) return reply.code(429).send({ error: 'daily_limit' });
+      creatorWallet = who.wallet; accountId = who.accountId;
+    }
+    const made = await createDraft(store, catalog, deps.drafts, { creatorWallet, terms: body.terms,
+      prizeUsdc: body.prizeUsdc, days: body.days, ...(accountId ? { accountId } : {}) }, clock());
     if (!made.ok) return reply.code(400).send({ error: made.error });
     return { draftId: made.draft.id, description: made.description, rulesHash: made.draft.rulesHash,
       deadline: made.draft.deadline.toISOString(), typedData: plain(draftTypedData(deps.drafts, made.draft)) };

@@ -157,6 +157,58 @@ function signedHeaders(k: { privateKey: KeyObject; publicKey: string }, audience
     ...(body ? { 'content-type': 'application/json' } : {}) };
 }
 
+maybe('creator drafts', () => {
+  const ORIGIN = 'https://wildsentia.test', WALLET = '0x' + 'c'.repeat(40);
+  let app: FastifyInstance, store: ChallengeStore, who: { accountId: string; wallet: string | null; xAccountDays: number } | null, made: number;
+  beforeEach(async () => {
+    await migrate(pool!);
+    await pool!.query('truncate challenge_attempt_log, challenge_chain_ops, challenge_attempts, challenges, challenge_drafts, challenge_index_cursor, accounts, live_agents cascade');
+    await pool!.query(`insert into live_agents (id, kind, name, name_key, network_hash) values ('ag_00000000000000c1', 'human', 'Cre', 'cre', 'n')`);
+    const { rows } = await pool!.query(`insert into accounts (id, x_user_id, x_handle, x_name, x_created_at, agent_id)
+      values (gen_random_uuid(), '99', 'cre', 'Cre', now() - interval '400 days', 'ag_00000000000000c1') returning id`);
+    who = { accountId: rows[0].id, wallet: WALLET, xAccountDays: 400 };
+    made = 0;
+    store = new ChallengeStore(pool!);
+    app = Fastify();
+    installChallenges(app, { store, catalog, drafts, adminToken: ADMIN, explorerUrl: null,
+      creators: { origin: ORIGIN, account: async (req) => (req.headers.cookie === 'ws_session=good' ? who : null),
+        draftsToday: async () => made } });
+    await app.ready();
+  });
+  const body = { creatorWallet: '0x' + 'd'.repeat(40), terms: { template: 'hunt', speciesId: 'tiger' }, prizeUsdc: '5', days: 3 };
+  const draft = (headers: Record<string, string> = {}, payload: object = body) => app.inject({ method: 'POST', url: '/challenges/drafts',
+    headers: { cookie: 'ws_session=good', origin: ORIGIN, 'content-type': 'application/json', ...headers }, payload: JSON.stringify(payload) });
+
+  it("drafts only from the signed-in creator's own wallet, within the limits", async () => {
+    const ok = await draft();
+    expect(ok.statusCode).toBe(200);
+    // Whatever the body says, the creator is the account's linked wallet.
+    expect(ok.json().typedData.message.from.toLowerCase()).toBe(WALLET);
+    const saved = await store.draft(ok.json().draftId);
+    expect(saved).toMatchObject({ creatorWallet: WALLET, accountId: who!.accountId });
+    made = 3;
+    expect((await draft()).json()).toEqual({ error: 'daily_limit' });
+    made = 0;
+    who = { ...who!, wallet: null };
+    expect((await draft()).json()).toEqual({ error: 'wallet_required' });
+    who = { ...who!, wallet: WALLET, xAccountDays: 29 };
+    expect((await draft()).json()).toEqual({ error: 'x_account_too_new' });
+    who = null;
+    expect((await draft()).statusCode).toBe(401);
+  });
+
+  it('refuses cross-site drafts, and still lets the operator draft with the token', async () => {
+    expect((await draft({ origin: 'https://evil.test' })).statusCode).toBe(403);
+    expect((await draft({ 'sec-fetch-site': 'cross-site' })).statusCode).toBe(403);
+    const operator = await app.inject({ method: 'POST', url: '/challenges/drafts', headers: { authorization: `Bearer ${ADMIN}`, 'content-type': 'application/json' },
+      payload: JSON.stringify(body) });
+    expect(operator.statusCode).toBe(200);
+    expect((await store.draft(operator.json().draftId))).toMatchObject({ creatorWallet: '0x' + 'd'.repeat(40), accountId: null });
+    expect((await app.inject({ method: 'POST', url: '/challenges/drafts', headers: { authorization: 'Bearer wrong', 'content-type': 'application/json' },
+      payload: JSON.stringify(body) })).statusCode).toBe(401);
+  });
+});
+
 maybe('agent challenge route', () => {
   it('accepts through the engine with the agent\'s proven wallet, and shows progress in observe', async () => {
     await migrate(pool!);

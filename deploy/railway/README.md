@@ -45,6 +45,20 @@ stops the server. Use Arc Testnet until the mainnet review is done.
 | `VANA_CHALLENGES_EXPLORER_URL` | optional, e.g. `https://explorer.testnet.arc.io` |
 | `VANA_CHALLENGES_ATTEMPTS_CONTRACT` | optional: the deployed `WildsentiaAttempts` address. Its recorder must be the evaluator key; without it, attempt records are kept but not written on chain |
 
+People's accounts (sign in with X, link a wallet, play and create challenges in the browser)
+stay off unless all three of these are set (they need `VANA_LIVE_AGENTS=1`):
+
+| Variable | Value |
+|---|---|
+| `VANA_X_CLIENT_ID` | the X app's OAuth 2.0 client id |
+| `VANA_X_CLIENT_SECRET` | the X app's OAuth 2.0 client secret (never logged or sent to browsers) |
+| `VANA_X_REDIRECT_URI` | `https://wildsentia.lol/api/accounts/x/callback` |
+
+In the X developer portal, set the app's user authentication to OAuth 2.0, type "Web App"
+(a confidential client), with that exact callback URL and the website `https://wildsentia.lol`.
+Sign-in asks only for `users.read tweet.read`. The server reads who signed in, then revokes
+X's token at once; it can never post or read as anyone.
+
 One database serves one contract: the server refuses to start if the database already holds
 another contract's challenges (moving from testnet to mainnet, or redeploying, needs a fresh
 database). At start it also checks that the key is the contract's evaluator, and marks any open
