@@ -107,6 +107,10 @@ export interface Said { agentId: string; name: string; animalId: string; x: numb
 /** How a possession ended, for the leaderboard: a death counts as an animal lost. */
 export type LifeEnd = 'died' | 'caught' | 'birth' | 'idle' | 'released';
 export interface EndedLife { agentId: string; animalId: string; speciesId: string; since: number; endedAt: number; how: LifeEnd }
+/** A live hunt that reached its prey, and which agents (if any) steered either side. */
+export interface HuntOutcome { predatorId: string; preyId: string; predatorAgentId: string | null; preyAgentId: string | null; killed: boolean; at: number }
+/** An agent command the live layer accepted, for challenge attempt logs. */
+export interface CommandRecord { agentId: string; command: string; args: Record<string, unknown>; at: number }
 
 /**
  * A wild animal the live layer has taken off its recorded route for a real-time chase:
@@ -138,6 +142,10 @@ export class LiveLayer {
   readonly #lastSaid = new Map<string, number>();
   /** Told whenever an agent's time with an animal ends (the runtime records it). */
   onEnded: ((life: EndedLife) => void) | null = null;
+  /** Told after every live hunt that reached its prey (challenges count kills and escapes). */
+  onHunt: ((hunt: HuntOutcome) => void) | null = null;
+  /** Told after every accepted agent command (challenges log them). */
+  onCommand: ((record: CommandRecord) => void) | null = null;
 
   constructor(private readonly world: WorldPort, private readonly drops: DropLedger | null = null,
     private readonly clock: () => number = Date.now, private readonly random: () => number = Math.random) {}
@@ -214,6 +222,7 @@ export class LiveLayer {
   release(agentId: string, why = 'You let your animal go back to the wild.', how: LifeEnd = 'released'): boolean {
     const avatar = this.avatars.get(agentId);
     if (!avatar) return false;
+    if (how === 'released') this.#command(agentId, 'release', {});
     this.#flushAction(avatar);
     this.world.release(avatar.animalId);
     this.#end(avatar, why, how);
@@ -248,6 +257,7 @@ export class LiveLayer {
     avatar.path = points.map((p) => ({ x: p.x, z: p.z }));
     avatar.gait = gait; avatar.moving = true; avatar.action = 'idle'; avatar.opening = null; avatar.hunt = null;
     avatar.lastCommand = this.clock();
+    this.#command(agentId, 'move', { points: avatar.path.map((p) => ({ x: p.x, z: p.z })), gait });
     return null;
   }
 
@@ -266,6 +276,7 @@ export class LiveLayer {
     if (!avatar) return 'not_possessing';
     avatar.path = []; avatar.moving = false; avatar.hunt = null; if (avatar.action === 'hunt') avatar.action = 'idle';
     avatar.lastCommand = this.clock();
+    this.#command(agentId, 'stop', {});
     return null;
   }
 
@@ -283,6 +294,7 @@ export class LiveLayer {
     this.#flushAction(avatar);
     avatar.path = []; avatar.moving = false; avatar.opening = null; avatar.flying = false;
     avatar.action = action; avatar.lastCommand = this.clock();
+    this.#command(agentId, 'act', { action });
     return null;
   }
 
@@ -304,6 +316,7 @@ export class LiveLayer {
     this.#flushAction(avatar);
     avatar.path = []; avatar.moving = true; avatar.opening = null;
     avatar.hunt = { targetId }; avatar.action = 'hunt'; avatar.lastCommand = this.clock();
+    this.#command(agentId, 'hunt', { targetId });
     return null;
   }
 
@@ -484,6 +497,8 @@ export class LiveLayer {
     const killed = this.random() < chance;
     const recorded = this.world.resolveHunt(predatorId, preyId, at, this.world.playedTime(), killed);
     const now = this.clock();
+    this.onHunt?.({ predatorId, preyId, predatorAgentId: hunterAvatar?.agentId ?? null, preyAgentId: preyAvatar?.agentId ?? null,
+      killed: killed && recorded, at: now });
     if (killed && recorded) {
       if (hunterAvatar) {
         hunterAvatar.hunt = null; hunterAvatar.action = 'idle'; hunterAvatar.moving = false;
@@ -617,6 +632,10 @@ export class LiveLayer {
     }
   }
 
+  #command(agentId: string, command: string, args: Record<string, unknown>): void {
+    this.onCommand?.({ agentId, command, args, at: this.clock() });
+  }
+
   #end(avatar: Avatar, why: string, how: LifeEnd): void {
     this.avatars.delete(avatar.agentId);
     this.notify(avatar.agentId, why);
@@ -640,6 +659,7 @@ export class LiveLayer {
     this.#said.push({ agentId, name: avatar.agentName, animalId: avatar.animalId, x: avatar.x, z: avatar.z, text: clean.text, at: now });
     while (this.#said.length > 500 || (this.#said[0] && now - this.#said[0].at > HEARD_FOR_MS)) this.#said.shift();
     avatar.lastCommand = now;
+    this.#command(agentId, 'say', { text: clean.text });
     return null;
   }
 
@@ -669,6 +689,7 @@ export class LiveLayer {
     this.#flushAction(avatar);
     avatar.path = []; avatar.moving = false; avatar.hunt = null; avatar.action = 'rest'; avatar.perched = true;
     avatar.lastCommand = this.clock();
+    this.#command(agentId, 'climb', {});
     for (const r of this.wild.values()) if (r.mode === 'chase' && r.otherId === avatar.animalId) {
       r.mode = 'idle';
       this.notify(agentId, `The ${this.world.species(r.speciesId)?.displayName.toLowerCase()} cannot follow you up the tree.`);
