@@ -1,0 +1,9 @@
+{
+  "name": "wildsentia-contracts",
+  "private": true,
+  "description": "Solidity contracts for Wildsentia Challenges (Foundry). Not part of the npm workspaces.",
+  "devDependencies": {
+    "@openzeppelin/contracts": "5.4.0",
+    "forge-std": "github:foundry-rs/forge-std#v1.10.0"
+  }
+}
