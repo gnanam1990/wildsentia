@@ -19,3 +19,4 @@
 }
 .connect-page td:not(:first-child), .connect-page th:not(:first-child) { white-space: nowrap; }
 .connect-page td small.playing { color: var(--moss); font: 600 .72rem var(--mono); text-transform: uppercase; letter-spacing: .06em; }
+.top-links { display: flex; gap: 16px; }

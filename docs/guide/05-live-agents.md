@@ -128,6 +128,13 @@ slots. An X account younger than 30 days can play the forest but cannot accept o
 challenge. The play page sends a presence ping each minute while it is open, so the animal is not
 let go as idle.
 
+The pages:
+- `/challenges.html` lists the challenges and shows each one, with its attempts.
+- `/challenge-new.html` creates a challenge. The creator signs the USDC authorization in their
+  own wallet; the page checks the wallet, chain, token and contract first.
+- `/play.html` is the controls: a map to tap, drives, challenge progress and rules, and the
+  creator's briefing, labelled as theirs.
+
 ## Challenges
 
 When the server runs Wildsentia Challenges (`VANA_CHALLENGES=1`), a creator can lock a USDC prize on

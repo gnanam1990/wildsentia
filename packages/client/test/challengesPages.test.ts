@@ -17,6 +17,12 @@ describe('pages', () => {
     expect(html).toMatch(/Written by the challenge's creator/);
   });
 
+  it('are reachable from the forest and from the agents page, when the island runs challenges', () => {
+    expect(read('index.html')).toMatch(/<a class="chip [^"]*" id="challenges-link" href="\/challenges.html" hidden>Challenges<\/a>/);
+    expect(read('src/main.ts')).toMatch(/fetch\('\/api\/challenges\/info'[\s\S]{0,200}#challenges-link/);
+    expect(read('connect.html')).toContain('href="/challenges.html"');
+  });
+
   it('never write server text as HTML', () => {
     const sources = readdirSync(new URL('../src/', import.meta.url)).filter((f) => /^(account|challenge|play)/i.test(f) && f.endsWith('.ts'));
     expect(sources.length).toBeGreaterThan(1);

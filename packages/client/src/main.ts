@@ -1055,6 +1055,10 @@ setInterval(renderAgentsChip, 1000);
 void fetch('/api/agents/info', { cache: 'no-store' }).then((r) => {
   if (r.ok) document.querySelector<HTMLElement>('#connect-agent')!.hidden = false;
 }).catch(() => undefined);
+// Challenges, shown only when this island runs them.
+void fetch('/api/challenges/info', { cache: 'no-store' }).then((r) => {
+  if (r.ok) document.querySelector<HTMLElement>('#challenges-link')!.hidden = false;
+}).catch(() => undefined);
 agentsChip.addEventListener('click', () => {
   agentsList.hidden = !agentsList.hidden;
   agentsChip.setAttribute('aria-expanded', String(!agentsList.hidden));
