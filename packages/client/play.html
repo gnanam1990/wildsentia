@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="referrer" content="no-referrer" />
+  <title>Wildsentia — Play</title>
+  <link rel="stylesheet" href="/src/style.css" />
+  <link rel="stylesheet" href="/src/holder.css" />
+  <link rel="stylesheet" href="/src/challenges.css" />
+  <link rel="stylesheet" href="/src/play.css" />
+</head>
+<body class="holder-page challenges-page play-page">
+  <a class="skip" href="#main">Skip to the controls</a>
+  <header class="holder-header"><div class="brand">Wildsentia<small>the living wild</small></div><nav class="top-links"><a href="/challenges.html">Challenges</a><a id="play-forest" href="/">Watch in the forest</a></nav></header>
+  <main id="main">
+    <section id="account-box" class="holder-card account-box" aria-label="Your account">
+      <p id="account-status" role="status" aria-atomic="true">Checking whether you are signed in…</p>
+      <div class="actions">
+        <a id="account-signin" class="button" href="/api/accounts/x/start" hidden>Sign in with X</a>
+        <button id="account-wallet" type="button" hidden>Link a wallet</button>
+        <button id="account-signout" type="button" class="quiet" hidden>Sign out</button>
+      </div>
+    </section>
+
+    <p id="play-state" class="play-state" role="status" aria-live="polite" aria-atomic="true">Connecting…</p>
+
+    <section id="play-pick" class="holder-card" hidden aria-label="Pick an animal">
+      <label>Species <select id="play-species"></select></label>
+      <button id="play-possess" type="button">Take a free animal</button>
+    </section>
+
+    <div class="play-grid">
+      <section class="holder-card map-card" aria-label="Map around your animal">
+        <canvas id="play-map" width="480" height="480" aria-label="Map of 200 metres around your animal: tap the ground to go there, tap prey to hunt it"></canvas>
+        <fieldset id="play-gait" class="gait"><legend>Pace</legend>
+          <label><input type="radio" name="gait" value="walk" checked /> Walk</label>
+          <label><input type="radio" name="gait" value="trot" /> Trot</label>
+          <label><input type="radio" name="gait" value="run" /> Run</label>
+        </fieldset>
+        <div class="controls">
+          <button id="play-stop" type="button">Stop</button><button id="play-graze" type="button">Graze</button>
+          <button id="play-drink" type="button">Drink</button><button id="play-rest" type="button">Rest</button>
+          <button id="play-feed" type="button">Feed</button><button id="play-climb" type="button">Climb</button>
+          <button id="play-release" type="button" class="quiet">Let it go</button>
+        </div>
+        <form id="play-say" class="say"><label>Say <input id="play-say-text" maxlength="140" autocomplete="off" /></label><button type="submit">Say</button></form>
+      </section>
+      <section class="holder-card" aria-label="Your animal">
+        <h2>Your animal</h2>
+        <ul id="play-drives" class="drives"></ul>
+        <section id="play-challenge" hidden aria-labelledby="play-challenge-title">
+          <h2 id="play-challenge-title"></h2>
+          <p id="play-progress"></p>
+          <ul id="play-rules"></ul>
+          <div id="play-briefing" hidden><p id="play-briefing-label" class="small"></p><blockquote id="play-briefing-text"></blockquote></div>
+        </section>
+        <h2>Notices</h2>
+        <ul id="play-notices" class="notices"></ul>
+      </section>
+    </div>
+  </main>
+  <script type="module" src="/src/play.ts"></script>
+</body>
+</html>
