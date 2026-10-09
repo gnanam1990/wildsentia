@@ -1,6 +1,7 @@
 import { getAddress, isAddress, type Hex } from 'viem';
 import type { SpeciesConfig } from '@vana/shared';
 import type { Pool } from '../db/pool.js';
+import { HERD_STRUCTURES } from '../live/fieldGuide.js';
 import type { LiveLayer, WorldPort } from '../live/liveLayer.js';
 import { viemChallengeChain, type ChallengeChain } from './chain.js';
 import { ChainOps } from './chainOps.js';
@@ -17,6 +18,8 @@ import type { SpeciesCatalog } from './terms.js';
 export interface ChallengesConfig {
   rpcUrl: string; chainId: number; contract: Hex; usdc: Hex; evaluatorKey: Hex; fromBlock: number; adminToken: string;
   usdcDomain: { name: string; version: string }; explorerUrl: string | null;
+  /** The WildsentiaAttempts contract; without it attempts are kept and hashed here but not written on chain. */
+  attemptsContract: Hex | null;
 }
 
 const loopback = (host: string) => host === 'localhost' || host === '127.0.0.1';
@@ -48,19 +51,21 @@ export function challengesConfig(env: NodeJS.ProcessEnv): ChallengesConfig | und
   if (!Number.isSafeInteger(fromBlock) || fromBlock < 0) throw new Error('Invalid VANA_CHALLENGES_FROM_BLOCK');
   const adminToken = need('VANA_CHALLENGES_ADMIN_TOKEN');
   if (adminToken.length < 32 || adminToken.length > 256 || /\s/.test(adminToken)) throw new Error('Invalid VANA_CHALLENGES_ADMIN_TOKEN');
+  const attempts = env.VANA_CHALLENGES_ATTEMPTS_CONTRACT?.trim() ? address('VANA_CHALLENGES_ATTEMPTS_CONTRACT') : null;
   const explorer = env.VANA_CHALLENGES_EXPLORER_URL?.trim();
   if (explorer && !/^https:\/\/[^\s/]+(\/[^\s]*)?$/.test(explorer)) throw new Error('Invalid VANA_CHALLENGES_EXPLORER_URL');
   return {
     rpcUrl: rpc.href, chainId, contract: address('VANA_CHALLENGES_CONTRACT'), usdc: address('VANA_CHALLENGES_USDC'),
     evaluatorKey: key as Hex, fromBlock, adminToken,
     usdcDomain: { name: need('VANA_CHALLENGES_USDC_DOMAIN_NAME'), version: need('VANA_CHALLENGES_USDC_DOMAIN_VERSION') },
-    explorerUrl: explorer ? explorer.replace(/\/$/, '') : null,
+    explorerUrl: explorer ? explorer.replace(/\/$/, '') : null, attemptsContract: attempts,
   };
 }
 
 export interface ChallengesRuntime {
   routes: ChallengeRouteDeps;
-  agent: { accept: ChallengeEngine['accept']; progressOf: ChallengeEngine['progressOf'] };
+  agent: { accept: ChallengeEngine['accept']; progressOf: ChallengeEngine['progressOf']; waitingOf: ChallengeEngine['waitingOf'];
+    leave: ChallengeEngine['leave'] };
   start(): Promise<void>;
   stop(): void;
 }
@@ -69,14 +74,13 @@ export function challengesRuntime(config: ChallengesConfig,
   deps: { pool: Pool; live: LiveLayer; world: WorldPort; species: () => readonly SpeciesConfig[] },
   chain: ChallengeChain = viemChallengeChain(config)): ChallengesRuntime {
   const store = new ChallengeStore(deps.pool);
-  const engine = new ChallengeEngine(store, deps.live, deps.world);
+  const engine = new ChallengeEngine(store, deps.live, deps.world, Date.now, { recordOnChain: config.attemptsContract !== null });
   const ops = new ChainOps(store, chain);
   const indexer = new ChallengeIndexer(store, chain, config.fromBlock);
   const configOf = (id: string) => deps.species().find((s) => s.id === id);
   const catalog: SpeciesCatalog = { ids: () => deps.species().map((s) => s.id), preyOf: (id) => deps.world.species(id)?.preferredPrey ?? [],
     displayName: (id) => deps.world.species(id)?.displayName ?? id,
-    // Herds, packs, families and troops: the herd rule can be set for these.
-    social: (id) => ['herd', 'pack', 'family', 'troop'].includes(configOf(id)?.social.structure ?? 'solitary'),
+    social: (id) => HERD_STRUCTURES.has(configOf(id)?.social.structure ?? 'solitary'),
     onLand: (x, z) => deps.world.patchAt(x, z)?.land === true };
   // Limits come from the contract when it starts; until then nothing can be drafted.
   const drafts = { chainId: config.chainId, contract: config.contract, usdc: config.usdc, usdcDomain: config.usdcDomain,
@@ -92,7 +96,8 @@ export function challengesRuntime(config: ChallengesConfig,
   };
   return {
     routes: { store, catalog, drafts, adminToken: config.adminToken, explorerUrl: config.explorerUrl },
-    agent: { accept: (player, id) => engine.accept(player, id), progressOf: (agentId) => engine.progressOf(agentId) },
+    agent: { accept: (player, id) => engine.accept(player, id), progressOf: (agentId) => engine.progressOf(agentId),
+      waitingOf: (agentId) => engine.waitingOf(agentId), leave: (agentId) => engine.leave(agentId) },
     async start() {
       // Fail closed: the key must be the evaluator the contract appoints, or new prizes could never be paid.
       const appointed = await chain.appointedEvaluator();
@@ -104,6 +109,11 @@ export function challengesRuntime(config: ChallengesConfig,
       // Challenges recorded under an evaluator that is not ours can never be paid by us: they refund.
       const foreign = await store.unrecogniseOtherEvaluators(config.contract, chain.evaluator);
       if (foreign) console.error(`[challenges] ${foreign} open challenges belong to another evaluator; they will refund`);
+      if (config.attemptsContract) {
+        const recorder = await chain.attemptsRecorder();
+        if (recorder.toLowerCase() !== chain.evaluator.toLowerCase())
+          throw new Error(`VANA_CHALLENGES_EVALUATOR_KEY is not the attempts contract's recorder (${recorder})`);
+      }
       const limits = await chain.prizeLimits();
       drafts.minPrizeAtomic = limits.min; drafts.maxPrizeAtomic = limits.max;
       await engine.restore();
@@ -116,7 +126,9 @@ export function challengesRuntime(config: ChallengesConfig,
       every(5000, 'indexer', () => indexer.pollOnce());
       every(3000, 'chain operations', () => ops.processOnce());
       every(30_000, 'sweep', () => engine.sweep());
-      console.log(`challenges: on (contract ${config.contract}, chain ${config.chainId}, evaluator ${chain.evaluator})`);
+      every(5000, 'attempt records', () => engine.recordAttempts());
+      console.log(`challenges: on (contract ${config.contract}, chain ${config.chainId}, evaluator ${chain.evaluator}, `
+        + `attempts ${config.attemptsContract ?? 'kept off chain'})`);
     },
     stop() { for (const t of timers) clearInterval(t); },
   };

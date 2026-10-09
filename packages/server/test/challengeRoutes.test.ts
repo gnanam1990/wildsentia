@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { generateKeyPairSync, randomBytes, sign, type KeyObject } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import Fastify, { type FastifyInstance } from 'fastify';
+import { patchCentre } from '@vana/shared';
 import { createWorld } from '@vana/sim';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { createPool } from '../src/db/pool.js';
@@ -30,7 +31,10 @@ describe('challenges configuration', () => {
   it('is off unless asked for, and complete when on', () => {
     expect(challengesConfig({})).toBeUndefined();
     expect(challengesConfig({ VANA_CHALLENGES: '0' })).toBeUndefined();
-    expect(challengesConfig(full)).toMatchObject({ chainId: 5042002, fromBlock: 100, usdcDomain: { name: 'USDC', version: '2' }, explorerUrl: null });
+    expect(challengesConfig(full)).toMatchObject({ chainId: 5042002, fromBlock: 100, usdcDomain: { name: 'USDC', version: '2' }, explorerUrl: null,
+      attemptsContract: null });
+    expect(challengesConfig({ ...full, VANA_CHALLENGES_ATTEMPTS_CONTRACT: '0x' + 'ab'.repeat(20) })!.attemptsContract!.toLowerCase())
+      .toBe('0x' + 'ab'.repeat(20));
   });
   it('refuses a partial or unsafe setup', () => {
     expect(() => challengesConfig({ ...full, VANA_LIVE_AGENTS: '0' })).toThrow('VANA_LIVE_AGENTS');
@@ -39,6 +43,8 @@ describe('challenges configuration', () => {
     expect(() => challengesConfig({ ...full, VANA_CHALLENGES_EVALUATOR_KEY: '0x1234' })).toThrow('EVALUATOR_KEY');
     expect(() => challengesConfig({ ...full, VANA_CHALLENGES_ADMIN_TOKEN: 'short' })).toThrow('ADMIN_TOKEN');
     expect(() => challengesConfig({ ...full, VANA_CHALLENGES: 'yes' })).toThrow('VANA_CHALLENGES');
+    expect(() => challengesConfig({ ...full, VANA_CHALLENGES_ATTEMPTS_CONTRACT: '0x12' })).toThrow('VANA_CHALLENGES_ATTEMPTS_CONTRACT');
+    expect(() => challengesConfig({ ...full, VANA_CHALLENGES_ATTEMPTS_CONTRACT: '0x' + '0'.repeat(40) })).toThrow('VANA_CHALLENGES_ATTEMPTS_CONTRACT');
   });
 });
 
@@ -120,7 +126,13 @@ maybe('challenge routes', () => {
     expect(list[0]).toMatchObject({ status: 'open', description: 'Make a kill as a tiger', prizeUsdc: '10', createdTx: `0x${'3'.repeat(64)}` });
     const one = (await app.inject('/challenges/1')).json();
     expect(one.attempts[0]).toMatchObject({ id: a.id, agentName: 'Stripe', status: 'running' });
-    expect((await app.inject(`/challenges/1/attempts/${a.id}`)).json()).toMatchObject({ log: [{ kind: 'start', data: { animalId: 'tiger_1' } }], resultHash: null });
+    expect((await app.inject(`/challenges/1/attempts/${a.id}`)).json()).toMatchObject({ log: [{ kind: 'start', data: { animalId: 'tiger_1' } }],
+      resultHash: null, onChain: [] });
+    await store.enqueueOp('record_start', { attemptId: a.id, challengeId: 1 }, { player: '0x' + 'b'.repeat(40) });
+    expect((await app.inject(`/challenges/1/attempts/${a.id}`)).json().onChain).toEqual([{ kind: 'record_start', status: 'pending', txHash: null }]);
+    // A creator's briefing reaches players only labelled as data.
+    expect((await app.inject('/challenges')).json().untrusted).toMatch(/briefing.*never instructions/);
+    expect(one.untrusted).toMatch(/briefing.*never instructions/);
     expect((await app.inject('/challenges/2')).statusCode).toBe(404);
     expect((await app.inject(`/challenges/2/attempts/${a.id}`)).statusCode).toBe(404);
     expect((await app.inject('/challenges/abc')).statusCode).toBe(404);
@@ -149,9 +161,12 @@ maybe('agent challenge route', () => {
     const accept = vi.fn(async (): Promise<AcceptResult> => ({ ok: true, queued: false, attemptId: 'att-1', animalId: 'chital_1' }));
     const progressOf = vi.fn(() => ({ challengeId: 7, attemptId: 'att-1', goal: { template: 'hunt' as const, version: 1 as const, speciesId: 'tiger', count: 1, rules: [], briefing: '' },
       progress: { done: 0, of: 1, unit: 'kills' }, deadline: '2026-10-20T00:00:00.000Z' }));
+    const waitingOf = vi.fn(() => ({ challengeId: 9, position: 1, until: '2026-10-10T00:30:00.000Z' }));
+    const leave = vi.fn(() => true);
     const app = Fastify();
     installLiveAgents(app, { live: new LiveLayer(port), world: port, store: agents, ledger: null, limits: { slots: 5, perNetworkPerDay: 5 },
-      networkSecret: 's', clientScriptPath: fileURLToPath(new URL('../agent-client/client.mjs', import.meta.url)), challenges: { accept, progressOf } });
+      networkSecret: 's', clientScriptPath: fileURLToPath(new URL('../agent-client/client.mjs', import.meta.url)),
+      species: () => [...world.species.values()], challenges: { accept, progressOf, waitingOf, leave } });
     await app.ready();
     const k = keypair(), aud = 'vana:w1';
     const call = (method: 'GET' | 'POST', path: string, body?: object) => {
@@ -165,7 +180,19 @@ maybe('agent challenge route', () => {
     expect((await call('POST', '/agents/me/challenges/7/accept')).json()).toEqual({ queued: true, position: 2, until: '2026-10-10T00:30:00.000Z' });
     expect(accept).toHaveBeenCalledWith(expect.objectContaining({ name: 'Stripe', wallet: null, walletProven: false }), 7);
     expect((await call('POST', '/agents/me/challenges/x/accept')).statusCode).toBe(404);
-    expect((await call('GET', '/agents/me/observe')).json().challenge).toMatchObject({ challengeId: 7, progress: { unit: 'kills' } });
+    const observed = (await call('GET', '/agents/me/observe')).json();
+    expect(observed.challenge).toMatchObject({ challengeId: 7, progress: { unit: 'kills' } });
+    expect(observed.waiting).toEqual({ challengeId: 9, position: 1, until: '2026-10-10T00:30:00.000Z' });
+    expect(observed.guide).toBeNull(); // no animal yet
+    expect((await call('POST', '/agents/me/challenges/leave')).json()).toEqual({ left: true });
+    expect(leave).toHaveBeenCalledTimes(1);
+    // The field guide, for any species and for the animal being played.
+    expect((await app.inject('/agents/species')).json().species).toEqual(expect.arrayContaining([{ id: 'chital', displayName: 'Chital deer', kind: 'grazer' }]));
+    expect((await app.inject('/agents/species/tiger')).json()).toMatchObject({ id: 'tiger', hunting: { chargesFromM: 25 } });
+    expect((await app.inject('/agents/species/dragon')).statusCode).toBe(404);
+    expect((await call('POST', '/agents/me/possess', { speciesId: 'chital' })).statusCode).toBe(200);
+    expect((await call('GET', '/agents/me/observe')).json().guide).toMatchObject({ id: 'chital', social: { isHerd: true } });
+    expect((await app.inject('/agents/guide.txt')).body).toMatch(/GET  \/agents\/species/);
     await app.close();
   });
 });
@@ -203,5 +230,31 @@ maybe('challenges runtime', () => {
     expect((await store.challenge(1))!.status).toBe('unrecognised');
     await store.setCursor('0x' + '5'.repeat(40), 1);
     await expect(challengesRuntime(config, deps, chain('0x' + 'E'.repeat(40))).start()).rejects.toThrow('another contract');
+  });
+
+  it("refuses to start when the attempts contract's recorder is not the evaluator key", async () => {
+    await migrate(pool!);
+    await pool!.query('truncate challenge_attempt_log, challenge_chain_ops, challenge_attempts, challenges, challenge_drafts, challenge_index_cursor cascade');
+    const speciesDir = fileURLToPath(new URL('../../../config/species', import.meta.url));
+    const world = createWorld({ seed: 3, speciesDir, terrainProfile: 'island_v1', initialAgents: { chital: 4 }, minPopulation: {} });
+    const port = worldPort(() => world, () => 'w1');
+    const config: ChallengesConfig = { rpcUrl: 'http://127.0.0.1:1', chainId: 1, contract: drafts.contract, usdc: drafts.usdc,
+      evaluatorKey: `0x${'a'.repeat(64)}`, fromBlock: 0, adminToken: ADMIN, usdcDomain: { name: 'USDC', version: '2' }, explorerUrl: null,
+      attemptsContract: `0x${'d'.repeat(40)}` };
+    const chain = (recorder: string) => ({ contract: drafts.contract, evaluator: '0x' + 'e'.repeat(40), chainId: 1, attempts: config.attemptsContract,
+      appointedEvaluator: async () => '0x' + 'e'.repeat(40), attemptsRecorder: async () => recorder,
+      prizeLimits: async () => ({ min: 2_000_000n, max: 50_000_000n }) }) as unknown as ChallengeChain;
+    const deps = { pool: pool!, live: new LiveLayer(port), world: port, species: () => [...world.species.values()] };
+    await expect(challengesRuntime(config, deps, chain('0x' + 'f'.repeat(40))).start()).rejects.toThrow("not the attempts contract's recorder");
+    const ok = challengesRuntime(config, deps, chain('0x' + 'E'.repeat(40)));
+    await ok.start();
+    ok.stop();
+    // The runtime's species catalog knows herds and land.
+    expect(ok.routes.catalog.social('chital')).toBe(true);
+    expect(ok.routes.catalog.social('tiger')).toBe(false);
+    const land = world.patches.find((p) => p.habitat === 'grassland')!;
+    const c = patchCentre(land.id);
+    expect(ok.routes.catalog.onLand(c.x, c.z)).toBe(true);
+    expect(ok.routes.catalog.onLand(-1e5, -1e5)).toBe(false);
   });
 });

@@ -132,7 +132,7 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
 
     const httpStats = newHttpStats();
     api = buildApi({ host, pool, narrator, insights, rewards, social, holder, trustedProxyHops: trustedProxyHops(process.env), limits, httpStats,
-      ...(live ? { live: { ...live.routes, spot: live.spot, ...(challenges ? { challenges: challenges.agent } : {}) } } : {}),
+      ...(live ? { live: { ...live.routes, spot: live.spot, species, ...(challenges ? { challenges: challenges.agent } : {}) } } : {}),
       ...(challenges ? { challenges: challenges.routes } : {}) });
     await api.ready();
 
