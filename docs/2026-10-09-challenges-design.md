@@ -149,6 +149,12 @@ settings below; partial configuration is an error).
 before any retry, so the same payout is never sent twice. Arc's finality is under a second, so
 a receipt with status 1 is final.
 
+**Blocklisted addresses.** On Arc a USDC transfer to or from a blocklisted address reverts. A
+`resolve` to a blocklisted winner therefore fails; the attempt is recorded as met but unpaid, and
+the prize returns to the creator through `refund` after the deadline. A blocklisted creator cannot
+create (the authorization's transfer reverts). If a creator is blocklisted after creating, the
+refund cannot be paid until that is lifted; this is stated on the create page.
+
 **Who is paid.** A human winner is paid to their linked wallet. An AI agent is paid to the wallet
 its builder proved at registration. An agent with no proven wallet can play but cannot win a prize.
 
@@ -189,13 +195,50 @@ holds only gas money.
 - **Agents:** the "Play as an AI agent" page and `client.mjs` gain `challenges` and
   `accept <id>` commands.
 
-## 9. Out of scope for the first version
+## 9. Arc and Circle features: what we use, when, and why
 
-ERC-8004 identity and reputation records, automatic video clips, transaction memos,
-on-ramp and bridge, mainnet, fees, teams, "raise a young", sandboxed replays, Earn.
-Each is a candidate for the next version once the first works end to end on testnet.
+Checked against `docs.arc.io` (index read 9 October 2026).
 
-## 10. Testing
+**First version**
+
+| Feature | Use |
+|---|---|
+| USDC escrow in our own contract | The prize (section 5) |
+| EIP-3009 authorization, relayed by our server | The creator locks the prize with one signature and no gas (`docs.arc.io/integrate/relayers-and-paymasters/eip-3009-relayer`) |
+| Sub-second deterministic finality | A winner is paid the moment the goal is met; one receipt is final |
+| Transaction memos (Memo contract, mainnet and testnet `0x5294…e505`) | `resolve` and `refund` are sent through the Memo contract with a readable note ("Wildsentia challenge #42: survived 3 days"), shown on the explorer and good for sharing |
+| Arc runtime rules | 6-decimal ERC-20 interface vs 18-decimal native; 20 Gwei minimum `maxFeePerGas`; sends to `address(0)` revert; transfers to or from a blocklisted address revert and still cost gas |
+
+Players never send a transaction, so no paymaster is needed.
+
+**Next version, once the first works on testnet**
+
+| Feature | Use |
+|---|---|
+| App Kit Bridge (CCTP) and Unified Balance | A creator funds a prize with USDC held on Base, Ethereum, Solana or elsewhere |
+| App Kit Onramp | A creator with no crypto buys USDC on Arc by card inside the create flow |
+| App Kit custom fees | Wildsentia's income: a small fee on bridge, swap or on-ramp done through our page, while players still pay nothing |
+| ERC-8004 (IdentityRegistry, ReputationRegistry, ValidationRegistry; on mainnet) | AI agents get an on-chain identity, and every win is recorded as reputation and validation |
+| UMA Optimistic Oracle (Arc's prediction-market sample uses it) | Results become disputable: the server proposes the winner and the log hash, and anyone can dispute with a bond during a window. This removes the server as the final judge |
+| Wallet screening (Elliptic, TRM Labs) | Screen creators and winners before mainnet payouts |
+
+**Not used**
+
+| Feature | Why not |
+|---|---|
+| Earn, Borrow, Swap, StableFX, USYC | Escrowed prizes must stay exactly as locked; nothing to swap |
+| Prediction markets for spectators | That is betting |
+| Gateway nanopayments, x402 | Nobody pays per call; playing is free |
+| ERC-8183 AgenticCommerce | Needs the provider before funding; testnet address only (section 5) |
+| Opt-in privacy (APS) | Results are meant to be public |
+| On-chain randomness | Arc has none suitable for money; animals are assigned off chain |
+
+## 10. Out of scope for the first version
+
+Automatic video clips, mainnet, teams, "raise a young", sandboxed replays, and the
+"next version" features above.
+
+## 11. Testing
 
 - **Contract (forge):**
   - Unit tests for every function and revert.
@@ -214,11 +257,12 @@ Each is a candidate for the next version once the first works end to end on test
 - **Testnet:** the same two journeys once on Arc Testnet with faucet USDC, with the transaction
   links recorded.
 
-## 11. Must be verified before or during the build
+## 12. Must be verified before or during the build
 
 | Item | How |
 |---|---|
 | Arc USDC supports `receiveWithAuthorization` (docs confirm only `transferWithAuthorization`) | Read the token on testnet; if it is missing, fall back to approve + `createFor` |
 | X OAuth 2.0 sign-in works on the X API access tier the owner has, and returns account creation date | Create the X app; test sign-in locally |
 | Arc Foundry installs and deploys to testnet | Follow `docs.arc.io` install guide |
+| The Memo contract's call interface (how it forwards a call and its note) | Read `docs.arc.io/arc/concepts/transaction-memos` and call it once on testnet |
 | Legal status of creator-funded prizes for players in each country, and for the operator | Lawyer, before any mainnet use |
