@@ -1,5 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { getAddress, isAddress, verifyMessage, type Address, type Hex } from 'viem';
+import { createSiweMessage } from 'viem/siwe';
 import type { AccountsConfig } from './config.js';
 import { cookie, cookieHeader, sameOriginJson } from './cookies.js';
 import { CREATES_PER_DAY, MIN_X_ACCOUNT_DAYS, SESSION_DAYS, type Account, type AccountStore } from './store.js';
@@ -9,8 +11,15 @@ export const SESSION_COOKIE = 'ws_session';
 const OAUTH_COOKIE = 'ws_oauth';
 const STATE_MS = 10 * 60_000;
 const MAX_PENDING = 5000;
+const WALLET_MS = 5 * 60_000;
 
-export interface AccountRouteDeps { config: AccountsConfig; store: AccountStore; x: XAuth; clock?: () => number }
+export interface AccountRouteDeps {
+  config: AccountsConfig; store: AccountStore; x: XAuth; clock?: () => number;
+  /** The chain wallets are linked on (the challenges' chain); without it, no wallet link. */
+  wallet?: { chainId: number } | undefined;
+}
+const bodyOf = (req: FastifyRequest): Record<string, unknown> =>
+  req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body as Record<string, unknown> : {};
 
 /** What the signed-in person can do, and what they still need (spec §6 and §14). */
 export async function accountView(store: AccountStore, a: Account) {
@@ -76,6 +85,45 @@ export function installAccounts(app: FastifyInstance, deps: AccountRouteDeps): v
     const a = await store.fromSession(cookie(req, SESSION_COOKIE));
     if (!a) return reply.code(401).send({ error: 'signed_out' });
     return { account: await accountView(store, a) };
+  });
+
+  // Linking a wallet: a SIWE message for this site, signed by the wallet (an ordinary key; not a contract wallet).
+  const walletChallenges = new Map<string, { accountId: string; address: Address; message: string; expires: number }>();
+  app.post('/accounts/wallet/challenge', async (req, reply) => {
+    if (!deps.wallet) return reply.code(503).send({ error: 'wallet_link_unavailable' });
+    const a = await store.fromSession(cookie(req, SESSION_COOKIE));
+    if (!a) return reply.code(401).send({ error: 'signed_out' });
+    const raw = bodyOf(req).address;
+    if (typeof raw !== 'string' || !isAddress(raw)) return reply.code(400).send({ error: 'invalid_address' });
+    const now = clock();
+    for (const [k, v] of walletChallenges) if (v.expires <= now) walletChallenges.delete(k);
+    if (walletChallenges.size >= MAX_PENDING) return reply.code(503).send({ error: 'busy' });
+    const address = getAddress(raw), nonce = randomBytes(16).toString('hex');
+    const origin = new URL(config.origin);
+    const message = createSiweMessage({ address, domain: origin.host, scheme: origin.protocol.slice(0, -1), uri: `${config.origin}/challenges.html`,
+      version: '1', chainId: deps.wallet.chainId, nonce, issuedAt: new Date(now), expirationTime: new Date(now + WALLET_MS),
+      statement: 'Link this wallet to your Wildsentia account as your payout wallet. This is not a transaction.' });
+    walletChallenges.set(nonce, { accountId: a.id, address, message, expires: now + WALLET_MS });
+    return { nonce, message, chainId: deps.wallet.chainId, expiresAt: new Date(now + WALLET_MS).toISOString() };
+  });
+
+  app.post('/accounts/wallet/verify', async (req, reply) => {
+    if (!deps.wallet) return reply.code(503).send({ error: 'wallet_link_unavailable' });
+    const a = await store.fromSession(cookie(req, SESSION_COOKIE));
+    if (!a) return reply.code(401).send({ error: 'signed_out' });
+    const { address, nonce, signature } = bodyOf(req);
+    const pendingLink = typeof nonce === 'string' ? walletChallenges.get(nonce) : undefined;
+    if (!pendingLink || pendingLink.accountId !== a.id || pendingLink.expires <= clock() || typeof address !== 'string'
+      || !isAddress(address) || getAddress(address) !== pendingLink.address) return reply.code(400).send({ error: 'challenge_expired' });
+    walletChallenges.delete(nonce as string);
+    if (typeof signature !== 'string' || !/^0x[0-9a-fA-F]{130}$/.test(signature)) return reply.code(400).send({ error: 'wallet_signature_invalid' });
+    let valid = false;
+    try { valid = await verifyMessage({ address: pendingLink.address, message: pendingLink.message, signature: signature as Hex }); } catch { valid = false; }
+    if (!valid) return reply.code(401).send({ error: 'wallet_signature_invalid' });
+    const wallet = pendingLink.address.toLowerCase();
+    // One player per wallet, whether agent or person.
+    if (await store.agents.setWallet(a.agentId, wallet) !== 'ok') return reply.code(409).send({ error: 'wallet_taken' });
+    return { wallet };
   });
 
   app.post('/accounts/logout', async (req, reply) => {

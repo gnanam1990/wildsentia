@@ -8,6 +8,7 @@ import { accountsConfig } from '../src/accounts/config.js';
 import { AccountStore } from '../src/accounts/store.js';
 import { installAccounts } from '../src/accounts/routes.js';
 import { xAuth, type XAuth, type XUser } from '../src/accounts/xAuth.js';
+import { privateKeyToAccount } from 'viem/accounts';
 import { testDatabaseUrl } from './testDatabase.js';
 
 const ORIGIN = 'https://wildsentia.test';
@@ -85,7 +86,7 @@ maybe('accounts', () => {
     x = fakeX(() => user);
     accounts = new AccountStore(pool!, new AgentStore(pool!), () => now);
     app = Fastify();
-    installAccounts(app, { config: accountsConfig(env)!, store: accounts, x, clock: () => now });
+    installAccounts(app, { config: accountsConfig(env)!, store: accounts, x, clock: () => now, wallet: { chainId: 5042002 } });
     await app.ready();
   });
 
@@ -185,5 +186,51 @@ maybe('accounts', () => {
     expect((await post({ 'content-type': 'application/json', 'sec-fetch-site': 'cross-site' })).statusCode).toBe(403);
     expect((await post({ 'content-type': 'text/plain' })).statusCode).toBe(415);
     expect((await app.inject({ url: '/accounts/me', headers: { cookie: `ws_session=${session}` } })).statusCode).toBe(200);
+  });
+
+  describe('wallet link', () => {
+    const key = privateKeyToAccount(`0x${'4'.repeat(64)}`);
+    const json = (session: string, payload: object) => ({ method: 'POST' as const, headers: { cookie: `ws_session=${session}`,
+      'content-type': 'application/json', origin: ORIGIN }, payload: JSON.stringify(payload) });
+    const link = async (session: string, signer = key) => {
+      const c = await app.inject({ url: '/accounts/wallet/challenge', ...json(session, { address: key.address }) });
+      const { message, nonce } = c.json();
+      const signature = await signer.signMessage({ message });
+      return { challenge: c.json(), verify: (over: object = {}) => app.inject({ url: '/accounts/wallet/verify',
+        ...json(session, { address: key.address, nonce, signature, ...over }) }) };
+    };
+
+    it('links the wallet that signs the sign-in message for this site, once, within five minutes', async () => {
+      const { session } = await signIn();
+      const { challenge, verify } = await link(session);
+      expect(challenge.message).toContain('wildsentia.test wants you to sign in with your Ethereum account:');
+      expect(challenge.message).toContain(key.address);
+      expect(challenge.message).toContain('Chain ID: 5042002');
+      expect(challenge.message).toContain(`Nonce: ${challenge.nonce}`);
+      expect(challenge.message).toMatch(/payout wallet/);
+      expect((await verify()).json()).toEqual({ wallet: key.address.toLowerCase() });
+      expect((await verify()).statusCode).toBe(400); // used up
+      const me = (await app.inject({ url: '/accounts/me', headers: { cookie: `ws_session=${session}` } })).json();
+      expect(me.account).toMatchObject({ wallet: key.address.toLowerCase(), canPlay: true, canCreate: true, needs: [] });
+    });
+
+    it('refuses a signature by another key, a late one, and a signed-out request', async () => {
+      const { session } = await signIn();
+      const other = privateKeyToAccount(`0x${'5'.repeat(64)}`);
+      expect((await (await link(session, other)).verify()).json()).toEqual({ error: 'wallet_signature_invalid' });
+      const late = await link(session);
+      now += 5 * 60_000 + 1;
+      expect((await late.verify()).statusCode).toBe(400);
+      expect((await app.inject({ url: '/accounts/wallet/challenge', ...json('nobody', { address: key.address }) })).statusCode).toBe(401);
+      expect((await app.inject({ url: '/accounts/wallet/challenge', ...json(session, { address: '0x12' }) })).json()).toEqual({ error: 'invalid_address' });
+    });
+
+    it('refuses a wallet another player uses', async () => {
+      const agents = new AgentStore(pool!);
+      expect((await agents.register({ publicKey: 'D'.repeat(43), name: 'Bot', bio: '', networkHash: 'n', wallet: key.address.toLowerCase() },
+        { slots: 5, perNetworkPerDay: 5 })).ok).toBe(true);
+      const { session } = await signIn();
+      expect((await (await link(session)).verify()).json()).toEqual({ error: 'wallet_taken' });
+    });
   });
 });
