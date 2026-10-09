@@ -44,6 +44,10 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --no-audit --no-fund
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.8.3
+      - run: npm ci --prefix contracts --no-audit --no-fund
       - run: npm run verify:ci
       - name: Retain test evidence
         if: always()

@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, copyFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, copyFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
@@ -18,6 +18,23 @@ const run = (args: string[]): void => {
   if (result.status !== 0) throw new Error(`Verification command failed: npm ${args.join(' ')}`);
 };
 
+const contracts = join(root, 'contracts');
+const runIn = (cwd: string, command: string, args: string[]): void => {
+  const result = spawnSync(command, args, { cwd, env, stdio: 'inherit', shell: false });
+  if (result.error || result.status !== 0) throw new Error(`Verification command failed: ${command} ${args.join(' ')}`);
+};
+
+// The escrow contract is part of the gate: formatting, every forge test (unit, fuzz and
+// invariant), and the server's copy of its ABI. A missing toolchain fails; it never skips.
+function verifyContracts(): void {
+  if (!existsSync(join(contracts, 'node_modules', '@openzeppelin', 'contracts'))) {
+    throw new Error('Contract dependencies are missing: run npm ci --prefix contracts');
+  }
+  runIn(contracts, 'forge', ['fmt', '--check']);
+  runIn(contracts, 'forge', ['test']);
+  runIn(root, process.execPath, ['contracts/scripts/export-abi.mjs', '--check']);
+}
+
 async function verify(): Promise<void> {
   const url = testDatabaseUrl(env)!;
   const pool = new pg.Pool({ connectionString: url, max: 1, connectionTimeoutMillis: 5000,
@@ -31,6 +48,7 @@ async function verify(): Promise<void> {
   } finally { await pool.end(); }
 
   run(['run', 'typecheck']);
+  verifyContracts();
   run(['exec', '--', 'tsc', '--project', 'tools/ci/tsconfig.json']);
   run(['exec', '--', 'tsc', '--project', 'tools/ops/tsconfig.json']);
   const artifacts = join(root, '.ci-artifacts');

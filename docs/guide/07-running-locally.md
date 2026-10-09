@@ -86,6 +86,19 @@ It proxies `/api` and `/live` to the stack and exposes `window.__vana` (scene, c
 controller, animal layer, store, live recordings and replay) for the browser console and for
 scripts such as the video tools.
 
+## The challenges contract
+
+The prize escrow for Wildsentia Challenges is a Foundry project in `contracts/`, outside the npm
+workspaces. It needs Foundry v1.8.3:
+
+```bash
+npm ci --prefix contracts
+(cd contracts && forge test)              # unit, fuzz and invariant tests
+node contracts/scripts/export-abi.mjs     # after a contract change: refresh the server's ABI
+```
+
+`npm run verify:ci` runs the contract's format check, its tests and the ABI check too.
+
 ## Browser journeys
 
 `tools/e2e/journeys.ts` drives the built site in real Chromium the way a visitor or the
