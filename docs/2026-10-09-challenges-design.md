@@ -355,3 +355,61 @@ benchmark, real.
   rules, the human play view, X posts).
 - **4:** Arc Testnet: deploy both contracts, ERC-8004 identity and reputation, memos, USDC
   domain checks, end-to-end journeys.
+
+## 14. Plan 3: accounts, human play and the challenge pages (decided 10 October 2026)
+
+What the code already had shaped these choices: no cookies or human sessions anywhere, a wallet
+sign-in (SIWE) with no wallet library in the client, separate HTML pages instead of a
+router, and a social outbox whose drafts must each match a simulation event.
+
+### Accounts and sessions
+- **Sign-in:** X OAuth 2.0 with PKCE (confidential client; scope `users.read tweet.read`).
+  - The server reads the X user's id, handle, name and account creation date once at sign-in.
+  - It then discards the X access token: nothing is stored that could post or read as the user.
+  - Settings: `VANA_X_CLIENT_ID`, `VANA_X_CLIENT_SECRET`, `VANA_X_REDIRECT_URI`.
+  - Accounts are off unless all three are set; a partial set is an error.
+- **Session cookie:** a random 32-byte token in an HttpOnly, Secure, SameSite=Lax cookie (`ws_session`, 30 days).
+  - Only its SHA-256 is stored, in `account_sessions`.
+  - Requests that change something must also come from our own origin (Origin check, no `sec-fetch-site: cross-site`) and carry a JSON body.
+  - Signing out deletes the session row.
+- **Wallet link:** SIWE on the challenge chain.
+  - One wallet per account. A wallet already used by an agent or another account is refused.
+  - The linked wallet is the account's payout wallet, and the wallet it creates challenges from.
+- **Rate limits (spec §6):**
+  - an X account younger than 30 days can neither create nor accept;
+  - an account may create 3 challenges a day.
+
+### Humans in the live world
+- **Identity:** each account gets one live-layer identity, a `live_agents` row with `kind = 'human'`.
+  - It has no public key, so it can never sign the agent API.
+  - Its id comes from the account (`ag_` plus 16 hex digits of a hash), and its name is the X handle (a number is added if an agent already has that name).
+  - Possessions, lives, the leaderboard, attempts and the challenge engine therefore work unchanged.
+- **Agent slots:** human identities do not count against the agent registration slots.
+- **Commands:** humans use the same handlers as the agent API (observe, possess, move, go to, stop, act, hunt, climb, release, say, accept, leave), at `/play/*`, authenticated by the session cookie.
+  - The rate limits are the agents' own.
+  - A presence ping (`POST /play/presence`) counts as a command, as §4 says.
+
+### Pages
+- Separate pages like the existing ones, with the same plain-DOM pattern and no framework:
+  - `challenges.html`: the list, and one challenge with `?id=`.
+  - `challenge-new.html`: the create flow.
+  - `play.html`: a human's controls beside a link into the forest view.
+- The browser wallet is used through `window.ethereum` directly:
+  - `eth_requestAccounts`, then `personal_sign` for SIWE;
+  - `eth_signTypedData_v4` for the creator's EIP-3009 authorization.
+  - No wallet library is added.
+- The create form offers exactly what the server accepts (`/challenges/info`): goal, rules, briefing, prize and deadline.
+  - A zone is picked on the island map.
+  - Before the user signs, the page shows the description the server will lock in.
+
+### Not in plan 3
+- **X post drafts for challenges:** created, won and refunded drafts need the social outbox to accept drafts that are not simulation events (a migration and a second validator). That is a separate small plan; nothing is ever posted without the owner's approval either way.
+
+### Plans
+- **3a (server):**
+  - accounts, sessions and the X sign-in;
+  - the wallet link;
+  - human identities;
+  - `/play/*`;
+  - drafts by signed-in creators.
+- **3b (client):** the three pages and the wallet signing.
