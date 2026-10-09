@@ -5,7 +5,8 @@ const api = process.env.VANA_API_PORT ?? '8080';
 
 export default defineConfig({
   build: { rollupOptions: { input: { forest: 'index.html', characters: 'characters.html', rewardsAdmin: 'rewards-admin.html',
-    socialAdmin: 'social-admin.html', holder: 'holder.html', connect: 'connect.html' } } },
+    socialAdmin: 'social-admin.html', holder: 'holder.html', connect: 'connect.html',
+    challenges: 'challenges.html' } } },
   server: {
     port: Number(process.env.VANA_CLIENT_PORT ?? 5173),
     proxy: {

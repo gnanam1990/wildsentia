@@ -1,0 +1,13 @@
+.top-links { display: flex; gap: 16px; }
+.account-box .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+.holder-page a.button { display: inline-flex; align-items: center; min-height: 48px; padding: 10px 20px; border-radius: 10px; background: var(--moss); color: #07140a; font-weight: 700; text-decoration: none; }
+.holder-page a.button[hidden], .holder-page button[hidden] { display: none; }
+.holder-page button.quiet { background: transparent; color: var(--mist); border: 1px solid var(--line); }
+#page-notice:not(:empty), #detail-feedback:not(:empty) { padding: 12px 14px; border-left: 3px solid var(--mist); background: #182c23; }
+.challenge-list { display: grid; gap: 12px; margin-top: 16px; }
+.challenge-card { display: grid; gap: 4px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--dialog-surface); color: var(--ink); text-decoration: none; }
+.challenge-card:hover, .challenge-card:focus-visible { border-color: var(--moss); }
+.challenge-card .prize, .prize-line strong { color: var(--moss); font: 700 1rem var(--mono); }
+.challenge-card .meta { color: var(--ink-2); font-size: .9rem; }
+.links { display: flex; flex-wrap: wrap; gap: 16px; }
+.briefing blockquote { margin: 8px 0 0; padding: 10px 14px; border-left: 3px solid var(--line); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
