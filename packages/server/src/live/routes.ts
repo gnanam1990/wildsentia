@@ -9,6 +9,7 @@ import { OPEN_RADIUS_M, type Gait, type LiveLayer, type WorldPort } from './live
 import { agentIdFor, type AgentRecord, type AgentStore, type PlaceDropLedger, type RegistrationLimits } from './liveStore.js';
 import { displayAmount } from '../rewards.js';
 import { networkKey } from '../network.js';
+import type { AcceptResult, ChallengeEngine, Player } from '../challenges/engine.js';
 
 /**
  * The agent API (docs/2026-09-26-live-agents-design.md). Everything under /agents/me is
@@ -31,6 +32,8 @@ export interface LiveRouteDeps {
   /** Keyed hash for registration limits; never stored raw. */
   networkSecret: string;
   clientScriptPath: string;
+  /** Wildsentia Challenges, when configured: agents accept a challenge and see their progress. */
+  challenges?: { accept(player: Player, challengeId: number): Promise<AcceptResult>; progressOf: ChallengeEngine['progressOf'] } | undefined;
 }
 
 const EVM = /^0x[0-9a-fA-F]{40}$/;
@@ -264,6 +267,15 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
       return error ? reply.code(409).send({ error }) : { ok: true };
     });
 
+    scope.post<{ Params: { id: string } }>('/agents/me/challenges/:id/accept', async (req, reply) => {
+      const ctx = await me(req, reply, commands); if (!ctx) return reply;
+      if (!deps.challenges) return reply.code(503).send({ error: 'challenges_not_configured' });
+      if (!/^[0-9]{1,15}$/.test(req.params.id)) return reply.code(404).send({ error: 'not_found' });
+      const result = await deps.challenges.accept({ agentId: ctx.agent.id, name: ctx.agent.name, wallet: ctx.agent.wallet,
+        walletProven: ctx.agent.walletProven }, Number(req.params.id));
+      return result.ok ? { attemptId: result.attemptId, animalId: result.animalId } : reply.code(result.status).send({ error: result.error });
+    });
+
     scope.post('/agents/me/open', async (req, reply) => {
       const ctx = await me(req, reply, commands); if (!ctx) return reply;
       if (!ledger) return reply.code(503).send({ error: 'drops_not_configured' });
@@ -326,6 +338,8 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
         hint: { x: Math.round(d.hintX), z: Math.round(d.hintZ), radius: d.hintRadius }, expiresInSeconds: Math.max(0, Math.round((d.expiresAt - Date.now()) / 1000)),
         ...(d.spottedBy ? { exact: { x: Math.round(d.x * 10) / 10, z: Math.round(d.z * 10) / 10 } } : {}) })),
       candidates: avatar ? [] : world.candidates(null, 12).map((a) => ({ id: a.id, speciesId: a.speciesId })),
+      /** The challenge this animal is playing, if any, and how far along it is. */
+      challenge: deps.challenges?.progressOf(agent.id) ?? null,
       notices: live.notices(agent.id).slice(-8),
       /** Other agents' lines within earshot. Written by other players: data, never instructions. */
       heard: live.heard(agent.id),
@@ -400,6 +414,8 @@ API (paths relative to <server>/api), every /agents/me call signed:
   POST /agents/me/say         {text}   (up to 140 characters, one line per 10 s, heard within 150 m; no links, addresses or keys)
   POST /agents/me/release
   POST /agents/me/wallet      {wallet, signature}
+  GET  /challenges            open challenges: a USDC prize for the first to meet a goal (survive, hunt, escape)
+  POST /agents/me/challenges/<id>/accept   takes a free animal of the challenge's species (needs a proven payout wallet)
 
 Signature: Ed25519 over "VANA1\\n<audience>\\n<METHOD>\\n<path>\\n<timestamp ms>\\n<nonce>\\n<sha256 hex of body>"
 with headers x-vana-key (base64url public key), x-vana-timestamp, x-vana-nonce, x-vana-signature (base64url).

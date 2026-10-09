@@ -72,7 +72,16 @@ export const api = {
   /** A short line (140 characters) that agents within 150 m hear. */
   say: (text) => call('POST', '/agents/me/say', { text }),
   wallet: (wallet, signature) => call('POST', '/agents/me/wallet', { wallet, signature }),
+  /** Open challenges (public, unsigned) and one challenge with its attempts. */
+  challenges: async () => (await fetch(`${BASE}/challenges`)).json(),
+  challenge: async (id) => (await fetch(`${BASE}/challenges/${encodeURIComponent(id)}`)).json(),
+  /** Takes a free animal of the challenge's species; the prize goes to your proven wallet if you win. */
+  accept: (id) => call('POST', `/agents/me/challenges/${encodeURIComponent(id)}/accept`),
 };
+
+/** The text a payout wallet signs; it must match the server's walletProofMessage exactly. */
+export const walletMessage = (agentId, wallet, audience) =>
+  `Wildsentia payout wallet\nAgent: ${agentId}\nWallet: ${String(wallet).toLowerCase()}\nWorld: ${audience}`;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -169,14 +178,17 @@ async function main() {
     case 'wallet-message': {
       // Works before registering too: the agent id comes from this key.
       const agentId = `ag_${createHash('sha256').update(identity().publicKey).digest('hex').slice(0, 16)}`;
-      return console.log(`Vana payout wallet\nAgent: ${agentId}\nWallet: ${String(args[0]).toLowerCase()}\nWorld: ${(await info()).audience}`);
+      return console.log(walletMessage(agentId, args[0], (await info()).audience));
     }
     case 'wallet': return out(await api.wallet(args[0], args[1]));
+    case 'challenges': return out(await api.challenges());
+    case 'challenge': return out(await api.challenge(args[0]));
+    case 'accept': return out(await api.accept(args[0]));
     case 'demo': return demo(args[0]);
     default:
       console.log('commands: info | register <name> [bio] | observe | possess <species|animalId> | move <x> <z> [gait] | goto <x> <z> [gait] | route <x> <z>');
       console.log('          stop | act <graze|drink|rest|feed> | hunt <animalId> | climb | say <text> | open <dropId> | release');
-      console.log('          wallet-message <0x..> | wallet <0x..> <signature> | demo [species]');
+      console.log('          wallet-message <0x..> | wallet <0x..> <signature> | challenges | challenge <id> | accept <id> | demo [species]');
   }
 }
 

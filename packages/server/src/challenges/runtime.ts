@@ -1,0 +1,111 @@
+import { getAddress, isAddress, type Hex } from 'viem';
+import type { Pool } from '../db/pool.js';
+import type { LiveLayer, WorldPort } from '../live/liveLayer.js';
+import { viemChallengeChain, type ChallengeChain } from './chain.js';
+import { ChainOps } from './chainOps.js';
+import { ChallengeEngine } from './engine.js';
+import { ChallengeIndexer } from './indexer.js';
+import type { ChallengeRouteDeps } from './routes.js';
+import { ChallengeStore } from './store.js';
+import type { SpeciesCatalog } from './terms.js';
+
+/**
+ * Wildsentia Challenges beside the live layer. Off unless VANA_CHALLENGES=1, which needs live
+ * agents (VANA_LIVE_AGENTS=1) and every VANA_CHALLENGES_* setting below; a partial setup is an error.
+ */
+export interface ChallengesConfig {
+  rpcUrl: string; chainId: number; contract: Hex; usdc: Hex; evaluatorKey: Hex; fromBlock: number; adminToken: string;
+  usdcDomain: { name: string; version: string }; explorerUrl: string | null;
+}
+
+const loopback = (host: string) => host === 'localhost' || host === '127.0.0.1';
+
+export function challengesConfig(env: NodeJS.ProcessEnv): ChallengesConfig | undefined {
+  if (env.VANA_CHALLENGES !== '1') {
+    if (env.VANA_CHALLENGES && env.VANA_CHALLENGES !== '0') throw new Error('Invalid VANA_CHALLENGES');
+    return undefined;
+  }
+  if (env.VANA_LIVE_AGENTS !== '1') throw new Error('VANA_CHALLENGES needs VANA_LIVE_AGENTS=1');
+  const need = (name: string): string => {
+    const v = env[name]?.trim();
+    if (!v) throw new Error(`VANA_CHALLENGES needs ${name}`);
+    return v;
+  };
+  const rpc = new URL(need('VANA_CHALLENGES_RPC_URL'));
+  if (!['https:', 'http:'].includes(rpc.protocol) || (rpc.protocol === 'http:' && !loopback(rpc.hostname)) || rpc.username || rpc.password)
+    throw new Error('Invalid VANA_CHALLENGES_RPC_URL');
+  const chainId = Number(need('VANA_CHALLENGES_CHAIN_ID'));
+  if (!Number.isSafeInteger(chainId) || chainId < 1) throw new Error('Invalid VANA_CHALLENGES_CHAIN_ID');
+  const address = (name: string): Hex => {
+    const v = need(name);
+    if (!isAddress(v) || /^0x0{40}$/i.test(v)) throw new Error(`Invalid ${name}`);
+    return getAddress(v);
+  };
+  const key = need('VANA_CHALLENGES_EVALUATOR_KEY');
+  if (!/^0x[0-9a-fA-F]{64}$/.test(key)) throw new Error('Invalid VANA_CHALLENGES_EVALUATOR_KEY');
+  const fromBlock = Number(need('VANA_CHALLENGES_FROM_BLOCK'));
+  if (!Number.isSafeInteger(fromBlock) || fromBlock < 0) throw new Error('Invalid VANA_CHALLENGES_FROM_BLOCK');
+  const adminToken = need('VANA_CHALLENGES_ADMIN_TOKEN');
+  if (adminToken.length < 32 || adminToken.length > 256 || /\s/.test(adminToken)) throw new Error('Invalid VANA_CHALLENGES_ADMIN_TOKEN');
+  const explorer = env.VANA_CHALLENGES_EXPLORER_URL?.trim();
+  if (explorer && !/^https:\/\/[^\s/]+(\/[^\s]*)?$/.test(explorer)) throw new Error('Invalid VANA_CHALLENGES_EXPLORER_URL');
+  return {
+    rpcUrl: rpc.href, chainId, contract: address('VANA_CHALLENGES_CONTRACT'), usdc: address('VANA_CHALLENGES_USDC'),
+    evaluatorKey: key as Hex, fromBlock, adminToken,
+    usdcDomain: { name: need('VANA_CHALLENGES_USDC_DOMAIN_NAME'), version: need('VANA_CHALLENGES_USDC_DOMAIN_VERSION') },
+    explorerUrl: explorer ? explorer.replace(/\/$/, '') : null,
+  };
+}
+
+export interface ChallengesRuntime {
+  routes: ChallengeRouteDeps;
+  agent: { accept: ChallengeEngine['accept']; progressOf: ChallengeEngine['progressOf'] };
+  start(): Promise<void>;
+  stop(): void;
+}
+
+export function challengesRuntime(config: ChallengesConfig, deps: { pool: Pool; live: LiveLayer; world: WorldPort; speciesIds: () => string[] },
+  chain: ChallengeChain = viemChallengeChain(config)): ChallengesRuntime {
+  const store = new ChallengeStore(deps.pool);
+  const engine = new ChallengeEngine(store, deps.live, deps.world);
+  const ops = new ChainOps(store, chain);
+  const indexer = new ChallengeIndexer(store, chain, config.fromBlock);
+  const catalog: SpeciesCatalog = { ids: deps.speciesIds, preyOf: (id) => deps.world.species(id)?.preferredPrey ?? [],
+    displayName: (id) => deps.world.species(id)?.displayName ?? id };
+  // Limits come from the contract when it starts; until then nothing can be drafted.
+  const drafts = { chainId: config.chainId, contract: config.contract, usdc: config.usdc, usdcDomain: config.usdcDomain,
+    minPrizeAtomic: 1n, maxPrizeAtomic: 0n };
+  const timers: NodeJS.Timeout[] = [];
+  const every = (ms: number, what: string, fn: () => Promise<unknown>) => {
+    let running = false;
+    timers.push(setInterval(() => {
+      if (running) return;
+      running = true;
+      void fn().catch((e) => console.error(`[challenges] ${what} failed`, (e as Error).message)).finally(() => { running = false; });
+    }, ms));
+  };
+  return {
+    routes: { store, catalog, drafts, adminToken: config.adminToken, explorerUrl: config.explorerUrl },
+    agent: { accept: (player, id) => engine.accept(player, id), progressOf: (agentId) => engine.progressOf(agentId) },
+    async start() {
+      // Fail closed: the key must be the evaluator the contract appoints, or new prizes could never be paid.
+      const appointed = await chain.appointedEvaluator();
+      if (appointed.toLowerCase() !== chain.evaluator.toLowerCase())
+        throw new Error(`VANA_CHALLENGES_EVALUATOR_KEY is not the contract's evaluator (${appointed})`);
+      const limits = await chain.prizeLimits();
+      drafts.minPrizeAtomic = limits.min; drafts.maxPrizeAtomic = limits.max;
+      await engine.restore();
+      // Hooks join the live runtime's own (the leaderboard keeps its onEnded).
+      const ended = deps.live.onEnded;
+      deps.live.onEnded = (life) => { ended?.(life); engine.onEnded(life); };
+      deps.live.onHunt = (hunt) => engine.onHunt(hunt);
+      deps.live.onCommand = (record) => engine.onCommand(record);
+      every(1000, 'tick', () => engine.tick());
+      every(5000, 'indexer', () => indexer.pollOnce());
+      every(3000, 'chain operations', () => ops.processOnce());
+      every(30_000, 'sweep', () => engine.sweep());
+      console.log(`challenges: on (contract ${config.contract}, chain ${config.chainId}, evaluator ${chain.evaluator})`);
+    },
+    stop() { for (const t of timers) clearInterval(t); },
+  };
+}

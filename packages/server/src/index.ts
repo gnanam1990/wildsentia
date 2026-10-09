@@ -7,6 +7,7 @@ import { Narrator } from './narration/narrator.js';
 import { claudeRephraser } from './narration/claude.js';
 import { Insights } from './insights/insights.js';
 import { liveRuntime, type LiveRuntime } from './live/runtime.js';
+import { challengesConfig, challengesRuntime, type ChallengesRuntime } from './challenges/runtime.js';
 import { typesafeConfig, typesafeDailyCalls, typesafeSystemOne } from './insights/typesafe.js';
 import { Gateway } from './gateway.js';
 import { rewardConfig } from './rewards.js';
@@ -81,6 +82,7 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
   let broadcastTimer: NodeJS.Timeout | undefined;
   let watchdogTimer: NodeJS.Timeout | undefined;
   let live: LiveRuntime | null = null;
+  let challenges: ChallengesRuntime | null = null;
   let closing: Promise<void> | undefined;
   const onSignal = (): void => { void close().then(() => process.exit(0), () => process.exit(1)); };
   const cleanup = async (checkpoint: boolean): Promise<void> => {
@@ -89,6 +91,7 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
     for (const signal of ['SIGINT', 'SIGTERM'] as const) process.removeListener(signal, onSignal);
     gateway?.close();
     metricsServer?.close();
+    challenges?.stop();
     await live?.stop();
     try {
       if (checkpoint) await host.stop(); else await host.abort();
@@ -121,10 +124,15 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
 
     // Outside agents steering animals: off unless VANA_LIVE_AGENTS=1.
     live = liveRuntime(host, pool, rewards, process.env);
+    // Wildsentia Challenges: off unless VANA_CHALLENGES=1 (which needs live agents).
+    const challengeSettings = challengesConfig(process.env);
+    if (challengeSettings && live) challenges = challengesRuntime(challengeSettings, { pool, live: live.routes.live, world: live.routes.world,
+      speciesIds: () => [...host.world.species.keys()] });
 
     const httpStats = newHttpStats();
     api = buildApi({ host, pool, narrator, insights, rewards, social, holder, trustedProxyHops: trustedProxyHops(process.env), limits, httpStats,
-      ...(live ? { live: { ...live.routes, spot: live.spot } } : {}) });
+      ...(live ? { live: { ...live.routes, spot: live.spot, ...(challenges ? { challenges: challenges.agent } : {}) } } : {}),
+      ...(challenges ? { challenges: challenges.routes } : {}) });
     await api.ready();
 
     server = createServer((req, res) => { api!.server.emit('request', req, res); });
@@ -141,6 +149,7 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
     host.start();
     broadcastTimer = setInterval(() => gateway!.broadcast(), 1000);
     await live?.start({ live: (state, at) => gateway!.broadcastLive(state as never, at), roster: (state) => gateway!.broadcastRoster(state as never) });
+    await challenges?.start();
     // Docker restart policies react to process exit, not an unhealthy healthcheck. A lost
     // writer or three consecutive failed scheduled ticks must exit so one writer can recover
     // from the last durable checkpoint. A single transient failure gets the next tick to retry.
