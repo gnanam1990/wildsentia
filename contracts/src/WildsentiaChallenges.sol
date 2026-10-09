@@ -6,6 +6,19 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {Ownable, Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
+/// @notice EIP-3009 `receiveWithAuthorization` with the signature as bytes (Circle FiatToken v2.2).
+interface IReceiveWithAuthorization {
+    function receiveWithAuthorization(
+        address from,
+        address to,
+        uint256 value,
+        uint256 validAfter,
+        uint256 validBefore,
+        bytes32 nonce,
+        bytes calldata signature
+    ) external;
+}
+
 /// @title Wildsentia Challenges
 /// @notice A creator locks a USDC prize behind a goal. The evaluator pays it to the first player
 /// to meet the goal; if nobody does by the deadline, anyone can return it to the creator.
@@ -85,6 +98,37 @@ contract WildsentiaChallenges is Ownable2Step, ReentrancyGuard {
         id = _open(msg.sender, rulesHash, prize, deadline);
         uint256 before = usdc.balanceOf(address(this));
         usdc.safeTransferFrom(msg.sender, address(this), prize);
+        if (usdc.balanceOf(address(this)) - before != prize) revert AmountMismatch();
+    }
+
+    /// @notice The EIP-3009 nonce a creator signs for `createWithAuthorization`. It commits to every
+    /// parameter, so a relayed authorization cannot be used to open a challenge with other terms.
+    function authorizationNonce(address creator, bytes32 rulesHash, uint96 prize, uint64 deadline, bytes32 salt)
+        public
+        view
+        returns (bytes32)
+    {
+        return keccak256(abi.encode(block.chainid, address(this), creator, rulesHash, prize, deadline, salt));
+    }
+
+    /// @notice Creates a challenge funded by the creator's signed EIP-3009 authorization. Anyone may
+    /// relay it; only the terms the creator signed can be opened.
+    function createWithAuthorization(
+        address creator,
+        bytes32 rulesHash,
+        uint96 prize,
+        uint64 deadline,
+        bytes32 salt,
+        uint256 validAfter,
+        uint256 validBefore,
+        bytes calldata signature
+    ) external nonReentrant returns (uint256 id) {
+        if (creator == address(0)) revert ZeroAddress();
+        bytes32 nonce = authorizationNonce(creator, rulesHash, prize, deadline, salt);
+        id = _open(creator, rulesHash, prize, deadline);
+        uint256 before = usdc.balanceOf(address(this));
+        IReceiveWithAuthorization(address(usdc))
+            .receiveWithAuthorization(creator, address(this), prize, validAfter, validBefore, nonce, signature);
         if (usdc.balanceOf(address(this)) - before != prize) revert AmountMismatch();
     }
 
