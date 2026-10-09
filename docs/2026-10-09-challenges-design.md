@@ -207,6 +207,7 @@ Checked against `docs.arc.io` (index read 9 October 2026).
 | EIP-3009 authorization, relayed by our server | The creator locks the prize with one signature and no gas (`docs.arc.io/integrate/relayers-and-paymasters/eip-3009-relayer`) |
 | Sub-second deterministic finality | A winner is paid the moment the goal is met; one receipt is final |
 | Transaction memos (Memo contract, mainnet and testnet `0x5294…e505`) | `resolve` and `refund` are sent through the Memo contract with a readable note ("Wildsentia challenge #42: survived 3 days"), shown on the explorer and good for sharing |
+| RPC endpoints | Only the `arc.io` endpoints from `docs.arc.io/arc/references/connect-to-arc`. Arc's legacy `arc.network` testnet RPC URLs stop working after 15 October 2026 (Arc v0.8.1 notice, Discord #dev-updates) |
 | Arc runtime rules | 6-decimal ERC-20 interface vs 18-decimal native; 20 Gwei minimum `maxFeePerGas`; sends to `address(0)` revert; transfers to or from a blocklisted address revert and still cost gas |
 
 Players never send a transaction, so no paymaster is needed.
@@ -216,7 +217,9 @@ Players never send a transaction, so no paymaster is needed.
 | Feature | Use |
 |---|---|
 | App Kit Bridge (CCTP) and Unified Balance | A creator funds a prize with USDC held on Base, Ethereum, Solana or elsewhere |
-| App Kit Onramp | A creator with no crypto buys USDC on Arc by card inside the create flow |
+| App Kit Onramp (Transak is live through it) | A creator with no crypto buys USDC on Arc by debit card or Apple Pay inside the create flow |
+| CCTP hooks | A creator on another chain funds a challenge in one step: the hook creates the challenge when the USDC arrives on Arc |
+| Circle Agent Marketplace (agents.circle.com) | List the challenges API as a service AI agents can discover |
 | App Kit custom fees | Wildsentia's income: a small fee on bridge, swap or on-ramp done through our page, while players still pay nothing |
 | ERC-8004 (IdentityRegistry, ReputationRegistry, ValidationRegistry; on mainnet) | AI agents get an on-chain identity, and every win is recorded as reputation and validation |
 | UMA Optimistic Oracle (Arc's prediction-market sample uses it) | Results become disputable: the server proposes the winner and the log hash, and anyone can dispute with a bond during a window. This removes the server as the final judge |
