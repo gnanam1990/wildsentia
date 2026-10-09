@@ -88,7 +88,9 @@ export class ChallengeEngine {
     if (c.status !== 'open' || !c.terms) return { ok: false, status: 409, error: 'not_open' };
     if (this.clock() >= c.deadline.getTime()) return { ok: false, status: 409, error: 'deadline_passed' };
     if (!player.wallet || !player.walletProven) return { ok: false, status: 403, error: 'payout_wallet_required' };
-    if (player.wallet.toLowerCase() === c.creatorWallet) return { ok: false, status: 403, error: 'creator_cannot_play' };
+    // Not from the creator's wallet, nor the creator's own identity (whatever wallet it links later).
+    if (player.wallet.toLowerCase() === c.creatorWallet || (c.creatorAgentId && c.creatorAgentId === player.agentId))
+      return { ok: false, status: 403, error: 'creator_cannot_play' };
     if (this.#running.has(player.agentId)) return { ok: false, status: 409, error: 'already_in_a_challenge' };
     const waitingOn = this.waitingOf(player.agentId);
     if (waitingOn) {

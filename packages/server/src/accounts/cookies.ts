@@ -4,10 +4,17 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 export function cookie(req: FastifyRequest, name: string): string | null {
   for (const part of (req.headers.cookie ?? '').split(';')) {
     const at = part.indexOf('=');
-    if (at > 0 && part.slice(0, at).trim() === name) return decodeURIComponent(part.slice(at + 1).trim());
+    if (at <= 0 || part.slice(0, at).trim() !== name) continue;
+    try { return decodeURIComponent(part.slice(at + 1).trim()); } catch { return null; }
   }
   return null;
 }
+
+/**
+ * On https the __Host- prefix: the browser then only takes the cookie from this exact host, over
+ * https, for path / — no other subdomain can plant one. A local http site cannot use it.
+ */
+export const cookieName = (base: string, secure: boolean) => (secure ? `__Host-${base}` : base);
 
 export function cookieHeader(name: string, value: string, o: { maxAgeSeconds: number; secure: boolean }): string {
   return `${name}=${encodeURIComponent(value)}; Path=/; Max-Age=${Math.max(0, Math.floor(o.maxAgeSeconds))}; HttpOnly; SameSite=Lax${o.secure ? '; Secure' : ''}`;

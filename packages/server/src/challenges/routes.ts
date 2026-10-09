@@ -114,8 +114,8 @@ export function installChallenges(app: FastifyInstance, deps: ChallengeRouteDeps
       creatorWallet = who.wallet; accountId = who.accountId;
     }
     const made = await createDraft(store, catalog, deps.drafts, { creatorWallet, terms: body.terms,
-      prizeUsdc: body.prizeUsdc, days: body.days, ...(accountId ? { accountId } : {}) }, clock());
-    if (!made.ok) return reply.code(400).send({ error: made.error });
+      prizeUsdc: body.prizeUsdc, days: body.days, ...(accountId ? { accountId, dailyLimit: CREATES_PER_DAY } : {}) }, clock());
+    if (!made.ok) return reply.code(made.error === 'daily_limit' ? 429 : 400).send({ error: made.error });
     return { draftId: made.draft.id, description: made.description, rulesHash: made.draft.rulesHash,
       deadline: made.draft.deadline.toISOString(), typedData: plain(draftTypedData(deps.drafts, made.draft)) };
   });

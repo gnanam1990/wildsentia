@@ -22,6 +22,8 @@ export interface Challenge {
   id: number; contract: string; draftId: string | null; creatorWallet: string; evaluator: string; terms: ChallengeTerms | null; rulesHash: Hex;
   prizeAtomic: string; deadline: Date; authNonce: Hex; status: ChallengeStatus; winnerAttempt: string | null;
   createdTx: Hex; createdBlock: number; settledTx: Hex | null;
+  /** The live identity of the account that drafted it, if a signed-in person did (read by challenge(id) only). */
+  creatorAgentId?: string | null;
 }
 export interface Attempt {
   id: string; challengeId: number; agentId: string; animalId: string; payoutWallet: string; startedAt: Date; startedWorld: number;
@@ -49,7 +51,8 @@ const draft = (r: any): Draft => ({ id: r.id, creatorWallet: r.creator_wallet, t
   accountId: r.account_id ?? null });
 const challenge = (r: any): Challenge => ({ id: Number(r.id), contract: r.contract, draftId: r.draft_id, creatorWallet: r.creator_wallet, evaluator: r.evaluator,
   terms: termsOf(r.terms), rulesHash: r.rules_hash, prizeAtomic: String(r.prize_atomic), deadline: r.deadline, authNonce: r.auth_nonce,
-  status: r.status, winnerAttempt: r.winner_attempt, createdTx: r.created_tx, createdBlock: Number(r.created_block), settledTx: r.settled_tx });
+  status: r.status, winnerAttempt: r.winner_attempt, createdTx: r.created_tx, createdBlock: Number(r.created_block), settledTx: r.settled_tx,
+  ...(r.creator_agent_id !== undefined ? { creatorAgentId: r.creator_agent_id } : {}) });
 const attempt = (r: any): Attempt => ({ id: r.id, challengeId: Number(r.challenge_id), agentId: r.agent_id, animalId: r.animal_id,
   payoutWallet: r.payout_wallet, startedAt: r.started_at, startedWorld: Number(r.started_world), startState: r.start_state,
   kills: r.kills, escapes: r.escapes, status: r.status, endedAt: r.ended_at, endedWorld: r.ended_world === null ? null : Number(r.ended_world),
@@ -64,7 +67,28 @@ export class ChallengeStore {
 
   // ---- drafts ----------------------------------------------------------------------------
 
-  async insertDraft(d: Omit<Draft, 'id' | 'createdAt' | 'relayedAt'>): Promise<Draft> {
+  /**
+   * Saves a draft. A signed-in creator's draft is counted against `dailyLimit` under a lock on their
+   * account, so drafts sent all at once cannot pass the limit together; null when it is reached.
+   */
+  async insertDraft(d: Omit<Draft, 'id' | 'createdAt' | 'relayedAt'>, dailyLimit?: number): Promise<Draft | null> {
+    if (d.accountId && dailyLimit !== undefined) {
+      const db = await this.pool.connect();
+      try {
+        await db.query('begin');
+        await db.query('select pg_advisory_xact_lock(hashtext($1))', [`challenge-drafts:${d.accountId}`]);
+        const { rows: [count] } = await db.query(`select count(*)::int as n from challenge_drafts
+          where account_id = $1 and created_at > now() - interval '24 hours'`, [d.accountId]);
+        if (count.n >= dailyLimit) { await db.query('rollback'); return null; }
+        const { rows } = await db.query(`insert into challenge_drafts
+          (id, creator_wallet, terms, rules_hash, prize_atomic, deadline, salt, auth_nonce, account_id) values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning *`,
+        [randomUUID(), d.creatorWallet.toLowerCase(), JSON.stringify(d.terms), d.rulesHash.toLowerCase(), d.prizeAtomic, d.deadline,
+          d.salt.toLowerCase(), d.authNonce.toLowerCase(), d.accountId]);
+        await db.query('commit');
+        return draft(rows[0]);
+      } catch (error) { await db.query('rollback'); throw error; }
+      finally { db.release(); }
+    }
     const { rows } = await this.pool.query(`insert into challenge_drafts
       (id, creator_wallet, terms, rules_hash, prize_atomic, deadline, salt, auth_nonce, account_id) values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning *`,
     [randomUUID(), d.creatorWallet.toLowerCase(), JSON.stringify(d.terms), d.rulesHash.toLowerCase(), d.prizeAtomic, d.deadline,
@@ -148,7 +172,8 @@ export class ChallengeStore {
 
   async challenge(id: number): Promise<Challenge | null> {
     if (!Number.isSafeInteger(id) || id < 1) return null;
-    const { rows } = await this.pool.query('select * from challenges where id = $1', [id]);
+    const { rows } = await this.pool.query(`select c.*, a.agent_id as creator_agent_id from challenges c
+      left join challenge_drafts d on d.id = c.draft_id left join accounts a on a.id = d.account_id where c.id = $1`, [id]);
     return rows[0] ? challenge(rows[0]) : null;
   }
 

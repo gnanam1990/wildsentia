@@ -110,4 +110,9 @@ maybe('play: a signed-in person steering an animal', () => {
     const res = await app.inject({ url: '/agents/me/observe', headers: { 'x-vana-key': key, 'x-vana-timestamp': timestamp, 'x-vana-nonce': nonce, 'x-vana-signature': signature } });
     expect(res.json()).toEqual({ error: 'not_registered' });
   });
+
+  it('limits requests by network before looking up a session', async () => {
+    const codes = await Promise.all(Array.from({ length: 80 }, (_, i) => send('GET', '/play/observe', undefined, { cookie: `ws_session=guess${i}` })));
+    expect(codes.some((r) => r.statusCode === 429)).toBe(true);
+  });
 });

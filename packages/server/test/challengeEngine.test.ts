@@ -542,4 +542,16 @@ maybe('challenge engine', () => {
       expect(JSON.parse(done.resultRecord!).log).toHaveLength((await store.log(a.attemptId)).length);
     });
   });
+
+  it('never lets a creator play their own challenge, even from a wallet linked since', async () => {
+    // A person's identity created the draft through their account; they then link another wallet.
+    await pool!.query(`insert into accounts (id, x_user_id, x_handle, x_name, x_created_at, agent_id)
+      values ('11111111-1111-1111-1111-111111111111', '5', 'a', 'A', now() - interval '400 days', 'ag_000000000000000a')`);
+    const terms = { template: 'survive', version: 1, speciesId: 'chital', days: 1, rules: [], briefing: '' } as const;
+    const id = await challenge(terms);
+    await pool!.query("update challenge_drafts set account_id = '11111111-1111-1111-1111-111111111111'");
+    expect(await engine.accept(player('ag_000000000000000a', { wallet: '0x' + 'f'.repeat(40) }), id))
+      .toMatchObject({ ok: false, error: 'creator_cannot_play' });
+    expect((await engine.accept(player('ag_000000000000000b'), id)).ok).toBe(true);
+  });
 });

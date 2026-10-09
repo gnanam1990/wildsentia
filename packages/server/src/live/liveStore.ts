@@ -81,6 +81,7 @@ export class AgentStore {
   async ensureHuman(p: { xUserId: string; handle: string; networkHash: string }): Promise<AgentRecord> {
     const id = humanAgentId(p.xUserId);
     const existing = await this.byId(id);
+    if (existing && existing.kind !== 'human') throw new Error('identity clash');
     if (existing) return existing;
     const handle = p.handle.replace(/[^A-Za-z0-9_]/g, '').slice(0, 15) || 'player';
     const base = NAME_RE.test(handle) && !RESERVED.test(handle) ? handle : `X ${handle}`;

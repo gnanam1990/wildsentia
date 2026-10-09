@@ -4,7 +4,7 @@ import type { AgentStore } from '../live/liveStore.js';
 import type { HumanSessions } from '../live/routes.js';
 import type { AccountsConfig } from './config.js';
 import { cookie } from './cookies.js';
-import { SESSION_COOKIE, type AccountRouteDeps } from './routes.js';
+import { sessionCookie, type AccountRouteDeps } from './routes.js';
 import { AccountStore } from './store.js';
 import { xAuth } from './xAuth.js';
 
@@ -16,7 +16,7 @@ import { xAuth } from './xAuth.js';
 export function accountsRuntime(config: AccountsConfig, deps: { pool: Pool; agents: AgentStore; chainId?: number | undefined; clock?: () => number }):
   { routes: AccountRouteDeps; humans: HumanSessions; creators: Creators } {
   const store = new AccountStore(deps.pool, deps.agents, deps.clock);
-  const signedIn = (req: Parameters<HumanSessions['account']>[0]) => store.fromSession(cookie(req, SESSION_COOKIE));
+  const signedIn = (req: Parameters<HumanSessions['account']>[0]) => store.fromSession(cookie(req, sessionCookie(config)));
   return {
     routes: { config, store, x: xAuth(config), ...(deps.clock ? { clock: deps.clock } : {}),
       ...(deps.chainId ? { wallet: { chainId: deps.chainId } } : {}) },

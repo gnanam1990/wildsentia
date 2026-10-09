@@ -17,6 +17,7 @@ import { rulesHash, type SpeciesCatalog } from '../src/challenges/terms.js';
 import type { DraftConfig } from '../src/challenges/drafts.js';
 import { LiveLayer } from '../src/live/liveLayer.js';
 import { worldPort } from '../src/live/worldPort.js';
+import { AccountStore } from '../src/accounts/store.js';
 import { AgentStore } from '../src/live/liveStore.js';
 import { installLiveAgents, walletProofMessage } from '../src/live/routes.js';
 import { signingString } from '../src/live/signing.js';
@@ -195,6 +196,18 @@ maybe('creator drafts', () => {
     expect((await draft()).json()).toEqual({ error: 'x_account_too_new' });
     who = null;
     expect((await draft()).statusCode).toBe(401);
+  });
+
+  it('holds the daily limit even against drafts sent all at once', async () => {
+    const real = new AccountStore(pool!, new AgentStore(pool!));
+    await app.close();
+    app = Fastify();
+    installChallenges(app, { store, catalog, drafts, adminToken: ADMIN, explorerUrl: null,
+      creators: { origin: ORIGIN, account: async () => who, draftsToday: (accountId) => real.draftsToday(accountId) } });
+    await app.ready();
+    const results = await Promise.all(Array.from({ length: 8 }, () => draft()));
+    expect(results.filter((r) => r.statusCode === 200)).toHaveLength(3);
+    expect(results.filter((r) => r.statusCode === 429).map((r) => r.json().error)).toEqual(Array(5).fill('daily_limit'));
   });
 
   it('refuses cross-site drafts, and still lets the operator draft with the token', async () => {

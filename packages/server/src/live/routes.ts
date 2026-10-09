@@ -141,12 +141,15 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
       void store.touch(agent.id).catch(() => undefined);
       return { agent, json: auth.json };
     };
+    const playNetworks = new Bucket(20, 60);
     /** A signed-in person, by their session cookie: same-origin JSON only, with an agent's rate limits. */
     const person = (humans: HumanSessions): Resolve => async (req, reply, bucket) => {
       if (!sameOriginJson(req, reply, humans.origin)) return null;
+      // Each network gets a fair share before any session is looked up.
+      if (!playNetworks.take(networkKey(req.ip))) { reply.code(429).send({ error: 'rate_limited' }); return null; }
       const who = await humans.account(req);
       const agent = who ? await store.byId(who.agentId) : null;
-      if (!who || !agent) { reply.code(401).send({ error: 'signed_out' }); return null; }
+      if (!who || !agent || agent.kind !== 'human') { reply.code(401).send({ error: 'signed_out' }); return null; }
       if (!bucket.take(agent.id)) { reply.code(429).send({ error: 'rate_limited' }); return null; }
       void store.touch(agent.id).catch(() => undefined);
       const body = (req.body as { json?: unknown } | undefined)?.json;

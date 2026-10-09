@@ -27,6 +27,8 @@ export class AccountStore {
       on conflict (x_user_id) do update set x_handle = excluded.x_handle, x_name = excluded.x_name,
         x_created_at = excluded.x_created_at, signed_in_at = now()
       returning *`, [randomUUID(), user.id, user.username, user.name, user.createdAt, agent.id]);
+    // Expired sessions are cleared as people sign in.
+    await this.pool.query('delete from account_sessions where expires_at <= $1', [new Date(this.clock())]);
     const token = randomBytes(32).toString('base64url');
     await this.pool.query('insert into account_sessions (token_hash, account_id, expires_at) values ($1, $2, $3)',
       [hash(token), rows[0].id, new Date(this.clock() + SESSION_DAYS * 86_400_000)]);
