@@ -282,7 +282,7 @@ Automatic video clips, mainnet, teams, "raise a young", sandboxed replays, and t
 
 | Item | How |
 |---|---|
-| Arc USDC supports `receiveWithAuthorization` (docs confirm only `transferWithAuthorization`) | Read the token on testnet; if it is missing, fall back to approve + `createFor` |
+| Arc USDC supports `receiveWithAuthorization` (docs confirm only `transferWithAuthorization`) | **Checked 10 October 2026** (`tools/arc/check-testnet.ts`, read-only): on Arc Testnet (chain 5042002) USDC at `0x3600…0000` has 6 decimals and EIP-712 domain name `USDC`, version `2` (its `DOMAIN_SEPARATOR` matches). Its implementation (`0xC6AD…3cA6`) has `receiveWithAuthorization` with a bytes signature and with v, r, s. Server settings: `VANA_CHALLENGES_USDC_DOMAIN_NAME=USDC`, `VANA_CHALLENGES_USDC_DOMAIN_VERSION=2`. |
 | X OAuth 2.0 sign-in works on the X API access tier the owner has, and returns account creation date | Create the X app; test sign-in locally |
 | Arc Foundry installs and deploys to testnet | Follow `docs.arc.io` install guide |
 | The Memo contract's call interface (how it forwards a call and its note) | Read `docs.arc.io/arc/concepts/transaction-memos` and call it once on testnet |
