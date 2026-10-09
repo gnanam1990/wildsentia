@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateKeyPairSync, randomBytes, sign, type KeyObject } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -53,6 +54,12 @@ describe('agent client', () => {
     expect(walletMessage('ag_0000000000000001', '0xABCDEF0000000000000000000000000000000001', 'vana:w1'))
       .toBe(walletProofMessage('ag_0000000000000001', '0xABCDEF0000000000000000000000000000000001', 'vana:w1'));
   });
+  it('calls the waiting-list and field-guide routes the server serves', async () => {
+    const source = readFileSync(fileURLToPath(new URL('../agent-client/client.mjs', import.meta.url)), 'utf8');
+    expect(source).toContain("call('POST', '/agents/me/challenges/leave')");
+    expect(source).toContain('`${BASE}/agents/species');
+    expect(source).toMatch(/case 'leave':.*case 'species':/s);
+  });
 });
 
 const url = testDatabaseUrl();
@@ -61,7 +68,7 @@ const pool = url ? createPool(url) : null;
 afterAll(async () => { await pool?.end(); });
 
 const catalog: SpeciesCatalog = { ids: () => ['tiger', 'chital'], preyOf: (id) => (id === 'tiger' ? ['chital'] : []),
-  displayName: (id) => (id === 'tiger' ? 'Tiger' : 'Chital') };
+  displayName: (id) => (id === 'tiger' ? 'Tiger' : 'Chital'), social: (id) => id === 'chital', onLand: () => true };
 const drafts: DraftConfig = { chainId: 5042002, contract: ('0x' + '1'.repeat(40)) as `0x${string}`,
   usdc: '0x3600000000000000000000000000000000000000', usdcDomain: { name: 'USDC', version: '2' }, minPrizeAtomic: 1_000_000n, maxPrizeAtomic: 100_000_000n };
 const ADMIN = 'challenge-admin-token-'.repeat(2);

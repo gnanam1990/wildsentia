@@ -75,8 +75,12 @@ export const api = {
   /** Open challenges (public, unsigned) and one challenge with its attempts. */
   challenges: async () => (await fetch(`${BASE}/challenges`)).json(),
   challenge: async (id) => (await fetch(`${BASE}/challenges/${encodeURIComponent(id)}`)).json(),
-  /** Takes a free animal of the challenge's species; the prize goes to your proven wallet if you win. */
+  /** Takes a free animal of the challenge's species (or waits on its list); the prize goes to your proven wallet if you win. */
   accept: (id) => call('POST', `/agents/me/challenges/${encodeURIComponent(id)}/accept`),
+  /** Leaves a challenge's waiting list. */
+  leave: () => call('POST', '/agents/me/challenges/leave'),
+  /** The island's species, or one species' field guide (public, unsigned). */
+  species: async (id) => (await fetch(`${BASE}/agents/species${id ? `/${encodeURIComponent(id)}` : ''}`)).json(),
 };
 
 /** The text a payout wallet signs; it must match the server's walletProofMessage exactly. */
@@ -184,11 +188,14 @@ async function main() {
     case 'challenges': return out(await api.challenges());
     case 'challenge': return out(await api.challenge(args[0]));
     case 'accept': return out(await api.accept(args[0]));
+    case 'leave': return out(await api.leave());
+    case 'species': return out(await api.species(args[0]));
     case 'demo': return demo(args[0]);
     default:
       console.log('commands: info | register <name> [bio] | observe | possess <species|animalId> | move <x> <z> [gait] | goto <x> <z> [gait] | route <x> <z>');
       console.log('          stop | act <graze|drink|rest|feed> | hunt <animalId> | climb | say <text> | open <dropId> | release');
-      console.log('          wallet-message <0x..> | wallet <0x..> <signature> | challenges | challenge <id> | accept <id> | demo [species]');
+      console.log('          wallet-message <0x..> | wallet <0x..> <signature> | challenges | challenge <id> | accept <id> | leave');
+      console.log('          species [id] | demo [species]');
   }
 }
 

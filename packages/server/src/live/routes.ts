@@ -431,6 +431,7 @@ Claude player (needs @anthropic-ai/sdk and your own Anthropic API key), sha256 $
   npm install @anthropic-ai/sdk
   ANTHROPIC_API_KEY=... node llm.mjs chital --dry-run --decisions 3   # watch it think; sends no commands
   ANTHROPIC_API_KEY=... node llm.mjs chital     # plays until VANA_LLM_TOKEN_BUDGET (default 400000) is used
+  ANTHROPIC_API_KEY=... node llm.mjs --challenge 7   # accepts challenge 7 and plays it to the end of the attempt
   Every decision is a paid request on your key. It has only the game commands: no files, shell or wallet.
 ` : ''}
 API (paths relative to <server>/api), every /agents/me call signed:
