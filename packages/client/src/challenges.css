@@ -11,3 +11,14 @@
 .challenge-card .meta { color: var(--ink-2); font-size: .9rem; }
 .links { display: flex; flex-wrap: wrap; gap: 16px; }
 .briefing blockquote { margin: 8px 0 0; padding: 10px 14px; border-left: 3px solid var(--line); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+.new-form fieldset { border: 1px solid var(--line); border-radius: 12px; margin: 0 0 16px; padding: 12px 16px 16px; display: grid; gap: 10px; }
+.new-form legend { color: var(--moss); font: 700 .8rem var(--mono); text-transform: uppercase; letter-spacing: .12em; padding: 0 6px; }
+.new-form label { display: grid; gap: 4px; color: var(--ink-2); }
+.new-form label.check { display: flex; align-items: center; gap: 10px; color: var(--ink); }
+.new-form label[hidden], .new-form div[hidden] { display: none; }
+.new-form .pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
+.new-form input, .new-form select, .new-form textarea { min-height: 44px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: #0f1d17; color: var(--ink); font: inherit; }
+.new-form input[type="checkbox"] { min-height: 0; width: 22px; height: 22px; }
+#new-map { width: 100%; max-width: 600px; aspect-ratio: 1; border-radius: 10px; cursor: crosshair; touch-action: manipulation; }
+#new-status:not(:empty) { padding: 12px 14px; border-left: 3px solid var(--mist); background: #182c23; }
+.description { font-size: 1.15rem; color: var(--ink); }

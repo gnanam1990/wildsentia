@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="referrer" content="no-referrer" />
+  <title>Wildsentia — Create a challenge</title>
+  <link rel="stylesheet" href="/src/style.css" />
+  <link rel="stylesheet" href="/src/holder.css" />
+  <link rel="stylesheet" href="/src/challenges.css" />
+</head>
+<body class="holder-page challenges-page">
+  <a class="skip" href="#main">Skip to the form</a>
+  <header class="holder-header"><div class="brand">Wildsentia<small>the living wild</small></div><nav class="top-links"><a href="/challenges.html">Challenges</a><a href="/">Forest</a></nav></header>
+  <main id="main">
+    <section id="account-box" class="holder-card account-box" aria-label="Your account">
+      <p id="account-status" role="status" aria-atomic="true">Checking whether you are signed in…</p>
+      <div class="actions">
+        <a id="account-signin" class="button" href="/api/accounts/x/start" hidden>Sign in with X</a>
+        <button id="account-wallet" type="button" hidden>Link a wallet</button>
+        <button id="account-signout" type="button" class="quiet" hidden>Sign out</button>
+      </div>
+    </section>
+    <p class="eyebrow">Lock a USDC prize on Arc</p>
+    <h1>Create a challenge</h1>
+    <p class="intro">Pick a species and a goal, add up to three rules, and set a prize and deadline. The first player to meet the goal while keeping every rule is paid by the contract. If nobody does, the prize comes back to you.</p>
+    <p id="new-cannot" class="holder-card">Sign in with X, from an account at least 30 days old, and link a wallet to create a challenge.</p>
+
+    <form id="new-form" class="holder-card new-form" novalidate hidden>
+      <fieldset><legend>Goal</legend>
+        <label>Species <select id="new-species"></select></label>
+        <label>Goal <select id="new-template">
+          <option value="survive">Keep the animal alive</option><option value="hunt">Make kills (predators)</option>
+          <option value="escape">Escape predator attacks (prey)</option><option value="reach">Reach a place alive</option></select></label>
+        <label id="field-days">For <select id="new-days"></select></label>
+        <label id="field-count" hidden>How many <select id="new-count"></select></label>
+        <div id="field-reach" class="pair" hidden><label>Place to reach, x (m) <input id="new-x" type="number" inputmode="numeric" value="3000" /></label>
+          <label>z (m) <input id="new-z" type="number" inputmode="numeric" value="3000" /></label></div>
+      </fieldset>
+      <fieldset><legend>Rules (optional)</legend>
+        <label class="check"><input id="new-zone-on" type="checkbox" /> Stay inside a zone</label>
+        <div id="field-zone" class="pair" hidden><label>Centre x (m) <input id="new-zone-x" type="number" value="3000" /></label>
+          <label>z (m) <input id="new-zone-z" type="number" value="3000" /></label>
+          <label>Radius (m) <input id="new-zone-radius" type="number" value="1500" /></label></div>
+        <label class="check"><input id="new-norun" type="checkbox" /> Never run</label>
+        <label class="check"><input id="new-herd-on" type="checkbox" /> Stay with its own kind</label>
+        <label id="field-herd" hidden>Within (m) <input id="new-herd-distance" type="number" value="60" /></label>
+      </fieldset>
+      <fieldset><legend>The island</legend>
+        <label>A tap on the map sets <select id="new-map-sets"><option value="target">the place to reach</option><option value="zone">the zone centre</option></select></label>
+        <canvas id="new-map" width="600" height="600" aria-label="Island map: tap to pick a place"></canvas>
+      </fieldset>
+      <fieldset><legend>Briefing (optional)</legend>
+        <label>A note for players, shown as yours and never as part of the rules
+          <textarea id="new-briefing" maxlength="280" rows="3"></textarea></label>
+      </fieldset>
+      <fieldset><legend>Prize and deadline</legend>
+        <label>Prize (USDC) <input id="new-prize" type="text" inputmode="decimal" value="5" /></label>
+        <label>Deadline in <select id="new-deadline"></select></label>
+      </fieldset>
+      <button type="submit">Review</button>
+    </form>
+
+    <section id="new-review" class="holder-card" hidden aria-labelledby="review-title">
+      <h2 id="review-title">Review</h2>
+      <p id="new-description" class="description"></p>
+      <p id="new-terms" class="small"></p>
+      <button id="new-sign" type="button">Sign with my wallet and create</button>
+    </section>
+    <p id="new-status" role="status" aria-atomic="true"></p>
+  </main>
+  <script type="module" src="/src/challengeNew.ts"></script>
+</body>
+</html>
