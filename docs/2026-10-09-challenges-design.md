@@ -101,20 +101,26 @@ attempt, the first to finish is paid", which ERC-8183 cannot express because it 
 before funding. ERC-8183 also has no mainnet address in Arc's docs today.
 
 ```solidity
-struct Challenge { address creator; uint96 prize; uint64 deadline; bytes32 rulesHash; Status status; address winner; }
+struct Challenge { address creator; uint96 prize; address winner; uint64 deadline; Status status; bytes32 rulesHash; bytes32 resultHash; }
 enum Status { None, Open, Resolved, Refunded }
 
-function createWithAuthorization(bytes32 rulesHash, uint96 prize, uint64 deadline,
-    address from, uint256 validAfter, uint256 validBefore, bytes32 nonce, bytes signature) returns (uint256 id);
+function create(bytes32 rulesHash, uint96 prize, uint64 deadline) returns (uint256 id);           // approve + transferFrom
+function authorizationNonce(address creator, bytes32 rulesHash, uint96 prize, uint64 deadline, bytes32 salt) view returns (bytes32);
+function createWithAuthorization(address creator, bytes32 rulesHash, uint96 prize, uint64 deadline,
+    bytes32 salt, uint256 validAfter, uint256 validBefore, bytes signature) returns (uint256 id);  // relayed EIP-3009
 function resolve(uint256 id, address winner, bytes32 resultHash);   // evaluator only
 function refund(uint256 id);                                          // anyone, after deadline + GRACE
 function setEvaluator(address next);                                  // owner only
 function setResolvePaused(bool paused);                               // owner only; never affects refund
+function setPrizeLimits(uint96 minPrize, uint96 maxPrize);            // owner only
 ```
 
 - **Escrow intake:** `createWithAuthorization` calls USDC `receiveWithAuthorization` (the payee
-  must be the caller, so a relayed authorization cannot be front-run elsewhere). The creator
-  signs once and pays no gas; the server's relayer submits it.
+  must be the caller, so a relayed authorization cannot be redeemed elsewhere). The signed nonce
+  must equal `authorizationNonce(...)`, which commits to the chain, the contract, the creator and
+  every term plus a salt, so a relayer cannot open the challenge with other terms. The creator
+  signs once and pays no gas; the server's relayer submits it. `create` (approve, then create) is
+  the fallback if Arc's USDC lacks `receiveWithAuthorization`.
 - **Payout:** `resolve` only while `Open`, only before `deadline + GRACE` (1 hour, for an attempt
   met just before the deadline), only to `winner != creator` and `winner != address(0)` (Arc
   reverts zero-address sends). It records `resultHash`, the hash of the attempt's published log.
@@ -124,8 +130,10 @@ function setResolvePaused(bool paused);                               // owner o
   - The contract's USDC balance always equals the sum of `Open` prizes.
   - Each challenge pays out exactly once, to its winner or its creator.
   - The owner can change the evaluator and pause payouts. The owner can never move escrowed funds.
-- **Limits on chain:** a maximum prize (owner-set; 100 USDC on testnet) and a deadline 1–14 days
-  from creation.
+- **Limits on chain:** owner-set minimum and maximum prize (1 and 100 USDC on testnet), and deadline
+  rails of 12 hours to 15 days from creation; the server offers 1 to 14 days inside them, so a
+  signature that takes a while to land never falls outside the rails. Ownership is two-step and
+  cannot be renounced.
 - **Decimals:** prizes use the USDC ERC-20 interface at `0x3600…0000` (6 decimals). Native gas
   amounts are 18 decimals. Server code keeps the two apart and reads `decimals()` at start.
 - Open source with tests and a README, as a reusable "first to finish" escrow for Arc builders.
