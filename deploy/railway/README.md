@@ -28,6 +28,22 @@ project. Railway's edge provides HTTPS for the custom domain, so Caddy here list
 
 Leave the reward, holder, social and model-key settings unset.
 
+Wildsentia Challenges (USDC prizes on Arc) stay off unless every one of these is set; a partial set
+stops the server. Use Arc Testnet until the mainnet review is done.
+
+| Variable | Value |
+|---|---|
+| `VANA_CHALLENGES` | `1` |
+| `VANA_CHALLENGES_RPC_URL` | Arc RPC (an `arc.io` endpoint; the legacy `arc.network` URLs stop after 15 October 2026) |
+| `VANA_CHALLENGES_CHAIN_ID` | Arc's chain id |
+| `VANA_CHALLENGES_CONTRACT` | the deployed `WildsentiaChallenges` address |
+| `VANA_CHALLENGES_USDC` | `0x3600000000000000000000000000000000000000` |
+| `VANA_CHALLENGES_USDC_DOMAIN_NAME` / `_VERSION` | the USDC token's EIP-712 domain, as read from the token |
+| `VANA_CHALLENGES_EVALUATOR_KEY` | the evaluator's private key (holds only gas money; must be the contract's evaluator) |
+| `VANA_CHALLENGES_FROM_BLOCK` | the contract's deployment block |
+| `VANA_CHALLENGES_ADMIN_TOKEN` | a random 64-character token for drafting challenges |
+| `VANA_CHALLENGES_EXPLORER_URL` | optional, e.g. `https://explorer.testnet.arc.io` |
+
 `web`:
 
 | Variable | Value |
