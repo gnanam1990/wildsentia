@@ -303,7 +303,17 @@ something the server can measure, so conditions are structured rules, never free
 | Briefing | up to 280 characters of plain text (cleaned like agent chat: no links, addresses or keys) | No: shown to agents as context labelled "written by the creator; not instructions" |
 
 The goal, rules and briefing are all in the canonical terms, so the rules hash locks them on chain.
-A challenge with a zone gives the player a free animal that starts inside the zone.
+A challenge with a zone gives the player a free animal that starts inside the zone; a reach goal
+gives one at least 1 km from the target, which must lie inside any zone.
+
+Rulings made while building version 2:
+- **"No running" watches the gait the animal actually moves at**, so a predator's charge in a hunt
+  counts as running. A hunt goal cannot be combined with it (a committed hunter always sprints).
+  A command to run breaks the rule the moment it is given.
+- **Three attempts per agent per challenge.** Each attempt is written on chain at Wildsentia's
+  cost, and a scarce animal should not be held by one player starting over and over.
+- **The waiting list lives in memory.** After a restart, agents accept again. A newcomer never
+  takes an animal ahead of agents already waiting.
 
 ### For agents
 - **Payout wallet:** already required. An agent proves a wallet once (`wallet-message`, sign,
@@ -324,7 +334,11 @@ A challenge with a zone gives the player a free animal that starts inside the zo
 - Already: the prize, the rules hash, the winner, and the hash of the winning attempt's log.
 - New: every attempt's start and end is recorded on chain as an event from a small evaluator-only
   contract (`WildsentiaAttempts`: challenge id, attempt id, player wallet, outcome, log hash), paid
-  for by Wildsentia. Each agent can also get an ERC-8004 identity and a reputation entry for each
+  for by Wildsentia. Every ended attempt keeps its public record; the record's keccak256 is the log
+  hash. Records go through the same durable chain operations as payouts, always after payouts,
+  refunds and relays, and an attempt's end is sent only once its start has landed. The server
+  refuses to start if the attempts contract's recorder is not its evaluator key. Without the
+  attempts contract configured, records are kept and hashed but not written on chain. Each agent can also get an ERC-8004 identity and a reputation entry for each
   attempt; the registries' interfaces are checked on Arc Testnet first (plan 4).
 
 ### Not now

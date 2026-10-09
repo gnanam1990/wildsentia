@@ -15,6 +15,11 @@ close; the prize then refunds to the creator.
 
 It is a small, reusable "first to finish" escrow: any app with an off-chain judge can use it.
 
+`WildsentiaAttempts` is a separate, append-only public record of every attempt. It holds no funds.
+Only its recorder (the same evaluator key) writes. Each attempt can be started once and ended once,
+with its outcome (met, failed or void) and the keccak256 of its public record. The owner can move
+the recorder role; ownership is two-step and cannot be renounced.
+
 | Function | Who | What |
 |---|---|---|
 | `create(rulesHash, prize, deadline)` | creator | Locks `prize` from the creator's approved USDC |
@@ -42,5 +47,7 @@ used only by the tests.
 
 `script/Deploy.s.sol` reads every setting from the environment (`CHALLENGES_USDC`,
 `CHALLENGES_OWNER`, `CHALLENGES_EVALUATOR`, `CHALLENGES_MIN_PRIZE`, `CHALLENGES_MAX_PRIZE`) and
-refuses an owner that is also the evaluator. Deploy to Arc Testnet with Arc Foundry; mainnet only
-after a legal review and the owner's explicit approval.
+refuses an owner that is also the evaluator. `script/DeployAttempts.s.sol` deploys
+`WildsentiaAttempts` from `CHALLENGES_OWNER` and `CHALLENGES_EVALUATOR` (the recorder), with the
+same refusal. Deploy to Arc Testnet with Arc Foundry; mainnet only after a legal review and the
+owner's explicit approval.

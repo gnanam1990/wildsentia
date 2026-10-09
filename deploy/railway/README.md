@@ -43,6 +43,7 @@ stops the server. Use Arc Testnet until the mainnet review is done.
 | `VANA_CHALLENGES_FROM_BLOCK` | the contract's deployment block |
 | `VANA_CHALLENGES_ADMIN_TOKEN` | a random 64-character token for drafting challenges |
 | `VANA_CHALLENGES_EXPLORER_URL` | optional, e.g. `https://explorer.testnet.arc.io` |
+| `VANA_CHALLENGES_ATTEMPTS_CONTRACT` | optional: the deployed `WildsentiaAttempts` address. Its recorder must be the evaluator key; without it, attempt records are kept but not written on chain |
 
 One database serves one contract: the server refuses to start if the database already holds
 another contract's challenges (moving from testnet to mainnet, or redeploying, needs a fresh
