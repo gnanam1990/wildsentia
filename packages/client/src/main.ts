@@ -364,7 +364,9 @@ canvas.addEventListener('keydown', (e) => {
 });
 reducedMotion.addEventListener('change', () => { if (reducedMotion.matches && replay) replay.clock.paused = true; });
 
+/** Leaves a replay (or one still loading) for the live view; does nothing when none is open. */
 function stopReplay(): void {
+  if (banner.hidden) return;
   replayRequest++;
   replayAbort?.abort(); replayAbort = null;
   replay = null;
@@ -405,7 +407,7 @@ function watch(id: string | null): void {
 
 liveEncounterPicker.addEventListener('change', () => {
   const encounter = liveEncounters.current(performance.now())?.encounters.find((e) => e.eventId === liveEncounterPicker.value);
-  if (encounter) { stopReplay(); watch(encounter.predator.id); livePairFrame.checked = true; }
+  if (encounter) { watch(encounter.predator.id); livePairFrame.checked = true; }
 });
 canvas.addEventListener('wheel', () => { livePairFrame.checked = false; }, { passive: true });
 canvas.addEventListener('keydown', (e) => {
@@ -625,7 +627,7 @@ for (const id of Object.keys(SPECIES_VISUALS)) {
 }
 speciesPicker.addEventListener('change', () => {
   const animal = [...store.animals.values()].find((a) => a.speciesId === speciesPicker.value);
-  if (animal) { stopReplay(); watch(animal.id); }
+  if (animal) watch(animal.id); // watch() leaves any replay; the picker keeps focus.
 });
 
 // Family members and teachers in the passport are links: follow them.
