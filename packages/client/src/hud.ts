@@ -40,6 +40,10 @@ export interface Passport {
 const escape = (text: string): string =>
   text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
+/** A count from the server, grouped in thousands; anything that is not a number shows as unknown. */
+const count = (value: unknown): string =>
+  typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString('en-US', { maximumFractionDigits: 0 }) : UNKNOWN;
+
 const age = (days: number): string =>
   days >= 365 ? `${(days / 365).toFixed(1)} years` : `${Math.round(days)} days`;
 
@@ -268,11 +272,13 @@ export class Hud {
     this.elements.clock.title = world?.formatted ?? '';
     this.elements.season.innerHTML = world ? escape(world.season.replace(/^./, (c) => c.toUpperCase())) : UNKNOWN;
     if (world) {
-      const counts = Object.entries(world.population).sort((a, b) => b[1] - a[1]);
+      const counts = Object.entries(world.population as Record<string, unknown>)
+        .filter((entry): entry is [string, number] => typeof entry[1] === 'number' && Number.isFinite(entry[1]))
+        .sort((a, b) => b[1] - a[1]);
       const total = counts.reduce((sum, [, n]) => sum + n, 0);
       // Rebuilding the list would close it under the viewer's pointer; update only on change.
-      const html = `<summary>${total.toLocaleString('en-IN')} animals</summary><div class="pop-list">${counts
-        .map(([species, n]) => `<span>${escape(SPECIES_NAME[species] ?? species)} <b>${n}</b></span>`).join('')}</div>`;
+      const html = `<summary>${count(total)} animals</summary><div class="pop-list">${counts
+        .map(([species, n]) => `<span>${escape(SPECIES_NAME[species] ?? species)} <b>${count(n)}</b></span>`).join('')}</div>`;
       if (this.#populationHtml !== html) {
         const open = (this.elements.population.querySelector?.('details') as HTMLDetailsElement | null)?.open ?? false;
         this.elements.population.innerHTML = `<details${open ? ' open' : ''}>${html}</details>`;
@@ -313,7 +319,7 @@ export class Hud {
     const live = this.liveActivity(followedId);
     const identity = p === null
       ? `${animal.speciesId} &middot; patch ${animal.patchId}`
-      : `${escape(p.sex)} &middot; ${escape(p.lifeStage)} &middot; ${age(p.ageDays)} &middot; generation ${p.generation}`;
+      : `${escape(p.sex)} &middot; ${escape(p.lifeStage)} &middot; ${age(p.ageDays)} &middot; generation ${count(p.generation)}`;
     const name = p ? p.displayName : (SPECIES_NAME[animal.speciesId] ?? animal.speciesId).replace(/^./, (c) => c.toUpperCase());
     this.#setPassport(`${this.#recapCard(followedId)}
       <h2>${escape(name)}</h2>
@@ -329,7 +335,7 @@ export class Hud {
         ? `<div class="row"><span>Injury</span><b>Modelled ${animal.woundStatus === 'infected' ? 'wound infection' : 'open wound'}</b></div>` : ''}
       <div class="row"><span>Goal</span><b>${escape(live?.goal || animal.currentGoal)}</b></div>
       ${live?.agent ? `<div class="row"><span>Steered by</span><b class="agent-name">${escape(live.agent)} (AI agent)</b></div>` : ''}
-      <div class="row"><span>Watching now</span><b>${viewers ?? UNKNOWN}</b></div>
+      <div class="row"><span>Watching now</span><b>${count(viewers)}</b></div>
       ${p === null ? '' : `<details class="story"><summary>Life story, family and skills</summary>${this.#skills(p) + this.#lineage(p) + this.#timeline(p)}</details>`}
       <div class="card-actions">
         <button data-replay="${escape(animal.id)}">Replay this life</button>
@@ -392,7 +398,7 @@ export class Hud {
     return `<h3>Family</h3>
       <div class="row"><span>Mother</span><b>${kinLink(p.lineage.mother)}</b></div>
       <div class="row"><span>Father</span><b>${kinLink(p.lineage.father)}</b></div>
-      <div class="row"><span>Young</span><b>${p.lineage.offspring.length} (${living} alive)</b></div>`;
+      <div class="row"><span>Young</span><b>${count(p.lineage.offspring.length)} (${count(living)} alive)</b></div>`;
   }
 
   #timeline(p: Passport): string {
