@@ -1,4 +1,5 @@
 import { positionInPatch } from '@vana/shared';
+import { withTimeout } from './abortSignals.js';
 import { isRecordedEncounter, type RecordedEncounter } from './encounterReplay.js';
 import { validNextCursor } from './historyCursor.js';
 import { isRecordedClimb, type Life, type LifeMoment, type LifeTrackPoint } from './replay.js';
@@ -11,7 +12,7 @@ const record = (v: unknown): v is Record<string, unknown> => typeof v === 'objec
 export async function loadSelectedEncounter(id: string, eventId: string, signal: AbortSignal): Promise<Life> {
   signal.throwIfAborted();
   const response = await fetch(`/api/animals/${encodeURIComponent(id)}/encounters/${encodeURIComponent(eventId)}`,
-    { signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]) });
+    { signal: withTimeout(signal, 15000) });
   if (!response.ok) throw new Error('Selected recording unavailable in the saved checkpoint.');
   const p: unknown = await response.json(); signal.throwIfAborted();
   if (!record(p) || p.id !== id || p.source !== 'checkpoint' || p.scope !== 'encounter'
@@ -31,7 +32,7 @@ export async function loadSelectedEncounter(id: string, eventId: string, signal:
 export async function loadSelectedClimb(id: string, eventId: string, signal: AbortSignal): Promise<Life> {
   signal.throwIfAborted();
   const response = await fetch(`/api/animals/${encodeURIComponent(id)}/movements/${encodeURIComponent(eventId)}`,
-    { signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]) });
+    { signal: withTimeout(signal, 15000) });
   if (!response.ok) throw new Error('Selected tree recording unavailable in the saved checkpoint.');
   const p: unknown = await response.json(); signal.throwIfAborted();
   if (!record(p) || p.id !== id || p.source !== 'checkpoint' || p.scope !== 'movement'
@@ -66,7 +67,7 @@ export async function loadLifeHistory(id: string, options: {
   let selected: RecordedEncounter | null = null, pages = 0, lastTime = -1;
   while (true) {
     options.signal.throwIfAborted();
-    const response = await fetch(url, { signal: AbortSignal.any([options.signal, AbortSignal.timeout(15000)]) });
+    const response = await fetch(url, { signal: withTimeout(options.signal, 15000) });
     if (!response.ok) throw new Error('Life history unavailable; restart the replay.');
     const p: unknown = await response.json(); options.signal.throwIfAborted();
     if (!record(p) || p.id !== id || p.source !== 'checkpoint' || !whole(p.asOfWorldTime) || !whole(p.nextEventSequence)

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { timeoutSignal } from './abortSignals.js';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 import type { Person } from '@vana/shared';
 import type { RenderTier } from './renderQuality.js';
@@ -56,7 +57,7 @@ export function tintHumanScene(root: THREE.Object3D, seed: number): void {
 }
 
 export const loadHuman: HumanLoader = async model => {
-  const response = await fetch(`/assets/humans-v1/human-${model}.glb`, { signal: AbortSignal.timeout(20_000) });
+  const response = await fetch(`/assets/humans-v1/human-${model}.glb`, { signal: timeoutSignal(20_000) });
   if (!response.ok) throw new Error(`Human model HTTP ${response.status}`);
   const data = await response.arrayBuffer();
   if (data.byteLength > 8_000_000) throw new Error('Human asset exceeds download budget');

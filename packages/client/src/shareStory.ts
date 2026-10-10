@@ -1,4 +1,5 @@
 import { isAnimalLinkId } from './animalLink.js';
+import { withTimeout } from './abortSignals.js';
 import { buildShareCard, type SharePassport } from './shareCard.js';
 
 const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
@@ -42,7 +43,7 @@ export class ShareStory {
     try {
       if (!isAnimalLinkId(id)) throw new Error('Animal link is invalid. Select an animal in the forest.');
       const response = await fetch(`/api/animals/${encodeURIComponent(id)}/passport`, {
-        signal: AbortSignal.any([this.#abort.signal, AbortSignal.timeout(15000)]),
+        signal: withTimeout(this.#abort.signal, 15000),
       });
       if (!response.ok) throw new Error(response.status === 404 ? 'This animal’s record is unavailable. Select another animal or retry.' : 'Story unavailable. Please retry.');
       const passport: unknown = await response.json();

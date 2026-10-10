@@ -1,4 +1,5 @@
 import type { WorldStore } from './protocol.js';
+import { withTimeout } from './abortSignals.js';
 import { modelStatusForAnimal } from './species.js';
 import { validNextCursor } from './historyCursor.js';
 
@@ -206,7 +207,7 @@ export class Hud {
       let lines: NonNullable<Hud['recap']>['lines'] = [];
       const seen = new Set<string>();
       do {
-        const response = await fetch(path + query, { signal: AbortSignal.any([this.#recapAbort.signal, AbortSignal.timeout(15000)]) });
+        const response = await fetch(path + query, { signal: withTimeout(this.#recapAbort.signal, 15000) });
         if (!response.ok) throw new Error('History unavailable');
         const body = await response.json();
         if (request !== this.#recapRequest) return false;

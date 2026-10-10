@@ -1,4 +1,5 @@
 import { HOME_STAGES, HOME_SHELTER_THRESHOLD, homeCondition, isCommunityState, type CommunityState, type Person, type WorldPosition } from '@vana/shared';
+import { withTimeout } from './abortSignals.js';
 
 export interface CommunityPage {
   source: 'checkpoint';
@@ -117,7 +118,7 @@ export class CommunityObserver {
     this.close(); const revision = this.#revision; this.#abort = new AbortController();
     this.page = null; this.error = ''; this.loading = true; this.change();
     try {
-      const response = await fetch('/api/community', { signal: AbortSignal.any([this.#abort.signal, AbortSignal.timeout(15000)]) });
+      const response = await fetch('/api/community', { signal: withTimeout(this.#abort.signal, 15000) });
       if (!response.ok) throw new Error('Saved community unavailable. Try refresh after the world reconnects.');
       const page: unknown = await response.json();
       if (revision !== this.#revision) return;

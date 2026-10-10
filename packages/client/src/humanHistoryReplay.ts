@@ -1,4 +1,5 @@
 import { humanMotionAt, isWorldPosition, MAX_HUMAN_MOTION_SAMPLES, type HumanMotionSample } from '@vana/shared';
+import { withTimeout } from './abortSignals.js';
 
 export interface RecordedHumanWindow { startWorldTime: number; endWorldTime: number; samples: HumanMotionSample[] }
 export interface HumanMotionPage {
@@ -100,7 +101,7 @@ export class HumanMotionPager {
     this.#abort?.abort(); this.#abort = new AbortController();
     this.loading = true; this.error = ''; this.change();
     try {
-      const response = await fetch(humanMotionUrl(id, cursor), { signal: AbortSignal.any([this.#abort.signal, AbortSignal.timeout(15000)]) });
+      const response = await fetch(humanMotionUrl(id, cursor), { signal: withTimeout(this.#abort.signal, 15000) });
       if (!response.ok) throw new Error(response.status === 400 ? 'Recording cursor expired. Start again.' : 'Recorded movement unavailable. Retry.');
       const page: unknown = await response.json();
       if (revision !== this.#revision) return;
