@@ -42,7 +42,7 @@ const draftOf = (r: any): SocialDraft => ({ id: r.id, challengeId: Number(r.chal
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
 export class ChallengeSocialStore {
-  constructor(private readonly pool: Pool, private readonly catalog: SpeciesCatalog, private readonly siteUrl: string | null) {}
+  constructor(readonly pool: Pool, private readonly catalog: SpeciesCatalog, private readonly siteUrl: string | null) {}
 
   /** The post a kind should say about a challenge now, from its facts; null if it has none to say. */
   async textFor(challengeId: number, kind: PostKind): Promise<string | null> {

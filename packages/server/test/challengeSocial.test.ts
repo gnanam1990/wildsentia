@@ -1,4 +1,8 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import Fastify, { type FastifyInstance } from 'fastify';
+import { installSocialOutbox } from '../src/socialOutbox.js';
+import { installChallengeSocial } from '../src/challenges/socialRoutes.js';
+import type { XPublisher } from '../src/xPublisher.js';
 import { createPool } from '../src/db/pool.js';
 import { migrate } from '../src/db/migrate.js';
 import { ChallengeStore } from '../src/challenges/store.js';
@@ -81,5 +85,82 @@ maybe('challenge social drafts', () => {
     await pool!.query("update challenges set status = 'unrecognised'");
     await social.sweep();
     expect(await social.list()).toEqual([]);
+  });
+
+  describe('admin routes', () => {
+    const TOKEN = 'social-admin-token-'.repeat(3);
+    let app: FastifyInstance, posted: string[], fail: boolean, known: Map<string, { id: string; text: string; authorId: string }>;
+    const publisher: XPublisher = { accountId: '42', verifyAccount: async () => undefined,
+      create: async (text) => { posted.push(text); if (fail) throw new Error('timeout'); return { id: String(1000 + posted.length), text }; },
+      lookup: async (id) => known.get(id) ?? null };
+    beforeEach(async () => {
+      posted = []; fail = false; known = new Map();
+      app = Fastify();
+      installSocialOutbox(app, { pool: pool!, config: { adminToken: TOKEN, xPublisher: publisher }, boundary: () => null });
+      installChallengeSocial(app, { social, publisher });
+      await app.ready();
+      await social.sweep();
+    });
+    const call = (method: 'GET' | 'POST', path: string, body?: object, token = TOKEN) => app.inject({ method, url: path,
+      headers: { authorization: `Bearer ${token}`, ...(method === 'POST' ? { 'content-type': 'application/json' } : {}) },
+      ...(method === 'POST' ? { payload: JSON.stringify(body ?? {}) } : {}) });
+    const first = async () => (await call('GET', '/admin/social/challenges')).json().drafts[0];
+
+    it('is for the owner only', async () => {
+      expect((await call('GET', '/admin/social/challenges', undefined, 'wrong')).statusCode).toBe(401);
+      expect((await first())).toMatchObject({ challengeId: 1, kind: 'created', status: 'draft', stillTrue: true });
+    });
+
+    it('publishes only approved text that still matches the challenge', async () => {
+      const d = await first();
+      expect((await call('POST', `/admin/social/challenges/${d.id}/publish`)).json()).toEqual({ error: 'not_approved' });
+      expect((await call('POST', `/admin/social/challenges/${d.id}/review`, { action: 'approve', note: 'ok' })).json()).toMatchObject({ status: 'approved' });
+      // The facts changed since approval (the prize limit was edited by hand): it no longer says what is true.
+      await pool!.query("update challenge_social_drafts set body = body || ' extra' where id = $1", [d.id]);
+      expect((await call('POST', `/admin/social/challenges/${d.id}/publish`)).json()).toEqual({ error: 'no_longer_true' });
+      expect(posted).toEqual([]);
+    });
+
+    it('publishes once: a second press, or an unknown result, never posts again', async () => {
+      const d = await first();
+      await call('POST', `/admin/social/challenges/${d.id}/review`, { action: 'approve' });
+      const done = await call('POST', `/admin/social/challenges/${d.id}/publish`);
+      expect(done.json()).toMatchObject({ status: 'published', xPostId: '1001' });
+      expect((await call('POST', `/admin/social/challenges/${d.id}/publish`)).json()).toMatchObject({ status: 'published', xPostId: '1001' });
+      expect(posted).toHaveLength(1);
+      // Another draft whose call to X times out: unknown, and never sent again.
+      await store.setStatus(1, ['open'], 'refunding'); await store.setStatus(1, ['refunding'], 'refunded', hex('7'));
+      await social.sweep();
+      const refunded = (await call('GET', '/admin/social/challenges')).json().drafts.find((x: { kind: string }) => x.kind === 'refunded');
+      await call('POST', `/admin/social/challenges/${refunded.id}/review`, { action: 'approve' });
+      fail = true;
+      expect((await call('POST', `/admin/social/challenges/${refunded.id}/publish`)).json()).toMatchObject({ status: 'unknown' });
+      fail = false;
+      expect((await call('POST', `/admin/social/challenges/${refunded.id}/publish`)).json()).toEqual({ error: 'not_approved' });
+      expect(posted).toHaveLength(2);
+      // The owner checks X: a post id is confirmed only if it is ours and says exactly the draft.
+      known.set('555', { id: '555', text: 'something else', authorId: '42' });
+      expect((await call('POST', `/admin/social/challenges/${refunded.id}/resolve`, { xPostId: '555' })).json()).toEqual({ error: 'post_does_not_match' });
+      known.set('556', { id: '556', text: refunded.body, authorId: '42' });
+      expect((await call('POST', `/admin/social/challenges/${refunded.id}/resolve`, { xPostId: '556' })).json()).toMatchObject({ status: 'published', xPostId: '556' });
+    });
+
+    it('lets the owner say an unknown post never appeared, which makes it publishable again', async () => {
+      const d = await first();
+      await call('POST', `/admin/social/challenges/${d.id}/review`, { action: 'approve' });
+      fail = true;
+      await call('POST', `/admin/social/challenges/${d.id}/publish`);
+      expect((await call('POST', `/admin/social/challenges/${d.id}/resolve`, {})).json()).toEqual({ error: 'say_what_you_found' });
+      expect((await call('POST', `/admin/social/challenges/${d.id}/resolve`, { notPosted: true })).json()).toMatchObject({ status: 'approved' });
+    });
+
+    it('rejects and revokes', async () => {
+      const d = await first();
+      expect((await call('POST', `/admin/social/challenges/${d.id}/review`, { action: 'reject' })).json()).toMatchObject({ status: 'rejected' });
+      expect((await call('POST', `/admin/social/challenges/${d.id}/review`, { action: 'approve' })).json()).toMatchObject({ status: 'approved' });
+      expect((await call('POST', `/admin/social/challenges/${d.id}/review`, { action: 'revoke' })).json()).toMatchObject({ status: 'revoked' });
+      expect((await call('POST', `/admin/social/challenges/${d.id}/review`, { action: 'post' })).statusCode).toBe(400);
+      expect((await call('POST', '/admin/social/challenges/nope/review', { action: 'approve' })).statusCode).toBe(404);
+    });
   });
 });
