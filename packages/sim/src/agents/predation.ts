@@ -124,14 +124,17 @@ export function choosePrey<T extends PreyCandidate>(candidates: readonly T[], rn
     if (pick < 0) { chosen = list; break; }
   }
 
-  const vulnerability = (candidate: T): number =>
-    (1 - candidate.agent.drives.fatigue) * (1 - candidate.agent.drives.fear * 0.5);
+  // How well an animal would get away: rested and watchful. sim_0.38.0: fear makes an animal
+  // harder to take, not easier; it was counted the other way, so hunters went for the most
+  // frightened animal in sight, the one already watching them.
+  const resistance = (candidate: T): number =>
+    (1 - candidate.agent.drives.fatigue) * (0.5 + candidate.agent.drives.fear * 0.5);
   // sim_0.37.0: a hunter with a preferred prey size (leopards, 10-40 kg: Hayward et al. 2006)
   // takes the individuals of that size within the kind where there are any: the piglet before
   // the sow, the fawn before the stag.
   const sized = preferredKg ? chosen.filter(c => c.agent.massKg >= preferredKg[0] && c.agent.massKg <= preferredKg[1]) : [];
   const within = sized.length ? sized : chosen;
   let best = within[0]!;
-  for (const candidate of within) if (vulnerability(candidate) < vulnerability(best)) best = candidate;
+  for (const candidate of within) if (resistance(candidate) < resistance(best)) best = candidate;
   return best;
 }
