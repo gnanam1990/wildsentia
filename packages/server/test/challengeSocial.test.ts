@@ -53,10 +53,10 @@ maybe('challenge social drafts', () => {
     await migrate(pool!);
     await pool!.query('truncate challenge_social_drafts, challenge_attempt_log, challenge_chain_ops, challenge_attempts, challenges, challenge_drafts, live_agents cascade');
     store = new ChallengeStore(pool!);
-    social = new ChallengeSocialStore(pool!, catalog, SITE);
+    social = new ChallengeSocialStore(pool!, catalog, SITE, EVALUATOR);
     await store.insertDraft({ creatorWallet: '0x' + 'a'.repeat(40), terms, rulesHash: rulesHash(terms), prizeAtomic: '25000000',
-      deadline: new Date('2026-10-12T18:00:00Z'), salt: hex('1'), authNonce: hex('2') });
-    await store.recordCreated(CONTRACT, { id: 1, creator: '0x' + 'a'.repeat(40), prizeAtomic: '25000000', deadline: Date.parse('2026-10-12T18:00:00Z') / 1000,
+      deadline: new Date('2030-10-12T18:00:00Z'), salt: hex('1'), authNonce: hex('2') });
+    await store.recordCreated(CONTRACT, { id: 1, creator: '0x' + 'a'.repeat(40), prizeAtomic: '25000000', deadline: Date.parse('2030-10-12T18:00:00Z') / 1000,
       rulesHash: rulesHash(terms), authNonce: hex('2'), txHash: hex('3'), blockNumber: 1 }, { challenge: EVALUATOR, ours: EVALUATOR });
   });
 
@@ -65,7 +65,7 @@ maybe('challenge social drafts', () => {
     await social.sweep();
     expect((await social.list()).map((d) => [d.challengeId, d.kind, d.status])).toEqual([[1, 'created', 'draft']]);
     expect((await social.list())[0]!.body).toBe('New Wildsentia challenge on Arc: make a kill as a tiger; never run. '
-      + 'Prize 25 USDC to the first player (person or AI agent) to do it by 12 Oct 2026. https://wildsentia.lol/challenges.html?id=1');
+      + 'Prize 25 USDC to the first player (person or AI agent) to do it by 12 Oct 2030. https://wildsentia.lol/challenges.html?id=1');
     // Won and paid: the winner's player name.
     await pool!.query(`insert into live_agents (id, public_key, name, name_key, network_hash) values ('ag_0000000000000001', $1, 'Stripe', 'stripe', 'n')`,
       ['1'.padEnd(43, 'A')]);
@@ -161,6 +161,94 @@ maybe('challenge social drafts', () => {
       expect((await call('POST', `/admin/social/challenges/${d.id}/review`, { action: 'revoke' })).json()).toMatchObject({ status: 'revoked' });
       expect((await call('POST', `/admin/social/challenges/${d.id}/review`, { action: 'post' })).statusCode).toBe(400);
       expect((await call('POST', '/admin/social/challenges/nope/review', { action: 'approve' })).statusCode).toBe(404);
+    });
+  });
+
+  describe('review fixes', () => {
+    const TOKEN = 'social-admin-token-'.repeat(3);
+    let app: FastifyInstance, posted: string[], fail: boolean;
+    const publisher: XPublisher = { accountId: '42', verifyAccount: async () => undefined,
+      create: async (text) => { posted.push(text); if (fail) throw new Error('timeout'); return { id: String(2000 + posted.length), text }; },
+      lookup: async (id) => (id === '777' ? { id, text: 'Nobody met Wildsentia challenge 1 in time (make a kill as a tiger; never run). The 25 USDC went back to its creator on Arc. https://t.co/xyz', authorId: '42' } : null) };
+    beforeEach(async () => {
+      posted = []; fail = false;
+      app = Fastify();
+      installSocialOutbox(app, { pool: pool!, config: { adminToken: TOKEN, xPublisher: publisher }, boundary: () => null });
+      installChallengeSocial(app, { social, publisher });
+      await app.ready();
+    });
+    const call = (method: 'GET' | 'POST', path: string, body?: object) => app.inject({ method, url: path,
+      headers: { authorization: `Bearer ${TOKEN}`, ...(method === 'POST' ? { 'content-type': 'application/json' } : {}) },
+      ...(method === 'POST' ? { payload: JSON.stringify(body ?? {}) } : {}) });
+    const drafts = async () => (await call('GET', '/admin/social/challenges')).json().drafts as Array<{ id: string; kind: string; status: string; body: string; stillTrue: boolean }>;
+    const refund = async () => { await store.setStatus(1, ['open', 'won', 'unpaid'], 'refunding'); await store.setStatus(1, ['refunding'], 'refunded', hex('7')); };
+
+    it('confirms a post X shows with its link rewritten to t.co', async () => {
+      await refund(); await social.sweep();
+      const r = (await drafts()).find((d) => d.kind === 'refunded')!;
+      await call('POST', `/admin/social/challenges/${r.id}/review`, { action: 'approve' });
+      fail = true;
+      await call('POST', `/admin/social/challenges/${r.id}/publish`);
+      expect((await call('POST', `/admin/social/challenges/${r.id}/resolve`, { xPostId: '777' })).json()).toMatchObject({ status: 'published', xPostId: '777' });
+    });
+
+    it('never posts a "new challenge" once it is no longer open', async () => {
+      await social.sweep();
+      const c = (await drafts())[0]!;
+      await call('POST', `/admin/social/challenges/${c.id}/review`, { action: 'approve' });
+      await refund();
+      expect((await call('POST', `/admin/social/challenges/${c.id}/publish`)).json()).toEqual({ error: 'no_longer_true' });
+      expect(posted).toEqual([]);
+      // A challenge already over is never drafted as new.
+      await pool!.query('truncate challenge_social_drafts cascade');
+      await social.sweep();
+      expect((await drafts()).map((d) => d.kind)).toEqual(['refunded']);
+    });
+
+    it('says a challenge was met but not paid when its winner could not be paid, not that nobody met it', async () => {
+      await pool!.query(`insert into live_agents (id, public_key, name, name_key, network_hash) values ('ag_0000000000000001', $1, 'Stripe', 'stripe', 'n')`, ['1'.padEnd(43, 'A')]);
+      const a = await store.startAttempt({ challengeId: 1, agentId: 'ag_0000000000000001', animalId: 'tiger_1', payoutWallet: '0x' + 'b'.repeat(40), startedWorld: 0, startState: {} });
+      await store.win({ challengeId: 1, attemptId: a.id, endedWorld: 1, resultRecord: '{}', resultHash: hex('9'), winner: '0x' + 'b'.repeat(40) });
+      await store.setStatus(1, ['won'], 'unpaid');
+      await refund(); await social.sweep();
+      expect((await drafts()).find((d) => d.kind === 'refunded')!.body).toBe('Wildsentia challenge 1 was met by Stripe, but the prize could not be paid, '
+        + 'so the 25 USDC went back to its creator on Arc. https://wildsentia.lol/challenges.html?id=1');
+    });
+
+    it('lets the owner settle a post stuck while being posted, once the X call is long over', async () => {
+      await social.sweep();
+      const c = (await drafts())[0]!;
+      await pool!.query("update challenge_social_drafts set status = 'publishing', reserved_at = now() where id = $1", [c.id]);
+      expect((await drafts())[0]!.status).toBe('publishing');
+      expect((await call('POST', `/admin/social/challenges/${c.id}/resolve`, { notPosted: true })).json()).toEqual({ error: 'not_unknown' });
+      await pool!.query("update challenge_social_drafts set reserved_at = now() - interval '3 minutes' where id = $1", [c.id]);
+      expect((await drafts())[0]!.status).toBe('unknown');
+      expect((await call('POST', `/admin/social/challenges/${c.id}/resolve`, { notPosted: true })).json()).toMatchObject({ status: 'approved' });
+    });
+
+    it('redrafts a post whose challenge facts changed, back to review', async () => {
+      await social.sweep();
+      const c = (await drafts())[0]!;
+      await pool!.query("update challenge_social_drafts set body = 'Old wording' where id = $1", [c.id]);
+      expect((await call('POST', `/admin/social/challenges/${c.id}/review`, { action: 'redraft' })).json()).toMatchObject({ status: 'draft', body: c.body });
+      expect((await call('POST', `/admin/social/challenges/${c.id}/review`, { action: 'redraft' })).json()).toEqual({ error: 'already_true' });
+    });
+
+    it('drafts nothing for a challenge of another evaluator, whatever its status became', async () => {
+      await pool!.query("update challenges set evaluator = $1, status = 'refunded'", ['0x' + 'f'.repeat(40)]);
+      await social.sweep();
+      expect(await drafts()).toEqual([]);
+    });
+
+    it('keeps an audit of every step', async () => {
+      await social.sweep();
+      const c = (await drafts())[0]!;
+      await call('POST', `/admin/social/challenges/${c.id}/review`, { action: 'approve', note: 'fine' });
+      fail = true;
+      await call('POST', `/admin/social/challenges/${c.id}/publish`);
+      await call('POST', `/admin/social/challenges/${c.id}/resolve`, { notPosted: true });
+      const { rows } = await pool!.query('select action, note from challenge_social_audit where draft_id = $1 order by id', [c.id]);
+      expect(rows.map((r) => r.action)).toEqual(['drafted', 'approved', 'reserved', 'unknown', 'resolved_not_posted']);
     });
   });
 });

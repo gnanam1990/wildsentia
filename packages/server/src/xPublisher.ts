@@ -6,6 +6,12 @@ export interface XPublisher {
   lookup(id: string): Promise<{ id: string; text: string; authorId: string } | null>;
 }
 
+/** X rewrites every link in a post to https://t.co/…: texts are the same if they match with each link taken as just "a link". */
+export function sameTextIgnoringLinks(sent: string, shown: string): boolean {
+  const plain = (t: string) => t.replace(/https?:\/\/\S+/g, '<link>');
+  return plain(sent) === plain(shown);
+}
+
 export function createXPublisher(accountId: string, token: string, request: typeof fetch = fetch): XPublisher {
   if (!/^[0-9]{1,30}$/.test(accountId) || !token || /\s/.test(token)) throw new Error('Invalid X publisher configuration');
   const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
@@ -27,7 +33,7 @@ export function createXPublisher(accountId: string, token: string, request: type
       if (response.status !== 201) throw new Error('X create did not return 201');
       const data: unknown = await response.json();
       const post = (data as { data?: { id?: unknown; text?: unknown } })?.data;
-      if (typeof post?.id !== 'string' || !/^[0-9]{1,30}$/.test(post.id) || post.text !== text)
+      if (typeof post?.id !== 'string' || !/^[0-9]{1,30}$/.test(post.id) || typeof post.text !== 'string' || !sameTextIgnoringLinks(text, post.text))
         throw new Error('X create response did not match prepared text');
       return { id: post.id, text };
     },

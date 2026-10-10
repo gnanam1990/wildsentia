@@ -246,7 +246,7 @@ async function refreshAll(): Promise<void> {
   // The export fetch itself creates an access record; load that audit page afterwards.
   const results = await Promise.all(sections.filter((kind) => kind !== 'export-audit').map((kind) => load(kind)));
   results.push(await load('export-audit'));
-  results.push(await loadChallengePosts(api));
+  results.push(await loadChallengePosts(api, () => !!token && currentGeneration === generation));
   if (token && currentGeneration === generation) status.textContent = results.every(Boolean)
     ? 'Private outbox refreshed. Nothing was posted externally.'
     : 'Some sections could not refresh. Check each section status; nothing was posted externally.';

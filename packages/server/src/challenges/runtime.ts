@@ -107,7 +107,7 @@ export function challengesRuntime(config: ChallengesConfig,
       void fn().catch((e) => console.error(`[challenges] ${what} failed`, (e as Error).message)).finally(() => { running = false; });
     }, ms));
   };
-  const social = new ChallengeSocialStore(deps.pool, catalog, config.siteUrl ?? null);
+  const social = new ChallengeSocialStore(deps.pool, catalog, config.siteUrl ?? null, chain.evaluator);
   return {
     social,
     routes: { store, catalog, drafts, adminToken: config.adminToken, explorerUrl: config.explorerUrl },
