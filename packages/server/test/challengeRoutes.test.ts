@@ -340,6 +340,32 @@ maybe('challenges runtime', () => {
     await expect(challengesRuntime(config, deps, chain('0x' + 'E'.repeat(40))).start()).rejects.toThrow('another contract');
   });
 
+  it('keeps the forest running when the chain cannot be reached at startup, and starts challenges once it can', async () => {
+    await migrate(pool!);
+    await pool!.query('truncate challenge_attempt_log, challenge_chain_ops, challenge_attempts, challenges, challenge_drafts, challenge_index_cursor cascade');
+    const speciesDir = fileURLToPath(new URL('../../../config/species', import.meta.url));
+    const world = createWorld({ seed: 3, speciesDir, terrainProfile: 'island_v1', initialAgents: { chital: 4 }, minPopulation: {} });
+    const port = worldPort(() => world, () => 'w1');
+    const config: ChallengesConfig = { rpcUrl: 'http://127.0.0.1:1', chainId: 1, contract: drafts.contract, usdc: drafts.usdc,
+      evaluatorKey: `0x${'a'.repeat(64)}`, fromBlock: 0, adminToken: ADMIN, usdcDomain: { name: 'USDC', version: '2' }, explorerUrl: null };
+    let reachable = false;
+    const chain = { contract: drafts.contract, evaluator: '0x' + 'e'.repeat(40), chainId: 1,
+      appointedEvaluator: async () => { if (!reachable) throw new Error('fetch failed'); return '0x' + 'e'.repeat(40); },
+      prizeLimits: async () => ({ min: 2_000_000n, max: 50_000_000n }) } as unknown as ChallengeChain;
+    const live = new LiveLayer(port);
+    const runtime = challengesRuntime(config, { pool: pool!, live, world: port, species: () => [...world.species.values()] }, chain, { retryMs: 20 });
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await runtime.start(); // does not throw: the outage is not a wrong key
+      expect(runtime.routes.drafts.maxPrizeAtomic).toBe(0n); // nothing can be drafted yet
+      expect(live.onHunt).toBeNull();
+      reachable = true;
+      await vi.waitFor(() => expect(runtime.routes.drafts.maxPrizeAtomic).toBe(50_000_000n), { timeout: 2000 });
+      expect(live.onHunt).not.toBeNull();
+      expect(errors.mock.calls.join(' ')).toMatch(/could not reach the chain/);
+    } finally { runtime.stop(); errors.mockRestore(); }
+  });
+
   it("refuses to start when the attempts contract's recorder is not the evaluator key", async () => {
     await migrate(pool!);
     await pool!.query('truncate challenge_attempt_log, challenge_chain_ops, challenge_attempts, challenges, challenge_drafts, challenge_index_cursor cascade');

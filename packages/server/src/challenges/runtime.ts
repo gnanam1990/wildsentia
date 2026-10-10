@@ -93,9 +93,12 @@ export interface ChallengesRuntime {
   stop(): void;
 }
 
+/** A setting that is wrong, not a chain that is unreachable: the server must not start with it. */
+class ChallengesConfigError extends Error {}
+
 export function challengesRuntime(config: ChallengesConfig,
   deps: { pool: Pool; live: LiveLayer; world: WorldPort; species: () => readonly SpeciesConfig[]; worldHoursPerRealHour?: number },
-  chain: ChallengeChain = viemChallengeChain(config)): ChallengesRuntime {
+  chain: ChallengeChain = viemChallengeChain(config), options: { retryMs?: number } = {}): ChallengesRuntime {
   const store = new ChallengeStore(deps.pool);
   const engine = new ChallengeEngine(store, deps.live, deps.world, Date.now, { recordOnChain: config.attemptsContract !== null,
     ...(deps.worldHoursPerRealHour ? { worldHoursPerRealHour: deps.worldHoursPerRealHour } : {}),
@@ -121,6 +124,42 @@ export function challengesRuntime(config: ChallengesConfig,
     }, ms));
   };
   const social = new ChallengeSocialStore(deps.pool, catalog, config.siteUrl ?? null, chain.evaluator);
+  let stopped = false;
+  const begin = async (): Promise<void> => {
+    // Fail closed: the key must be the evaluator the contract appoints, or new prizes could never be paid.
+    const appointed = await chain.appointedEvaluator();
+    if (appointed.toLowerCase() !== chain.evaluator.toLowerCase())
+      throw new ChallengesConfigError(`VANA_CHALLENGES_EVALUATOR_KEY is not the contract's evaluator (${appointed})`);
+    // One database serves one contract: ids are the contract's own.
+    const others = await store.otherContracts(config.contract);
+    if (others.length) throw new ChallengesConfigError(`The database holds challenges of another contract (${others[0]}); use a fresh database`);
+    // Challenges recorded under an evaluator that is not ours can never be paid by us: they refund.
+    const foreign = await store.unrecogniseOtherEvaluators(config.contract, chain.evaluator);
+    if (foreign) console.error(`[challenges] ${foreign} open challenges belong to another evaluator; they will refund`);
+    if (config.attemptsContract) {
+      const recorder = await chain.attemptsRecorder();
+      if (recorder.toLowerCase() !== chain.evaluator.toLowerCase())
+        throw new ChallengesConfigError(`VANA_CHALLENGES_EVALUATOR_KEY is not the attempts contract's recorder (${recorder})`);
+    }
+    const limits = await chain.prizeLimits();
+    await engine.restore();
+    if (stopped) return;
+    drafts.minPrizeAtomic = limits.min; drafts.maxPrizeAtomic = limits.max;
+    // Hooks join the live runtime's own (the leaderboard keeps its onEnded).
+    const ended = deps.live.onEnded;
+    deps.live.onEnded = (life) => { ended?.(life); engine.onEnded(life); };
+    deps.live.onHunt = (hunt) => engine.onHunt(hunt);
+    deps.live.onCommand = (record) => engine.onCommand(record);
+    deps.live.holdFreed = (speciesId, since) => engine.holdsFreed(speciesId, since);
+    every(1000, 'tick', () => engine.tick());
+    every(5000, 'indexer', () => indexer.pollOnce());
+    every(3000, 'chain operations', () => ops.processOnce());
+    every(30_000, 'sweep', () => engine.sweep());
+    every(5000, 'attempt records', () => engine.recordAttempts());
+    every(30_000, 'challenge posts', () => social.sweep());
+    console.log(`challenges: on (contract ${config.contract}, chain ${config.chainId}, evaluator ${chain.evaluator}, `
+      + `attempts ${config.attemptsContract ?? 'kept off chain'})`);
+  };
   return {
     social,
     identity: config.identityRegistry ? { owner: (agentId) => chain.identityOwner(agentId) } : null,
@@ -128,39 +167,21 @@ export function challengesRuntime(config: ChallengesConfig,
     agent: { accept: (player, id) => engine.accept(player, id), progressOf: (agentId) => engine.progressOf(agentId),
       waitingOf: (agentId) => engine.waitingOf(agentId), leave: (agentId) => engine.leave(agentId) },
     async start() {
-      // Fail closed: the key must be the evaluator the contract appoints, or new prizes could never be paid.
-      const appointed = await chain.appointedEvaluator();
-      if (appointed.toLowerCase() !== chain.evaluator.toLowerCase())
-        throw new Error(`VANA_CHALLENGES_EVALUATOR_KEY is not the contract's evaluator (${appointed})`);
-      // One database serves one contract: ids are the contract's own.
-      const others = await store.otherContracts(config.contract);
-      if (others.length) throw new Error(`The database holds challenges of another contract (${others[0]}); use a fresh database`);
-      // Challenges recorded under an evaluator that is not ours can never be paid by us: they refund.
-      const foreign = await store.unrecogniseOtherEvaluators(config.contract, chain.evaluator);
-      if (foreign) console.error(`[challenges] ${foreign} open challenges belong to another evaluator; they will refund`);
-      if (config.attemptsContract) {
-        const recorder = await chain.attemptsRecorder();
-        if (recorder.toLowerCase() !== chain.evaluator.toLowerCase())
-          throw new Error(`VANA_CHALLENGES_EVALUATOR_KEY is not the attempts contract's recorder (${recorder})`);
-      }
-      const limits = await chain.prizeLimits();
-      drafts.minPrizeAtomic = limits.min; drafts.maxPrizeAtomic = limits.max;
-      await engine.restore();
-      // Hooks join the live runtime's own (the leaderboard keeps its onEnded).
-      const ended = deps.live.onEnded;
-      deps.live.onEnded = (life) => { ended?.(life); engine.onEnded(life); };
-      deps.live.onHunt = (hunt) => engine.onHunt(hunt);
-      deps.live.onCommand = (record) => engine.onCommand(record);
-      deps.live.holdFreed = (speciesId, since) => engine.holdsFreed(speciesId, since);
-      every(1000, 'tick', () => engine.tick());
-      every(5000, 'indexer', () => indexer.pollOnce());
-      every(3000, 'chain operations', () => ops.processOnce());
-      every(30_000, 'sweep', () => engine.sweep());
-      every(5000, 'attempt records', () => engine.recordAttempts());
-      every(30_000, 'challenge posts', () => social.sweep());
-      console.log(`challenges: on (contract ${config.contract}, chain ${config.chainId}, evaluator ${chain.evaluator}, `
-        + `attempts ${config.attemptsContract ?? 'kept off chain'})`);
+      // A wrong key or database refuses to start (the operator must see it). An unreachable chain
+      // must not take the forest down with it: challenges stay paused and startup is tried again.
+      try { await begin(); return; }
+      catch (error) { if (error instanceof ChallengesConfigError) throw error; console.error(`[challenges] could not reach the chain at startup (${(error as Error).message}); retrying, challenges stay paused`); }
+      let trying = false;
+      const retry = setInterval(() => {
+        if (trying) return;
+        trying = true;
+        begin().then(() => clearInterval(retry), (error: Error) => {
+          if (error instanceof ChallengesConfigError) clearInterval(retry);
+          console.error(`[challenges] ${error instanceof ChallengesConfigError ? 'refused to start' : 'could not reach the chain'}: ${error.message}`);
+        }).finally(() => { trying = false; });
+      }, options.retryMs ?? 30_000);
+      timers.push(retry);
     },
-    stop() { for (const t of timers) clearInterval(t); },
+    stop() { stopped = true; for (const t of timers) clearInterval(t); },
   };
 }

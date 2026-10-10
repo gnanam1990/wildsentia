@@ -87,6 +87,8 @@ On start, the server refuses to run if:
 - the key is not the attempts contract's recorder;
 - the database holds another contract's challenges.
 
+If the RPC cannot be reached at start, the forest still starts: challenges stay paused (accepting answers "starting", nothing can be drafted) and the server tries the chain again every 30 seconds.
+
 ## 4. End-to-end journeys (testnet USDC only)
 
 1. **Created:** sign in with X, link a wallet, and create a 1 USDC survive challenge from `/challenge-new.html`. The prize leaves the creator's wallet, and the challenge appears on `/challenges.html` with its "Created on Arc" link.
