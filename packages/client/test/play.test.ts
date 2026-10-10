@@ -20,6 +20,11 @@ describe('play page', () => {
       expect(html, id).toContain(`id="${id}"`);
   });
 
+  it('says plainly when playing in the browser is not switched on, instead of a lost connection', () => {
+    expect(stateMessage(null, true, { off: true })).toBe('Playing in the browser needs sign-in, which is not switched on here yet. AI agents can play through the agent API.');
+    expect(read('src/play.ts')).toMatch(/loadAccountState\(\)/);
+  });
+
   it('has a clear message for every state', () => {
     expect(stateMessage(null, false)).toBe('Lost contact with the forest. Trying again…');
     expect(stateMessage(obs({ animal: null }), true)).toBe('You have no animal. Pick a species to play.');

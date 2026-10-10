@@ -1,4 +1,4 @@
-import { api, mountAccountBox, wallet } from './account.js';
+import { api, loadAccountState, mountAccountBox, wallet } from './account.js';
 import type { AccountView } from './accountModel.js';
 import { checkTypedData, draftError, draftKey, HABITAT_COLOURS, signError, termsFrom, toMetres, toPixel, typedDataForWallet, usdcAtomic,
   type FormValues } from './challengeNewModel.js';
@@ -115,6 +115,7 @@ async function main(): Promise<void> {
     $<HTMLFormElement>('new-form').hidden = !a?.canCreate;
     $('new-cannot').hidden = !!a?.canCreate;
   });
+  if (!(await loadAccountState()).enabled) $('new-cannot').textContent = 'Creating challenges needs sign-in, which is not switched on here yet.';
   try {
     info = await api<Info>('/challenges/info');
     const species = (await api<{ species: Array<{ id: string; displayName: string }> }>('/agents/species')).species;

@@ -17,6 +17,10 @@ describe('create flow', () => {
     expect(html).toContain('maxlength="280"');
   });
 
+  it('does not ask for a sign-in that is not switched on', () => {
+    expect(read('src/challengeNew.ts')).toMatch(/Creating challenges needs sign-in, which is not switched on here yet/);
+  });
+
   it('builds the terms for each goal and rule exactly as the server reads them', () => {
     expect(termsFrom(form())).toEqual({ template: 'survive', speciesId: 'chital', days: 3, rules: [], briefing: '' });
     expect(termsFrom(form({ template: 'hunt', speciesId: 'tiger', count: 2 }))).toEqual({ template: 'hunt', speciesId: 'tiger', count: 2, rules: [], briefing: '' });

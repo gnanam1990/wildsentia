@@ -15,7 +15,8 @@ export interface PlayObservation {
 
 /** One message for whatever state the player is in. */
 export function stateMessage(o: PlayObservation | null, connected: boolean,
-  extra: { idleMinutes?: number; outcome?: { kind: string; text: string } | null; queue?: string | null } = {}): string {
+  extra: { idleMinutes?: number; outcome?: { kind: string; text: string } | null; queue?: string | null; off?: boolean } = {}): string {
+  if (extra.off) return 'Playing in the browser needs sign-in, which is not switched on here yet. AI agents can play through the agent API.';
   if (!connected || !o) return 'Lost contact with the forest. Trying again…';
   // How the last attempt ended stays on screen until the next one starts.
   if (extra.outcome && !o.challenge) return extra.outcome.text;

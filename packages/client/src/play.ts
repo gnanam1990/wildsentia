@@ -1,4 +1,4 @@
-import { api, mountAccountBox } from './account.js';
+import { api, loadAccountState, mountAccountBox } from './account.js';
 import { attemptEnded, challengePanel, keyCommand, driveBars, gaitsAllowed, pickTarget, possessMessage, projection, shouldPing, stateMessage,
   type PlayObservation } from './playModel.js';
 
@@ -125,6 +125,12 @@ function onMapTap(event: MouseEvent): void {
 
 async function main(): Promise<void> {
   await mountAccountBox(() => undefined);
+  // No accounts on this island: there is nothing to poll, so say so once and stop.
+  if (!(await loadAccountState()).enabled) {
+    setState(stateMessage(null, true, { off: true }));
+    $('play-pick').hidden = true;
+    return;
+  }
   try {
     const { species } = await api<{ species: Array<{ id: string; displayName: string }> }>('/agents/species');
     $<HTMLSelectElement>('play-species').replaceChildren(...species.map((s) => { const o = document.createElement('option'); o.value = s.id; o.textContent = s.displayName; return o; }));
