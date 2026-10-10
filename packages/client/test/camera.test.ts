@@ -261,3 +261,28 @@ describe('turning the view without a right mouse button', () => {
     expect(follow.theta).toBe(0.9); expect(follow.phi).toBe(0.55);
   });
 });
+
+describe('following an animal whose position is not known this frame', () => {
+  it('keeps applying zoom, turns and flights while holding the last framing', () => {
+    const camera = new THREE.PerspectiveCamera(50, 1, .1, 1000);
+    const target = surface();
+    const follow = new FollowCamera(camera, target);
+    follow.reducedMotion = true;
+    follow.follow({ x: 10, z: 20, heading: 0, moving: false }, 1);
+    const at = follow.target.clone(), before = camera.position.clone();
+    follow.zoomBy(2); follow.rotateBy(.5);
+    follow.hold(1 / 60);
+    expect(camera.position.distanceTo(before)).toBeGreaterThan(1);
+    expect(camera.position.distanceTo(follow.target)).toBeCloseTo(follow.distance, 3);
+    expect(follow.target.toArray()).toEqual(at.toArray());
+    // Still following: a plain drag circles the held point rather than exploring away.
+    let explored = false; follow.onExplore = () => { explored = true; };
+    dispatch(target, 'pointerdown', { pointerId: 1, clientX: 100, clientY: 100, button: 0 });
+    dispatch(target, 'pointermove', { pointerId: 1, clientX: 160, clientY: 100 });
+    expect(explored).toBe(false);
+    follow.reducedMotion = false; follow.flyToDistance(80);
+    const distance = follow.distance;
+    follow.hold(1 / 60);
+    expect(follow.distance).toBeGreaterThan(distance);
+  });
+});

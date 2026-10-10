@@ -909,7 +909,7 @@ function frame(): void {
           y: Math.max(renderBaseY(position, animals.groundHeightAt), renderBaseY(partner, animals.groundHeightAt)) }, dt);
       } else follow.follow({ ...position, y: renderBaseY(position, animals.groundHeightAt),
         focusHeight: visualFor(speciesId).heightM * characterScale(visibleAnimals.get(followedId) ?? {}) * 0.5 }, dt);
-    }
+    } else follow.hold(dt); // Not placed this frame: keep the last framing, but zoom and turns still work.
     // The bubble floats over the animal's head, projected into screen space.
     const head = position === null ? null
       : new THREE.Vector3(

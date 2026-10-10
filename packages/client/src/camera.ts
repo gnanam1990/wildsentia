@@ -251,6 +251,16 @@ export class FollowCamera {
     this.#apply(dt);
   }
 
+  /**
+   * Keeps following but holds the last framing, for a frame where the followed animal's
+   * position is not known. Zoom, turns and flights still apply, so the view never freezes.
+   */
+  hold(dt: number): void {
+    this.#following = true;
+    this.#velocity.set(0, 0);
+    this.#apply(dt);
+  }
+
   freeLook(dt: number): void {
     this.#following = false;
     const step = Math.max(0, Math.min(dt, 0.1));
