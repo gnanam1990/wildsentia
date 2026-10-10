@@ -25,7 +25,8 @@ export function workSkill(action: HumanAction): HumanSkill | null {
 export function learnFromSharedWork(state: CommunityState, windows: readonly HumanWorkWindow[], log: EventLog): void {
   if (state.version < 3) return;
   const people = new Map(state.people.map(p => [p.id, p]));
-  const ordered = [...windows].sort((a, b) => a.start - b.start || a.personId.localeCompare(b.personId));
+  // Code-point order (sim_0.38.0): localeCompare followed the host's locale data.
+  const ordered = [...windows].sort((a, b) => a.start - b.start || (a.personId < b.personId ? -1 : a.personId > b.personId ? 1 : 0));
   for (let i = 0; i < ordered.length; i++) for (let j = i + 1; j < ordered.length; j++) {
     const a = ordered[i]!, b = ordered[j]!;
     if (a.personId === b.personId || a.action !== b.action || a.skill !== b.skill || workSkill(a.action) !== a.skill) continue;
@@ -43,7 +44,7 @@ export function learnFromSharedWork(state: CommunityState, windows: readonly Hum
     let relationship = relationships.find(r => r.members[0] === members[0] && r.members[1] === members[1]);
     if (!relationship) {
       relationship = { members, sharedWorkSeconds: 0, lastInteractionAt: interactionEnd, trust: 0, reportedHours: 0, lessons: [] };
-      relationships.push(relationship); relationships.sort((x, y) => x.members.join(':').localeCompare(y.members.join(':')));
+      relationships.push(relationship); relationships.sort((x, y) => { const p = x.members.join(':'), q = y.members.join(':'); return p < q ? -1 : p > q ? 1 : 0; });
     }
     relationship.sharedWorkSeconds += seconds; relationship.lastInteractionAt = Math.max(relationship.lastInteractionAt, interactionEnd);
     // This is an explicit cooperation score, not a claim to infer human feelings.

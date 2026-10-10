@@ -103,7 +103,7 @@ export function advanceCommunityFamily(state: CommunityState, patches: Patch[], 
       && father.patchId === mother.patchId && distance(mother, father) <= 3)
       .map(father => ({ father, edge: state.relationships?.find(r => r.members.includes(mother.id) && r.members.includes(father.id)) }))
       .filter(pair => (pair.edge?.sharedWorkSeconds ?? 0) >= 3600)
-      .sort((a, b) => (b.edge?.trust ?? 0) - (a.edge?.trust ?? 0) || a.father.id.localeCompare(b.father.id));
+      .sort((a, b) => (b.edge?.trust ?? 0) - (a.edge?.trust ?? 0) || (a.father.id < b.father.id ? -1 : a.father.id > b.father.id ? 1 : 0));
     const pair = candidates[0]; if (!pair || state.people.length >= MAX_PEOPLE) continue;
     const roll = spatialHash(`${state.id}:conception:${day}:${mother.id}:${pair.father.id}`) / 0x1_0000_0000;
     if (roll >= .04) continue;

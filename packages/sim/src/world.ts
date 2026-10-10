@@ -1510,7 +1510,7 @@ export class World {
         }).sort((a, b) => {
           const av = familyStarts.get(a.id)!.position, bv = familyStarts.get(b.id)!.position;
           return Math.hypot(av.x - person.position.x, av.z - person.position.z)
-            - Math.hypot(bv.x - person.position.x, bv.z - person.position.z) || a.id.localeCompare(b.id);
+            - Math.hypot(bv.x - person.position.x, bv.z - person.position.z) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
         }).map(a => ({ ...a, alive: true, patchId: familyStarts.get(a.id)!.patchId,
           position: { ...familyStarts.get(a.id)!.position } }))[0] ?? null,
         preyById: (id) => this.#agentsById.get(id) ?? null,

@@ -99,7 +99,7 @@ function careTarget(state: CommunityState, caregiver: Person): Person | null {
     .sort((a, b) => Number(b.motherId === caregiver.id || b.fatherId === caregiver.id)
       - Number(a.motherId === caregiver.id || a.fatherId === caregiver.id)
       || Math.max(a.needs.hunger, a.needs.thirst) - Math.max(b.needs.hunger, b.needs.thirst)
-      || a.id.localeCompare(b.id))[0] ?? null;
+      || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))[0] ?? null;
 }
 
 function choose(state: CommunityState, p: Person, at: number, patch: Patch, pool: MicroPatchPopulation | undefined,

@@ -30,6 +30,16 @@ describe('authoritative shared work and observational learning', () => {
     expect(w.log.all().filter(e => e.type === 'human_skill_learned')).toHaveLength(0);
   });
 
+  it('orders relationships by code point, not by the host locale', () => {
+    // localeCompare follows the runtime's locale data: '_' sorts before digits and 'B' after
+    // 'a' there, the reverse of code-point order, so a saved order could differ by host.
+    const { w, c, a, b, windows } = fixture();
+    a.id = 'a_x'; b.id = 'a_y'; windows[0]!.personId = a.id; windows[1]!.personId = b.id;
+    c.relationships!.push({ members: ['a0', 'b0'], sharedWorkSeconds: 1, lastInteractionAt: 0, trust: 0, reportedHours: 0, lessons: [] });
+    learnFromSharedWork(c, windows, w.log);
+    expect(c.relationships!.map(r => r.members.join(':'))).toEqual(['a0:b0', 'a_x:a_y']);
+  });
+
   it('creates no relationships for non-overlap, distance, different work, idle time or dead people', () => {
     for (const mode of ['nonoverlap', 'distance', 'different', 'idle', 'dead'] as const) {
       const { w, c, b, windows } = fixture();
