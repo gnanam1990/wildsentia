@@ -147,7 +147,9 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
 - Live derivative: `animals/TigerRigged.glb`. Locally fitted skeleton and geometric weights;
   oriented +Z and animated by `tools/assets/rig_local_tiger.py`. No new generation credits used.
 - Authored clips: Idle, Walk, Run, Sneak, Eating, Drinking, Resting, Death. These are simplified
-  poses/cycles, not motion capture. Resting is an idle variant, not a lying-down animation;
+  poses/cycles, not motion capture. Walk, Run (a trot) and Sneak were rewritten on 10 October 2026
+  by `tools/assets/big_cat_gaits.mjs` (a cat's four-beat walk with planted paws), in both the tiger
+  and the leopard. Resting is an idle variant, not a lying-down animation;
   feeding/drinking are head-lowering gestures without mouth/water or carcass contact.
 - Manual weight painting, gait/contact and anatomy review remain pending.
 - **Not the Amil “Running Tiger” Sketchfab asset.** The official download did not complete
@@ -174,7 +176,7 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
   - `animals/Tiger.glb`: sha256 `7d7c3d9546d1bbeb`
   - `animals/Elephant.glb`: sha256 `682e6b100ff1a6a23`
   - `animals/Rabbit.glb`: sha256 `763c19a2606208f05`
-  - `animals/TigerRigged.glb`: sha256 `86e04733f6d4cd6e`
+  - `animals/TigerRigged.glb`: sha256 `de507500a8afe2ec`
   - `animals/ElephantWalking.glb`: sha256 `f82c664c59e76713`
   - `animals/AsianElephantAdultMale.glb`: sha256 `fa5095bb38155cc041363ac60eb6d9a2f56cc660ffa2e322fd8a229afc841c8c`
   - `animals/AsianElephantAdultFemale.glb`: sha256 `4b2259f653ca329b0c61e69a155f312b97555d92b66506731edfcec5fb54de03`
