@@ -10,7 +10,7 @@ import { buildApi } from '../src/api.js';
 import { testDatabaseUrl } from './testDatabase.js';
 import { LiveLayer, OPEN_SECONDS } from '../src/live/liveLayer.js';
 import { AgentStore, PlaceDropLedger, agentIdFor } from '../src/live/liveStore.js';
-import { NonceStore, signingString, verifySigned } from '../src/live/signing.js';
+import { AGENT_RATE_LIMITS, NonceStore, signingString, verifySigned } from '../src/live/signing.js';
 import { randomLandSpot, worldPort } from '../src/live/worldPort.js';
 import { walletProofMessage, type LiveRouteDeps } from '../src/live/routes.js';
 
@@ -46,6 +46,18 @@ describe('signed agent requests', () => {
     for (let i = 0; i < 3; i++) expect(nonces.claim('k', `nonce-${i}-aaaaaaaaaaaa`, 0)).toBe('ok');
     expect(nonces.claim('k', 'nonce-x-aaaaaaaaaaaa', 0)).toBe('too_many_requests');
     expect(nonces.claim('k', 'nonce-x-aaaaaaaaaaaa', 10 * 60_000)).toBe('ok');
+  });
+  it('never refuses an agent that keeps to the published rate limits', () => {
+    // Five commands and two observes a second, for five minutes, with an honest clock.
+    const nonces = new NonceStore();
+    const perSecond = AGENT_RATE_LIMITS.commandsPerSecond + AGENT_RATE_LIMITS.observesPerSecond;
+    expect(perSecond).toBe(7);
+    const start = Date.now();
+    for (let i = 0; i < perSecond * 300; i++) {
+      const now = start + Math.floor(i * 1000 / perSecond);
+      const h = signedHeaders(k, aud, 'POST', '/agents/me/stop', '', { timestamp: String(now) });
+      expect(verifySigned(headers(h), { audience: aud, method: 'POST', path: '/agents/me/stop', body: '' }, nonces, now), `request ${i}`).toMatchObject({ ok: true });
+    }
   });
 });
 

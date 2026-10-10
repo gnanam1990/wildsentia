@@ -13,6 +13,8 @@ import { createHash, createPublicKey, verify, type KeyObject } from 'node:crypto
  */
 
 export const SIGNATURE_SKEW_MS = 120_000;
+/** The published per-agent limits (docs/guide/05-live-agents.md): commands and observes a second. */
+export const AGENT_RATE_LIMITS = { commandsPerSecond: 5, observesPerSecond: 2 };
 const KEY_RE = /^[A-Za-z0-9_-]{43}$/;
 const SIG_RE = /^[A-Za-z0-9_-]{86}$/;
 const NONCE_RE = /^[A-Za-z0-9_-]{16,64}$/;
@@ -25,13 +27,22 @@ export function signingString(p: { audience: string; method: string; path: strin
 export type SignatureFailure = 'missing_signature' | 'bad_key' | 'bad_signature' | 'stale_timestamp' | 'replayed_nonce' | 'too_many_requests';
 export type SignedHeaders = { key?: string | undefined; timestamp?: string | undefined; nonce?: string | undefined; signature?: string | undefined };
 
-/** Replay protection: each key's nonces are remembered for the skew window, and bounded. */
+/**
+ * A nonce is kept until its request's timestamp goes stale, at most twice the skew from now (a
+ * clock running ahead). The per-key bound must let an agent at the published limits through.
+ */
+const NONCES_PER_KEY = Math.ceil((AGENT_RATE_LIMITS.commandsPerSecond + AGENT_RATE_LIMITS.observesPerSecond) * 2 * SIGNATURE_SKEW_MS / 1000);
+
+/** Replay protection: each key's nonces are remembered while their timestamps are fresh, and bounded. */
 export class NonceStore {
   readonly #seen = new Map<string, Map<string, number>>();
-  constructor(private readonly perKey = 600, private readonly maxKeys = 20_000) {}
+  constructor(private readonly perKey = NONCES_PER_KEY, private readonly maxKeys = 20_000) {}
 
-  /** False if this nonce was used, or the key has made too many requests in the window. */
-  claim(key: string, nonce: string, now: number): 'ok' | 'replayed_nonce' | 'too_many_requests' {
+  /**
+   * False if this nonce was used, or the key has made too many requests in the window. `until`
+   * is when a replay would be refused as stale anyway (the request's timestamp plus the skew).
+   */
+  claim(key: string, nonce: string, now: number, until = now + 2 * SIGNATURE_SKEW_MS): 'ok' | 'replayed_nonce' | 'too_many_requests' {
     let nonces = this.#seen.get(key);
     if (nonces) for (const [n, until] of nonces) if (until < now) nonces.delete(n);
     if (!nonces) {
@@ -41,7 +52,7 @@ export class NonceStore {
     }
     if (nonces.has(nonce)) return 'replayed_nonce';
     if (nonces.size >= this.perKey) return 'too_many_requests';
-    nonces.set(nonce, now + 2 * SIGNATURE_SKEW_MS);
+    nonces.set(nonce, Math.min(until, now + 2 * SIGNATURE_SKEW_MS));
     return 'ok';
   }
 
@@ -78,6 +89,6 @@ export function verifySigned(h: SignedHeaders, p: { audience: string; method: st
   let good = false;
   try { good = verify(null, data, key, Buffer.from(h.signature, 'base64url')); } catch { good = false; }
   if (!good) return { ok: false, error: 'bad_signature' };
-  const claimed = nonces.claim(h.key, h.nonce, now);
+  const claimed = nonces.claim(h.key, h.nonce, now, Number(h.timestamp) + SIGNATURE_SKEW_MS);
   return claimed === 'ok' ? { ok: true, key: h.key } : { ok: false, error: claimed };
 }

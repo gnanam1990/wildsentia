@@ -5,7 +5,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { verifyMessage } from 'viem';
 import { formatWorldTime, seasonAt, type SpeciesConfig } from '@vana/shared';
 import { fieldGuide } from './fieldGuide.js';
-import { NonceStore, verifySigned, type SignedHeaders } from './signing.js';
+import { AGENT_RATE_LIMITS, NonceStore, verifySigned, type SignedHeaders } from './signing.js';
 import { OPEN_RADIUS_M, type Gait, type LiveLayer, type WorldPort } from './liveLayer.js';
 import { agentIdFor, type AgentRecord, type AgentStore, type PlaceDropLedger, type RegistrationLimits } from './liveStore.js';
 import { displayAmount } from '../rewards.js';
@@ -87,7 +87,7 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
   const llmScript = existsSync(llmPath) ? readFileSync(llmPath, 'utf8') : null;
   const llmHash = llmScript ? createHash('sha256').update(llmScript).digest('hex') : null;
   const nonces = new NonceStore();
-  const commands = new Bucket(5, 10), observes = new Bucket(2, 4), registrations = new Bucket(10 / 60, 10);
+  const commands = new Bucket(AGENT_RATE_LIMITS.commandsPerSecond, 10), observes = new Bucket(AGENT_RATE_LIMITS.observesPerSecond, 4), registrations = new Bucket(10 / 60, 10);
   const audience = (): string | null => { const id = world.worldId(); return id ? `vana:${id}` : null; };
   // A balance is read from the chain at most every ten minutes per wallet.
   const balances = new Map<string, { at: number; enough: boolean }>();
