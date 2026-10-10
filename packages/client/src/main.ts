@@ -42,6 +42,7 @@ import { LazyDialog } from './lazyDialog.js';
 import { ReturnPath } from './returnPath.js';
 import { renderBaseY } from './space.js';
 import { AmbientAudio, cueFor, type AudioAnimal } from './ambientAudio.js';
+import { mountSettings } from './settings.js';
 
 
 /** Where the thought floats: just above the marker over this species' head. */
@@ -117,6 +118,8 @@ follow.onExplore = () => {
   if (followedId !== null || followedPersonId !== null) watch(null);
 };
 const observerVisibility = new ObserverVisibility();
+mountSettings(document.querySelector<HTMLButtonElement>('#open-settings')!, document.querySelector<HTMLElement>('#settings-panel')!,
+  document.querySelector<HTMLSelectElement>('#theme-choice')!);
 const revealAnimal = document.querySelector<HTMLInputElement>('#observer-cutaway')!;
 const hud = new Hud({
   clock: document.querySelector('#clock')!,

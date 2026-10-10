@@ -22,9 +22,30 @@
     <button id="freecam" title="Stop tracking and explore the whole island"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg><span>Explore</span></button>
     <button id="open-event-map" title="Where hunts, births and deaths happened"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6-5.3-6-11a6 6 0 0 1 12 0c0 5.7-6 11-6 11z"/><circle cx="12" cy="10" r="2.2"/></svg><span>Events</span></button>
     <button id="open-community" aria-haspopup="dialog" title="The island's village"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-6 8 6v9H4z"/><path d="M10 20v-5h4v5"/></svg><span>Village</span></button>
+    <button id="open-settings" type="button" aria-expanded="false" aria-controls="settings-panel" title="Theme, graphics, sound and view"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span>Settings</span></button>
     </div>
   </header>
   <div id="agents-list" class="agents-list" hidden></div>
+  <section id="settings-panel" class="settings-panel" hidden aria-labelledby="settings-title">
+    <h2 id="settings-title">Settings</h2>
+    <div class="observer-options">
+      <label for="theme-choice">Theme</label>
+      <select id="theme-choice"><option value="auto">Same as device</option><option value="light">Light</option><option value="dark">Dark</option></select>
+      <label for="render-quality">Graphics quality</label>
+      <select id="render-quality" aria-describedby="render-quality-help">
+        <option value="auto">Auto (recommended)</option><option value="smooth">Smooth / low power</option>
+        <option value="balanced">Balanced</option><option value="high">High detail</option>
+      </select>
+      <p id="render-quality-help">Auto lowers detail if frame delivery stays slow. Grass, shadows and near-tree detail range change; animal and ecosystem state do not.</p>
+      <output id="render-quality-status" aria-live="polite"></output>
+      <button id="ambient-toggle" type="button" aria-pressed="false" aria-describedby="ambient-help">Ambient audio: off</button>
+      <p id="ambient-help">Off by default, no autoplay. Click to hear quiet, synthetic rain, wind and nearby visible water from the current saved forest, and short synthetic calls only from visible animals the simulation records as fleeing or hunting.</p>
+      <output id="ambient-status" role="status" aria-live="polite"></output>
+      <label><input id="observer-cutaway" type="checkbox" checked aria-describedby="observer-cutaway-help" /> Reveal followed subjects</label>
+      <p id="observer-cutaway-help">Fade decorative plants and rocks directly in front of the followed animal or person. Viewer-only: nature and shadows stay unchanged.</p>
+      <p><a href="/characters.html">Character review</a> the public forest never needs a wallet.</p>
+    </div>
+  </section>
   <p id="observer-ui-status" role="status" aria-atomic="true"></p>
   <section id="event-visit" aria-labelledby="event-visit-title" hidden>
     <h2 id="event-visit-title"></h2>
@@ -39,22 +60,6 @@
     <div id="passport"></div>
     <div id="outlook" aria-live="polite"></div>
     <div id="reward-subject"></div>
-    <details class="observer-options">
-      <summary>View options</summary>
-      <label for="render-quality">Graphics quality</label>
-      <select id="render-quality" aria-describedby="render-quality-help">
-        <option value="auto">Auto (recommended)</option><option value="smooth">Smooth / low power</option>
-        <option value="balanced">Balanced</option><option value="high">High detail</option>
-      </select>
-      <p id="render-quality-help">Auto lowers detail if frame delivery stays slow. Grass, shadows and near-tree detail range change; animal and ecosystem state do not.</p>
-      <output id="render-quality-status" aria-live="polite"></output>
-      <button id="ambient-toggle" type="button" aria-pressed="false" aria-describedby="ambient-help">Ambient audio: off</button>
-      <p id="ambient-help">Off by default, no autoplay. Click to hear quiet, synthetic rain, wind and nearby visible water from the current saved forest, and short synthetic calls only from visible animals the simulation records as fleeing or hunting.</p>
-      <output id="ambient-status" role="status" aria-live="polite"></output>
-      <label><input id="observer-cutaway" type="checkbox" checked aria-describedby="observer-cutaway-help" /> Reveal followed subjects</label>
-      <p id="observer-cutaway-help">Fade decorative plants and rocks directly in front of the followed animal or person. Viewer-only: nature and shadows stay unchanged.</p>
-      <p><a href="/characters.html">Character review</a> the public forest never needs a wallet.</p>
-    </details>
     <details class="live-encounters">
       <summary>Watch a recorded hunt</summary>
       <p>Checkpointed hunts play on a shared timeline, behind the current world. Animation is illustrative.</p>

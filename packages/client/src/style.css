@@ -470,3 +470,16 @@ body.clean-view #reward-badge, body.clean-view #reward-total, body.clean-view #r
 body.clean-view #thought, body.clean-view .encounter-label, body.clean-view .agent-tag,
 body.clean-view #agents-list, body.clean-view #notice, body.clean-view #event-visit,
 body.clean-view .replay, body.clean-view #render-stats { display: none !important; }
+
+/* Settings: theme, graphics, sound and view, opened from the top bar. */
+.settings-panel { position: fixed; z-index: 40; width: min(340px, calc(100vw - 24px)); max-height: calc(100dvh - var(--bar-bottom) - 24px);
+  overflow-y: auto; padding: 14px 16px; background: var(--dialog-surface); border: 1px solid var(--line); border-radius: 14px;
+  box-shadow: 0 16px 44px var(--shadow); color: var(--ink); }
+.settings-panel h2 { margin: 0 0 4px; font-size: 15px; }
+.settings-panel .observer-options { border: 0; margin: 0; padding: 0; }
+.settings-panel .observer-options > label:not(:has(input)) { display: block; min-height: 0; margin: 12px 0 6px; font-size: 12px;
+  color: var(--ink-2); text-transform: uppercase; letter-spacing: .08em; font-weight: 650; cursor: default; }
+.settings-panel select { width: 100%; min-height: 40px; color: var(--ink); background: var(--field); border: 1px solid var(--line);
+  border-radius: 8px; padding: 8px; font: inherit; font-size: 13px; }
+.settings-panel a { color: var(--mist); }
+body.clean-view .settings-panel { display: none !important; }
