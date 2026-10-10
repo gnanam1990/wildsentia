@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { fileURLToPath } from 'node:url';
 import { WORLD_SECONDS_PER_DAY } from '@vana/shared';
 import { createWorld } from '../src/world.js';
+import { takeSnapshot } from '../src/snapshot.js';
 import { assertNutrientsConserved } from '../src/fields/nutrients.js';
 
 const speciesDir = fileURLToPath(new URL('../../../config/species', import.meta.url));
@@ -111,5 +112,25 @@ describe('spawn records', () => {
     const spawned = world.log.all().filter(e => e.type === 'agent_spawned');
     expect(spawned).toHaveLength(19);
     for (const event of spawned) expect(event.patchId).toBe(world.agents.find(a => a.id === event.actors[0])!.patchId);
+  });
+});
+
+describe('social groups', () => {
+  it('drop members that have died, and a group none of whose members live', () => {
+    // Every death stayed listed in its group forever, and a group whose members had all died
+    // stayed open: the next founder or immigrant of its kind joined the dead group.
+    const world = createWorld({ seed: 4, speciesDir, initialAgents: { dhole: 5 }, minPopulation: {} });
+    const pack = world.agents.filter(a => a.speciesId === 'dhole');
+    const groupId = pack[0]!.groupId!;
+    expect(pack.every(a => a.groupId === groupId)).toBe(true);
+    for (const dhole of pack.slice(0, 2)) dhole.drives.hunger = 1;
+    world.step(1);
+    const living = pack.filter(a => a.alive).map(a => a.id);
+    expect(living).toHaveLength(3);
+    const group = () => takeSnapshot(world).groups.find(([id]) => id === groupId)?.[1];
+    expect(group()!.memberIds).toEqual(living);
+    for (const dhole of pack) dhole.drives.hunger = 1;
+    world.step(1);
+    expect(group()).toBeUndefined();
   });
 });

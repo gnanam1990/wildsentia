@@ -438,6 +438,18 @@ export class World {
     return bestPatch;
   }
 
+  /**
+   * sim_0.38.0: a group lists its living members only, and a group with none is gone. Every
+   * death stayed listed for good, and a group whose members had all died stayed open, so the
+   * next founder or immigrant of its kind joined it as a group of one under the dead group's id.
+   */
+  #pruneGroups(): void {
+    for (const [groupId, group] of this.#groups) {
+      group.memberIds = group.memberIds.filter(id => this.#agentsById.get(id)?.alive === true);
+      if (!group.memberIds.length) this.#groups.delete(groupId);
+    }
+  }
+
   #assignGroup(agent: Agent, cfg: SpeciesConfig): void {
     const structure = cfg.social.structure;
     if (structure === 'solitary') return;
@@ -1560,6 +1572,7 @@ export class World {
     }
     if (Math.floor(decisionEnd / WORLD_SECONDS_PER_DAY) > Math.floor(this.#time / WORLD_SECONDS_PER_DAY))
       this.#islandArrival(decisionEnd);
+    this.#pruneGroups();
     this.#time += seconds;
   }
 }
