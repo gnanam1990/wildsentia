@@ -26,21 +26,25 @@ const SHORT: Record<string, string> = {
 
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
+const text = (v: unknown, max = 2000): v is string => typeof v === 'string' && v.length <= max;
+const record = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/** Only replies every field of which the card can draw; anything else shows nothing. */
 export function validOutlook(body: unknown): body is OutlookBody {
-  if (typeof body !== 'object' || body === null) return false;
-  const b = body as Record<string, unknown>;
+  if (!record(body)) return false;
+  const b = body;
   if (b.available === false) return typeof b.reason === 'string';
-  return b.available === true && finite(b.asOfWorldTime) && finite(b.confidence) && Array.isArray(b.choices)
-    && b.choices.every((c) => typeof c === 'object' && c !== null && typeof (c as OutlookChoice).goal === 'string'
-      && finite((c as OutlookChoice).probability));
+  return b.available === true && finite(b.asOfWorldTime) && finite(b.confidence) && text(b.model, 200) && text(b.notice)
+    && Array.isArray(b.choices) && b.choices.length <= 50
+    && b.choices.every((c) => record(c) && text(c.goal, 100) && text(c.label, 500) && finite(c.probability));
 }
 
 export function validHighlights(body: unknown): body is HighlightsBody {
-  if (typeof body !== 'object' || body === null) return false;
-  const b = body as Record<string, unknown>;
+  if (!record(body)) return false;
+  const b = body;
   if (b.available === false) return typeof b.reason === 'string';
-  return b.available === true && Array.isArray(b.highlights) && b.highlights.every((h) => typeof h === 'object' && h !== null
-    && typeof (h as HighlightItem).event === 'object' && finite((h as HighlightItem).score));
+  return b.available === true && text(b.model, 200) && text(b.notice) && Array.isArray(b.highlights) && b.highlights.length <= 50
+    && b.highlights.every((h) => record(h) && record(h.event) && finite(h.score));
 }
 
 /** The likely next hour as bars, most likely first; empty when there is nothing to show. */

@@ -42,6 +42,27 @@ describe('observer insights in the browser', () => {
     expect(validHighlights({ available: false, reason: 'budget_exhausted' })).toBe(true);
   });
 
+  it('refuses replies whose text or events would break the card when drawn', () => {
+    const { model: _m, ...noModel } = outlook;
+    expect(validOutlook(noModel)).toBe(false);
+    expect(validOutlook({ ...outlook, notice: 42 })).toBe(false);
+    expect(validOutlook({ ...outlook, choices: [{ goal: 'rest', label: null, probability: .5 }] })).toBe(false);
+    expect(validOutlook({ ...outlook, choices: Array.from({ length: 500 }, () => outlook.choices[0]) })).toBe(false);
+    expect(validOutlook({ available: false, reason: 'x' })).toBe(true);
+    const highlights = { available: true, asOfWorldTime: 7200, model: 'jev', notice: 'n',
+      highlights: [{ event: { id: 'e1', type: 'hunt' }, score: 3, confidence: .8 }] };
+    expect(validHighlights(highlights)).toBe(true);
+    expect(validHighlights({ ...highlights, highlights: [{ event: null, score: 3, confidence: .8 }] })).toBe(false);
+    expect(validHighlights({ ...highlights, highlights: [{ event: [], score: 3, confidence: .8 }] })).toBe(false);
+    expect(validHighlights({ ...highlights, model: undefined })).toBe(false);
+    expect(validHighlights({ ...highlights, notice: {} })).toBe(false);
+    // Every reply the checks accept can be drawn.
+    for (const body of [outlook, highlights]) {
+      expect(() => (validOutlook(body) ? outlookHtml(body) : '')).not.toThrow();
+      expect(() => (validHighlights(body) ? highlightsHtml(body) : '')).not.toThrow();
+    }
+  });
+
   it('asks for the followed animal, drops a stale reply and clears on unfollow', async () => {
     const outlookEl = { innerHTML: '' } as HTMLElement, highlightsEl = { innerHTML: '' } as HTMLElement;
     let release!: () => void;
