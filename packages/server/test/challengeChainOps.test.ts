@@ -36,7 +36,10 @@ class FakeChain implements ChallengeChain {
   async prizeLimits() { return { min: 1n, max: 100n }; }
   async challengeCount(_atBlock: number) { return this.state.size; }
   async attemptStage(attemptId: string) { return this.stages.get(attemptId) ?? 0; }
-  async attemptsRecorder() { return this.evaluator; }
+  recorder: Hex = EVALUATOR as Hex;
+  readonly reputation: Hex | null = null;
+  async attemptsRecorder() { return this.recorder; }
+  async identityOwner() { return null; }
   async prepare(call: ChainCall, options?: PrepareOptions) {
     this.prepared.push(options);
     if (this.failPrepare) throw new Error(this.failPrepare);
@@ -126,6 +129,18 @@ maybe('chain operations', () => {
     expect((await store.opsOf({ attemptId: id })).map((o) => o.status)).toEqual(['sent', 'pending']);
     await ops.processOnce();
     expect(chain.sent.map((c) => c.fn)).toEqual(['refund', 'recordStart', 'recordEnd']);
+  });
+
+  it('pauses records when a plain revert comes back and the recorder is no longer our key', async () => {
+    const id = await recorded();
+    const prepare = chain.prepare.bind(chain);
+    chain.prepare = async (call, options) => {
+      if (call.fn === 'recordStart') throw new Error('execution reverted');
+      return prepare(call, options);
+    };
+    chain.recorder = ('0x' + '5'.repeat(40)) as Hex;
+    await ops.processOnce();
+    expect((await store.opsOf({ attemptId: id })).map((o) => [o.status, o.tries])).toEqual([['pending', 0], ['pending', 0]]);
   });
 
   it('leaves attempt records waiting, untouched, while no attempts contract is set', async () => {

@@ -338,9 +338,10 @@ export class ChallengeEngine {
     const feedback = this.options.feedback;
     if (feedback) {
       for (const a of await this.store.attemptsForFeedback(50)) {
+        // feedbackURI serves exactly the record whose keccak256 is feedbackHash (ERC-8004); wallet is checked against the identity's owner when sent.
         await this.store.enqueueOp('reputation', { attemptId: a.id, challengeId: a.challengeId }, { agentId: a.erc8004AgentId,
-          value: a.status === 'met' ? 100 : 0, tag2: a.status, endpoint: `${feedback.siteUrl}/challenges.html?id=${a.challengeId}`,
-          feedbackURI: `${feedback.siteUrl}/api/challenges/${a.challengeId}/attempts/${a.id}`, feedbackHash: a.resultHash });
+          value: a.status === 'met' ? 100 : 0, tag2: a.status, wallet: a.payoutWallet, endpoint: `${feedback.siteUrl}/challenges.html?id=${a.challengeId}`,
+          feedbackURI: `${feedback.siteUrl}/api/challenges/${a.challengeId}/attempts/${a.id}/record`, feedbackHash: a.resultHash });
       }
     }
     if (!this.options.recordOnChain) return;

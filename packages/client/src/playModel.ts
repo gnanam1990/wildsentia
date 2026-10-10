@@ -111,9 +111,14 @@ export function challengePanel(c: ChallengeProgress, now: number) {
 export const KEY_STEP_M = 40;
 const ARROWS: Record<string, [number, number]> = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
 
-/** The map from a keyboard: arrows move a step that way, H hunts the nearest prey, Escape stops. */
-export function keyCommand(o: PlayObservation, key: string): { kind: 'go'; x: number; z: number } | { kind: 'hunt'; id: string } | { kind: 'stop' } | null {
-  if (!o.animal) return null;
+/**
+ * The map from a keyboard: arrows move a step that way, H hunts the nearest prey, Escape stops.
+ * A held key's repeats send nothing (they would flood the server), and keys with Alt, Ctrl or Cmd
+ * are left to the browser.
+ */
+export function keyCommand(o: PlayObservation, key: string, mods: { repeat?: boolean; altKey?: boolean; ctrlKey?: boolean; metaKey?: boolean } = {}):
+  { kind: 'go'; x: number; z: number } | { kind: 'hunt'; id: string } | { kind: 'stop' } | null {
+  if (!o.animal || mods.repeat || mods.altKey || mods.ctrlKey || mods.metaKey) return null;
   const arrow = ARROWS[key];
   if (arrow) return { kind: 'go', x: Math.round(o.animal.position.x + arrow[0] * KEY_STEP_M), z: Math.round(o.animal.position.z + arrow[1] * KEY_STEP_M) };
   if (key === 'h' || key === 'H') {

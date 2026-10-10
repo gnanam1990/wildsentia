@@ -124,6 +124,10 @@ describe('play page', () => {
     expect(keyCommand(o, 'Escape')).toEqual({ kind: 'stop' });
     expect(keyCommand(o, 'q')).toBeNull();
     expect(keyCommand(obs({ animal: null }), 'ArrowUp')).toBeNull();
+    // Held keys repeat ~30 times a second; with Alt, Ctrl or Cmd they are the browser's.
+    expect(keyCommand(o, 'ArrowUp', { repeat: true })).toBeNull();
+    expect(keyCommand(o, 'ArrowLeft', { altKey: true })).toBeNull();
+    expect(keyCommand(o, 'h', { metaKey: true })).toBeNull();
     expect(read('play.html')).toMatch(/id="play-map"[^>]*tabindex="0"/);
     expect(read('play.html')).toContain('id="play-keys"');
   });

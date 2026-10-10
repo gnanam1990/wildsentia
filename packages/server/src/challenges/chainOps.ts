@@ -76,7 +76,12 @@ export class ChainOps {
     catch (error) {
       const message = (error as Error).message;
       if (op.kind === 'resolve' && PERMANENT_RESOLVE.test(message)) return this.#fail(op, `prepare: ${message}`);
-      if (isRecord(op) && /NotRecorder/.test(message)) {
+      // A refusal with no name (some nodes give none): if the recorder is no longer our key, that is why.
+      let notRecorder = isRecord(op) && /NotRecorder/.test(message);
+      if (isRecord(op) && !notRecorder && isRevert(message)) {
+        try { notRecorder = (await this.chain.attemptsRecorder()).toLowerCase() !== this.chain.evaluator.toLowerCase(); } catch { /* unknown: an ordinary try */ }
+      }
+      if (notRecorder) {
         if (this.clock() >= this.#recordsPausedUntil) console.error('[challenges] the attempts contract does not take this key as its recorder; records wait');
         this.#recordsPausedUntil = this.clock() + RECORDS_PAUSE_MS;
         return this.store.noteOpError(op.id, `prepare: ${message}`);
@@ -132,8 +137,13 @@ export class ChainOps {
       case 'record_start': return { fn: 'recordStart', attemptId: op.attemptId!, challengeId: op.challengeId!, player: p.player as Hex };
       case 'record_end': return { fn: 'recordEnd', attemptId: op.attemptId!, challengeId: op.challengeId!,
         outcome: Number(p.outcome) as AttemptOutcome, logHash: p.logHash as Hex };
-      case 'reputation': return { fn: 'giveFeedback', agentId: BigInt(p.agentId!), value: BigInt(p.value!), tag2: p.tag2!, endpoint: p.endpoint!,
-        feedbackURI: p.feedbackURI!, feedbackHash: p.feedbackHash as Hex };
+      case 'reputation': {
+        // Feedback is for the player who played: an identity that has since moved to another wallet gets none.
+        const owner = await this.chain.identityOwner(BigInt(p.agentId!));
+        if (!owner || owner.toLowerCase() !== String(p.wallet).toLowerCase()) { await this.#fail(op, 'identity_moved'); return null; }
+        return { fn: 'giveFeedback', agentId: BigInt(p.agentId!), value: BigInt(p.value!), tag2: p.tag2!, endpoint: p.endpoint!,
+          feedbackURI: p.feedbackURI!, feedbackHash: p.feedbackHash as Hex };
+      }
       case 'relay_create':
         if (Number(p.validBefore) * 1000 <= this.clock()) { await this.#fail(op, 'authorization_expired'); return null; }
         return { fn: 'createWithAuthorization', creator: p.creator as Hex, rulesHash: p.rulesHash as Hex, prize: BigInt(p.prize!),

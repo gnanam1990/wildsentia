@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { fileURLToPath } from 'node:url';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { createPublicClient, createWalletClient, http, parseAbi, type Hex } from 'viem';
+import { createPublicClient, createWalletClient, http, keccak256, parseAbi, toBytes, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { landWalkable, patchCentre } from '@vana/shared';
 import { createWorld } from '@vana/sim';
@@ -192,7 +192,10 @@ maybe('rehearsal: the testnet journeys on a local chain, through the site\'s own
     await settle(async () => (await store.opsOf({ attemptId: accepted.attemptId })).some((o) => o.kind === 'reputation' && o.status === 'confirmed'));
     const feedback = await reader.getLogs({ address: local.reputation, fromBlock: 0n, event: parseAbi(['event NewFeedback(uint256 indexed agentId, address indexed clientAddress, int128 value, uint8 valueDecimals, string tag1, string tag2, string endpoint, string feedbackURI, bytes32 feedbackHash)'])[0] });
     expect(feedback.map((l) => [l.args.agentId, l.args.value, l.args.tag2, l.args.feedbackURI, l.args.feedbackHash])).toEqual([[1n, 100n, 'met',
-      `${ORIGIN}/api/challenges/1/attempts/${accepted.attemptId}`, attempt.resultHash]]);
+      `${ORIGIN}/api/challenges/1/attempts/${accepted.attemptId}/record`, attempt.resultHash]]);
+    // ERC-8004: the feedbackURI serves exactly what feedbackHash hashes.
+    const served = await app.inject(`/challenges/1/attempts/${accepted.attemptId}/record`);
+    expect(keccak256(toBytes(served.body))).toBe(attempt.resultHash);
     const page = (await app.inject(`/challenges/1/attempts/${accepted.attemptId}`)).json();
     expect(page.onChain.map((o: { kind: string; status: string }) => [o.kind, o.status]).sort()).toEqual([['record_end', 'confirmed'],
       ['record_start', 'confirmed'], ['reputation', 'confirmed']]);

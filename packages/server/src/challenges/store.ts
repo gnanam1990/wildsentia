@@ -255,6 +255,7 @@ export class ChallengeStore {
   async attemptsForFeedback(limit: number): Promise<Array<Attempt & { erc8004AgentId: string }>> {
     const { rows } = await this.pool.query(`select a.*, l.erc8004_agent_id from challenge_attempts a join live_agents l on l.id = a.agent_id
       where a.status in ('met', 'failed') and a.result_hash is not null and l.erc8004_agent_id is not null
+        and a.ended_at >= l.erc8004_linked_at
         and not exists (select 1 from challenge_chain_ops o where o.kind = 'reputation' and o.attempt_id = a.id)
       order by a.ended_at, a.id limit $1`, [limit]);
     return rows.map((r: { erc8004_agent_id: string }) => ({ ...attempt(r), erc8004AgentId: String(r.erc8004_agent_id) }));

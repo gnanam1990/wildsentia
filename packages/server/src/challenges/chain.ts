@@ -1,4 +1,5 @@
-import { createPublicClient, encodeFunctionData, getAddress, type Hex, http, keccak256, parseAbi, parseEventLogs } from 'viem';
+import { BaseError, createPublicClient, decodeErrorResult, encodeFunctionData, getAddress, type Hex, http, keccak256, parseAbi,
+  parseEventLogs } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { attemptsAbi } from './attemptsAbi.js';
 import { challengesAbi } from './challengesAbi.js';
@@ -30,6 +31,24 @@ const reputationAbi = parseAbi([
   'function giveFeedback(uint256 agentId, int128 value, uint8 valueDecimals, string tag1, string tag2, string endpoint, string feedbackURI, bytes32 feedbackHash)',
 ]);
 export const FEEDBACK_TAG = 'wildsentia-challenge';
+
+/** Every custom error our contracts (and the ERC-8004 owner rule) can revert with, to name a refusal. */
+const errorAbi = [...challengesAbi, ...attemptsAbi].filter((item) => item.type === 'error');
+
+/**
+ * A node reports a custom error only by its selector ("execution reverted" with data 0x…). The
+ * operations decide by name (NotRecorder pauses records, BadWinner ends a payout), so it is
+ * decoded here into "execution reverted: Name()". Anything else is passed on as it was.
+ */
+export function namedRevert(error: unknown): unknown {
+  if (!(error instanceof BaseError)) return error;
+  const carrier = error.walk((e) => typeof (e as { data?: unknown }).data === 'string' && /^0x[0-9a-fA-F]{8}/.test((e as { data: string }).data));
+  const data = (carrier as { data?: Hex } | null)?.data
+    ?? (/0x[0-9a-fA-F]{8,}/.exec(/custom error (0x[0-9a-fA-F]+)/.exec(error.message)?.[1] ?? '')?.[0] as Hex | undefined);
+  if (!data) return error;
+  try { return new Error(`execution reverted: ${decodeErrorResult({ abi: errorAbi, data }).errorName}()`); }
+  catch { return error; }
+}
 
 /** WildsentiaAttempts.Outcome: 1 met, 2 failed, 3 void. */
 export type AttemptOutcome = 1 | 2 | 3;
@@ -161,7 +180,7 @@ export function viemChallengeChain(config: ChainConfig): ChallengeChain {
       const [nonce, block, gas] = await Promise.all([
         options?.nonce ?? client.getTransactionCount({ address: account.address, blockTag: 'pending' }),
         client.getBlock({ blockTag: 'latest' }),
-        client.estimateGas({ account: account.address, to, data }),
+        client.estimateGas({ account: account.address, to, data }).catch((error: unknown) => { throw namedRevert(error); }),
       ]);
       // Fresh fees for every transaction, never cached; at least Arc's floor.
       const base = block.baseFeePerGas ?? 0n;

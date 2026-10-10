@@ -97,6 +97,13 @@ export function installChallenges(app: FastifyInstance, deps: ChallengeRouteDeps
       onChain: (await store.opsOf({ attemptId: a.id })).map((o) => ({ kind: o.kind, status: o.status, txHash: o.txHash })) };
   });
 
+  // An attempt's record exactly as hashed (its keccak256 is on chain): what ERC-8004 feedback points at.
+  app.get<{ Params: { id: string; attemptId: string } }>('/challenges/:id/attempts/:attemptId/record', async (req, reply) => {
+    const a = await store.attempt(req.params.attemptId);
+    if (!a || String(a.challengeId) !== req.params.id || !a.resultRecord) return reply.code(404).send({ error: 'not_found' });
+    return reply.type('application/json; charset=utf-8').send(a.resultRecord);
+  });
+
   app.post('/challenges/drafts', async (req, reply) => {
     if (!drafts.take(networkKey(req.ip), clock())) return reply.code(429).send({ error: 'rate_limited' });
     const body = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<string, unknown>;

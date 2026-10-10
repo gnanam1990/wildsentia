@@ -115,14 +115,26 @@ export class AgentStore {
     return changed ? 'ok' : 'wallet_taken';
   }
 
-  /** Links (or, with null, unlinks) the player's ERC-8004 identity. One player per identity. */
-  async setIdentity(agentId: string, erc8004AgentId: string | null): Promise<'ok' | 'identity_taken'> {
+  /**
+   * Links (or, with null, unlinks) the player's ERC-8004 identity. One player per identity: with
+   * `takeOver` (the caller proved the identity's owner is this player's wallet) a link another
+   * player kept from before the identity moved is cleared; otherwise that is `identity_taken`.
+   */
+  async setIdentity(agentId: string, erc8004AgentId: string | null, o: { takeOver?: boolean } = {}): Promise<'ok' | 'identity_taken'> {
+    const db = await this.pool.connect();
     try {
-      await this.pool.query('update live_agents set erc8004_agent_id = $2 where id = $1', [agentId, erc8004AgentId]);
+      await db.query('begin');
+      if (erc8004AgentId !== null && o.takeOver)
+        await db.query('update live_agents set erc8004_agent_id = null, erc8004_linked_at = null where erc8004_agent_id = $2 and id <> $1', [agentId, erc8004AgentId]);
+      await db.query(`update live_agents set erc8004_agent_id = $2, erc8004_linked_at = case when $2::numeric is null then null else now() end
+        where id = $1`, [agentId, erc8004AgentId]);
+      await db.query('commit');
     } catch (error) {
+      await db.query('rollback');
       if ((error as { code?: string }).code === '23505') return 'identity_taken';
       throw error;
-    }
+    } finally { db.release(); }
+    this.#byKey.clear();
     for (const [key, agent] of this.#byKey) if (agent.id === agentId) this.#byKey.delete(key);
     return 'ok';
   }

@@ -137,8 +137,9 @@ async function main(): Promise<void> {
   $('play-map').addEventListener('click', onMapTap);
   $('play-map').addEventListener('keydown', (event) => {
     if (!latest) return;
-    const c = keyCommand(latest, event.key);
-    if (!c) return;
+    const c = keyCommand(latest, event.key, event);
+    // A held arrow still must not scroll the page; it just sends nothing more.
+    if (!c) { if (event.repeat && keyCommand(latest, event.key)) event.preventDefault(); return; }
     event.preventDefault();
     void (c.kind === 'hunt' ? command('hunt', { animalId: c.id }) : c.kind === 'stop' ? command('stop')
       : command('move', { to: { x: c.x, z: c.z }, gait: gait() }));

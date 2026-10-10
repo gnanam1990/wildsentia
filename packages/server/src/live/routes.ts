@@ -352,8 +352,10 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
         try { owner = await deps.identity.owner(BigInt(text)); } catch { return reply.code(503).send({ error: 'identity_check_unavailable' }); }
         if (!owner) return reply.code(404).send({ error: 'identity_not_found' });
         if (owner.toLowerCase() !== ctx.agent.wallet.toLowerCase()) return reply.code(403).send({ error: 'identity_not_owned_by_payout_wallet' });
-        if (await store.setIdentity(ctx.agent.id, text) !== 'ok') return reply.code(409).send({ error: 'identity_taken' });
-        return { erc8004AgentId: text };
+        const id = BigInt(text).toString();
+        // Its owner's wallet is this player's: a stale link elsewhere (from before the identity moved) gives way.
+        if (await store.setIdentity(ctx.agent.id, id, { takeOver: true }) !== 'ok') return reply.code(409).send({ error: 'identity_taken' });
+        return { erc8004AgentId: id };
       });
 
       scope.post(`${prefix}/presence`, async (req, reply) => {

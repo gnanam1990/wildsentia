@@ -2,7 +2,9 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { fileURLToPath } from 'node:url';
 import Fastify from 'fastify';
 import { createWorld } from '@vana/sim';
+import { keccak256, toBytes } from 'viem';
 import { createPool } from '../src/db/pool.js';
+import { installChallenges } from '../src/challenges/routes.js';
 import { migrate } from '../src/db/migrate.js';
 import { LiveLayer } from '../src/live/liveLayer.js';
 import { worldPort } from '../src/live/worldPort.js';
@@ -30,10 +32,17 @@ describe('ERC-8004 settings', () => {
     VANA_CHALLENGES_CHAIN_ID: '5042002', VANA_CHALLENGES_CONTRACT: '0x' + '1'.repeat(40), VANA_CHALLENGES_USDC: '0x3600000000000000000000000000000000000000',
     VANA_CHALLENGES_EVALUATOR_KEY: '0x' + 'a'.repeat(64), VANA_CHALLENGES_FROM_BLOCK: '100', VANA_CHALLENGES_ADMIN_TOKEN: 'x'.repeat(40),
     VANA_CHALLENGES_USDC_DOMAIN_NAME: 'USDC', VANA_CHALLENGES_USDC_DOMAIN_VERSION: '2' };
+  it('needs the site address with the registries, since feedback points at the site', () => {
+    const both = { ...full, VANA_CHALLENGES_IDENTITY_REGISTRY: '0x8004A818BFB912233c491871b3d84c89A494BD9e',
+      VANA_CHALLENGES_REPUTATION_REGISTRY: '0x8004B663056A597Dffe9eCcC1965A193B7388713' };
+    expect(() => challengesConfig(both)).toThrow('VANA_PUBLIC_ORIGIN');
+    expect(challengesConfig({ ...both, VANA_PUBLIC_ORIGIN: 'https://wildsentia.lol' })!.reputationRegistry).toBeTruthy();
+  });
+
   it('takes both registries or neither', () => {
     expect(challengesConfig(full)).toMatchObject({ identityRegistry: null, reputationRegistry: null });
     expect(challengesConfig({ ...full, VANA_CHALLENGES_IDENTITY_REGISTRY: '0x8004A818BFB912233c491871b3d84c89A494BD9e',
-      VANA_CHALLENGES_REPUTATION_REGISTRY: '0x8004B663056A597Dffe9eCcC1965A193B7388713' })).toMatchObject({
+      VANA_CHALLENGES_REPUTATION_REGISTRY: '0x8004B663056A597Dffe9eCcC1965A193B7388713', VANA_PUBLIC_ORIGIN: 'https://wildsentia.lol' })).toMatchObject({
       identityRegistry: '0x8004A818BFB912233c491871b3d84c89A494BD9e', reputationRegistry: '0x8004B663056A597Dffe9eCcC1965A193B7388713' });
     expect(() => challengesConfig({ ...full, VANA_CHALLENGES_IDENTITY_REGISTRY: '0x8004A818BFB912233c491871b3d84c89A494BD9e' })).toThrow('both');
   });
@@ -78,20 +87,30 @@ maybe('ERC-8004 identities and feedback', () => {
     expect((await link('8')).json()).toEqual({ error: 'identity_not_owned_by_payout_wallet' });
     expect((await link('99')).json()).toEqual({ error: 'identity_not_found' });
     expect((await link('x')).json()).toEqual({ error: 'bad_identity' });
-    expect((await link('7')).json()).toEqual({ erc8004AgentId: '7' });
+    expect((await link('007')).json()).toEqual({ erc8004AgentId: '7' }); // one spelling for one identity
     expect((await app.inject({ url: '/play/observe', headers: { origin: ORIGIN } })).json().you.erc8004AgentId).toBe('7');
     who = 'ag_0000000000000002';
     expect((await link('7')).json()).toEqual({ error: 'payout_wallet_required' });
+    // The identity moves to Kite's wallet: Kite links it, and it leaves Stripe.
+    await agents.setWallet('ag_0000000000000002', '0x' + 'c'.repeat(40));
+    owners['7'] = '0x' + 'c'.repeat(40);
+    expect((await link('7')).json()).toEqual({ erc8004AgentId: '7' });
+    expect((await agents.byId('ag_0000000000000001'))!.erc8004AgentId).toBeNull();
+    owners['7'] = WALLET;
     who = 'ag_0000000000000001';
     expect((await link(null)).json()).toEqual({ erc8004AgentId: null });
   });
 
-  it('queues one feedback per met or failed attempt of a player with an identity, and sends it after payouts', async () => {
+  it('queues one feedback per met or failed attempt of a player with an identity, and sends it once a reputation registry is set', async () => {
     const terms: ChallengeTerms = { template: 'survive', version: 1, speciesId: 'chital', days: 1, rules: [], briefing: '' };
     await store.insertDraft({ creatorWallet: '0x' + 'a'.repeat(40), terms, rulesHash: rulesHash(terms), prizeAtomic: '1000000',
       deadline: new Date(Date.now() + 86_400_000), salt: hex('1'), authNonce: hex('2') });
     await store.recordCreated('0x' + 'c'.repeat(40), { id: 1, creator: '0x' + 'a'.repeat(40), prizeAtomic: '1000000', deadline: Math.floor(Date.now() / 1000) + 86_400,
       rulesHash: rulesHash(terms), authNonce: hex('2'), txHash: hex('3'), blockNumber: 1 }, { challenge: '0x' + 'e'.repeat(40), ours: '0x' + 'e'.repeat(40) });
+    // An attempt that ended before the identity was linked leaves no feedback on it.
+    const before = await store.startAttempt({ challengeId: 1, agentId: 'ag_0000000000000001', animalId: 'chital_0', payoutWallet: WALLET, startedWorld: 0, startState: {} });
+    await store.endAttempt(before.id, 'failed', 'caught', 1);
+    await pool!.query("update challenge_attempts set ended_at = now() - interval '1 hour' where id = $1", [before.id]);
     await agents.setIdentity('ag_0000000000000001', '7');
     const a = await store.startAttempt({ challengeId: 1, agentId: 'ag_0000000000000001', animalId: 'chital_1', payoutWallet: WALLET, startedWorld: 0, startState: {} });
     const b = await store.startAttempt({ challengeId: 1, agentId: 'ag_0000000000000002', animalId: 'chital_2', payoutWallet: WALLET, startedWorld: 0, startState: {} });
@@ -105,14 +124,25 @@ maybe('ERC-8004 identities and feedback', () => {
     await engine.recordAttempts();
     const ops = await store.opsOf({ attemptId: a.id });
     const record = (await store.attempt(a.id))!;
-    expect(ops.map((o) => [o.kind, o.payload])).toEqual([['reputation', { agentId: '7', value: 0, tag2: 'failed',
-      endpoint: `${ORIGIN}/challenges.html?id=1`, feedbackURI: `${ORIGIN}/api/challenges/1/attempts/${a.id}`, feedbackHash: record.resultHash }]]);
+    expect(ops.map((o) => [o.kind, o.payload])).toEqual([['reputation', { agentId: '7', value: 0, tag2: 'failed', wallet: WALLET,
+      endpoint: `${ORIGIN}/challenges.html?id=1`, feedbackURI: `${ORIGIN}/api/challenges/1/attempts/${a.id}/record`, feedbackHash: record.resultHash }]]);
+    expect(await store.opsOf({ attemptId: before.id })).toEqual([]);
+    // The feedbackURI serves exactly the text feedbackHash is the keccak256 of (ERC-8004).
+    const site = Fastify();
+    installChallenges(site, { store, catalog: { ids: () => [], preyOf: () => [], displayName: (x) => x, social: () => false, onLand: () => true },
+      drafts: { chainId: 1, contract: ('0x' + 'c'.repeat(40)) as Hex, usdc: ('0x' + 'd'.repeat(40)) as Hex, usdcDomain: { name: 'USDC', version: '2' },
+        minPrizeAtomic: 1n, maxPrizeAtomic: 2n }, adminToken: 'x'.repeat(40), explorerUrl: null });
+    const served = await site.inject(`/challenges/1/attempts/${a.id}/record`);
+    expect(served.headers['content-type']).toMatch(/^application\/json/);
+    expect(keccak256(toBytes(served.body))).toBe(record.resultHash);
+    expect((await site.inject(`/challenges/2/attempts/${a.id}/record`)).statusCode).toBe(404);
     // A player without an identity leaves none.
     expect(await store.opsOf({ attemptId: b.id })).toEqual([]);
 
     // ChainOps sends it as giveFeedback, and waits while no reputation registry is set.
     const sent: ChainCall[] = [];
-    const chain = { reputation: null as Hex | null, attempts: null, evaluator: '0x' + 'e'.repeat(40),
+    let owner: string | null = WALLET;
+    const chain = { reputation: null as Hex | null, attempts: null, evaluator: '0x' + 'e'.repeat(40), identityOwner: async () => owner,
       prepare: async (call: ChainCall) => { sent.push(call); return { hash: hex('9'), raw: '0x01' as Hex, nonce: 0, maxFeePerGas: 1n }; },
       broadcast: async () => undefined, receipt: async () => 'success' as const, known: async () => true } as unknown as ChallengeChain;
     const chainOps = new ChainOps(store, chain);
@@ -122,7 +152,15 @@ maybe('ERC-8004 identities and feedback', () => {
     await chainOps.processOnce();
     await chainOps.processOnce();
     expect(sent).toEqual([{ fn: 'giveFeedback', agentId: 7n, value: 0n, tag2: 'failed', endpoint: `${ORIGIN}/challenges.html?id=1`,
-      feedbackURI: `${ORIGIN}/api/challenges/1/attempts/${a.id}`, feedbackHash: record.resultHash }]);
+      feedbackURI: `${ORIGIN}/api/challenges/1/attempts/${a.id}/record`, feedbackHash: record.resultHash }]);
     expect((await store.opsOf({ attemptId: a.id }))[0]!.status).toBe('confirmed');
+    // An identity that moved to another wallet before its feedback went out gets none.
+    const c = await store.startAttempt({ challengeId: 1, agentId: 'ag_0000000000000001', animalId: 'chital_3', payoutWallet: WALLET, startedWorld: 0, startState: {} });
+    await store.endAttempt(c.id, 'failed', 'caught', 9);
+    await engine.recordAttempts();
+    owner = '0x' + 'f'.repeat(40);
+    await chainOps.processOnce();
+    expect(sent).toHaveLength(1);
+    expect((await store.opsOf({ attemptId: c.id }))[0]).toMatchObject({ status: 'failed', lastError: 'identity_moved' });
   });
 });

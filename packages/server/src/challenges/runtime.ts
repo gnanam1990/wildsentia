@@ -63,6 +63,7 @@ export function challengesConfig(env: NodeJS.ProcessEnv): ChallengesConfig | und
   const identityRegistry = hasIdentity ? address('VANA_CHALLENGES_IDENTITY_REGISTRY') : null;
   const reputationRegistry = hasReputation ? address('VANA_CHALLENGES_REPUTATION_REGISTRY') : null;
   const site = env.VANA_PUBLIC_ORIGIN?.trim();
+  if (hasReputation && !site) throw new Error('The ERC-8004 registries need VANA_PUBLIC_ORIGIN: feedback points at the attempt records on the site');
   let siteUrl: string | null = null;
   if (site) {
     let u: URL;

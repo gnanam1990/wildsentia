@@ -87,8 +87,18 @@ maybe('challenge chain client (local anvil)', () => {
       event: parseAbi(['event AttemptEnded(bytes32 indexed attemptId, uint256 indexed challengeId, uint8 outcome, bytes32 logHash)'])[0] });
     expect(logs.map((l) => [l.args.attemptId, l.args.challengeId, l.args.outcome, l.args.logHash]))
       .toEqual([[attemptKey(id), 1n, 2, `0x${'7'.repeat(64)}`]]);
+    // A real node reports a custom error only as its selector: the client names it from the contracts' ABIs.
     await expect(chain.prepare({ fn: 'recordEnd', attemptId: id, challengeId: 1, outcome: 1, logHash: `0x${'7'.repeat(64)}` }))
-      .rejects.toThrow(/AlreadyEnded|revert/i);
+      .rejects.toThrow(/execution reverted: AlreadyEnded\(\)/);
+    // The owner moves the recorder: records are refused by name, which is what pauses them.
+    const owner = createWalletClient({ account: privateKeyToAccount(ANVIL_KEYS.owner), transport: http(local.url), chain: null });
+    const reader = createPublicClient({ transport: http(local.url) });
+    await reader.waitForTransactionReceipt({ hash: await owner.writeContract({ address: local.attempts, chain: null,
+      abi: parseAbi(['function setRecorder(address)']), functionName: 'setRecorder', args: [local.addresses.player] }) });
+    await expect(chain.prepare({ fn: 'recordStart', attemptId: '1f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0', challengeId: 1, player: local.addresses.player }))
+      .rejects.toThrow(/execution reverted: NotRecorder\(\)/);
+    await reader.waitForTransactionReceipt({ hash: await owner.writeContract({ address: local.attempts, chain: null,
+      abi: parseAbi(['function setRecorder(address)']), functionName: 'setRecorder', args: [local.addresses.evaluator] }) });
     // Without an attempts contract the client refuses record calls and reads nothing.
     const bare = viemChallengeChain({ rpcUrl: local.url, chainId: CHAIN_ID, contract: local.contract, evaluatorKey: ANVIL_KEYS.evaluator });
     expect(bare.attempts).toBeNull();
@@ -115,7 +125,7 @@ maybe('challenge chain client (local anvil)', () => {
   });
 
   it('cannot prepare a transaction the contract would refuse', async () => {
-    await expect(chain.prepare({ fn: 'refund', id: 2 })).rejects.toThrow(/TooEarly|revert/i);
+    await expect(chain.prepare({ fn: 'refund', id: 2 })).rejects.toThrow(/execution reverted: TooEarly\(\)/);
     expect(await chain.receipt(`0x${'9'.repeat(64)}`)).toBeNull();
     expect(await chain.known(`0x${'9'.repeat(64)}`)).toBe(false);
   });
