@@ -37,6 +37,29 @@ describe('live layer', () => {
     expect(live.possess('ag_2', 'Kai', { animalId: avatar.animalId })).toEqual({ ok: false, reason: 'already_controlled' });
   });
 
+  it('keeps the line waiting, without spinning, when a freed animal cannot be taken at once', () => {
+    const world = createWorld({ seed: 3, speciesDir, terrainProfile: 'island_v1', initialAgents: { sambar: 4, chital: 2 }, minPopulation: {} });
+    let now = 1_000_000;
+    const live = new LiveLayer(worldPort(() => world, () => 'w1'), null, () => now);
+    expect(live.possess('ag_1', 'Sora', { speciesId: 'chital' }).ok).toBe(true);
+    expect(live.possess('ag_2', 'Kai', { speciesId: 'chital' })).toEqual({ ok: false, reason: 'queued:1' });
+    expect(live.possess('ag_3', 'Ren', { speciesId: 'chital' })).toEqual({ ok: false, reason: 'queued:2' });
+    // Of two chital one may be steered. Both are mid-chase as ag_1's comes free, so nobody can take
+    // one yet: the offer must not loop forever.
+    const chital = world.agents.filter((a) => a.speciesId === 'chital').map((a) => a.id);
+    for (const id of chital) live.wild.set(id, {} as never);
+    expect(live.release('ag_1')).toBe(true);
+    expect(live.avatars.has('ag_2')).toBe(false);
+    // Both are still in line, in order: asking again shows the same places.
+    expect(live.possess('ag_2', 'Kai', { speciesId: 'chital' })).toEqual({ ok: false, reason: 'queued:1' });
+    expect(live.possess('ag_3', 'Ren', { speciesId: 'chital' })).toEqual({ ok: false, reason: 'queued:2' });
+    // Once it is free, the first in line gets it when the next animal of the species ends.
+    // Once the chase is over, the first in line gets one.
+    for (const id of chital) live.wild.delete(id);
+    expect(live.possess('ag_2', 'Kai', { speciesId: 'chital' }).ok).toBe(true);
+    expect(live.possess('ag_3', 'Ren', { speciesId: 'chital' })).toEqual({ ok: false, reason: 'queued:1' });
+  });
+
   it('walks at the species pace and runs only as long as its breath lasts', () => {
     const { live, world, run } = setup();
     live.possess('ag_1', 'Sora', { speciesId: 'chital' });

@@ -174,14 +174,14 @@ export class LiveLayer {
   }
 
   /** Takes over an animal: a named one, or any free one of a species. */
-  possess(agentId: string, agentName: string, choice: { animalId?: string; speciesId?: string }): { ok: true; avatar: Avatar } | { ok: false; reason: string } {
+  possess(agentId: string, agentName: string, choice: { animalId?: string; speciesId?: string }, queueIfNone = true): { ok: true; avatar: Avatar } | { ok: false; reason: string } {
     if (this.avatars.has(agentId)) return { ok: false, reason: 'already_possessing' };
     // After an animal dies, a short wait before the next: death has to cost something.
     if ((this.#cooldowns.get(agentId) ?? 0) > this.clock()) return { ok: false, reason: 'cooldown' };
     const target = choice.animalId ?? this.world.candidates(choice.speciesId ?? null, 20).find((a) => !this.wild.has(a.id))?.id;
     if (!target) {
       // None free: wait in line for the next one of this species (tigers, above all).
-      if (choice.speciesId && this.world.species(choice.speciesId)) {
+      if (queueIfNone && choice.speciesId && this.world.species(choice.speciesId)) {
         const queue = this.#queues.get(choice.speciesId) ?? [];
         if (!queue.some((q) => q.agentId === agentId)) queue.push({ agentId, agentName, since: this.clock() });
         this.#queues.set(choice.speciesId, queue);
@@ -198,6 +198,11 @@ export class LiveLayer {
       x: animal.position.x, z: animal.position.z, heading: animal.position.heading, gait: 'walk', path: [],
       moving: false, action: 'idle', pendingSeconds: 0, stamina: 1, since: now, lastCommand: now, opening: null };
     this.avatars.set(agentId, avatar);
+    // Holding an animal ends any wait in line.
+    for (const queue of this.#queues.values()) {
+      const at = queue.findIndex((q) => q.agentId === agentId);
+      if (at >= 0) queue.splice(at, 1);
+    }
     this.notify(agentId, `You are now ${animal.id} (${this.world.species(animal.speciesId)?.displayName ?? animal.speciesId}).`);
     return { ok: true, avatar };
   }
@@ -234,11 +239,19 @@ export class LiveLayer {
   /** An animal of this species just came free: the next agent in line gets it. */
   #offerNext(speciesId: string): void {
     const queue = this.#queues.get(speciesId);
-    while (queue?.length) {
-      const next = queue.shift()!;
-      if (this.clock() - next.since > 30 * 60_000 || this.avatars.has(next.agentId)) continue;
-      const result = this.possess(next.agentId, next.agentName, { speciesId });
-      if (result.ok) { this.notify(next.agentId, `Your turn: a ${this.world.species(speciesId)?.displayName.toLowerCase() ?? speciesId} came free.`); return; }
+    if (!queue) return;
+    for (let i = 0; i < queue.length;) {
+      const next = queue[i]!;
+      if (this.clock() - next.since > 30 * 60_000 || this.avatars.has(next.agentId)) { queue.splice(i, 1); continue; }
+      // Never queue from here: a failed offer re-joining the same line would loop forever.
+      const result = this.possess(next.agentId, next.agentName, { speciesId }, false);
+      if (result.ok) {
+        this.notify(next.agentId, `Your turn: a ${this.world.species(speciesId)?.displayName.toLowerCase() ?? speciesId} came free.`);
+        return;
+      }
+      // Nothing to take yet: everyone keeps their place for the next one.
+      if (result.reason === 'no_free_animal') return;
+      i++; // This agent cannot take one right now (a cooldown); the next in line may.
     }
   }
 
