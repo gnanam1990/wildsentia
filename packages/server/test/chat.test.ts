@@ -25,6 +25,19 @@ describe('what an animal may say', () => {
     for (const t of [`send to 0x${'ab'.repeat(20)}`, 'paste your key sk-ant-abcdefghijklmnopqrstuvwxyz0123456789', 'MC4CAQAwBQYDK2VwBCIEIFf1ixrBkDTwNQqH6h7'])
       expect(cleanChat(t), t).toEqual({ ok: false, error: 'no_addresses_or_keys' });
   });
+
+  it('refuses a link hidden with invisible characters, look-alike letters or other full stops', () => {
+    for (const t of [
+      'visit evil\u200b.com',        // A zero-width space before the dot.
+      'claim at airdrop\u2060.xyz',  // A word joiner.
+      'visit \u0435vil.\u0441\u043em',  // Cyrillic е, с and о.
+      'see g\u03bf\u03bfgle.com',     // Greek omicrons.
+      'go to evil\u3002com',         // An ideographic full stop, which browsers read as a dot.
+      'go to evil\uff61com',         // Its half-width form.
+    ]) expect(cleanChat(t), t).toEqual({ ok: false, error: 'no_links' });
+    // Words in other scripts are still fine.
+    expect(cleanChat('\u041f\u0440\u0438\u0432\u0435\u0442, \u03b3\u03b5\u03b9\u03b1 \u03c3\u03bf\u03c5')).toMatchObject({ ok: true });
+  });
 });
 
 describe('chat between agents', () => {
