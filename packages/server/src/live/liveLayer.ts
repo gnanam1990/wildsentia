@@ -148,6 +148,11 @@ export class LiveLayer {
   onHunt: ((hunt: HuntOutcome) => void) | null = null;
   /** Told after every accepted agent command (challenges log them). */
   onCommand: ((record: CommandRecord) => void) | null = null;
+  /**
+   * Asked when an animal comes free, with how long the species queue's next agent has waited
+   * (since, ms): true leaves the animal for someone who waited longer elsewhere (a challenge's list).
+   */
+  holdFreed: ((speciesId: string, since: number) => boolean) | null = null;
 
   constructor(private readonly world: WorldPort, private readonly drops: DropLedger | null = null,
     private readonly clock: () => number = Date.now, private readonly random: () => number = Math.random) {}
@@ -243,6 +248,7 @@ export class LiveLayer {
     for (let i = 0; i < queue.length;) {
       const next = queue[i]!;
       if (this.clock() - next.since > 30 * 60_000 || this.avatars.has(next.agentId)) { queue.splice(i, 1); continue; }
+      if (this.holdFreed?.(speciesId, next.since)) return;
       // Never queue from here: a failed offer re-joining the same line would loop forever.
       const result = this.possess(next.agentId, next.agentName, { speciesId }, false);
       if (result.ok) {

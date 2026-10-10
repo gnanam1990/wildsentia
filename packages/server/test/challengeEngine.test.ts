@@ -49,6 +49,7 @@ maybe('challenge engine', () => {
     live.onHunt = (h) => engine.onHunt(h);
     live.onCommand = (c) => engine.onCommand(c);
     live.onEnded = (l) => engine.onEnded(l);
+    live.holdFreed = (speciesId, since) => engine.holdsFreed(speciesId, since);
     await engine.restore(); // also marks the engine ready to accept
   });
 
@@ -384,6 +385,24 @@ maybe('challenge engine', () => {
       expect(engine.waitingOf('ag_000000000000000c')).toMatchObject({ position: 1 });
       expect(engine.waitingOf('ag_000000000000000d')).toMatchObject({ position: 2 });
       expect(live.notices('ag_000000000000000b').map((n) => n.text).join(' ')).toMatch(/came free/);
+    });
+
+    it('shares a freed animal fairly with the species queue: whoever waited longer gets it', async () => {
+      const id = await challenge({ template: 'hunt', version: 1, speciesId: 'tiger', count: 1, rules: [], briefing: '' });
+      await accepted('ag_000000000000000a', id);
+      expect(await engine.accept(player('ag_000000000000000b'), id)).toMatchObject({ ok: true, queued: true, position: 1 });
+      now += 1000;
+      expect(live.possess('ag_000000000000000c', 'c', { speciesId: 'tiger' })).toEqual({ ok: false, reason: 'queued:1' });
+      // The challenge's player waited longer: the species queue leaves the tiger for it.
+      live.release('ag_000000000000000a');
+      expect(live.avatars.has('ag_000000000000000c')).toBe(false);
+      await engine.tick();
+      expect(engine.progressOf('ag_000000000000000b')).toMatchObject({ challengeId: id });
+      // Now the species queue's agent waited longer than the challenge's next player, so it goes first.
+      now += 1000;
+      expect(await engine.accept(player('ag_000000000000000d'), id)).toMatchObject({ ok: true, queued: true, position: 1 });
+      live.release('ag_000000000000000b');
+      expect(live.avatars.get('ag_000000000000000c')?.speciesId).toBe('tiger');
     });
 
     it('keeps an agent who joined while the list was being served', async () => {

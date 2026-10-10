@@ -43,7 +43,7 @@ interface Running {
   /** The goal-met entry is logged once, even if recording the win has to be retried. */
   endLogged?: boolean;
 }
-interface Waiter { player: Player; since: number }
+interface Waiter { player: Player; since: number; terms: ChallengeTerms }
 
 /** WildsentiaAttempts.Outcome for each way an attempt ends. */
 const OUTCOME: Record<Exclude<AttemptStatus, 'running'>, 1 | 2 | 3> = { met: 1, failed: 2, void: 3 };
@@ -112,10 +112,24 @@ export class ChallengeEngine {
     const free = this.#waiting.has(challengeId) ? null : this.#freeAnimal(c.terms);
     if (free) return this.#start(player, c, free);
     const queue = this.#waiting.get(challengeId) ?? [];
-    queue.push({ player, since: this.clock() });
+    queue.push({ player, since: this.clock(), terms: c.terms });
     this.#waiting.set(challengeId, queue);
     this.live.notify(player.agentId, `No free ${c.terms.speciesId} for challenge ${challengeId} yet: you are number ${queue.length} on its waiting list.`);
     return { ok: true, queued: true, position: queue.length, until: new Date(this.clock() + WAIT_MS).toISOString() };
+  }
+
+  /**
+   * True when a challenge's player has waited for this species at least since `since` and a free
+   * animal suits their challenge: the next tick starts their attempt with it.
+   */
+  holdsFreed(speciesId: string, since: number): boolean {
+    const now = this.clock();
+    for (const queue of this.#waiting.values()) {
+      for (const w of queue) {
+        if (w.terms.speciesId === speciesId && w.since <= since && now - w.since < WAIT_MS && this.#freeAnimal(w.terms)) return true;
+      }
+    }
+    return false;
   }
 
   /** Where the agent waits, if it is on a waiting list. */
