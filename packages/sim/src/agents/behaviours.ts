@@ -1,5 +1,5 @@
 import {
-  NUTRIENT_PER_KG_BIOMASS, edibleMass, takeEdibleMass, patchAtPosition, atWaterAccess, waterAccessPosition, waterContactPosition, WATER_CONTACT_RADIUS_M, landRayDistance, landWalkable, treeAnchorForPatch, treeAnchorGeometry,
+  NUTRIENT_PER_KG_BIOMASS, edibleMass, takeEdibleMass, patchAtPosition, patchCentre, positionInPatch, atWaterAccess, waterAccessPosition, waterContactPosition, WATER_CONTACT_RADIUS_M, landRayDistance, landWalkable, treeAnchorForPatch, treeAnchorGeometry,
   type Agent, type Carcass, type DeathCause, type Patch, type Rng, type SkillId,
   type SpeciesConfig, type WorldTime, type WorldPosition, type MovementTrace,
 } from '@vana/shared';
@@ -673,10 +673,18 @@ function flee(ctx: BehaviourContext): void {
   const away = options.filter((id) => id !== threat?.patchId);
   const pool = away.length > 0 ? away : options;
   const saved = ctx.agent.journey;
-  const farthest = threat ? [...pool].sort((a, b) => {
-    const pa = ctx.patches[a]!, pb = ctx.patches[b]!, t = ctx.patches[threat!.patchId]!;
-    return (Math.abs(pb.x - t.x) + Math.abs(pb.y - t.y)) - (Math.abs(pa.x - t.x) + Math.abs(pa.y - t.y)) || a - b;
-  })[0]! : null;
+  // sim_0.38.0: measured from where the predator stands, not from its patch. Every neighbour
+  // lies one patch from a predator in the animal's own patch, and the tie went to the
+  // lowest-numbered one: prey always ran north, past a predator standing there. A remaining
+  // exact tie is broken by the world's random stream.
+  let farthest: number | null = null;
+  if (threat) {
+    const t = positionInPatch(threat.agent.position, threat.agent.patchId) ? threat.agent.position : patchCentre(threat.patchId);
+    const gap = (id: number) => { const c = patchCentre(id); return Math.hypot(c.x - t.x, c.z - t.z); };
+    const best = Math.max(...pool.map(gap));
+    const tied = pool.filter(id => gap(id) >= best - 1e-6);
+    farthest = tied.length === 1 ? tied[0]! : tied[ctx.rng.int(tied.length)]!;
+  }
   const destination = saved?.goal === 'flee' && saved.destinationPatchId !== threat?.patchId
     ? saved.destinationPatchId : farthest ?? pool[ctx.rng.int(pool.length)]!;
   const travel = moveTo(ctx, destination, true);

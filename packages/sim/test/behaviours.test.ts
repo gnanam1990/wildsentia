@@ -415,6 +415,29 @@ describe('fleeing', () => {
     expect(s.agent.stamina!).toBeLessThan(1);
   });
 
+  it('runs away from a predator in its own patch, whichever side the predator is on', () => {
+    // Every neighbour lies the same number of patches from a predator sharing the patch, so
+    // the old tie-break sent prey to the lowest-numbered one: north, even past the tiger.
+    for (const [dx, dz] of [[-80, 0], [80, 0], [0, -80], [0, 80]] as const) {
+      const tiger = makeAgent('tiger', { id: 'tiger_1', currentGoal: 'wander', state: 'travelling',
+        drives: { hunger: 0.6, thirst: 0, fatigue: 0, fear: 0 } });
+      const s = scenario('chital', 'flee', { drives: { fear: 0.9 }, others: [tiger] });
+      // An inland patch with four walkable neighbours, so every direction is open.
+      const start = s.patches.find(p => p.neighbours.length === 4
+        && [p, ...p.neighbours.map(n => s.patches[n]!)].every(q => q.habitat !== 'water'))!.id;
+      const c = patchCentre(start);
+      s.agent.patchId = start; s.others[0]!.patchId = start;
+      s.agent.position = { x: c.x, z: c.z, heading: 0 };
+      s.others[0]!.position = { x: c.x + dx, z: c.z + dz, heading: 0 };
+      s.ctx.percept = perceive(s.agent, s.ctx.species, s.ctx.view);
+      expect(s.ctx.percept.threat?.patchId).toBe(start);
+      executeGoal(s.ctx);
+      const fled = s.log.all().find(e => e.type === 'fled')!;
+      const to = s.patches[fled.conditions.destination as number]!, from = s.patches[start]!;
+      expect([to.x - from.x, to.y - from.y]).toEqual([-Math.sign(dx) || 0, -Math.sign(dz) || 0]);
+    }
+  });
+
   it('logs where it fled from', () => {
     const s = scenario('sambar', 'flee', { drives: { fear: 0.9 } });
     const start = s.agent.patchId;
