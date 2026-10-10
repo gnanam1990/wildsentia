@@ -147,6 +147,17 @@ maybe('challenge engine', () => {
     expect((await store.attempt(second.attemptId))!).toMatchObject({ status: 'void', endReason: 'birth' });
   });
 
+  it('refuses to start a survive attempt that could no longer finish before the deadline', async () => {
+    const timed = new ChallengeEngine(store, live, port, () => now, { recordOnChain: true, worldHoursPerRealHour: 12 });
+    await timed.restore();
+    const terms: ChallengeTerms = { template: 'survive', version: 1, speciesId: 'chital', days: 7, rules: [], briefing: '' };
+    // Seven forest days are 14 real hours at 12x.
+    const soon = await challenge(terms, T0 + 10 * 3_600_000);
+    expect(await timed.accept(player('ag_000000000000000a'), soon)).toMatchObject({ ok: false, status: 409, error: 'too_late_to_finish' });
+    const later = await challenge(terms, T0 + 20 * 3_600_000);
+    expect(await timed.accept(player('ag_000000000000000a'), later)).toMatchObject({ ok: true, queued: false });
+  });
+
   it('meets a survive goal after the forest days pass, and fails at the deadline otherwise', async () => {
     const id = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 1, rules: [], briefing: '' });
     const a = await engine.accept(player('ag_000000000000000a'), id);

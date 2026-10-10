@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { encodeAbiParameters, getAddress, keccak256, verifyTypedData, type Hex } from 'viem';
+import { leastRealMs } from './goals.js';
 import type { ChallengeStore, Draft } from './store.js';
 import { describeTerms, parseTerms, rulesHash, type SpeciesCatalog } from './terms.js';
 
@@ -17,6 +18,8 @@ export interface DraftConfig {
   usdcDomain: { name: string; version: string };
   minPrizeAtomic: bigint;
   maxPrizeAtomic: bigint;
+  /** The island's speed; with it, a survive goal longer than its deadline is refused. */
+  worldHoursPerRealHour?: number;
 }
 
 /** Deadlines the server offers, in days (the contract's rails are 12 hours to 15 days). */
@@ -68,6 +71,8 @@ export async function createDraft(store: ChallengeStore, catalog: SpeciesCatalog
   const prize = parseUsdc(input.prizeUsdc);
   if (prize === null || prize < config.minPrizeAtomic || prize > config.maxPrizeAtomic) return { ok: false, error: 'bad_prize' };
   if (!DEADLINE_DAYS.includes(input.days as 1)) return { ok: false, error: 'bad_days' };
+  if (config.worldHoursPerRealHour && leastRealMs(parsed.terms, config.worldHoursPerRealHour) > (input.days as number) * 86_400_000)
+    return { ok: false, error: 'deadline_too_short' };
   const creator = getAddress(input.creatorWallet);
   const deadline = BigInt(Math.floor(now / 1000) + (input.days as number) * 86_400);
   const salt = `0x${randomBytes(32).toString('hex')}` as Hex;

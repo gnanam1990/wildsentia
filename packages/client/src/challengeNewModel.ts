@@ -67,7 +67,8 @@ export function checkTypedData(t: TypedData, account: string, info: { chainId: n
 }
 
 const DRAFT_ERRORS: Record<string, string> = {
-  unknown_species: 'Pick a species.', bad_days: 'Pick how many forest days.', bad_count: 'Pick how many (1 to 5).',
+  unknown_species: 'Pick a species.', bad_days: 'Pick how many forest days.',
+  deadline_too_short: 'The deadline is too soon: nobody could keep the animal alive that many forest days by then. Pick a later deadline or fewer days.', bad_count: 'Pick how many (1 to 5).',
   not_a_hunter: 'That species does not hunt: pick a predator for a hunt goal.', not_hunted: 'Nothing hunts that species: pick prey for an escape goal.',
   target_not_on_land: 'The place to reach must be on land: pick it on the map.', target_outside_zone: 'The place to reach must be inside the zone.',
   zone_too_small_for_reach: 'The zone is too small: a start inside it must be able to lie a kilometre from the place to reach.',

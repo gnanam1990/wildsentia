@@ -31,6 +31,11 @@ export function progressOf(terms: ChallengeTerms, p: AttemptProgress, worldNow: 
   }
 }
 
+/** The least real time the goal can take: a survive goal runs on the world clock, at the island's speed. */
+export function leastRealMs(terms: ChallengeTerms, worldHoursPerRealHour: number): number {
+  return terms.template === 'survive' ? terms.days * 24 / worldHoursPerRealHour * 3_600_000 : 0;
+}
+
 /** True once the attempt has met its goal. The animal must still be the player's; the engine checks that. */
 export function goalMet(terms: ChallengeTerms, p: AttemptProgress, worldNow: number): boolean {
   switch (terms.template) {

@@ -16,6 +16,7 @@ import { rewardConfig } from './rewards.js';
 import { socialConfig } from './socialOutbox.js';
 import { holderConfig } from './holder.js';
 import { generalLimits } from './limits.js';
+import { worldSettings } from './worldSettings.js';
 import { newHttpStats, renderMetrics, serveMetrics } from './metrics.js';
 
 export async function startServer(): Promise<{ close(): Promise<void> }> {
@@ -30,7 +31,7 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
   if (!databaseUrl) throw new Error('DATABASE_URL is required');
 
   const port = Number(process.env.PORT ?? 8080);
-  const seed = Number(process.env.WORLD_SEED ?? 1);
+  const { seed, worldHoursPerRealHour } = worldSettings(process.env);
   const speciesDir =
     process.env.SPECIES_DIR ?? fileURLToPath(new URL('../../../config/species', import.meta.url));
   const terrainProfile = process.env.VANA_TERRAIN_PROFILE ?? 'mainland';
@@ -42,7 +43,6 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
 
   // Live default is 12x real time: one world hour every five real minutes. Simulation routes
   // use species speeds in world seconds; client endpoint interpolation is still approximate.
-  const worldHoursPerRealHour = Number(process.env.WORLD_HOURS_PER_REAL_HOUR ?? 12);
 
   const host = new SimHost({ pool, seed, speciesDir, worldHoursPerRealHour, terrainProfile, communityProfile,
     allowV14Upgrade: process.env.VANA_ALLOW_V14_UPGRADE === '1',
@@ -139,7 +139,7 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
     const challengeSettings = challengesConfig(process.env);
     const species = () => [...host.world.species.values()];
     if (challengeSettings && live) challenges = challengesRuntime(challengeSettings, { pool, live: live.routes.live, world: live.routes.world,
-      species });
+      species, worldHoursPerRealHour });
     // People's accounts (X sign-in): off unless VANA_X_* are set; they play through the live layer.
     const accountSettings = accountsConfig(process.env);
     if (accountSettings && !live) throw new Error('VANA_X_* (accounts) needs VANA_LIVE_AGENTS=1');

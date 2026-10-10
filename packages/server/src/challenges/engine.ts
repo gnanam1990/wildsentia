@@ -1,6 +1,6 @@
 import { keccak256, toBytes } from 'viem';
 import type { CommandRecord, EndedLife, HuntOutcome, LiveLayer, WorldPort } from '../live/liveLayer.js';
-import { goalMet, progressOf } from './goals.js';
+import { goalMet, leastRealMs, progressOf } from './goals.js';
 import { RuleWatch, type RuleView } from './rules.js';
 import type { Attempt, AttemptStatus, Challenge, ChallengeStore, Hex, LogEntry } from './store.js';
 import { REACH_MIN_START_M, describeRule, type ChallengeTerms } from './terms.js';
@@ -63,7 +63,13 @@ export class ChallengeEngine {
 
   constructor(private readonly store: ChallengeStore, private readonly live: LiveLayer, private readonly world: WorldPort,
     private readonly clock: () => number = Date.now,
-    private readonly options: { recordOnChain?: boolean; feedback?: { siteUrl: string } | undefined } = {}) {}
+    private readonly options: { recordOnChain?: boolean; feedback?: { siteUrl: string } | undefined; worldHoursPerRealHour?: number } = {}) {}
+
+  /** True when an attempt started now could not meet the goal before the deadline. */
+  #tooLate(c: Challenge): boolean {
+    const speed = this.options.worldHoursPerRealHour;
+    return !!speed && !!c.terms && this.clock() + leastRealMs(c.terms, speed) > c.deadline.getTime();
+  }
 
   /** Picks up attempts still running before a restart; one whose animal was lost is void. */
   async restore(): Promise<void> {
@@ -88,6 +94,7 @@ export class ChallengeEngine {
     if (!c) return { ok: false, status: 404, error: 'not_found' };
     if (c.status !== 'open' || !c.terms) return { ok: false, status: 409, error: 'not_open' };
     if (this.clock() >= c.deadline.getTime()) return { ok: false, status: 409, error: 'deadline_passed' };
+    if (this.#tooLate(c)) return { ok: false, status: 409, error: 'too_late_to_finish' };
     if (!player.wallet || !player.walletProven) return { ok: false, status: 403, error: 'payout_wallet_required' };
     // Not from the creator's wallet, nor the creator's own identity (whatever wallet it links later).
     if (player.wallet.toLowerCase() === c.creatorWallet || (c.creatorAgentId && c.creatorAgentId === player.agentId))
@@ -281,7 +288,7 @@ export class ChallengeEngine {
       }
       if (queue().length === 0) continue;
       const c = await this.store.challenge(challengeId);
-      if (!c?.terms || c.status !== 'open' || this.clock() >= c.deadline.getTime()) {
+      if (!c?.terms || c.status !== 'open' || this.clock() >= c.deadline.getTime() || this.#tooLate(c)) {
         for (const w of queue()) {
           this.#dropWaiter(challengeId, w.player.agentId);
           this.live.notify(w.player.agentId, `Challenge ${challengeId} closed while you waited.`);

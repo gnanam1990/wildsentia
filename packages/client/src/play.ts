@@ -1,5 +1,5 @@
 import { api, loadAccountState, mountAccountBox } from './account.js';
-import { attemptEnded, challengePanel, keyCommand, driveBars, gaitsAllowed, pickTarget, possessMessage, projection, shouldPing, stateMessage,
+import { COMMAND_ERRORS, attemptEnded, challengePanel, keyCommand, driveBars, gaitsAllowed, pickTarget, possessMessage, projection, shouldPing, stateMessage,
   type PlayObservation } from './playModel.js';
 
 /** A signed-in person steering an animal, from a phone or a desktop (spec §8, §14). */
@@ -13,13 +13,6 @@ let outcome: { kind: 'met' | 'failed' | 'void'; text: string } | null = null, qu
 let feedbackTimer: ReturnType<typeof setTimeout> | undefined;
 
 const gait = () => document.querySelector<HTMLInputElement>('input[name="gait"]:checked')?.value ?? 'walk';
-const commandErrors: Record<string, string> = { not_possessing: 'You have no animal.', not_a_hunter: 'Your animal does not hunt.',
-  not_prey: 'That is not prey your animal hunts.', no_tree: 'There is no tree to climb here.', not_on_land: 'You cannot go there: it is not land.',
-  no_land_route: 'There is no way over land to there.', cooldown: 'Wait a little before taking another animal.', rate_limited: 'Slow down a moment.',
-  signed_out: 'Sign in with X to play.', too_soon: 'Wait a few seconds before speaking again.', no_links: 'No links in what your animal says.',
-  no_addresses_or_keys: 'No addresses or keys in what your animal says.', bad_text: 'Say something short (up to 140 characters).',
-  muted: 'Your animal has been silenced.', already_possessing: 'You already have an animal.', in_a_chase: 'That animal is in a chase right now.',
-  no_free_animal: 'No animal of that species is free.' };
 
 /** A command's problem stays on screen for a few seconds, apart from the state line the poll rewrites. */
 function feedback(text: string): void {
@@ -30,7 +23,7 @@ function feedback(text: string): void {
 
 async function command<T = unknown>(path: string, body?: unknown): Promise<T | null> {
   try { const r = await api<T>(`/play/${path}`, { method: 'POST', body }); lastCommand = Date.now(); return r; }
-  catch (e) { feedback(commandErrors[(e as Error).message] ?? `That did not work (${(e as Error).message}).`); return null; }
+  catch (e) { feedback(COMMAND_ERRORS[(e as Error).message] ?? `That did not work (${(e as Error).message}).`); return null; }
 }
 
 function draw(o: PlayObservation): void {

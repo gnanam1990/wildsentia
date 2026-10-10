@@ -1,6 +1,24 @@
 import { deadlineText } from './challengesModel.js';
 
 /** The play page's logic, kept apart from the page so it can be tested (spec §8, §14). */
+/** What each refusal from the live layer means, in the player's words (codes as the server sends them). */
+export const COMMAND_ERRORS: Record<string, string> = {
+  not_possessing: 'You have no animal.', not_a_hunter: 'Your animal does not hunt.',
+  not_its_prey: 'That is not prey your animal hunts.', out_of_sight: 'That animal is out of sight.', too_far: 'That is too far away.',
+  no_such_animal: 'That animal is no longer here.', no_tree_here: 'There is no tree to climb here.', cannot_climb: 'Your animal cannot climb.',
+  come_down_first: 'Come down from the tree first.', not_at_water: 'There is no water here: go to the shore first.',
+  does_not_eat_meat: 'Your animal does not eat meat.', no_carcass_here: 'There is no carcass here.', no_such_drop: 'That find is gone.',
+  not_on_land: 'You cannot go there: it is not land.', bad_path: 'That route is not possible.', no_land_route: 'There is no way over land to there.',
+  cooldown: 'Wait a little before taking another animal.', rate_limited: 'Slow down a moment.',
+  signed_out: 'Sign in with X to play.', too_soon: 'Wait a few seconds before speaking again.', no_links: 'No links in what your animal says.',
+  no_addresses_or_keys: 'No addresses or keys in what your animal says.', bad_text: 'Say something short (up to 140 characters).',
+  muted: 'Your animal has been silenced.', already_possessing: 'You already have an animal.', in_a_chase: 'That animal is in a chase right now.',
+  no_free_animal: 'No animal of that species is free.', already_controlled: 'Someone else is steering that animal.',
+  species_cap: 'Enough of that species are being steered already; most stay wild.', not_adult: 'Only adults can be taken.',
+  dependent: 'That animal is still a dependent youngster.', raising_young: 'That animal is raising young.',
+  off_the_ground: 'That animal is up off the ground.', not_alive: 'That animal is no longer alive.',
+};
+
 export interface NearbyAnimal { id: string; speciesId: string; x: number; z: number; distance: number; predator: boolean; huntsYou: boolean; chasingYou: boolean }
 export interface ChallengeProgress {
   challengeId: number; attemptId: string; goal: Record<string, unknown>; rules: string[]; briefing: string;

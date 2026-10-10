@@ -94,10 +94,11 @@ export interface ChallengesRuntime {
 }
 
 export function challengesRuntime(config: ChallengesConfig,
-  deps: { pool: Pool; live: LiveLayer; world: WorldPort; species: () => readonly SpeciesConfig[] },
+  deps: { pool: Pool; live: LiveLayer; world: WorldPort; species: () => readonly SpeciesConfig[]; worldHoursPerRealHour?: number },
   chain: ChallengeChain = viemChallengeChain(config)): ChallengesRuntime {
   const store = new ChallengeStore(deps.pool);
   const engine = new ChallengeEngine(store, deps.live, deps.world, Date.now, { recordOnChain: config.attemptsContract !== null,
+    ...(deps.worldHoursPerRealHour ? { worldHoursPerRealHour: deps.worldHoursPerRealHour } : {}),
     // Feedback points at the attempt's public record, so it needs the site's address.
     ...(config.reputationRegistry && config.siteUrl ? { feedback: { siteUrl: config.siteUrl } } : {}) });
   const ops = new ChainOps(store, chain);
@@ -109,7 +110,7 @@ export function challengesRuntime(config: ChallengesConfig,
     onLand: (x, z) => deps.world.patchAt(x, z)?.land === true };
   // Limits come from the contract when it starts; until then nothing can be drafted.
   const drafts = { chainId: config.chainId, contract: config.contract, usdc: config.usdc, usdcDomain: config.usdcDomain,
-    minPrizeAtomic: 1n, maxPrizeAtomic: 0n };
+    minPrizeAtomic: 1n, maxPrizeAtomic: 0n, ...(deps.worldHoursPerRealHour ? { worldHoursPerRealHour: deps.worldHoursPerRealHour } : {}) };
   const timers: NodeJS.Timeout[] = [];
   const every = (ms: number, what: string, fn: () => Promise<unknown>) => {
     let running = false;

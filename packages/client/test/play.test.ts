@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { attemptEnded, keyCommand, challengeOutcome, challengePanel, driveBars, gaitsAllowed, pickTarget, possessMessage, projection, shouldPing, stateMessage,
+import { COMMAND_ERRORS, attemptEnded, keyCommand, challengeOutcome, challengePanel, driveBars, gaitsAllowed, pickTarget, possessMessage, projection, shouldPing, stateMessage,
   type PlayObservation } from '../src/playModel.js';
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
@@ -135,5 +135,22 @@ describe('play page', () => {
     expect(keyCommand(o, 'h', { metaKey: true })).toBeNull();
     expect(read('play.html')).toMatch(/id="play-map"[^>]*tabindex="0"/);
     expect(read('play.html')).toContain('id="play-keys"');
+  });
+});
+
+describe('play page refusals', () => {
+  it('explains every refusal the live layer and the world can send, by the code the server uses', () => {
+    const source = (path: string) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
+    const live = source('server/src/live/liveLayer.ts');
+    const world = source('sim/src/world.ts');
+    const blocks = world.slice(world.indexOf('#blockFor('), world.indexOf('return null;', world.indexOf('#blockFor(')));
+    const codes = new Set([
+      ...[...live.matchAll(/return '([a-z_]+)'/g)].map((m) => m[1]!),
+      ...[...live.matchAll(/reason: '([a-z_]+)'/g)].map((m) => m[1]!),
+      ...[...blocks.matchAll(/return '([a-z_]+)'/g)].map((m) => m[1]!),
+    ]);
+    codes.delete('released');
+    expect(codes.size).toBeGreaterThan(15);
+    expect([...codes].filter((c) => !(c in COMMAND_ERRORS))).toEqual([]);
   });
 });

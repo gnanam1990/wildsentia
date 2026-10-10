@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { keccak256, toBytes } from 'viem';
 import { canonicalTerms, describeTerms, parseTerms, rulesHash, type SpeciesCatalog } from '../src/challenges/terms.js';
-import { goalMet, progressOf, WORLD_DAY_SECONDS } from '../src/challenges/goals.js';
+import { goalMet, leastRealMs, progressOf, WORLD_DAY_SECONDS } from '../src/challenges/goals.js';
+import { createDraft, type DraftConfig } from '../src/challenges/drafts.js';
+import type { ChallengeStore } from '../src/challenges/store.js';
 
 const catalog: SpeciesCatalog = {
   ids: () => ['tiger', 'dhole', 'chital', 'elephant'],
@@ -141,5 +143,26 @@ describe('challenge goals', () => {
     expect(goalMet(reach, { ...start, position: { x: 1025, z: 0 } }, 0)).toBe(true);
     expect(goalMet(reach, start, 0)).toBe(false);
     expect(progressOf(reach, { ...start, position: { x: 1000, z: 400.4 } }, 0)).toEqual({ done: 400, of: 0, unit: 'metres to go' });
+  });
+});
+
+describe('a goal that fits its deadline', () => {
+  const config: DraftConfig = { chainId: 1, contract: `0x${'c'.repeat(40)}`, usdc: `0x${'d'.repeat(40)}`,
+    usdcDomain: { name: 'USDC', version: '2' }, minPrizeAtomic: 1n, maxPrizeAtomic: 100_000_000n, worldHoursPerRealHour: 12 };
+  const store = { insertDraft: async (d: object) => ({ id: 'draft', createdAt: new Date(0), relayedAt: null, ...d }) } as unknown as ChallengeStore;
+  const draft = (days: number, deadlineDays: number) => createDraft(store, catalog, config, { creatorWallet: `0x${'a'.repeat(40)}`,
+    terms: { template: 'survive', speciesId: 'chital', days }, prizeUsdc: '1', days: deadlineDays }, 0);
+
+  it('takes a survive goal the real time its forest days last at the island\'s speed', () => {
+    const terms = { template: 'survive' as const, version: 1 as const, speciesId: 'chital', days: 14 as const, ...none };
+    expect(leastRealMs(terms, 12)).toBe(28 * 3_600_000);
+    expect(leastRealMs({ template: 'hunt', version: 1, speciesId: 'tiger', count: 1, ...none }, 12)).toBe(0);
+  });
+
+  it('refuses a survive challenge nobody could finish before its deadline', async () => {
+    // Fourteen forest days are 28 real hours at 12x: a one-day deadline can never be met.
+    expect(await draft(14, 1)).toEqual({ ok: false, error: 'deadline_too_short' });
+    expect((await draft(14, 2)).ok).toBe(true);
+    expect((await draft(7, 1)).ok).toBe(true);
   });
 });
