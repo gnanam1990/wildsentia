@@ -19,6 +19,19 @@ describe('World', () => {
     expect(w.now()).toBe(WORLD_SECONDS_PER_DAY);
   });
 
+  it('finds an animal in the patch it moved to during the hour, not the one it left', () => {
+    const w = createWorld(options);
+    w.step(1);
+    const mover = w.agents.find((a) => a.alive)!, from = mover.patchId;
+    const to = w.patches.find((p) => p.id !== from && w.__viewForTest().agentsInPatch(p.id).length === 0 && p.neighbours.length > 0)!.id;
+    expect(w.__viewForTest().agentsInPatch(from)).toContain(mover);
+    // Moving mid-hour, as a route or a chase does: the index is not rebuilt until the next hour.
+    mover.patchId = to;
+    const view = w.__viewForTest();
+    expect(view.agentsInPatch(to)).toEqual([mover]);
+    expect(view.agentsInPatch(from)).not.toContain(mover);
+  });
+
   it('is deterministic for a given seed', () => {
     const a = createWorld(options);
     const b = createWorld(options);

@@ -96,6 +96,15 @@ export class World {
   readonly #rng: Rng;
   readonly #options: WorldOptions;
   readonly #agentsByPatch = new Map<number, Agent[]>();
+  /**
+   * The patch each animal is filed under in #agentsByPatch. Animals move during the hour (routes,
+   * chases, carried young); sim_0.38.0 re-files them before the next lookup, so one that moved is
+   * seen where it is, not missing until the next hour. Between phases (a new view) every animal is
+   * checked; between two animals' turns only the ones that turn could have moved: the animal itself
+   * and the actors of the events it logged (its prey, its young, its packmates).
+   */
+  readonly #filedPatch = new Map<Agent, number>();
+  #indexStale = false;
   /** Herds, troops, packs and families: the spec's group entity, kept light. */
   readonly #groups = new Map<string, { speciesId: string; memberIds: string[] }>();
   #groupSeq = 0;
@@ -220,10 +229,38 @@ export class World {
     for (const carcass of this.carcasses) locateCarcass(carcass);
   }
 
+  /** Files a living animal that has moved (or was born) since it was filed, under its patch now. */
+  #refileOne(agent: Agent): void {
+    const filed = this.#filedPatch.get(agent);
+    if (!agent.alive || filed === agent.patchId) return;
+    if (filed !== undefined) {
+      const old = this.#agentsByPatch.get(filed), at = old?.indexOf(agent) ?? -1;
+      if (at >= 0) old!.splice(at, 1);
+    }
+    const list = this.#agentsByPatch.get(agent.patchId);
+    if (list) list.push(agent); else this.#agentsByPatch.set(agent.patchId, [agent]);
+    this.#filedPatch.set(agent, agent.patchId);
+  }
+
+  /** After one animal's turn: it, and every animal its events name, may have moved. */
+  #refileTurn(agent: Agent | null, logMark: number): void {
+    if (agent) this.#refileOne(agent);
+    const fresh = this.log.size() - logMark;
+    if (fresh <= 0) return;
+    for (const event of this.log.tail(fresh)) {
+      for (const id of event.actors) { const other = this.#agentsById.get(id); if (other) this.#refileOne(other); }
+    }
+  }
+
   #view(): WorldView {
+    // A view is taken between moves: anything that moved since the index was built is re-filed first.
+    this.#indexStale = true;
     return {
       patches: this.patches,
-      agentsInPatch: (patchId) => (this.#agentsByPatch.get(patchId) ?? []).filter((a) => a.alive && a.patchId === patchId),
+      agentsInPatch: (patchId) => {
+        if (this.#indexStale) { this.#indexStale = false; for (const agent of this.agents) this.#refileOne(agent); }
+        return (this.#agentsByPatch.get(patchId) ?? []).filter((a) => a.alive && a.patchId === patchId);
+      },
       agentById: (id) => this.#agentsById.get(id),
       carcassesInPatch: (patchId) => this.#carcassesByPatch.get(patchId) ?? [],
       speciesOf: (speciesId) => this.species.get(speciesId)!,
@@ -476,12 +513,15 @@ export class World {
 
   #reindex(): void {
     this.#agentsByPatch.clear();
+    this.#filedPatch.clear();
     for (const agent of this.agents) {
       if (!agent.alive) continue;
+      this.#filedPatch.set(agent, agent.patchId);
       const list = this.#agentsByPatch.get(agent.patchId);
       if (list) list.push(agent);
       else this.#agentsByPatch.set(agent.patchId, [agent]);
     }
+    this.#indexStale = false;
     this.#carcassesByPatch.clear();
     for (const carcass of this.carcasses) {
       const list = this.#carcassesByPatch.get(carcass.patchId);
@@ -1169,7 +1209,11 @@ export class World {
       else list.push(agent);
     }
 
+    let previous: Agent | null = null, logMark = this.log.size();
     for (const agent of this.agents) {
+      // The previous animal's turn may have moved it, its prey, its young or its packmates.
+      this.#refileTurn(previous, logMark);
+      previous = agent; logMark = this.log.size();
       if (!agent.alive) continue;
       processedAgents.add(agent.id);
       const cfg = this.species.get(agent.speciesId)!;
