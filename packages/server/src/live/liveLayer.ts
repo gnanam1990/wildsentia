@@ -342,9 +342,22 @@ export class LiveLayer {
     return true;
   }
 
+  /**
+   * A flyer that stops comes down where it is: only onto land, so over water or sea it flies on.
+   * Error, or null once it is on the ground (or never left it).
+   */
+  #land(avatar: Avatar): string | null {
+    if (!avatar.flying) return null;
+    if (!this.world.place(avatar.animalId, { x: avatar.x, z: avatar.z, heading: avatar.heading })) return 'not_on_land';
+    avatar.flying = false;
+    return null;
+  }
+
   stop(agentId: string): string | null {
     const avatar = this.avatars.get(agentId);
     if (!avatar) return 'not_possessing';
+    const landing = this.#land(avatar);
+    if (landing) return landing;
     avatar.path = []; avatar.moving = false; avatar.hunt = null; if (avatar.action === 'hunt') avatar.action = 'idle';
     avatar.lastCommand = this.clock();
     this.#command(agentId, 'stop', {});
@@ -361,9 +374,11 @@ export class LiveLayer {
       if (!this.world.carcassNear(avatar.x, avatar.z, 3)) return 'no_carcass_here';
     }
     if (avatar.perched && action !== 'rest') return 'come_down_first';
+    const landing = this.#land(avatar);
+    if (landing) return landing;
     avatar.hunt = null;
     this.#flushAction(avatar);
-    avatar.path = []; avatar.moving = false; avatar.opening = null; avatar.flying = false;
+    avatar.path = []; avatar.moving = false; avatar.opening = null;
     avatar.action = action; avatar.lastCommand = this.clock();
     this.#command(agentId, 'act', { action });
     return null;
@@ -398,6 +413,8 @@ export class LiveLayer {
     const drop = this.drops?.active().find((d) => d.id === dropId);
     if (!drop) return 'no_such_drop';
     if (Math.hypot(drop.x - avatar.x, drop.z - avatar.z) > OPEN_RADIUS_M) return 'too_far';
+    const landing = this.#land(avatar);
+    if (landing) return landing;
     this.#flushAction(avatar);
     avatar.path = []; avatar.moving = false;
     avatar.action = 'open'; avatar.opening = { dropId, seconds: 0 }; avatar.lastCommand = this.clock();

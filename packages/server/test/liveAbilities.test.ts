@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fileURLToPath } from 'node:url';
-import { landWalkable, patchCentre, treeAnchorForPatch } from '@vana/shared';
+import { landWalkable, patchAtPosition, patchCentre, treeAnchorForPatch } from '@vana/shared';
 import { createWorld, type World } from '@vana/sim';
 import { LiveLayer } from '../src/live/liveLayer.js';
 import { worldPort } from '../src/live/worldPort.js';
@@ -112,5 +112,37 @@ describe('species abilities and fair turns', () => {
     expect(live.notices('ag_v').some((n) => n.text.startsWith('Blocked'))).toBe(false);
     const sea = world.patches.find((p) => !landWalkable(p))!;
     expect(live.moveTo('ag_v', [patchCentre(sea.id)], 'run')).toBe('not_on_land'); // Cannot land on the sea.
+  });
+
+  it('lands a vulture that is told to stop over land, and refuses to set it down on water', () => {
+    const { world, live } = setup({ vulture: 6, chital: 4 });
+    const land = world.patches.filter((p) => landWalkable(p));
+    let pair: { from: { x: number; z: number }; to: { x: number; z: number } } | null = null;
+    for (const p of land) { for (const q of land) {
+      const from = patchCentre(p.id), to = patchCentre(q.id);
+      if (p.id < q.id && !clearOverLand(world.patches, from, to) && landRoute(world.patches, from, to, () => 1)) { pair = { from, to }; break; }
+    } if (pair) break; }
+    const vulture = world.agents.find((x) => x.speciesId === 'vulture' && world.possessionBlock(x.id) === null)!;
+    vulture.patchId = patchAtPosition({ ...pair!.from, heading: 0 });
+    vulture.position = { ...pair!.from, heading: 0 };
+    live.possess('ag_v', 'Giddh', { animalId: vulture.id });
+    const v = live.avatars.get('ag_v')!;
+    const overLand = () => landWalkable(world.patches[patchAtPosition({ x: v.x, z: v.z, heading: 0 })]);
+    expect(live.moveTo('ag_v', [pair!.to], 'run')).toBeNull();
+    live.tick(0.1);
+    expect(v.flying).toBe(true);
+    // Stopped over land, it comes down where it is, not hanging in the air out of every hunter's reach.
+    expect(live.stop('ag_v')).toBeNull();
+    expect(v.flying).toBe(false);
+    expect(world.animal(vulture.id)!.position).toMatchObject({ x: v.x, z: v.z });
+    expect(live.publicState().avatars.find((a) => (a as { agentId: string }).agentId === 'ag_v')).not.toHaveProperty('altitude');
+    // Over water it cannot land: it keeps flying, and says so.
+    expect(live.moveTo('ag_v', [pair!.to], 'run')).toBeNull();
+    for (let i = 0; i < 6000 && overLand() && v.moving; i++) live.tick(0.1);
+    expect(overLand()).toBe(false);
+    expect(live.stop('ag_v')).toBe('not_on_land');
+    expect(live.act('ag_v', 'rest')).toBe('not_on_land');
+    expect(v.flying).toBe(true);
+    expect(v.moving).toBe(true);
   });
 });
