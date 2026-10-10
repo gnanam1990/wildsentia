@@ -113,7 +113,8 @@ passes restart and health checks. Do not enable version-upgrade flags without a 
 checkpoint migration review. To move a saved `sim_0.36.0` world to this code after a
 verified backup, add `VANA_ALLOW_V36_UPGRADE: "1"` to the server's environment in a compose
 override for one start, confirm `/api/health`, then remove it. (Each flag names the saved
-world's version and moves it straight to this runtime: a `sim_0.35.0` world uses
+world's version and moves it straight to this runtime: a `sim_0.37.0` world uses
+`VANA_ALLOW_V37_UPGRADE`, which changes no saved state, a `sim_0.35.0` world uses
 `VANA_ALLOW_V35_UPGRADE`, a `sim_0.34.0` world `VANA_ALLOW_V34_UPGRADE`, a `sim_0.33.0` world
 `VANA_ALLOW_V33_UPGRADE`, a `sim_0.32.0` world `VANA_ALLOW_V32_UPGRADE`.) An upgraded island
 receives a recorded leopard pair (one male, one female) at the first day boundary after the

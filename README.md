@@ -349,7 +349,9 @@ of the 63 starvation deaths.
 
 ### Running an existing world on new code
 
-The current runtime identifies as `sim_0.37.0`. Its rule changes from `sim_0.36.0` add the
+The current runtime identifies as `sim_0.38.0`. Its rule changes from `sim_0.37.0` correct
+decisions an audit of `sim_0.37.0` found wrong; no saved state changes, and a saved 0.37 world starts
+on this code only with `VANA_ALLOW_V37_UPGRADE=1`. `sim_0.37.0`'s rule changes from `sim_0.36.0` add the
 leopard (a thirteenth species: an ambush cat that keeps away from tigers, climbs to escape
 them, caches its kills in trees and hunts for its weaned cubs), found the dholes as a pack of five
 (the smallest working pack) whose den mother stays with her pups and is fed by the pack,

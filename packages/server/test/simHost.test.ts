@@ -218,6 +218,18 @@ maybe('SimHost', () => {
     await restarted.abort();
   });
 
+  it('refuses a v0.37 save without VANA_ALLOW_V37_UPGRADE, and upgrades it keeping every animal', async () => {
+    const first = new SimHost(options()); await first.boot();
+    const old = structuredClone(takeSnapshot(first.world)); old.simVersion = 'sim_0.37.0';
+    await first.abort();
+    await new SnapshotStore(pool!).save(old);
+    await expect(new SimHost(options()).boot()).rejects.toThrow(/refusing to boot/);
+    const upgraded = new SimHost({ ...options(), allowV37Upgrade: true }); await upgraded.boot();
+    expect(upgraded.world.agents).toEqual(old.agents);
+    expect((await new SnapshotStore(pool!).loadLatest())!.simVersion).toBe(SIM_VERSION);
+    await upgraded.abort();
+  });
+
   it('refuses a v0.19 island save without explicit freshwater-basin upgrade opt-in', async () => {
     const island = { ...options(), seed: 1, terrainProfile: 'island_v1' as const,
       initialAgents: {}, minPopulation: {} };

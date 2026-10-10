@@ -474,6 +474,19 @@ export function upgradeV27Snapshot(snapshot: Snapshot): Snapshot {
 }
 
 /**
+ * v0.38 corrects decisions the audit of v0.37 found wrong; see each rule's own comment. Future
+ * decisions only: no state is added or reshaped, so every v0.37 state byte is kept and nothing
+ * is scheduled. The upgrade exists so a saved v0.37 world, whose recorded history was made by the
+ * old rules, moves to these only by explicit operator choice.
+ */
+export function upgradeV37Snapshot(snapshot: Snapshot): Snapshot {
+  if (snapshot.simVersion !== 'sim_0.37.0') throw new Error('only sim_0.37.0 snapshots can use this upgrade');
+  const upgraded = structuredClone(snapshot);
+  upgraded.simVersion = SIM_VERSION;
+  return upgraded;
+}
+
+/**
  * v0.37 adds the leopard, a den mother fed by a larger dhole pack, and a food limit on wild boar:
  * each land patch gets its rooting and mast food (paid out of its own soil nutrients), and an
  * island with no leopards receives a recorded male and female at the next day boundary. Saved
