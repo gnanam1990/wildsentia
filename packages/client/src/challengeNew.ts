@@ -133,7 +133,7 @@ async function main(): Promise<void> {
     account = a;
     $<HTMLFormElement>('new-form').hidden = !a?.canCreate;
     $('new-cannot').hidden = !!a?.canCreate;
-  });
+  }, { hideWhenOff: true });
   if (!(await loadAccountState()).enabled) $('new-cannot').textContent = 'Creating challenges needs sign-in, which is not switched on here yet.';
   try {
     info = await api<Info>('/challenges/info');

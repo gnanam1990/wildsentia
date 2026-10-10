@@ -118,11 +118,13 @@ function onMapTap(event: MouseEvent): void {
 }
 
 async function main(): Promise<void> {
-  await mountAccountBox(() => undefined);
+  await mountAccountBox(() => undefined, { hideWhenOff: true });
   // No accounts on this island: there is nothing to poll, so say so once and stop.
   if (!(await loadAccountState()).enabled) {
-    setState(stateMessage(null, true, { off: true }));
+    $('play-state').hidden = true;
     $('play-pick').hidden = true;
+    for (const grid of document.querySelectorAll<HTMLElement>('.play-grid')) grid.hidden = true;
+    $('play-off').hidden = false;
     return;
   }
   try {

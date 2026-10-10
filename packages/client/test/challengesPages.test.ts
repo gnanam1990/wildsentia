@@ -30,6 +30,18 @@ describe('pages', () => {
   });
 });
 
+describe('sign-in switched off', () => {
+  it('is said once on a page, and the play page offers what can be done instead of an empty map', () => {
+    for (const page of ['play', 'challengeNew']) expect(read(`src/${page}.ts`), page).toMatch(/mountAccountBox\([\s\S]{0,200}\{ hideWhenOff: true \}\)/);
+    expect(read('src/account.ts')).toMatch(/box\.hidden = !!options\.hideWhenOff && state\.kind === 'off'/);
+    const play = read('play.html');
+    const off = play.slice(play.indexOf('id="play-off"'), play.indexOf('</section>', play.indexOf('id="play-off"')));
+    expect(off).toContain('href="/connect.html"');
+    expect(off).toContain('href="/"');
+    expect(read('src/play.ts')).toMatch(/\$\('play-off'\)\.hidden = false/);
+  });
+});
+
 describe('account', () => {
   const base = { handle: 'kavya', name: 'Kavya', xAccountDays: 400, agentId: 'ag_1', playerName: 'kavya', wallet: '0x' + 'a'.repeat(40),
     canCreate: true, canPlay: true, createsLeftToday: 3, needs: [] as string[] };

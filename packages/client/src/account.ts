@@ -44,7 +44,9 @@ export async function linkWallet(): Promise<string> {
 }
 
 /** The account box at the top of each page: who is signed in, and sign in, link wallet and sign out. */
-export async function mountAccountBox(onChange: (a: AccountView | null) => void): Promise<AccountView | null> {
+export async function mountAccountBox(onChange: (a: AccountView | null) => void,
+  options: { hideWhenOff?: boolean } = {}): Promise<AccountView | null> {
+  const box = document.querySelector<HTMLElement>('#account-box')!;
   const status = document.querySelector<HTMLElement>('#account-status')!;
   const signin = document.querySelector<HTMLAnchorElement>('#account-signin')!;
   const link = document.querySelector<HTMLButtonElement>('#account-wallet')!;
@@ -53,6 +55,8 @@ export async function mountAccountBox(onChange: (a: AccountView | null) => void)
   const render = (a: AccountView | null) => {
     const state = accountState(a, { enabled });
     status.textContent = state.text;
+    // A page that explains sign-in being off in its own words hides the box, so it is said once.
+    box.hidden = !!options.hideWhenOff && state.kind === 'off';
     signin.hidden = state.kind !== 'signed_out';
     link.hidden = state.kind === 'off' || state.kind === 'signed_out' || state.kind === 'too_new';
     link.textContent = a?.wallet ? 'Link another wallet' : 'Link a wallet';
