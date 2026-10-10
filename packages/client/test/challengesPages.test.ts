@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { accountState, checkSiweMessage } from '../src/accountModel.js';
-import { attemptRow, cardMeta, deadlineText, signinMessage, statusLabel, txLink } from '../src/challengesModel.js';
+import { attemptRow, cardParts, deadlineText, filterChallenges, filterCounts, signinMessage, statusLabel, txLink } from '../src/challengesModel.js';
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
@@ -75,14 +75,26 @@ describe('challenges page', () => {
     expect(txLink(null, hash)).toBeNull();
     expect(txLink('https://explorer.testnet.arc.io', 'javascript:alert(1)')).toBeNull();
   });
-  it('sums up a challenge for the list: state, time left, and how many attempts it has had', () => {
-    const c = { id: 1, status: 'open', goal: null, description: null, prizeUsdc: '5', deadline: '2026-10-12T03:00:00Z', creator: '0x',
-      winnerAttempt: null, createdTx: null, settledTx: null };
-    expect(cardMeta({ ...c, attemptCount: 0 }, now)).toBe('Open · ends in 2 days 3 h · no attempts yet');
-    expect(cardMeta({ ...c, attemptCount: 1 }, now)).toBe('Open · ends in 2 days 3 h · 1 attempt');
-    expect(cardMeta({ ...c, status: 'paid', attemptCount: 4 }, now)).toMatch(/^Won and paid · deadline .* · 4 attempts$/);
-    expect(cardMeta(c, now)).toBe('Open · ends in 2 days 3 h');
+  it('lays a card out as prize, state, goal, rules and the kind of goal', () => {
+    const c = { id: 2, status: 'open', goal: { template: 'survive', speciesId: 'chital' }, prizeUsdc: '5', deadline: '2026-10-12T03:00:00Z',
+      description: 'Keep a chital deer alive for 1 forest day; never run; stay within 80 m of your own kind', creator: '0x', winnerAttempt: null,
+      createdTx: null, settledTx: null, attemptCount: 2 };
+    expect(cardParts(c, now)).toEqual({ prize: '5 USDC', tone: 'open', state: 'Open', time: 'ends in 2 days 3 h', attempts: '2 attempts',
+      title: 'Keep a chital deer alive for 1 forest day', rules: ['never run', 'stay within 80 m of your own kind'], kind: 'Survive' });
+    expect(cardParts({ ...c, status: 'paid', goal: { template: 'hunt', speciesId: 'tiger' }, description: 'Make a kill as a tiger', attemptCount: undefined }, now))
+      .toMatchObject({ tone: 'won', state: 'Won and paid', rules: [], kind: 'Hunt', attempts: null });
+    expect(cardParts({ ...c, status: 'refunded', goal: null, description: null }, now)).toMatchObject({ tone: 'returned', title: 'Challenge 2', kind: null });
   });
+
+  it('filters the list by what happened to each challenge, and counts each kind', () => {
+    const list = ['open', 'open', 'won', 'paid', 'unpaid', 'refunding', 'refunded'].map((status, id) => ({ id, status }));
+    expect(filterChallenges(list, 'all').length).toBe(7);
+    expect(filterChallenges(list, 'open').map((c) => c.id)).toEqual([0, 1]);
+    expect(filterChallenges(list, 'won').map((c) => c.id)).toEqual([2, 3]);
+    expect(filterChallenges(list, 'returned').map((c) => c.id)).toEqual([4, 5, 6]);
+    expect(filterCounts(list)).toEqual({ all: 7, open: 2, won: 2, returned: 3 });
+  });
+
   it('describes each attempt and how it ended', () => {
     expect(attemptRow({ id: 'a1', agentName: 'Stripe', status: 'failed', endReason: 'rule_no_run', kills: 0, escapes: 2 }))
       .toEqual({ player: 'Stripe', outcome: 'Failed: it ran', detail: '0 kills, 2 escapes' });

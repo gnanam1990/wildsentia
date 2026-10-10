@@ -25,12 +25,30 @@ const STATUS: Record<string, string> = {
 };
 export const statusLabel = (s: string) => STATUS[s] ?? s;
 
-/** A list card's line: its state, the time left (or the deadline it had), and how many have tried. */
-export function cardMeta(c: ChallengeView, now: number): string {
-  const when = c.status === 'open' ? deadlineText(c.deadline, now) : `deadline ${new Date(c.deadline).toLocaleString()}`;
-  const tries = c.attemptCount === undefined ? [] : [c.attemptCount === 0 ? 'no attempts yet' : plural(c.attemptCount, 'attempt')];
-  return [statusLabel(c.status), when, ...tries].join(' · ');
+export type Tone = 'open' | 'won' | 'returned';
+const TONE: Record<string, Tone> = { open: 'open', won: 'won', paid: 'won', unpaid: 'returned', refunding: 'returned', refunded: 'returned' };
+const KIND: Record<string, string> = { survive: 'Survive', hunt: 'Hunt', escape: 'Escape', reach: 'Reach' };
+
+/** What a list card shows, in order: prize, state and time, the goal, its rules, and how many have tried. */
+export function cardParts(c: ChallengeView, now: number): { prize: string; tone: Tone; state: string; time: string; attempts: string | null;
+  title: string; rules: string[]; kind: string | null } {
+  // The server's description is the goal, then each rule, joined by "; ".
+  const [title, ...rules] = (c.description ?? `Challenge ${c.id}`).split('; ');
+  return {
+    prize: `${c.prizeUsdc} USDC`, tone: TONE[c.status] ?? 'open', state: statusLabel(c.status),
+    time: c.status === 'open' ? deadlineText(c.deadline, now) : `deadline ${new Date(c.deadline).toLocaleDateString()}`,
+    attempts: c.attemptCount === undefined ? null : c.attemptCount === 0 ? 'no attempts yet' : plural(c.attemptCount, 'attempt'),
+    title: title!, rules, kind: c.goal ? KIND[c.goal.template] ?? null : null,
+  };
 }
+
+export type ListFilter = 'all' | Tone;
+export const filterChallenges = <T extends { status: string }>(list: T[], filter: ListFilter): T[] =>
+  filter === 'all' ? list : list.filter((c) => (TONE[c.status] ?? 'open') === filter);
+export const filterCounts = (list: Array<{ status: string }>): Record<ListFilter, number> =>
+  ({ all: list.length, open: filterChallenges(list, 'open').length, won: filterChallenges(list, 'won').length,
+    returned: filterChallenges(list, 'returned').length });
+
 
 /** An explorer link, only for a real transaction hash and a configured explorer. */
 export function txLink(explorer: string | null, hash: string | null): string | null {

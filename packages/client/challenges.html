@@ -29,7 +29,15 @@
       <p class="eyebrow">USDC prizes on Arc</p>
       <h1 id="list-title">Challenges</h1>
       <p class="intro">A creator locks a prize behind a goal for one species. The first player (a person or an AI agent) to meet it while keeping every rule is paid by the contract. If nobody does by the deadline, the prize goes back to the creator.</p>
-      <p id="challenge-status" role="status" aria-atomic="true">Loading…</p>
+      <div class="list-tools">
+        <div class="filters" role="group" aria-label="Show challenges">
+          <button type="button" data-filter="open" aria-pressed="true">Open</button>
+          <button type="button" data-filter="won" aria-pressed="false">Won</button>
+          <button type="button" data-filter="returned" aria-pressed="false">Returned</button>
+          <button type="button" data-filter="all" aria-pressed="false">All</button>
+        </div>
+        <p id="challenge-status" role="status" aria-atomic="true">Loading…</p>
+      </div>
       <div id="challenge-list" class="challenge-list"></div>
     </section>
 

@@ -4,10 +4,31 @@
 .holder-page button.quiet { background: transparent; color: var(--mist); border: 1px solid var(--line); }
 #page-notice:not(:empty), #detail-feedback:not(:empty) { padding: 12px 14px; border-left: 3px solid var(--mist); background: var(--surface-2); }
 .challenge-list { display: grid; gap: 12px; margin-top: 16px; }
-.challenge-card { display: grid; gap: 4px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--dialog-surface); color: var(--ink); text-decoration: none; }
-.challenge-card:hover, .challenge-card:focus-visible { border-color: var(--moss); }
-.challenge-card .prize, .prize-line strong { color: var(--moss); font: 700 1rem var(--mono); }
-.challenge-card .meta { color: var(--ink-2); font-size: .9rem; }
+/* A challenge card: prize and state on top, the goal, its rules, then the kind of goal, time and tries. */
+.challenge-card { display: grid; gap: 10px; padding: 18px 20px; border: 1px solid var(--line); border-left: 4px solid var(--moss);
+  border-radius: 14px; background: var(--dialog-surface); color: var(--ink); text-decoration: none; box-shadow: 0 8px 24px var(--shadow);
+  transition: border-color .15s, transform .15s; }
+.challenge-card:hover, .challenge-card:focus-visible { border-color: var(--line-strong); border-left-color: var(--moss); transform: translateY(-1px); }
+.challenge-card.tone-won { border-left-color: var(--clay); }
+.challenge-card.tone-returned { border-left-color: var(--ink-3); opacity: .85; }
+.card-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.challenge-card .prize, .prize-line strong { color: var(--clay); font: 700 1rem var(--mono); }
+.challenge-card .prize { padding: 4px 12px; border-radius: 999px; background: var(--prize-bg); border: 1px solid var(--gold-line); }
+.challenge-card .state { font-size: .82rem; font-weight: 600; color: var(--ink-2); }
+.challenge-card.tone-open .state { color: var(--moss); }
+.challenge-card .title { font-size: 1.08rem; line-height: 1.35; color: var(--ink); }
+.challenge-card .rules { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.challenge-card .rules li { font-size: .82rem; color: var(--ink-2); padding: 3px 10px; border-radius: 999px; background: var(--tint); border: 1px solid var(--line); }
+.card-foot { display: flex; flex-wrap: wrap; gap: 6px 14px; color: var(--ink-3); font-size: .85rem; }
+.card-foot .kind { color: var(--ink); font-weight: 600; }
+.list-tools { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; }
+.list-tools #challenge-status { color: var(--ink-3); margin: 0; }
+.filters { display: flex; flex-wrap: wrap; gap: 6px; }
+.holder-page .filters button { min-height: 38px; padding: 6px 14px; border-radius: 999px; font-size: .9rem; font-weight: 600;
+  background: transparent; color: var(--ink-2); border: 1px solid var(--line); }
+.holder-page .filters button:hover { color: var(--ink); background: var(--tint); }
+.holder-page .filters button[aria-pressed="true"] { color: var(--on-moss); background: var(--moss); border-color: var(--moss); }
+.challenge-list .empty { color: var(--ink-3); padding: 24px 0; }
 .links { display: flex; flex-wrap: wrap; gap: 16px; }
 .briefing blockquote { margin: 8px 0 0; padding: 10px 14px; border-left: 3px solid var(--line); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
 .new-form fieldset { border: 1px solid var(--line); border-radius: 12px; margin: 0 0 16px; padding: 12px 16px 16px; display: grid; gap: 10px; }

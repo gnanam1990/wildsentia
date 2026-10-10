@@ -1,7 +1,7 @@
 import './pageChrome.js';
 import { api, mountAccountBox } from './account.js';
 import type { AccountView } from './accountModel.js';
-import { acceptErrors, attemptRow, cardMeta, deadlineText, signinMessage, statusLabel, txLink, type AttemptView, type ChallengeView } from './challengesModel.js';
+import { acceptErrors, attemptRow, cardParts, deadlineText, filterChallenges, filterCounts, signinMessage, statusLabel, txLink, type AttemptView, type ChallengeView, type ListFilter } from './challengesModel.js';
 
 /** The challenges page: open and settled challenges, and one challenge with its attempts (spec §8). */
 const $ = <T extends HTMLElement>(id: string) => document.querySelector<T>(`#${id}`)!;
@@ -17,19 +17,51 @@ let shown: ChallengeView | null = null;
 const showAccept = () => { $('detail-accept').hidden = !(shown?.status === 'open' && account?.canPlay); };
 
 function listCard(c: ChallengeView): HTMLElement {
-  const card = el('a', undefined, 'challenge-card');
+  const p = cardParts(c, Date.now());
+  const card = el('a', undefined, `challenge-card tone-${p.tone}`);
   card.href = `/challenges.html?id=${c.id}`;
-  card.append(el('span', `${c.prizeUsdc} USDC`, 'prize'), el('strong', c.description ?? `Challenge ${c.id}`),
-    el('span', cardMeta(c, Date.now()), 'meta'));
+  const top = el('div', undefined, 'card-top');
+  top.append(el('span', p.prize, 'prize'), el('span', p.state, 'state'));
+  card.append(top, el('strong', p.title, 'title'));
+  if (p.rules.length) {
+    const rules = el('ul', undefined, 'rules');
+    rules.append(...p.rules.map((r) => el('li', r)));
+    card.append(rules);
+  }
+  const foot = el('div', undefined, 'card-foot');
+  if (p.kind) foot.append(el('span', p.kind, 'kind'));
+  foot.append(el('span', p.time, 'time'));
+  if (p.attempts) foot.append(el('span', p.attempts, 'tries'));
+  card.append(foot);
   return card;
 }
 
-async function showList(): Promise<void> {
-  const list = $('challenge-list');
-  const { challenges } = await api<{ challenges: ChallengeView[] }>('/challenges');
-  list.replaceChildren(...(challenges.length ? challenges.map(listCard) : [el('p', 'No challenges yet.')]));
-  $('challenge-status').textContent = `${challenges.filter((c) => c.status === 'open').length} open`;
+let all: ChallengeView[] = [];
+let filter: ListFilter = 'open';
+const EMPTY: Record<ListFilter, string> = { open: 'No open challenges right now.', won: 'No challenge has been won yet.',
+  returned: 'No prizes have gone back to their creators.', all: 'No challenges yet.' };
+
+function renderList(): void {
+  const shownList = filterChallenges(all, filter);
+  $('challenge-list').replaceChildren(...(shownList.length ? shownList.map(listCard) : [el('p', EMPTY[filter], 'empty')]));
+  const counts = filterCounts(all);
+  for (const b of document.querySelectorAll<HTMLButtonElement>('[data-filter]')) {
+    const f = b.dataset.filter as ListFilter;
+    b.setAttribute('aria-pressed', String(f === filter));
+    b.textContent = `${b.textContent!.replace(/ \d+$/, '')} ${counts[f]}`;
+  }
+  $('challenge-status').textContent = `${counts.open} open`;
 }
+
+async function showList(): Promise<void> {
+  all = (await api<{ challenges: ChallengeView[] }>('/challenges')).challenges;
+  // With nothing open, show everything rather than an empty list.
+  if (filter === 'open' && filterCounts(all).open === 0) filter = 'all';
+  renderList();
+}
+
+for (const b of document.querySelectorAll<HTMLButtonElement>('[data-filter]'))
+  b.addEventListener('click', () => { filter = b.dataset.filter as ListFilter; renderList(); });
 
 async function showDetail(id: string): Promise<void> {
   $('challenge-list-section').hidden = true;
