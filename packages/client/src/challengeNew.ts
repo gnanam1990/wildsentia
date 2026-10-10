@@ -1,7 +1,7 @@
 import { api, loadAccountState, mountAccountBox, wallet } from './account.js';
 import type { AccountView } from './accountModel.js';
-import { checkTypedData, draftError, draftKey, HABITAT_COLOURS, signError, termsFrom, toMetres, toPixel, typedDataForWallet, usdcAtomic,
-  type FormValues } from './challengeNewModel.js';
+import { checkTypedData, draftError, draftKey, HABITAT_COLOURS, relayMessage, signError, termsFrom, toMetres, toPixel, typedDataForWallet, usdcAtomic,
+  type FormValues, type RelayStatus } from './challengeNewModel.js';
 
 /** Creating a challenge: the goal, rules and briefing, then the creator signs the USDC authorization (spec §8, §14). */
 interface Info {
@@ -103,10 +103,28 @@ async function sign(): Promise<void> {
     say('Check your wallet: it asks you to authorize the prize transfer into the challenge contract.');
     const signature = await eth.request({ method: 'eth_signTypedData_v4', params: [from, JSON.stringify(typedDataForWallet(d.typedData))] });
     await api(`/challenges/drafts/${encodeURIComponent(d.draftId)}/relay`, { method: 'POST', body: { signature } });
-    say('Sent to Arc. Your challenge appears on the challenges page in about a minute, once it is confirmed.');
     $('new-review').hidden = true; if (draft === d) draft = null;
+    void follow(d.draftId);
   } catch (e) { say(signError(e)); }
   finally { signing = false; button.disabled = false; submit.disabled = false; }
+}
+
+/** Asks where the signed challenge is until Arc has created or refused it (about three minutes at most). */
+async function follow(draftId: string): Promise<void> {
+  for (let i = 0; i < 60; i++) {
+    let status: RelayStatus = { state: 'sending' };
+    try { status = await api<RelayStatus>(`/challenges/drafts/${encodeURIComponent(draftId)}/status`); } catch { /* ask again */ }
+    const m = relayMessage(status);
+    say(m.text);
+    if (m.challengeId !== undefined) {
+      const link = document.createElement('a');
+      link.href = `/challenges.html?id=${m.challengeId}`; link.textContent = ' Open it.';
+      $('new-status').append(link);
+    }
+    if (m.done) return;
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+  }
+  say('Still waiting for Arc. Check the challenges page in a few minutes.');
 }
 
 async function main(): Promise<void> {

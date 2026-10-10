@@ -103,3 +103,16 @@ export const draftError = (code: string) => DRAFT_ERRORS[code] ?? `The server re
 
 export const HABITAT_COLOURS: Record<string, string> = { shola: '#2f5d3a', grassland: '#8aa65a', riparian: '#4f8f6f', rock: '#8c8478',
   marsh: '#5f7f68', water: '#2b5c7d' };
+
+export type RelayStatus = { state: 'not_sent' | 'sending' } | { state: 'failed'; error: string } | { state: 'created'; challengeId: number };
+const RELAY_FAILURES: Record<string, string> = {
+  authorization_expired: 'The signed authorization ran out before it could be sent. No USDC was taken: review the challenge and sign again.',
+  reverted: 'Arc refused the challenge, so no USDC was taken. Review it and try again.',
+};
+
+/** What the creator is told while a signed challenge goes to Arc; `done` stops the page asking. */
+export function relayMessage(s: RelayStatus): { text: string; done: boolean; challengeId?: number } {
+  if (s.state === 'created') return { text: `Created on Arc as challenge ${s.challengeId}.`, done: true, challengeId: s.challengeId };
+  if (s.state === 'failed') return { text: RELAY_FAILURES[s.error] ?? `Arc did not take the challenge (${s.error}), so no USDC was taken.`, done: true };
+  return { text: 'Sent to Arc. Waiting for it to be confirmed (usually under a minute).', done: false };
+}

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { checkTypedData, draftError, draftKey, signError, termsFrom, toMetres, toPixel, typedDataForWallet, usdcAtomic, type FormValues } from '../src/challengeNewModel.js';
+import { checkTypedData, draftError, draftKey, signError, termsFrom, toMetres, toPixel, typedDataForWallet, usdcAtomic, type FormValues, relayMessage } from '../src/challengeNewModel.js';
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const form = (over: Partial<FormValues> = {}): FormValues => ({ template: 'survive', speciesId: 'chital', days: 3, count: 1, x: 0, z: 0,
@@ -100,5 +100,14 @@ describe('create flow', () => {
       expect(draftKey({ terms: termsFrom(form()), prizeUsdc: '5', days: 3 })).toBe(a);
       expect(draftKey({ terms: termsFrom(form({ briefing: 'x' })), prizeUsdc: '5', days: 3 })).not.toBe(a);
     });
+  });
+});
+
+describe('after signing', () => {
+  it('says whether the challenge reached Arc, and stops asking once it has an answer', () => {
+    expect(relayMessage({ state: 'sending' })).toEqual({ text: expect.stringMatching(/^Sent to Arc/), done: false });
+    expect(relayMessage({ state: 'created', challengeId: 4 })).toEqual({ text: 'Created on Arc as challenge 4.', done: true, challengeId: 4 });
+    expect(relayMessage({ state: 'failed', error: 'authorization_expired' })).toMatchObject({ text: expect.stringMatching(/No USDC was taken/), done: true });
+    expect(relayMessage({ state: 'failed', error: 'insufficient_funds' }).text).toMatch(/insufficient_funds.*no USDC was taken/);
   });
 });

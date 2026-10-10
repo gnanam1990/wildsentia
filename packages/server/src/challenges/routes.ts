@@ -57,7 +57,7 @@ const plain = (v: unknown): unknown => typeof v === 'bigint' ? v.toString()
 export function installChallenges(app: FastifyInstance, deps: ChallengeRouteDeps): void {
   const { store, catalog } = deps;
   const clock = deps.clock ?? Date.now;
-  const relays = new PerNetwork(10), drafts = new PerNetwork(20);
+  const relays = new PerNetwork(10), drafts = new PerNetwork(20), statuses = new PerNetwork(60);
   const view = (c: Challenge) => ({
     id: c.id, status: c.status, goal: c.terms, description: c.terms ? describeTerms(c.terms, catalog) : null,
     prizeUsdc: formatUsdc(c.prizeAtomic), deadline: c.deadline.toISOString(), creator: c.creatorWallet, winnerAttempt: c.winnerAttempt,
@@ -125,6 +125,14 @@ export function installChallenges(app: FastifyInstance, deps: ChallengeRouteDeps
     if (!made.ok) return reply.code(made.error === 'daily_limit' ? 429 : 400).send({ error: made.error });
     return { draftId: made.draft.id, description: made.description, rulesHash: made.draft.rulesHash,
       deadline: made.draft.deadline.toISOString(), typedData: plain(draftTypedData(deps.drafts, made.draft)) };
+  });
+
+  // Read by the creator's page after signing; the draft's id is only known to whoever made it.
+  app.get<{ Params: { id: string } }>('/challenges/drafts/:id/status', async (req, reply) => {
+    if (!statuses.take(networkKey(req.ip), clock())) return reply.code(429).send({ error: 'rate_limited' });
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.id);
+    const outcome = uuid ? await store.draftOutcome(req.params.id) : null;
+    return outcome ?? reply.code(404).send({ error: 'not_found' });
   });
 
   app.post<{ Params: { id: string } }>('/challenges/drafts/:id/relay', async (req, reply) => {

@@ -372,6 +372,20 @@ export class ChallengeStore {
   }
 
   /** A challenge's own operations (resolve, refund), a draft's relay, or an attempt's records. */
+  /** Where a signed draft is: on its way to the chain, refused there (with why), or created as a challenge. */
+  async draftOutcome(draftId: string): Promise<{ state: 'not_sent' | 'sending' } | { state: 'failed'; error: string }
+    | { state: 'created'; challengeId: number } | null> {
+    const { rows } = await this.pool.query(`select d.id, (select c.id from challenges c where c.draft_id = d.id limit 1) as challenge_id,
+      (select o.status from challenge_chain_ops o where o.draft_id = d.id order by o.created_at desc limit 1) as op_status,
+      (select o.last_error from challenge_chain_ops o where o.draft_id = d.id order by o.created_at desc limit 1) as op_error
+      from challenge_drafts d where d.id = $1`, [draftId]);
+    const r = rows[0];
+    if (!r) return null;
+    if (r.challenge_id !== null) return { state: 'created', challengeId: Number(r.challenge_id) };
+    if (r.op_status === 'failed') return { state: 'failed', error: r.op_error ?? 'failed' };
+    return { state: r.op_status ? 'sending' : 'not_sent' };
+  }
+
   async opsOf(target: { challengeId: number } | { draftId: string } | { attemptId: string }): Promise<ChainOp[]> {
     const { rows } = 'attemptId' in target
       ? await this.pool.query('select * from challenge_chain_ops where attempt_id = $1 order by created_at', [target.attemptId])

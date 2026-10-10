@@ -119,6 +119,19 @@ maybe('challenge routes', () => {
     expect((await relay(signature)).statusCode).toBe(202);
     expect((await relay(signature)).json()).toEqual({ error: 'already_queued' });
     expect((await store.opsOf({ draftId: made.draftId }))[0]).toMatchObject({ kind: 'relay_create', payload: { signature, prize: '12500000' } });
+
+    // The creator's page follows it: on its way, then failed with a reason, or created with its id.
+    const status = async (id = made.draftId) => (await app.inject(`/challenges/drafts/${id}/status`)).json();
+    expect(await status()).toEqual({ state: 'sending' });
+    const [relayOp] = await store.opsOf({ draftId: made.draftId });
+    await store.markOpFailed(relayOp!.id, 'authorization_expired');
+    expect(await status()).toEqual({ state: 'failed', error: 'authorization_expired' });
+    await pool!.query(`insert into challenges (id, contract, draft_id, creator_wallet, evaluator, terms, rules_hash, prize_atomic, deadline, auth_nonce,
+      status, created_tx, created_block) select 7, $2, id, creator_wallet, $3, terms, rules_hash, prize_atomic, deadline, auth_nonce, 'open', $4, 1
+      from challenge_drafts where id = $1`, [made.draftId, drafts.contract.toLowerCase(), '0x' + 'e'.repeat(40), `0x${'5'.repeat(64)}`]);
+    expect(await status()).toEqual({ state: 'created', challengeId: 7 });
+    expect((await app.inject('/challenges/drafts/00000000-0000-4000-8000-000000000000/status')).statusCode).toBe(404);
+    expect((await app.inject('/challenges/drafts/not-a-uuid/status')).statusCode).toBe(404);
   });
 
   it('shows a challenge, its attempts with names, and an attempt log; hides unrecognised ones', async () => {
