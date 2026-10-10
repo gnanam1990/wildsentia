@@ -57,6 +57,33 @@ describe('species abilities and fair turns', () => {
     expect(live.climb('ag_x')).toBe('not_possessing');
   });
 
+  it('leaves no tree, chase or open behind when the next action starts', () => {
+    const { world, put, adults } = setup({ leopard: 4, chital: 6 });
+    const treePatch = world.patches.find((p) => landWalkable(p) && treeAnchorForPatch(p))!;
+    const tree = treeAnchorForPatch(treePatch)!;
+    const leopard = adults('leopard')[0]!, chital = adults('chital')[0]!;
+    put(leopard.id, 1, 0, treePatch.id, tree); put(chital.id, 30, 0, treePatch.id, tree);
+    const now = 9_000_000;
+    const drop = { id: 'd1', amountMicro: '1000000', x: tree.x + 1, z: tree.z, hintX: tree.x, hintZ: tree.z, hintRadius: 50, expiresAt: now + 3_600_000, spottedBy: null };
+    const withDrops = new LiveLayer(worldPort(() => world, () => 'w'), { active: () => [drop], spot: () => undefined,
+      claim: async () => ({ ok: true as const, claimId: 'c' }) }, () => now, () => 0);
+    expect(withDrops.possess('ag_p', 'Bagheera', { animalId: leopard.id }).ok).toBe(true);
+    const a = withDrops.avatars.get('ag_p')!;
+    // Opening a drop, then up the tree: the open does not carry on in the branches.
+    expect(withDrops.openDrop('ag_p', 'd1')).toBeNull();
+    expect(withDrops.climb('ag_p')).toBeNull();
+    expect(a.opening).toBeNull();
+    // From the tree straight into a hunt: it is on the ground again, reachable, and shown there.
+    expect(withDrops.hunt('ag_p', chital.id)).toBeNull();
+    expect(a.perched).toBe(false);
+    expect(withDrops.publicState().avatars[0]).not.toHaveProperty('altitude');
+    // Up again, then to the drop: it comes down to open it.
+    expect(withDrops.climb('ag_p')).toBeNull();
+    expect(withDrops.openDrop('ag_p', 'd1')).toBeNull();
+    expect(a.perched).toBe(false);
+    expect(a.hunt).toBeNull();
+  });
+
   it('gives a dhole better odds with packmates closing on the same prey', () => {
     const odds = (pack: number) => {
       const { world, live, put, run, adults } = setup({ dhole: 6, chital: 10 }, () => 0.45);

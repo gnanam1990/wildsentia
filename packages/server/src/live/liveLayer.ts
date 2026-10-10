@@ -400,7 +400,8 @@ export class LiveLayer {
     const at = this.positionOf(targetId);
     if (!at || Math.hypot(at.x - avatar.x, at.z - avatar.z) > me.sightRangeM) return 'out_of_sight';
     this.#flushAction(avatar);
-    avatar.path = []; avatar.moving = true; avatar.opening = null;
+    // A hunt is on the ground: down from any tree first.
+    avatar.path = []; avatar.moving = true; avatar.opening = null; avatar.perched = false;
     avatar.hunt = { targetId }; avatar.action = 'hunt'; avatar.lastCommand = this.clock();
     this.#command(agentId, 'hunt', { targetId });
     return null;
@@ -416,7 +417,7 @@ export class LiveLayer {
     const landing = this.#land(avatar);
     if (landing) return landing;
     this.#flushAction(avatar);
-    avatar.path = []; avatar.moving = false;
+    avatar.path = []; avatar.moving = false; avatar.hunt = null; avatar.perched = false;
     avatar.action = 'open'; avatar.opening = { dropId, seconds: 0 }; avatar.lastCommand = this.clock();
     return null;
   }
@@ -788,7 +789,7 @@ export class LiveLayer {
     const tree = this.world.treeAt(avatar.x, avatar.z);
     if (!tree || Math.hypot(tree.x - avatar.x, tree.z - avatar.z) > 4) return 'no_tree_here';
     this.#flushAction(avatar);
-    avatar.path = []; avatar.moving = false; avatar.hunt = null; avatar.action = 'rest'; avatar.perched = true;
+    avatar.path = []; avatar.moving = false; avatar.hunt = null; avatar.opening = null; avatar.action = 'rest'; avatar.perched = true;
     avatar.lastCommand = this.clock();
     this.#command(agentId, 'climb', {});
     for (const r of this.wild.values()) if (r.mode === 'chase' && r.otherId === avatar.animalId) {
