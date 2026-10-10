@@ -516,13 +516,15 @@ export class World {
     this.pedigree.record(agent.id, null, null);
     this.#assignGroup(agent, cfg);
     // A swimmer comes ashore where it lands; it joins its kind's group by walking, not by a jump.
-    if (arrival) agent.patchId = arrival.patchId;
+    // sim_0.38.0: so does an immigrant from the surrounding landscape, at the edge it crossed.
+    if (arrival || atEdge) agent.patchId = patchId;
     locateAgent(agent);
     if (immigrant) this.ledger.imported += agent.massKg * NUTRIENT_PER_KG_BIOMASS;
 
     this.log.append({
       type: immigrant ? 'immigration' : 'agent_spawned',
-      worldTime: arrival?.at ?? this.#time, simVersion: SIM_VERSION, patchId,
+      // Where it was placed: joining its group may have moved it from the patch drawn above.
+      worldTime: arrival?.at ?? this.#time, simVersion: SIM_VERSION, patchId: agent.patchId,
       actors: [agent.id], conditions: { species: speciesId, ...arrival?.conditions },
       outcome: 'success', effects: { massKg: agent.massKg },
       causalParents: [], confidence: 'authoritative',

@@ -102,3 +102,14 @@ describe('World', () => {
   });
 });
 
+
+describe('spawn records', () => {
+  it('names the patch the animal was placed in, after it joined its group', () => {
+    // A founding herd or pack member is moved to its group's home when it joins it; the record
+    // named the patch drawn before that move. (An immigrant stays at the edge it crossed.)
+    const world = createWorld({ seed: 3, speciesDir, initialAgents: { chital: 12, dhole: 5, tiger: 2 }, minPopulation: {} });
+    const spawned = world.log.all().filter(e => e.type === 'agent_spawned');
+    expect(spawned).toHaveLength(19);
+    for (const event of spawned) expect(event.patchId).toBe(world.agents.find(a => a.id === event.actors[0])!.patchId);
+  });
+});
