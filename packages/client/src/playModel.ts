@@ -7,7 +7,7 @@ export const COMMAND_ERRORS: Record<string, string> = {
   not_its_prey: 'That is not prey your animal hunts.', out_of_sight: 'That animal is out of sight.', too_far: 'That is too far away.',
   no_such_animal: 'That animal is no longer here.', no_tree_here: 'There is no tree to climb here.', cannot_climb: 'Your animal cannot climb.',
   come_down_first: 'Come down from the tree first.', not_at_water: 'There is no water here: go to the shore first.',
-  does_not_eat_meat: 'Your animal does not eat meat.', no_carcass_here: 'There is no carcass here.', no_such_drop: 'That find is gone.',
+  does_not_eat_meat: 'Your animal does not eat meat.', does_not_graze: 'Your animal eats meat, not plants: hunt or feed instead.', no_carcass_here: 'There is no carcass here.', no_such_drop: 'That find is gone.',
   not_on_land: 'You cannot go there: it is not land.', bad_path: 'That route is not possible.', no_land_route: 'There is no way over land to there.',
   cooldown: 'Wait a little before taking another animal.', rate_limited: 'Slow down a moment.',
   signed_out: 'Sign in with X to play.', too_soon: 'Wait a few seconds before speaking again.', no_links: 'No links in what your animal says.',

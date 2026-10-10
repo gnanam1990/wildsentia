@@ -92,6 +92,9 @@ export const walletMessage = (agentId, wallet, audience) =>
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** A simple player: keep the animal fed and watered, and go for any drop in reach. */
+/** Whether the animal eats plants, from observe's field guide (a meat-eater is refused grazing). */
+const grazes = (o) => !o.guide?.eats || o.guide.eats.some((t) => t === 'grass' || t === 'browse' || t === 'roots');
+
 async function demo(species = 'chital') {
   let target = null;
   for (;;) {
@@ -146,11 +149,12 @@ async function demo(species = 'chital') {
       } else if (a.drives.thirst > 0.5 && o.water?.[0]) {
         if (o.water[0].distance > 1.5) { if (!a.moving) await api.goTo(o.water[0], 'walk').catch(() => undefined); }
         else if (a.action !== 'drink') await api.act('drink');
-      } else if (a.drives.hunger > 0.4 && (a.here?.grassKg ?? 0) > 5) {
+      } else if (a.drives.hunger > 0.4 && (a.here?.grassKg ?? 0) > 5 && grazes(o)) {
         if (a.action !== 'graze') await api.act('graze');
       } else if (!a.moving && a.action === 'idle') {
         const angle = Math.random() * Math.PI * 2;
-        await api.move([{ x: here.x + Math.sin(angle) * 60, z: here.z + Math.cos(angle) * 60 }], 'walk').catch(() => api.act('graze').catch(() => undefined));
+        await api.move([{ x: here.x + Math.sin(angle) * 60, z: here.z + Math.cos(angle) * 60 }], 'walk')
+          .catch(() => (grazes(o) ? api.act('graze') : api.act('rest')).catch(() => undefined));
         target = null;
       }
     } catch (e) { console.log('act:', e.message); }

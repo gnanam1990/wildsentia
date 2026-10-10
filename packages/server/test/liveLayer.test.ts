@@ -113,6 +113,16 @@ describe('live layer', () => {
     expect(live.notices('ag_2').some((n) => n.text.startsWith('Your turn'))).toBe(true);
   });
 
+  it('refuses to let a meat-eater graze', () => {
+    const world = createWorld({ seed: 3, speciesDir, terrainProfile: 'island_v1', initialAgents: { tiger: 2, chital: 6 }, minPopulation: {} });
+    const live = new LiveLayer(worldPort(() => world, () => 'w1'), null, () => 1_000_000);
+    expect(live.possess('ag_1', 'Stripe', { speciesId: 'tiger' }).ok).toBe(true);
+    expect(live.act('ag_1', 'graze')).toBe('does_not_graze');
+    expect(live.avatars.get('ag_1')!.action).toBe('idle');
+    expect(live.possess('ag_2', 'Sora', { speciesId: 'chital' }).ok).toBe(true);
+    expect(live.act('ag_2', 'graze')).toBeNull();
+  });
+
   it('walks at the species pace and runs only as long as its breath lasts', () => {
     const { live, world, run } = setup();
     live.possess('ag_1', 'Sora', { speciesId: 'chital' });

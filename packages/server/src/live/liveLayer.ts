@@ -22,6 +22,8 @@ export interface SpeciesMotion {
   displayName: string; walkMs: number; trotMs: number; sprintMs: number; sprintStaminaS: number; predator: boolean;
   /** What it hunts, and how often a hunt that reaches its prey ends in a kill. */
   preferredPrey: string[]; baseSuccess: number; eatsMeat: boolean;
+  /** Eats grass, browse or roots: may graze. */
+  eatsPlants: boolean;
   /** How well it hides while stalking (0-1), and how close it creeps before it sprints. */
   stalkConcealment: number; commitDistanceM: number;
   /** Herd members warn each other; pack hunters do better together; some climb, some fly. */
@@ -377,6 +379,7 @@ export class LiveLayer {
     const avatar = this.avatars.get(agentId);
     if (!avatar) return 'not_possessing';
     if (action === 'drink' && !this.world.waterPoints(avatar.x, avatar.z, 3).length) return 'not_at_water';
+    if (action === 'graze' && !this.world.species(avatar.speciesId)?.eatsPlants) return 'does_not_graze';
     if (action === 'feed') {
       if (!this.world.species(avatar.speciesId)?.eatsMeat) return 'does_not_eat_meat';
       if (!this.world.carcassNear(avatar.x, avatar.z, 3)) return 'no_carcass_here';
