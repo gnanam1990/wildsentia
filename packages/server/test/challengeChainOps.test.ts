@@ -3,7 +3,7 @@ import { keccak256, toBytes } from 'viem';
 import { createPool } from '../src/db/pool.js';
 import { migrate } from '../src/db/migrate.js';
 import { ChallengeStore } from '../src/challenges/store.js';
-import { ChainOps, DROPPED_AFTER_MS, MAX_TRIES, STUCK_AFTER_MS } from '../src/challenges/chainOps.js';
+import { ChainOps, DROPPED_AFTER_MS, MAX_TRIES, RECORDS_PAUSE_MS, STUCK_AFTER_MS } from '../src/challenges/chainOps.js';
 import { GRACE_SECONDS } from '../src/challenges/engine.js';
 import type { ChainCall, ChallengeChain, OnChainStatus, PrepareOptions } from '../src/challenges/chain.js';
 import { rulesHash, type ChallengeTerms } from '../src/challenges/terms.js';
@@ -23,7 +23,7 @@ const GWEI = 1_000_000_000n;
 
 /** An in-memory contract with switchable failures, standing in for the chain client. */
 class FakeChain implements ChallengeChain {
-  readonly contract = CONTRACT; readonly evaluator = EVALUATOR as Hex; readonly chainId = 1; readonly attempts = ('0x' + 'd'.repeat(40)) as Hex;
+  readonly contract = CONTRACT; readonly evaluator = EVALUATOR as Hex; readonly chainId = 1; attempts: Hex | null = ('0x' + 'd'.repeat(40)) as Hex;
   state = new Map<number, OnChainStatus>();
   stages = new Map<string, 0 | 1 | 2>();
   sent: ChainCall[] = []; mined = new Map<Hex, 'success' | 'reverted'>(); pool = new Set<Hex>(); prepared: Array<PrepareOptions | undefined> = [];
@@ -126,6 +126,37 @@ maybe('chain operations', () => {
     expect((await store.opsOf({ attemptId: id })).map((o) => o.status)).toEqual(['sent', 'pending']);
     await ops.processOnce();
     expect(chain.sent.map((c) => c.fn)).toEqual(['refund', 'recordStart', 'recordEnd']);
+  });
+
+  it('leaves attempt records waiting, untouched, while no attempts contract is set', async () => {
+    const id = await recorded();
+    chain.attempts = null;
+    for (let i = 0; i < 5; i++) await ops.processOnce();
+    expect(chain.prepared).toHaveLength(0);
+    expect((await store.opsOf({ attemptId: id })).map((o) => [o.status, o.tries])).toEqual([['pending', 0], ['pending', 0]]);
+  });
+
+  it('pauses attempt records when the contract no longer takes our key, keeps paying, and tries again later', async () => {
+    const id = await recorded();
+    await store.enqueueOp('refund', { challengeId: 1 }, {});
+    now = deadline + (GRACE_SECONDS + 600) * 1000;
+    const prepare = chain.prepare.bind(chain);
+    chain.prepare = async (call, options) => {
+      if (call.fn === 'recordStart' || call.fn === 'recordEnd') throw new Error('execution reverted: NotRecorder()');
+      return prepare(call, options);
+    };
+    await ops.processOnce();
+    await ops.processOnce();
+    expect(chain.sent.map((c) => c.fn)).toEqual(['refund']);
+    // The record is not given up and no try is counted: the owner may move the recorder back, or restart with the new key.
+    expect((await store.opsOf({ attemptId: id })).map((o) => [o.status, o.tries])).toEqual([['pending', 0], ['pending', 0]]);
+    const tried = chain.prepared.length;
+    await ops.processOnce();
+    expect(chain.prepared.length).toBe(tried); // paused: no RPC calls for records
+    chain.prepare = prepare;
+    now += RECORDS_PAUSE_MS + 1;
+    await ops.processOnce();
+    expect(chain.sent.map((c) => c.fn)).toEqual(['refund', 'recordStart']);
   });
 
   it('pays a winner: hash stored, sent, then confirmed and the challenge marked paid', async () => {

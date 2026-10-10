@@ -103,4 +103,4 @@ On start, the server refuses to run if:
   2. Appoint a new evaluator for new challenges.
   3. Let the old key's open prizes refund after their deadlines.
   4. Move the attempts recorder too (`setRecorder`).
-- **The recorder was moved while the server runs:** record operations fail with `NotRecorder`. Restart the server with the new key. Records that failed are not retried (each attempt is recorded at most once), so note them; the attempts' records stay public on the server.
+- **The recorder was moved while the server runs:** attempt records pause, without losing any. They are tried again every 5 minutes, and go out once the server's key is the recorder again (move it back, or restart with the new key). Payouts and refunds carry on meanwhile. Without an attempts contract configured, records simply wait.

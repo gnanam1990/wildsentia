@@ -19,6 +19,12 @@ export const DROPPED_AFTER_MS = 120_000;
 export const STUCK_AFTER_MS = 90_000;
 /** The longest wait between tries. */
 const MAX_BACKOFF_MS = 5 * 60_000;
+/**
+ * How long attempt records wait after the attempts contract refuses our key (its owner moved the
+ * recorder): not counted as tries and never given up, so they go out once the key is the recorder again.
+ */
+export const RECORDS_PAUSE_MS = 5 * 60_000;
+const isRecord = (op: ChainOp) => op.kind === 'record_start' || op.kind === 'record_end';
 
 /** Reverts that mean this payout can never succeed, whatever is retried. */
 const PERMANENT_RESOLVE = /BadWinner|NotEvaluator|ResolveWindowClosed/;
@@ -27,6 +33,7 @@ const isRevert = (message: string) => /revert/i.test(message);
 
 export class ChainOps {
   #busy = false;
+  #recordsPausedUntil = 0;
   constructor(private readonly store: ChallengeStore, private readonly chain: ChallengeChain,
     private readonly clock: () => number = Date.now) {}
 
@@ -44,6 +51,8 @@ export class ChainOps {
 
   async #step(op: ChainOp): Promise<void> {
     if (op.status === 'sent') return this.#checkSent(op);
+    // Attempt records wait, untouched, while there is no attempts contract or it does not take our key.
+    if (isRecord(op) && (this.chain.attempts === null || this.clock() < this.#recordsPausedUntil)) return;
     // Back off after refused tries: 10 s, 20 s, 40 s... up to five minutes.
     const wait = Math.min(MAX_BACKOFF_MS, 10_000 * 2 ** Math.max(0, op.tries - 1));
     if (op.tries > 0 && this.clock() - op.updatedAt.getTime() < wait) return;
@@ -65,6 +74,11 @@ export class ChainOps {
     catch (error) {
       const message = (error as Error).message;
       if (op.kind === 'resolve' && PERMANENT_RESOLVE.test(message)) return this.#fail(op, `prepare: ${message}`);
+      if (isRecord(op) && /NotRecorder/.test(message)) {
+        if (this.clock() >= this.#recordsPausedUntil) console.error('[challenges] the attempts contract does not take this key as its recorder; records wait');
+        this.#recordsPausedUntil = this.clock() + RECORDS_PAUSE_MS;
+        return this.store.noteOpError(op.id, `prepare: ${message}`);
+      }
       // The contract refused (counts towards giving up refunds and relays), or the RPC failed (does not).
       return this.store.retryOp(op.id, `prepare: ${message}`, isRevert(message));
     }
