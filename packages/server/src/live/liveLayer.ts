@@ -431,6 +431,12 @@ export class LiveLayer {
     if (hour !== this.#hour) {
       this.#hour = hour;
       for (const [id, r] of this.wild) if (r.mode === 'idle') this.wild.delete(id);
+      // Animals come free between hours too (a chase over, young grown, a mother's care done):
+      // whoever is waiting in line is offered one, and anyone waiting too long leaves the line.
+      for (const [speciesId, queue] of this.#queues) {
+        this.#offerNext(speciesId);
+        if (queue.length === 0) this.#queues.delete(speciesId);
+      }
     }
     for (const avatar of [...this.avatars.values()]) {
       const animal = this.world.animal(avatar.animalId);

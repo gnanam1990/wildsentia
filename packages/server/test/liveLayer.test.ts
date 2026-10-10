@@ -60,6 +60,24 @@ describe('live layer', () => {
     expect(live.possess('ag_3', 'Ren', { speciesId: 'chital' })).toEqual({ ok: false, reason: 'queued:1' });
   });
 
+  it('serves the line when an animal comes free without anyone letting one go', () => {
+    const world = createWorld({ seed: 3, speciesDir, terrainProfile: 'island_v1', initialAgents: { sambar: 4, chital: 2 }, minPopulation: {} });
+    let now = 1_000_000;
+    const live = new LiveLayer(worldPort(() => world, () => 'w1'), null, () => now);
+    now += 100; live.tick(0.1); // This hour is under way.
+    // Both chital are just out of a chase, so neither can be taken this hour.
+    for (const a of world.agents.filter((x) => x.speciesId === 'chital'))
+      live.wild.set(a.id, { animalId: a.id, speciesId: 'chital', ...a.position!, mode: 'idle', otherId: null, stamina: 1, stunnedUntil: 0 });
+    expect(live.possess('ag_2', 'Kai', { speciesId: 'chital' })).toEqual({ ok: false, reason: 'queued:1' });
+    now += 100; live.tick(0.1);
+    expect(live.avatars.has('ag_2')).toBe(false);
+    // The next hour's recording starts and the chases are over: the first in line gets one, unasked.
+    world.step(1);
+    now += 100; live.tick(0.1);
+    expect(live.avatars.get('ag_2')?.speciesId).toBe('chital');
+    expect(live.notices('ag_2').some((n) => n.text.startsWith('Your turn'))).toBe(true);
+  });
+
   it('walks at the species pace and runs only as long as its breath lasts', () => {
     const { live, world, run } = setup();
     live.possess('ag_1', 'Sora', { speciesId: 'chital' });
