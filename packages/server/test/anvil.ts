@@ -44,6 +44,8 @@ const artifact = (path: string): { abi: unknown[]; bytecode: Hex } => {
 export interface LocalChain {
   /** WildsentiaAttempts, with the evaluator as its recorder. */
   url: string; usdc: Hex; contract: Hex; attempts: Hex;
+  /** LOCAL TEST STAND-INS for the ERC-8004 identity and reputation registries. */
+  identity: Hex; reputation: Hex;
   addresses: { owner: Hex; evaluator: Hex; creator: Hex; player: Hex };
   stop(): void;
   mine(seconds: number): Promise<void>;
@@ -69,12 +71,14 @@ export async function startLocalChain(): Promise<LocalChain> {
   const contract = await deploy('WildsentiaChallenges.sol/WildsentiaChallenges.json',
     [usdc, acct.owner.address, acct.evaluator.address, 1_000_000n, 100_000_000n]);
   const attempts = await deploy('WildsentiaAttempts.sol/WildsentiaAttempts.json', [acct.owner.address, acct.evaluator.address]);
+  const identity = await deploy('MockIdentityRegistry.sol/MockIdentityRegistry.json', []);
+  const reputation = await deploy('MockReputationRegistry.sol/MockReputationRegistry.json', [identity]);
   const usdcAbi = artifact('TestUSDC.sol/TestUSDC.json').abi;
   const mint = await wallet('owner').writeContract({ address: usdc, abi: usdcAbi, functionName: 'mint', args: [acct.creator.address, 1_000_000_000n], chain: null });
   await client.waitForTransactionReceipt({ hash: mint });
   void challengesAbi;
   return {
-    url, usdc, contract, attempts,
+    url, usdc, contract, attempts, identity, reputation,
     addresses: { owner: acct.owner.address, evaluator: acct.evaluator.address, creator: acct.creator.address, player: acct.player.address },
     stop: () => { proc.kill('SIGKILL'); },
     async mine(seconds) {

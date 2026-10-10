@@ -1,4 +1,4 @@
-import { createPublicClient, encodeFunctionData, getAddress, http, keccak256, parseEventLogs, type Hex } from 'viem';
+import { createPublicClient, encodeFunctionData, getAddress, type Hex, http, keccak256, parseAbi, parseEventLogs } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { attemptsAbi } from './attemptsAbi.js';
 import { challengesAbi } from './challengesAbi.js';
@@ -20,7 +20,16 @@ export type ChainCall =
   | { fn: 'createWithAuthorization'; creator: Hex; rulesHash: Hex; prize: bigint; deadline: bigint; salt: Hex;
       validAfter: bigint; validBefore: bigint; signature: Hex }
   | { fn: 'recordStart'; attemptId: string; challengeId: number; player: Hex }
-  | { fn: 'recordEnd'; attemptId: string; challengeId: number; outcome: AttemptOutcome; logHash: Hex };
+  | { fn: 'recordEnd'; attemptId: string; challengeId: number; outcome: AttemptOutcome; logHash: Hex }
+  /** ERC-8004 feedback on a player's identity for one attempt (tag1 is always wildsentia-challenge). */
+  | { fn: 'giveFeedback'; agentId: bigint; value: bigint; tag2: string; endpoint: string; feedbackURI: string; feedbackHash: Hex };
+
+/** The ERC-8004 functions the server uses, as deployed on Arc Testnet (checked 10 October 2026). */
+const identityAbi = parseAbi(['function ownerOf(uint256 agentId) view returns (address)']);
+const reputationAbi = parseAbi([
+  'function giveFeedback(uint256 agentId, int128 value, uint8 valueDecimals, string tag1, string tag2, string endpoint, string feedbackURI, bytes32 feedbackHash)',
+]);
+export const FEEDBACK_TAG = 'wildsentia-challenge';
 
 /** WildsentiaAttempts.Outcome: 1 met, 2 failed, 3 void. */
 export type AttemptOutcome = 1 | 2 | 3;
@@ -37,6 +46,8 @@ export interface ChallengeChain {
   readonly contract: Hex;
   /** The WildsentiaAttempts contract, if attempts are recorded on chain. */
   readonly attempts: Hex | null;
+  /** The ERC-8004 reputation registry, if attempts leave feedback on players' identities. */
+  readonly reputation: Hex | null;
   readonly evaluator: Hex;
   readonly chainId: number;
   head(): Promise<number>;
@@ -52,6 +63,8 @@ export interface ChallengeChain {
   attemptStage(attemptId: string): Promise<0 | 1 | 2>;
   /** The address the attempts contract lets write records. */
   attemptsRecorder(): Promise<Hex>;
+  /** Who owns an ERC-8004 identity, or null if there is no such identity. */
+  identityOwner(agentId: bigint): Promise<Hex | null>;
   /** Signs the call with the evaluator key at the current fees; nothing is sent. */
   prepare(call: ChainCall, options?: PrepareOptions): Promise<Prepared>;
   broadcast(raw: Hex): Promise<void>;
@@ -61,7 +74,10 @@ export interface ChallengeChain {
   known(hash: Hex): Promise<boolean>;
 }
 
-export interface ChainConfig { rpcUrl: string; chainId: number; contract: Hex; evaluatorKey: Hex; attemptsContract?: Hex | null }
+export interface ChainConfig {
+  rpcUrl: string; chainId: number; contract: Hex; evaluatorKey: Hex; attemptsContract?: Hex | null;
+  identityRegistry?: Hex | null; reputationRegistry?: Hex | null;
+}
 
 export function viemChallengeChain(config: ChainConfig): ChallengeChain {
   // No cached block number: the indexer and the fee check must see the chain as it is now.
@@ -69,14 +85,22 @@ export function viemChallengeChain(config: ChainConfig): ChallengeChain {
   const account = privateKeyToAccount(config.evaluatorKey);
   const contract = getAddress(config.contract);
   const attempts = config.attemptsContract ? getAddress(config.attemptsContract) : null;
+  const identity = config.identityRegistry ? getAddress(config.identityRegistry) : null;
+  const reputation = config.reputationRegistry ? getAddress(config.reputationRegistry) : null;
   /** The contract a call goes to. */
   const target = (call: ChainCall): Hex => {
+    if (call.fn === 'giveFeedback') {
+      if (!reputation) throw new Error('reputation registry not configured');
+      return reputation;
+    }
     if (call.fn !== 'recordStart' && call.fn !== 'recordEnd') return contract;
     if (!attempts) throw new Error('attempts contract not configured');
     return attempts;
   };
   const encode = (call: ChainCall): Hex => {
     switch (call.fn) {
+      case 'giveFeedback': return encodeFunctionData({ abi: reputationAbi, functionName: 'giveFeedback',
+        args: [call.agentId, call.value, 0, FEEDBACK_TAG, call.tag2, call.endpoint, call.feedbackURI, call.feedbackHash] });
       case 'recordStart': return encodeFunctionData({ abi: attemptsAbi, functionName: 'recordStart',
         args: [attemptKey(call.attemptId), BigInt(call.challengeId), call.player] });
       case 'recordEnd': return encodeFunctionData({ abi: attemptsAbi, functionName: 'recordEnd',
@@ -88,7 +112,7 @@ export function viemChallengeChain(config: ChainConfig): ChallengeChain {
     }
   };
   return {
-    contract, attempts, evaluator: account.address, chainId: config.chainId,
+    contract, attempts, reputation, evaluator: account.address, chainId: config.chainId,
     async head() { return Number(await client.getBlockNumber()); },
     async createdEvents(fromBlock, toBlock) {
       if (toBlock < fromBlock) return [];
@@ -107,6 +131,15 @@ export function viemChallengeChain(config: ChainConfig): ChallengeChain {
     },
     async challengeCount(atBlock) {
       return Number(await client.readContract({ address: contract, abi: challengesAbi, functionName: 'challengeCount', blockNumber: BigInt(atBlock) }));
+    },
+    async identityOwner(agentId) {
+      if (!identity) throw new Error('identity registry not configured');
+      try { return getAddress(await client.readContract({ address: identity, abi: identityAbi, functionName: 'ownerOf', args: [agentId] })); }
+      catch (error) {
+        // ERC-721 reverts for an identity that does not exist; anything else (the RPC failing) is passed on.
+        if (/revert|ERC721NonexistentToken/i.test((error as Error).message)) return null;
+        throw error;
+      }
     },
     async attemptsRecorder() {
       if (!attempts) throw new Error('attempts contract not configured');

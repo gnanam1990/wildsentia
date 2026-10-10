@@ -14,7 +14,7 @@ maybe('challenge chain client (local anvil)', () => {
   beforeAll(async () => {
     local = await startLocalChain();
     chain = viemChallengeChain({ rpcUrl: local.url, chainId: CHAIN_ID, contract: local.contract, evaluatorKey: ANVIL_KEYS.evaluator,
-      attemptsContract: local.attempts });
+      attemptsContract: local.attempts, identityRegistry: local.identity, reputationRegistry: local.reputation });
   });
   afterAll(() => local?.stop());
 
@@ -94,6 +94,24 @@ maybe('challenge chain client (local anvil)', () => {
     expect(bare.attempts).toBeNull();
     expect(await bare.attemptStage(id)).toBe(0);
     await expect(bare.prepare({ fn: 'recordStart', attemptId: id, challengeId: 1, player: local.addresses.player })).rejects.toThrow(/not configured/);
+  });
+
+  it('reads who owns an ERC-8004 identity and gives feedback on it as the evaluator', async () => {
+    const player = createWalletClient({ account: privateKeyToAccount(ANVIL_KEYS.player), transport: http(local.url), chain: null });
+    const reader = createPublicClient({ transport: http(local.url) });
+    await reader.waitForTransactionReceipt({ hash: await player.writeContract({ address: local.identity, chain: null,
+      abi: parseAbi(['function register(string)']), functionName: 'register', args: ['https://example.test/agent.json'] }) });
+    expect(await chain.identityOwner(1n)).toBe(local.addresses.player);
+    expect(await chain.identityOwner(99n)).toBeNull();
+    const hash = `0x${'6'.repeat(64)}` as Hex;
+    expect((await send({ fn: 'giveFeedback', agentId: 1n, value: 100n, tag2: 'met', endpoint: 'https://wildsentia.test/challenges.html?id=1',
+      feedbackURI: 'https://wildsentia.test/api/challenges/1/attempts/a', feedbackHash: hash })).outcome).toBe('success');
+    const logs = await reader.getLogs({ address: local.reputation, fromBlock: 0n, event: parseAbi(['event NewFeedback(uint256 indexed agentId, address indexed clientAddress, int128 value, uint8 valueDecimals, string tag1, string tag2, string endpoint, string feedbackURI, bytes32 feedbackHash)'])[0] });
+    expect(logs.map((l) => [l.args.agentId, l.args.clientAddress, l.args.value, l.args.tag1, l.args.tag2, l.args.feedbackHash]))
+      .toEqual([[1n, local.addresses.evaluator, 100n, 'wildsentia-challenge', 'met', hash]]);
+    const bare = viemChallengeChain({ rpcUrl: local.url, chainId: CHAIN_ID, contract: local.contract, evaluatorKey: ANVIL_KEYS.evaluator });
+    expect(bare.reputation).toBeNull();
+    await expect(bare.identityOwner(1n)).rejects.toThrow(/not configured/);
   });
 
   it('cannot prepare a transaction the contract would refuse', async () => {
