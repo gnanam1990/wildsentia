@@ -354,6 +354,11 @@ body.is-replaying #passport-panel, body.is-replaying #feed-panel { visibility: h
   .camera-pad .camera-reset, .camera-pad [data-camera^="zoom"] { display: none; }
 }
 
+/* The one way back from clean view on a touch screen: a tap shows it for a few seconds. */
+.show-interface { display: none; }
+body.clean-view .show-interface { display: inline-flex; position: fixed; top: max(12px, env(safe-area-inset-top)); right: 12px; z-index: 50;
+  opacity: 0; pointer-events: none; transition: opacity .3s; }
+body.clean-view.interface-poked .show-interface, body.clean-view .show-interface:focus-visible { opacity: 1; pointer-events: auto; }
 /* Clean view (H, or ?cinema=1): only the forest. Dialogs still open over it when asked for. */
 body.clean-view .bar, body.clean-view .panel, body.clean-view .footer, body.clean-view .camera-pad,
 body.clean-view #reward-badge, body.clean-view #reward-total, body.clean-view #reward-mine,

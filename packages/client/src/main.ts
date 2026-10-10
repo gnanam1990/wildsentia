@@ -602,10 +602,21 @@ function pickedAnimal(event: MouseEvent | PointerEvent): string | null {
 
 // Explore lets go and rises to a wide view, so the button always shows the island around you.
 // Clean view for screenshots, streams and trailers: H toggles it, ?cinema=1 starts in it.
+const showInterface = document.querySelector<HTMLButtonElement>('#show-interface')!;
 function setCleanView(on: boolean): void {
   document.body.classList.toggle('clean-view', on);
+  document.body.classList.remove('interface-poked');
   animals.markersVisible = !on;
 }
+// Touch screens have no H key: in clean view a tap shows "Show interface" for a few seconds.
+let pokedTimer: number | null = null;
+addEventListener('pointerdown', () => {
+  if (!document.body.classList.contains('clean-view')) return;
+  document.body.classList.add('interface-poked');
+  if (pokedTimer !== null) clearTimeout(pokedTimer);
+  pokedTimer = window.setTimeout(() => { document.body.classList.remove('interface-poked'); }, 4000);
+}, { capture: true });
+showInterface.addEventListener('click', () => { setCleanView(false); canvas.focus(); });
 if (new URLSearchParams(location.search).has('cinema')) setCleanView(true);
 addEventListener('keydown', (event) => {
   if (event.key.toLowerCase() !== 'h' || event.ctrlKey || event.metaKey || event.altKey) return;
