@@ -801,6 +801,7 @@ function renderFrame(dt: number, now: number): void {
   renderStats.textContent = `${Math.round(statsFrames * 1000 / elapsed)} fps · ${quality.tier} · ${drawingSize.x}×${drawingSize.y} · ${renderer.info.render.calls} draws · ${(renderer.info.render.triangles / 1e6).toFixed(2)}M triangles`;
   statsStarted = performance.now(); statsFrames = 0;
 }
+const frameAnimals = new Map<string, AnimalState>();
 function frame(): void {
   requestAnimationFrame(frame);
   const now = performance.now();
@@ -903,11 +904,15 @@ function frame(): void {
     return;
   }
 
-  const visibleAnimals = new Map([...carcasses, ...store.animals]);
+  // One map reused every frame: copying thousands of animals through spread arrays, twice a
+  // frame, was garbage the collector had to sweep up while the forest was drawing.
+  const visibleAnimals = frameAnimals; visibleAnimals.clear();
+  for (const [id, carcass] of carcasses) visibleAnimals.set(id, carcass);
+  for (const [id, animal] of store.animals) visibleAnimals.set(id, animal);
   audioSubjects = visibleAnimals;
   const poses = liveEncounters.poses(now, reducedMotion.matches);
   // An agent's animal moves where its agent steers it, live; that wins over any recording.
-  for (const [id, pose] of liveAgents.poses(now, new Map([...carcasses, ...store.animals]))) poses.set(id, pose);
+  for (const [id, pose] of liveAgents.poses(now, visibleAnimals)) poses.set(id, pose);
   liveAgents.animate(now / 1000);
   for (const [id, pose] of poses) {
     const current = visibleAnimals.get(id);
