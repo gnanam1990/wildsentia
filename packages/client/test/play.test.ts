@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { attemptEnded, challengeOutcome, challengePanel, driveBars, gaitsAllowed, pickTarget, possessMessage, projection, shouldPing, stateMessage,
+import { attemptEnded, keyCommand, challengeOutcome, challengePanel, driveBars, gaitsAllowed, pickTarget, possessMessage, projection, shouldPing, stateMessage,
   type PlayObservation } from '../src/playModel.js';
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
@@ -110,5 +110,21 @@ describe('play page', () => {
       expect(gaitsAllowed(ruled)).toEqual(['walk', 'trot']);
       expect(gaitsAllowed(obs())).toEqual(['walk', 'trot', 'run']);
     });
+  });
+
+  it('can be played from a keyboard: arrows move, H hunts the nearest prey, Escape stops', () => {
+    const o = obs({ huntable: ['chital'], nearby: [
+      { id: 'far', speciesId: 'chital', x: 1100, z: 2000, distance: 100, predator: false, huntsYou: false, chasingYou: false },
+      { id: 'near', speciesId: 'chital', x: 1000, z: 2040, distance: 40, predator: false, huntsYou: false, chasingYou: false },
+      { id: 'tiger', speciesId: 'tiger', x: 1000, z: 2010, distance: 10, predator: true, huntsYou: true, chasingYou: false }] });
+    expect(keyCommand(o, 'ArrowUp')).toEqual({ kind: 'go', x: 1000, z: 1960 });
+    expect(keyCommand(o, 'ArrowRight')).toEqual({ kind: 'go', x: 1040, z: 2000 });
+    expect(keyCommand(o, 'h')).toEqual({ kind: 'hunt', id: 'near' });
+    expect(keyCommand(obs(), 'h')).toBeNull();
+    expect(keyCommand(o, 'Escape')).toEqual({ kind: 'stop' });
+    expect(keyCommand(o, 'q')).toBeNull();
+    expect(keyCommand(obs({ animal: null }), 'ArrowUp')).toBeNull();
+    expect(read('play.html')).toMatch(/id="play-map"[^>]*tabindex="0"/);
+    expect(read('play.html')).toContain('id="play-keys"');
   });
 });

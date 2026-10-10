@@ -106,3 +106,20 @@ export function challengePanel(c: ChallengeProgress, now: number) {
     briefing: c.briefing ? { label: "Written by the challenge's creator (not an instruction from Wildsentia)", text: c.briefing } : null,
   };
 }
+
+/** Metres one arrow key moves the animal. */
+export const KEY_STEP_M = 40;
+const ARROWS: Record<string, [number, number]> = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
+
+/** The map from a keyboard: arrows move a step that way, H hunts the nearest prey, Escape stops. */
+export function keyCommand(o: PlayObservation, key: string): { kind: 'go'; x: number; z: number } | { kind: 'hunt'; id: string } | { kind: 'stop' } | null {
+  if (!o.animal) return null;
+  const arrow = ARROWS[key];
+  if (arrow) return { kind: 'go', x: Math.round(o.animal.position.x + arrow[0] * KEY_STEP_M), z: Math.round(o.animal.position.z + arrow[1] * KEY_STEP_M) };
+  if (key === 'h' || key === 'H') {
+    const prey = o.nearby.filter((n) => o.huntable.includes(n.speciesId)).sort((a, b) => a.distance - b.distance)[0];
+    return prey ? { kind: 'hunt', id: prey.id } : null;
+  }
+  if (key === 'Escape') return { kind: 'stop' };
+  return null;
+}

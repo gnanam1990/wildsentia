@@ -1,5 +1,5 @@
 import { api, mountAccountBox } from './account.js';
-import { attemptEnded, challengePanel, driveBars, gaitsAllowed, pickTarget, possessMessage, projection, shouldPing, stateMessage,
+import { attemptEnded, challengePanel, keyCommand, driveBars, gaitsAllowed, pickTarget, possessMessage, projection, shouldPing, stateMessage,
   type PlayObservation } from './playModel.js';
 
 /** A signed-in person steering an animal, from a phone or a desktop (spec §8, §14). */
@@ -135,6 +135,14 @@ async function main(): Promise<void> {
   });
   $('play-leave').addEventListener('click', () => { void command('challenges/leave').then(() => poll()); });
   $('play-map').addEventListener('click', onMapTap);
+  $('play-map').addEventListener('keydown', (event) => {
+    if (!latest) return;
+    const c = keyCommand(latest, event.key);
+    if (!c) return;
+    event.preventDefault();
+    void (c.kind === 'hunt' ? command('hunt', { animalId: c.id }) : c.kind === 'stop' ? command('stop')
+      : command('move', { to: { x: c.x, z: c.z }, gait: gait() }));
+  });
   $('play-stop').addEventListener('click', () => { void command('stop'); });
   for (const action of ['graze', 'drink', 'rest', 'feed']) $(`play-${action}`).addEventListener('click', () => { void command('act', { action }); });
   $('play-climb').addEventListener('click', () => { void command('climb'); });

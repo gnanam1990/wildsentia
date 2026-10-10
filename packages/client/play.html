@@ -35,7 +35,8 @@
 
     <div class="play-grid">
       <section class="holder-card map-card" aria-label="Map around your animal">
-        <canvas id="play-map" width="480" height="480" aria-label="Map of 200 metres around your animal: tap the ground to go there, tap prey to hunt it"></canvas>
+        <canvas id="play-map" width="480" height="480" tabindex="0" aria-describedby="play-keys" aria-label="Map of 200 metres around your animal: tap the ground to go there, tap prey to hunt it"></canvas>
+        <p id="play-keys" class="small">Keyboard: focus the map, then arrow keys move 40 m, H hunts the nearest prey, Escape stops.</p>
         <fieldset id="play-gait" class="gait"><legend>Pace</legend>
           <label><input type="radio" name="gait" value="walk" checked /> Walk</label>
           <label><input type="radio" name="gait" value="trot" /> Trot</label>
