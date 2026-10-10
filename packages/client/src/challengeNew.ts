@@ -1,3 +1,4 @@
+import './pageChrome.js';
 import { api, loadAccountState, mountAccountBox, wallet } from './account.js';
 import type { AccountView } from './accountModel.js';
 import { checkTypedData, draftError, draftKey, HABITAT_COLOURS, relayMessage, signError, termsFrom, toMetres, toPixel, typedDataForWallet, usdcAtomic,

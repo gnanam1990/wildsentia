@@ -1,9 +1,8 @@
-.top-links { display: flex; gap: 16px; }
 .account-box .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
-.holder-page a.button { display: inline-flex; align-items: center; min-height: 48px; padding: 10px 20px; border-radius: 10px; background: var(--moss); color: #07140a; font-weight: 700; text-decoration: none; }
+.holder-page a.button { display: inline-flex; align-items: center; min-height: 48px; padding: 10px 20px; border-radius: 10px; background: var(--moss); color: var(--on-moss); font-weight: 700; text-decoration: none; }
 .holder-page a.button[hidden], .holder-page button[hidden] { display: none; }
 .holder-page button.quiet { background: transparent; color: var(--mist); border: 1px solid var(--line); }
-#page-notice:not(:empty), #detail-feedback:not(:empty) { padding: 12px 14px; border-left: 3px solid var(--mist); background: #182c23; }
+#page-notice:not(:empty), #detail-feedback:not(:empty) { padding: 12px 14px; border-left: 3px solid var(--mist); background: var(--surface-2); }
 .challenge-list { display: grid; gap: 12px; margin-top: 16px; }
 .challenge-card { display: grid; gap: 4px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--dialog-surface); color: var(--ink); text-decoration: none; }
 .challenge-card:hover, .challenge-card:focus-visible { border-color: var(--moss); }
@@ -17,8 +16,8 @@
 .new-form label.check { display: flex; align-items: center; gap: 10px; color: var(--ink); }
 .new-form label[hidden], .new-form div[hidden] { display: none; }
 .new-form .pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
-.new-form input, .new-form select, .new-form textarea { min-height: 44px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: #0f1d17; color: var(--ink); font: inherit; }
+.new-form input, .new-form select, .new-form textarea { min-height: 44px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--field); color: var(--ink); font: inherit; }
 .new-form input[type="checkbox"] { min-height: 0; width: 22px; height: 22px; }
 #new-map { width: 100%; max-width: 600px; aspect-ratio: 1; border-radius: 10px; cursor: crosshair; touch-action: manipulation; }
-#new-status:not(:empty) { padding: 12px 14px; border-left: 3px solid var(--mist); background: #182c23; }
+#new-status:not(:empty) { padding: 12px 14px; border-left: 3px solid var(--mist); background: var(--surface-2); }
 .description { font-size: 1.15rem; color: var(--ink); }

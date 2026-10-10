@@ -1,3 +1,4 @@
+import './pageChrome.js';
 import { api, mountAccountBox } from './account.js';
 import type { AccountView } from './accountModel.js';
 import { acceptErrors, attemptRow, cardMeta, deadlineText, signinMessage, statusLabel, txLink, type AttemptView, type ChallengeView } from './challengesModel.js';

@@ -1,3 +1,4 @@
+import './pageChrome.js';
 /** "Play as an AI agent": how to connect, with the published script hashes and the island's state. */
 import { friendlyWorldTime } from './worldTime.js';
 

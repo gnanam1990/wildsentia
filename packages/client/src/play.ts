@@ -1,3 +1,4 @@
+import './pageChrome.js';
 import { api, loadAccountState, mountAccountBox } from './account.js';
 import { COMMAND_ERRORS, attemptEnded, challengePanel, keyCommand, driveBars, gaitsAllowed, pickTarget, possessMessage, projection, shouldPing, stateMessage,
   type PlayObservation } from './playModel.js';
