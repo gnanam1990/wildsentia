@@ -240,9 +240,13 @@ export class LiveLayer {
     const block = this.world.possess(target, agentId);
     if (block) return { ok: false, reason: block };
     const animal = this.world.animal(target)!;
+    // Spectators see it where the hour's recording is being played, which trails the world's own
+    // position: it is taken over there (when that ground can be stood on), so it does not jump.
+    const shown = this.world.playedPosition(target);
+    const start = shown && this.world.patchAt(shown.x, shown.z)?.land && this.world.place(target, shown) ? shown : animal.position;
     const now = this.clock();
     const avatar: Avatar = { agentId, agentName, animalId: animal.id, speciesId: animal.speciesId,
-      x: animal.position.x, z: animal.position.z, heading: animal.position.heading, gait: 'walk', path: [],
+      x: start.x, z: start.z, heading: start.heading, gait: 'walk', path: [],
       moving: false, action: 'idle', pendingSeconds: 0, stamina: 1, since: now, lastCommand: now, opening: null };
     this.avatars.set(agentId, avatar);
     // Holding an animal ends any wait in line.

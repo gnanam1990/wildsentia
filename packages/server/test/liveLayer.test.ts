@@ -60,6 +60,24 @@ describe('live layer', () => {
     expect(live.possess('ag_3', 'Ren', { speciesId: 'chital' })).toEqual({ ok: false, reason: 'queued:1' });
   });
 
+  it('takes an animal over where it is being shown, so it does not jump on screen', () => {
+    const world = island();
+    const animal = world.agents.find((a) => a.speciesId === 'chital' && world.possessionBlock(a.id) === null)!;
+    const recorded = { ...animal.position! };
+    // The observer is still playing the hour's route: it shows the animal a little way back along it.
+    const shown = { x: recorded.x + 1.5, z: recorded.z - 1, heading: 1 };
+    const live = new LiveLayer(worldPort(() => world, () => 'w1', { position: (id) => (id === animal.id ? shown : null), time: () => world.now() }), null, () => 1);
+    expect(live.possess('ag_1', 'Sora', { animalId: animal.id }).ok).toBe(true);
+    expect(live.avatars.get('ag_1')).toMatchObject(shown);
+    expect(world.animal(animal.id)!.position).toEqual(shown); // The world agrees, so the next step starts there.
+    // Where it is shown cannot be stood on: it starts where the world has it.
+    const world2 = island();
+    const other = world2.agents.find((a) => a.speciesId === 'chital' && world2.possessionBlock(a.id) === null)!;
+    const live2 = new LiveLayer(worldPort(() => world2, () => 'w1', { position: () => ({ x: -1e6, z: -1e6, heading: 0 }), time: () => world2.now() }), null, () => 1);
+    expect(live2.possess('ag_1', 'Sora', { animalId: other.id }).ok).toBe(true);
+    expect(live2.avatars.get('ag_1')).toMatchObject({ x: other.position!.x, z: other.position!.z });
+  });
+
   it('serves the line when an animal comes free without anyone letting one go', () => {
     const world = createWorld({ seed: 3, speciesDir, terrainProfile: 'island_v1', initialAgents: { sambar: 4, chital: 2 }, minPopulation: {} });
     let now = 1_000_000;
