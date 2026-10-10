@@ -89,6 +89,8 @@ export interface SimHostOptions {
   speciesDir: string;
   /** Live acceleration. 12 means one world hour every 5 real minutes, independent of route length. */
   worldHoursPerRealHour?: number;
+  /** How long boot waits for another writer to let go of the world (0: refuse at once). */
+  writerWaitMs?: number;
   snapshotEveryWorldHours?: number;
   /** How often every animal's position and drives are sampled for life replay. */
   trackEveryWorldHours?: number;
@@ -303,6 +305,7 @@ export class SimHost {
       allowV12Upgrade: false,
       allowV13Upgrade: false,
       worldHoursPerRealHour: 12,
+      writerWaitMs: 0,
       snapshotEveryWorldHours: 1,
       trackEveryWorldHours: 6,
       housekeepingEveryWorldHours: 24,
@@ -384,7 +387,7 @@ export class SimHost {
       if (this.#lifecycle !== 'new') throw new Error('world host has already booted or closed');
       this.#lifecycle = 'booting';
       try {
-        await this.#writer.acquire();
+        await this.#writer.acquire(this.#options.writerWaitMs);
         await migrateOwned(this.#writer);
         const result = await this.#boot();
         this.#lifecycle = 'running';

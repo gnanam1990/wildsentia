@@ -44,7 +44,8 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
   // Live default is 12x real time: one world hour every five real minutes. Simulation routes
   // use species speeds in world seconds; client endpoint interpolation is still approximate.
 
-  const host = new SimHost({ pool, seed, speciesDir, worldHoursPerRealHour, terrainProfile, communityProfile,
+  // A new deployment starts while the old one still holds the world: wait for it to stop rather than crash.
+  const host = new SimHost({ pool, seed, speciesDir, worldHoursPerRealHour, terrainProfile, communityProfile, writerWaitMs: 120_000,
     allowV14Upgrade: process.env.VANA_ALLOW_V14_UPGRADE === '1',
     allowV15Upgrade: process.env.VANA_ALLOW_V15_UPGRADE === '1',
     allowV16Upgrade: process.env.VANA_ALLOW_V16_UPGRADE === '1',

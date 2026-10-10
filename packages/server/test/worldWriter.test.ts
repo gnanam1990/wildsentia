@@ -25,6 +25,19 @@ maybe('exclusive durable world writer', () => {
     await pool!.query('truncate events, snapshots, human_motion, tracks, animal_archive cascade');
   });
 
+  it('waits a while for the writer lock when told to, so a new deployment boots once the old one lets go', async () => {
+    const old = new SimHost(options());
+    await old.boot();
+    const next = new SimHost({ ...options(), writerWaitMs: 5000 });
+    const booting = next.boot();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(next.isWriterActive).toBe(false);
+    await old.stop();
+    await booting;
+    expect(next.isWriterActive).toBe(true);
+    await next.stop();
+  });
+
   it('refuses unbooted writes and permits only one of two concurrent boots', async () => {
     const a = new SimHost(options()), b = new SimHost(options());
     await expect(a.advance(1)).rejects.toThrow('writer');

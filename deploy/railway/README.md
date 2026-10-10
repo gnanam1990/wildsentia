@@ -84,6 +84,10 @@ railway up --service web --detach
 
 `railway up` uploads the working tree (honouring `.gitignore`) and builds the service's Dockerfile.
 
+Only one server may run the world at a time (a database lock). During a deploy the new server
+starts while the old one still holds it, so it waits up to two minutes for the old one to save the
+world and stop, then boots; it no longer exits and leans on Railway's restart policy.
+
 ## Domain
 
 Add `wildsentia.lol` (and `www.wildsentia.lol`) as custom domains on `web`, then create the DNS
