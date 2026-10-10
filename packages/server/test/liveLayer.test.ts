@@ -115,6 +115,27 @@ describe('live layer', () => {
     expect(animal.drives.thirst).toBeLessThan(0.6);
   });
 
+  it('finds the agent steering an animal without walking every avatar, and forgets it when the possession ends', () => {
+    const { live, world } = setup();
+    expect(live.possess('ag_1', 'Sora', { speciesId: 'chital' }).ok).toBe(true);
+    expect(live.possess('ag_2', 'Kai', { speciesId: 'sambar' }).ok).toBe(true);
+    const a = live.avatars.get('ag_2')!;
+    a.x += 3; // The live layer's position, not yet the recorded one.
+    const values = vi.spyOn(live.avatars, 'values'), entries = vi.spyOn(live.avatars, Symbol.iterator);
+    // Observe asks this for every nearby animal: it must not cost a walk over every avatar.
+    expect(live.positionOf(a.animalId)).toEqual({ x: a.x, z: a.z, heading: a.heading });
+    expect(values).not.toHaveBeenCalled();
+    expect(entries).not.toHaveBeenCalled();
+    values.mockRestore(); entries.mockRestore();
+    live.release('ag_2');
+    expect(live.positionOf(a.animalId)).toEqual(world.animal(a.animalId)!.position);
+    // Taken off the map from outside (as a lost possession is), it is forgotten too.
+    const b = live.avatars.get('ag_1')!;
+    b.x += 3;
+    live.avatars.delete('ag_1');
+    expect(live.positionOf(b.animalId)).toEqual(world.animal(b.animalId)!.position);
+  });
+
   it('counts grazing, resting and feeding in world time, at the speed the world runs', () => {
     // At 12 world hours per real hour a body hungers 12 times faster than the wall clock, so
     // half a real minute of grazing must count as six world minutes, not thirty world seconds.

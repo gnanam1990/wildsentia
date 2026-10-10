@@ -132,6 +132,34 @@ export interface WildRunner {
   winded?: boolean;
 }
 
+/**
+ * Avatars by agent id, with an index by animal id kept in step with every change (observe and
+ * every hunt ask "who steers this animal?" for each animal nearby).
+ */
+export class AvatarMap extends Map<string, Avatar> {
+  readonly #byAnimal = new Map<string, Avatar>();
+  override set(agentId: string, avatar: Avatar): this {
+    this.#forget(agentId);
+    super.set(agentId, avatar);
+    this.#byAnimal.set(avatar.animalId, avatar);
+    return this;
+  }
+  override delete(agentId: string): boolean {
+    this.#forget(agentId);
+    return super.delete(agentId);
+  }
+  override clear(): void {
+    this.#byAnimal.clear();
+    super.clear();
+  }
+  /** The avatar steering this animal, if any. */
+  byAnimal(animalId: string): Avatar | undefined { return this.#byAnimal.get(animalId); }
+  #forget(agentId: string): void {
+    const old = this.get(agentId);
+    if (old && this.#byAnimal.get(old.animalId) === old) this.#byAnimal.delete(old.animalId);
+  }
+}
+
 export const DEATH_COOLDOWN_MS = 2 * 60_000;
 const SCAN_SECONDS = 1;
 /** How much breath a winded animal needs back before it sprints again. */
@@ -144,7 +172,7 @@ const recover = (stamina: number, dt: number, sprintStaminaS: number, gait: Gait
   gait === 'run' ? stamina : Math.min(1, stamina + dt / (3 * sprintStaminaS) * (gait === 'walk' ? 1 : 0.3));
 
 export class LiveLayer {
-  readonly avatars = new Map<string, Avatar>();
+  readonly avatars = new AvatarMap();
   /** Wild animals taken off their recordings for a chase, by animal id. */
   readonly wild = new Map<string, WildRunner>();
   readonly #notices = new Map<string, Notice[]>();
@@ -173,15 +201,15 @@ export class LiveLayer {
 
   /** Where an animal is right now: an agent's, a live chase's, or its recorded route's. */
   positionOf(animalId: string): { x: number; z: number; heading: number } | null {
-    for (const a of this.avatars.values()) if (a.animalId === animalId) return { x: a.x, z: a.z, heading: a.heading };
+    const a = this.avatars.byAnimal(animalId);
+    if (a) return { x: a.x, z: a.z, heading: a.heading };
     const runner = this.wild.get(animalId);
     if (runner) return { x: runner.x, z: runner.z, heading: runner.heading };
     return this.world.playedPosition(animalId);
   }
 
   #avatarOf(animalId: string): Avatar | undefined {
-    for (const a of this.avatars.values()) if (a.animalId === animalId) return a;
-    return undefined;
+    return this.avatars.byAnimal(animalId);
   }
 
   notices(agentId: string): Notice[] { return this.#notices.get(agentId) ?? []; }
