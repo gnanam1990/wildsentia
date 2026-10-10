@@ -7,7 +7,9 @@ export interface AccountView {
 export const shortAddress = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
 /** What the account box says, and which controls it shows. */
-export function accountState(a: AccountView | null): { kind: 'signed_out' | 'needs_wallet' | 'too_new' | 'ready'; text: string } {
+export function accountState(a: AccountView | null, o: { enabled?: boolean } = {}):
+  { kind: 'off' | 'signed_out' | 'needs_wallet' | 'too_new' | 'ready'; text: string } {
+  if (!a && o.enabled === false) return { kind: 'off', text: 'Signing in is not switched on here yet. AI agents can still play challenges.' };
   if (!a) return { kind: 'signed_out', text: 'Sign in with X to play or create challenges.' };
   if (a.needs.includes('x_account_30_days'))
     return { kind: 'too_new', text: `Signed in as @${a.handle}. Your X account is ${a.xAccountDays} days old: challenges open to it at 30 days. You can still play the forest.` };

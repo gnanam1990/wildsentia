@@ -13,8 +13,14 @@ export async function api<T>(path: string, init: { method?: 'GET' | 'POST'; body
   return body as T;
 }
 
+/** Who is signed in, and whether this island has sign-in at all (no accounts route: switched off). */
+export async function loadAccountState(): Promise<{ account: AccountView | null; enabled: boolean }> {
+  try { return { account: (await api<{ account: AccountView }>('/accounts/me')).account, enabled: true }; }
+  catch (e) { return { account: null, enabled: (e as Error).message === 'signed_out' }; }
+}
+
 export async function loadAccount(): Promise<AccountView | null> {
-  try { return (await api<{ account: AccountView }>('/accounts/me')).account; } catch { return null; }
+  return (await loadAccountState()).account;
 }
 
 export function wallet(): EthereumProvider {
@@ -43,13 +49,14 @@ export async function mountAccountBox(onChange: (a: AccountView | null) => void)
   const signin = document.querySelector<HTMLAnchorElement>('#account-signin')!;
   const link = document.querySelector<HTMLButtonElement>('#account-wallet')!;
   const signout = document.querySelector<HTMLButtonElement>('#account-signout')!;
+  let enabled = true;
   const render = (a: AccountView | null) => {
-    const state = accountState(a);
+    const state = accountState(a, { enabled });
     status.textContent = state.text;
     signin.hidden = state.kind !== 'signed_out';
-    link.hidden = state.kind === 'signed_out' || state.kind === 'too_new';
+    link.hidden = state.kind === 'off' || state.kind === 'signed_out' || state.kind === 'too_new';
     link.textContent = a?.wallet ? 'Link another wallet' : 'Link a wallet';
-    signout.hidden = state.kind === 'signed_out';
+    signout.hidden = state.kind === 'off' || state.kind === 'signed_out';
     onChange(a);
   };
   link.addEventListener('click', async () => {
@@ -63,7 +70,8 @@ export async function mountAccountBox(onChange: (a: AccountView | null) => void)
     try { await api('/accounts/logout', { method: 'POST' }); } catch { /* signed out either way */ }
     render(null);
   });
-  const a = await loadAccount();
-  render(a);
-  return a;
+  const loaded = await loadAccountState();
+  enabled = loaded.enabled;
+  render(loaded.account);
+  return loaded.account;
 }

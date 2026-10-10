@@ -41,6 +41,12 @@ describe('account', () => {
       .toEqual({ kind: 'too_new', text: 'Signed in as @kavya. Your X account is 12 days old: challenges open to it at 30 days. You can still play the forest.' });
     expect(accountState(base)).toEqual({ kind: 'ready', text: 'Signed in as @kavya, paid to 0xaaaa…aaaa. 3 challenges left to create today.' });
   });
+  it('offers no sign-in where the island has accounts switched off', () => {
+    expect(accountState(null, { enabled: false })).toEqual({ kind: 'off', text: 'Signing in is not switched on here yet. AI agents can still play challenges.' });
+    expect(accountState(null, { enabled: true }).kind).toBe('signed_out');
+    expect(read('src/account.ts')).toMatch(/state\.kind !== 'signed_out'/);
+  });
+
   it('signs a wallet link only for this site and this wallet', () => {
     const address = '0x' + 'AbCd'.repeat(10);
     const message = `wildsentia.lol wants you to sign in with your Ethereum account:\n${address}\n\nLink this wallet…`;
