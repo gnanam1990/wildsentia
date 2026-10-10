@@ -469,7 +469,7 @@ export class LiveLayer {
     }
     for (const runner of [...this.wild.values()]) this.#runnerStep(runner, dt, now);
     this.#scanIn -= dt;
-    if (this.#scanIn <= 0) { this.#scanIn = SCAN_SECONDS; this.#scanForWildHunters(); this.#herdAlarm(now); }
+    if (this.#scanIn <= 0) { this.#scanIn = SCAN_SECONDS; this.#scanForWildHunters(); this.#scanForWildPrey(); this.#herdAlarm(now); }
     this.#spot();
     if (now >= this.#pruneAt) { this.#pruneAt = now + PRUNE_EVERY_MS; this.#prune(now); }
   }
@@ -659,6 +659,28 @@ export class LiveLayer {
       if (alarms.some((al) => al.speciesId === avatar.speciesId && al.except !== avatar.animalId && Math.hypot(al.x - avatar.x, al.z - avatar.z) <= 80)) {
         avatar.alarmedAt = now;
         this.notify(avatar.agentId, 'Alarm: your herd is running from danger nearby.');
+      }
+    }
+  }
+
+  /**
+   * Wild prey run from an agent's predator that comes within their flight distance, hunting or
+   * not: a deer does not graze on beside a tiger. A still predator is noticed at half that, a
+   * sprinting one as far off as the prey can detect danger. (Its own quarry is the hunt's to run.)
+   */
+  #scanForWildPrey(): void {
+    for (const avatar of this.avatars.values()) {
+      if (avatar.perched || avatar.flying) continue;
+      const me = this.world.species(avatar.speciesId);
+      if (!me?.preferredPrey.length) continue;
+      for (const candidate of this.world.nearby(avatar.x, avatar.z, 200, 80)) {
+        if (candidate.controller || this.wild.has(candidate.id) || !me.preferredPrey.includes(candidate.speciesId)) continue;
+        if (avatar.hunt?.targetId === candidate.id) continue;
+        const prey = this.world.species(candidate.speciesId);
+        const at = this.world.playedPosition(candidate.id);
+        if (!prey || !at) continue;
+        const noticeAt = avatar.gait === 'run' && avatar.moving ? prey.detectionM : avatar.moving ? prey.flightInitiationM : prey.flightInitiationM / 2;
+        if (Math.hypot(at.x - avatar.x, at.z - avatar.z) <= noticeAt) this.#startRunner(candidate.id, candidate.speciesId, at, 'flee', avatar.animalId);
       }
     }
   }

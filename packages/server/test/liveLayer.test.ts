@@ -123,6 +123,28 @@ describe('live layer', () => {
     expect(live.act('ag_2', 'graze')).toBeNull();
   });
 
+  it('makes wild prey run from an agent\'s predator that comes too close, even when it is not hunting', () => {
+    const world = createWorld({ seed: 3, speciesDir, terrainProfile: 'island_v1', initialAgents: { tiger: 2, chital: 6 }, minPopulation: {} });
+    let now = 1_000_000;
+    const live = new LiveLayer(worldPort(() => world, () => 'w1'), null, () => now);
+    expect(live.possess('ag_1', 'Stripe', { speciesId: 'tiger' }).ok).toBe(true);
+    const tiger = live.avatars.get('ag_1')!;
+    const [near, far] = world.agents.filter((a) => a.speciesId === 'chital' && a.alive && !a.controller);
+    const place = (id: string, dx: number) => {
+      const a = world.animal(id)!;
+      a.position = { x: tiger.x + dx, z: tiger.z, heading: 0 };
+      a.patchId = world.animal(tiger.animalId)!.patchId;
+    };
+    place(near!.id, 5); place(far!.id, 400);
+    // The tiger only rests: a deer five metres away still bolts, one far off grazes on.
+    expect(live.act('ag_1', 'rest')).toBeNull();
+    for (let i = 0; i < 30; i++) { now += 100; live.tick(0.1); }
+    expect(live.wild.get(near!.id)).toMatchObject({ mode: 'flee', otherId: tiger.animalId });
+    expect(live.wild.has(far!.id)).toBe(false);
+    const fled = live.positionOf(near!.id)!;
+    expect(Math.hypot(fled.x - tiger.x, fled.z - tiger.z)).toBeGreaterThan(5);
+  });
+
   it('walks at the species pace and runs only as long as its breath lasts', () => {
     const { live, world, run } = setup();
     live.possess('ag_1', 'Sora', { speciesId: 'chital' });
