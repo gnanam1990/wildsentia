@@ -8,6 +8,19 @@ export function animalFromHash(hash: string): string | null {
   return values.length === 1 && isAnimalLinkId(values[0]) ? values[0] : null;
 }
 
+/**
+ * The page fragment naming the followed animal, so the address bar can be copied or reloaded
+ * to come back to it. Other fragment values are kept; `null` (or an identity a shared link
+ * would refuse) removes the animal.
+ */
+export function followedHash(hash: string, id: string | null): string {
+  const params = new URLSearchParams(hash.length > 1024 ? '' : hash.replace(/^#/, ''));
+  params.delete('animal');
+  if (id !== null && isAnimalLinkId(id)) params.append('animal', id);
+  const text = params.toString();
+  return text ? `#${text}` : '';
+}
+
 /** Never copy debug parameters, credentials or an unrelated fragment into a public story. */
 export function animalLink(currentUrl: string, id: string): string | null {
   if (!isAnimalLinkId(id)) return null;

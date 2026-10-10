@@ -37,7 +37,7 @@ import { RewardObserver } from './rewards.js';
 import { SceneUpdates } from './sceneUpdates.js';
 import { AdaptiveQuality, qualityMode, RenderPacer } from './renderQuality.js';
 import { MicroEcologyLayer } from './microEcologyLayer.js';
-import { animalFromHash, initialFollowId } from './animalLink.js';
+import { animalFromHash, followedHash, initialFollowId } from './animalLink.js';
 import { LazyDialog } from './lazyDialog.js';
 import { renderBaseY } from './space.js';
 import { AmbientAudio, cueFor, type AudioAnimal } from './ambientAudio.js';
@@ -398,6 +398,11 @@ function watch(id: string | null): void {
   hud.cancelRecap();
   recapPending = id;
   lastFollowed.set(id);
+  // The address bar follows along, so copying or reloading it comes back to this animal.
+  const hash = followedHash(location.hash, id);
+  if (hash !== location.hash) {
+    try { history.replaceState(history.state, '', `${location.pathname}${location.search}${hash}`); } catch { /* optional */ }
+  }
   void hud.refreshPassport(id).then(() => hud.render(followedId));
   // An agent's animal does what its agent decides; an estimate of its next hour would mislead.
   void insightPanel.outlook(id !== null && liveAgents.avatarForAnimal(id) ? null : id);
