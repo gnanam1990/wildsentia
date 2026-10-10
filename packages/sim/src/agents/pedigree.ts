@@ -41,26 +41,47 @@ export class Pedigree {
   }
 
   /**
-   * Wright's coefficient of relationship, approximated over a bounded pedigree depth.
-   * Full siblings and parent-offspring both come out at 0.5; half siblings at 0.25.
+   * Wright's coefficient of relationship, approximated over a bounded pedigree depth: twice the
+   * kinship coefficient. Full siblings and parent-offspring both come out at 0.5; half siblings
+   * at 0.25; first cousins at 0.125, however many generations behind them are known.
+   *
+   * sim_0.38.0: kinship by the recursive (tabular) method, expanding the animal that is not an
+   * ancestor of the other. Summing 0.5^(steps) over every common ancestor counted a shared
+   * parent again through each of its own ancestors: full siblings with known grandparents came
+   * out at 0.75 and half siblings at 0.375, over the mate limit, so lineages stopped breeding.
    */
   relatedness(a: string, b: string, depth = 6): number {
     if (a === b) return 1;
-
-    const ancestorsA = this.ancestorsOf(a, depth);
-    const ancestorsB = this.ancestorsOf(b, depth);
-
-    // A direct line counts on its own: a parent is an ancestor of its child.
-    let total = 0;
-    if (ancestorsA.has(b)) total += 0.5 ** ancestorsA.get(b)!;
-    if (ancestorsB.has(a)) total += 0.5 ** ancestorsB.get(a)!;
-
-    for (const [ancestor, stepsA] of ancestorsA) {
-      const stepsB = ancestorsB.get(ancestor);
-      if (stepsB === undefined) continue;
-      total += 0.5 ** (stepsA + stepsB);
-    }
-    return Math.min(1, total);
+    const lines = new Map<string, Map<string, number>>();
+    const ancestors = (id: string) => {
+      let found = lines.get(id);
+      if (!found) lines.set(id, found = this.ancestorsOf(id, depth));
+      return found;
+    };
+    const memo = new Map<string, number>();
+    // Kinship of x and y, x being gx and y gy generations behind the pair asked about.
+    const kinship = (x: string, gx: number, y: string, gy: number): number => {
+      const key = x < y ? `${x}|${gx}|${y}|${gy}` : `${y}|${gy}|${x}|${gx}`;
+      const known = memo.get(key);
+      if (known !== undefined) return known;
+      let value = 0;
+      if (x === y) {
+        const parents = this.#parents.get(x);
+        const inbreeding = parents?.mother && parents.father && Math.max(gx, gy) < depth
+          ? kinship(parents.mother, Math.max(gx, gy) + 1, parents.father, Math.max(gx, gy) + 1) : 0;
+        value = 0.5 * (1 + inbreeding);
+      } else {
+        const [e, ge, o, go] = ancestors(y).has(x) ? [y, gy, x, gx] : [x, gx, y, gy];
+        const parents = this.#parents.get(e);
+        if (parents && ge < depth) {
+          if (parents.mother !== null) value += 0.5 * kinship(parents.mother, ge + 1, o, go);
+          if (parents.father !== null) value += 0.5 * kinship(parents.father, ge + 1, o, go);
+        }
+      }
+      memo.set(key, value);
+      return value;
+    };
+    return Math.min(1, 2 * kinship(a, 0, b, 0));
   }
 
   /** The inbreeding coefficient a pairing would give its offspring: half the parents' relatedness. */
