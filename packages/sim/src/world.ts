@@ -675,6 +675,8 @@ export class World {
     if (deathAltitudeM > 0) {
       delete agent.altitudeM; delete agent.locomotionMode; delete agent.treeAnchorId;
     }
+    // sim_0.38.0: likewise a bird that dies on the wing; its carcass is on the ground.
+    if (agent.locomotionMode === 'flight') { delete agent.altitudeM; delete agent.locomotionMode; delete agent.journey; }
     agent.alive = false;
     agent.state = 'dead';
     agent.departedAt = at;

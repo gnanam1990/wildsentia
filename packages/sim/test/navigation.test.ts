@@ -111,6 +111,21 @@ describe('authoritative terrain navigation', () => {
     expect(agent.locomotionMode).toBeUndefined();
   });
 
+  it('keeps a vulture already at cruise height up there when it resumes with only seconds to fly', () => {
+    const patches = buildGrid(9);
+    for (const p of patches) p.habitat = 'grassland';
+    const cfg = structuredClone(speciesOf('vulture'));
+    const agent = makeAgent('vulture', { id: 'vulture-resume', position: initialPosition('vulture-resume', 0),
+      drives: { hunger: 0, thirst: 0, fatigue: 0, fear: 0 } });
+    navigate(agent, cfg, patches, 24, 'scavenge', 0, 60);
+    const cruising = agent.altitudeM!;
+    expect(cruising).toBeGreaterThan(20);
+    const resumed = navigate(agent, cfg, patches, 24, 'scavenge', 60, 2);
+    expect(resumed.trace.completed).toBe(false);
+    for (const s of resumed.trace.samples) expect(s.altitudeM).toBeGreaterThanOrEqual(cruising - 1e-9);
+    expect(agent.altitudeM).toBeGreaterThanOrEqual(cruising - 1e-9);
+  });
+
   it('records the airborne interval of a flight completed within one tick, including short hops', () => {
     const patches = buildGrid(9), cfg = structuredClone(speciesOf('vulture'));
     for (const destination of [0, 24]) {

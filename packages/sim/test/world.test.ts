@@ -32,6 +32,20 @@ describe('World', () => {
     expect(view.agentsInPatch(from)).not.toContain(mover);
   });
 
+  it('grounds a vulture that dies in flight: no dead bird is left on record in the air', () => {
+    const w = createWorld({ seed: 5, speciesDir, initialAgents: { vulture: 3 }, minPopulation: {} });
+    const bird = w.agents.find((a) => a.speciesId === 'vulture')!;
+    bird.altitudeM = 60; bird.locomotionMode = 'flight';
+    bird.journey = { goal: 'scavenge', destinationPatchId: bird.patchId, route: [bird.patchId] };
+    bird.ageDays = w.species.get('vulture')!.lifecycle.maxAgeDays;
+    w.step(1);
+    const dead = bird;
+    expect(dead.alive).toBe(false);
+    expect(dead.altitudeM).toBeUndefined();
+    expect(dead.locomotionMode).toBeUndefined();
+    expect(dead.journey).toBeUndefined();
+  });
+
   it('is deterministic for a given seed', () => {
     const a = createWorld(options);
     const b = createWorld(options);
