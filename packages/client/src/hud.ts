@@ -283,7 +283,8 @@ export class Hud {
       this.#populationHtml = '';
     }
 
-    this.elements.notice.textContent = this.store.lastError ?? '';
+    const notice = this.store.errorNotice() ?? '';
+    if (this.elements.notice.textContent !== notice) this.elements.notice.textContent = notice;
 
     if (followedId === null) {
       this.#setPassport(

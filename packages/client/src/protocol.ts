@@ -49,11 +49,16 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
  * Holds what the server said, and only what the server said. The client never fills a gap with
  * a guess — a missing field stays missing so the HUD can say so instead of inventing a number.
  */
+/** How long a server error stays on screen. */
+export const ERROR_NOTICE_MS = 10_000;
+
 export class WorldStore {
   world: WorldState | null = null;
   readonly animals = new Map<string, AnimalState>();
   readonly viewerCounts = new Map<string, number>();
   lastError: string | null = null;
+  /** When the server last reported an error (Date.now()); see errorNotice. */
+  lastErrorAt = 0;
 
   readonly #listeners = new Set<Listener>();
 
@@ -68,6 +73,11 @@ export class WorldStore {
     this.animals.clear();
     for (const animal of animals) this.animals.set(animal.id, animal);
     for (const fn of this.#listeners) fn();
+  }
+
+  /** The server's last error while it is recent; a passing protocol error should not stay on screen. */
+  errorNotice(now = Date.now()): string | null {
+    return this.lastError !== null && now - this.lastErrorAt < ERROR_NOTICE_MS ? this.lastError : null;
   }
 
   apply(message: unknown): void {
@@ -133,6 +143,7 @@ export class WorldStore {
       }
       case 'error': {
         this.lastError = String(message.message ?? 'unknown error');
+        this.lastErrorAt = Date.now();
         break;
       }
       default:
