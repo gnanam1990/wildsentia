@@ -7,7 +7,7 @@ import type { ChallengeTerms } from './terms.js';
 export type Hex = `0x${string}`;
 export type ChallengeStatus = 'open' | 'won' | 'paid' | 'unpaid' | 'refunding' | 'refunded' | 'unrecognised';
 export type AttemptStatus = 'running' | 'met' | 'failed' | 'void';
-export type ChainOpKind = 'relay_create' | 'resolve' | 'refund' | 'record_start' | 'record_end';
+export type ChainOpKind = 'relay_create' | 'resolve' | 'refund' | 'record_start' | 'record_end' | 'reputation';
 /** What an operation acts on: a challenge (resolve, refund), a draft (relay) or an attempt (its on-chain record). */
 export type OpTarget = { challengeId: number } | { draftId: string } | { attemptId: string; challengeId: number };
 export type ChainOpStatus = 'pending' | 'sent' | 'confirmed' | 'failed';
@@ -248,6 +248,18 @@ export class ChallengeStore {
     return rows.map(attempt);
   }
 
+  /**
+   * Met or failed attempts, with their record, by players with an ERC-8004 identity, that have no
+   * reputation operation yet: each leaves one feedback.
+   */
+  async attemptsForFeedback(limit: number): Promise<Array<Attempt & { erc8004AgentId: string }>> {
+    const { rows } = await this.pool.query(`select a.*, l.erc8004_agent_id from challenge_attempts a join live_agents l on l.id = a.agent_id
+      where a.status in ('met', 'failed') and a.result_hash is not null and l.erc8004_agent_id is not null
+        and not exists (select 1 from challenge_chain_ops o where o.kind = 'reputation' and o.attempt_id = a.id)
+      order by a.ended_at, a.id limit $1`, [limit]);
+    return rows.map((r: { erc8004_agent_id: string }) => ({ ...attempt(r), erc8004AgentId: String(r.erc8004_agent_id) }));
+  }
+
   /** Keeps an ended attempt's record, unless it already has one. */
   async saveRecord(id: string, text: string, hash: Hex): Promise<void> {
     await this.pool.query(`update challenge_attempts set result_record = $2, result_hash = $3
@@ -342,7 +354,7 @@ export class ChallengeStore {
   async activeOps(): Promise<ChainOp[]> {
     // Money first: payouts, refunds and relays go before attempt records.
     const { rows } = await this.pool.query(`select * from challenge_chain_ops where status in ('pending', 'sent')
-      order by kind in ('record_start', 'record_end'), created_at`);
+      order by kind in ('record_start', 'record_end', 'reputation'), created_at`);
     return rows.map(op);
   }
 

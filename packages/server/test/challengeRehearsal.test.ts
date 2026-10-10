@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { fileURLToPath } from 'node:url';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { createPublicClient, http, parseAbi, type Hex } from 'viem';
+import { createPublicClient, createWalletClient, http, parseAbi, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { landWalkable, patchCentre } from '@vana/shared';
 import { createWorld } from '@vana/sim';
@@ -60,10 +60,10 @@ maybe('rehearsal: the testnet journeys on a local chain, through the site\'s own
     const catalog: SpeciesCatalog = { ids: () => [...world.species.keys()], preyOf: (id) => port.species(id)?.preferredPrey ?? [],
       displayName: (id) => port.species(id)?.displayName ?? id, social: () => true, onLand: (x, z) => port.patchAt(x, z)?.land === true };
     const chain = viemChallengeChain({ rpcUrl: local.url, chainId: CHAIN_ID, contract: local.contract, evaluatorKey: ANVIL_KEYS.evaluator,
-      attemptsContract: local.attempts });
+      attemptsContract: local.attempts, identityRegistry: local.identity, reputationRegistry: local.reputation });
     store = new ChallengeStore(pool!);
     live = new LiveLayer(port, null, () => now, () => 0);
-    engine = new ChallengeEngine(store, live, port, () => now, { recordOnChain: true });
+    engine = new ChallengeEngine(store, live, port, () => now, { recordOnChain: true, feedback: { siteUrl: ORIGIN } });
     live.onHunt = (h) => engine.onHunt(h); live.onCommand = (c) => engine.onCommand(c); live.onEnded = (l) => engine.onEnded(l);
     await engine.restore();
     ops = new ChainOps(store, chain, () => now);
@@ -80,6 +80,7 @@ maybe('rehearsal: the testnet journeys on a local chain, through the site\'s own
     installAccounts(app, { config, store: accounts, x, clock: () => now, wallet: { chainId: CHAIN_ID } });
     installLiveAgents(app, { live, world: port, store: agents, ledger: null, limits: { slots: 5, perNetworkPerDay: 5 }, networkSecret: 's',
       clientScriptPath: fileURLToPath(new URL('../agent-client/client.mjs', import.meta.url)), species: () => [...world.species.values()],
+      identity: { owner: (id) => chain.identityOwner(id) },
       challenges: { accept: (p, id) => engine.accept(p, id), progressOf: (a) => engine.progressOf(a), waitingOf: (a) => engine.waitingOf(a), leave: (a) => engine.leave(a) },
       humans: { origin: ORIGIN, account: async (req) => { const a = await signedIn(req); return a ? { agentId: a.agentId, xAccountDays: accounts.xAccountDays(a) } : null; } } });
     installChallenges(app, { store, catalog, adminToken: 'operator-token-'.repeat(3), explorerUrl: null, clock: () => now,
@@ -154,6 +155,11 @@ maybe('rehearsal: the testnet journeys on a local chain, through the site\'s own
     const player = await signIn({ id: '202', username: 'player_p', name: 'Player', createdAt: old });
     await linkWallet(player, ANVIL_KEYS.player);
     const play = as(player);
+    // The player registers an ERC-8004 identity with their wallet, and links it.
+    const playerWallet = createWalletClient({ account: privateKeyToAccount(ANVIL_KEYS.player), transport: http(local.url), chain: null });
+    await createPublicClient({ cacheTime: 0, transport: http(local.url) }).waitForTransactionReceipt({ hash: await playerWallet.writeContract({
+      address: local.identity, chain: null, abi: parseAbi(['function register(string)']), functionName: 'register', args: ['https://example.test/player.json'] }) });
+    expect((await play('POST', '/play/identity', { erc8004AgentId: '1' })).json()).toEqual({ erc8004AgentId: '1' });
     const accepted = (await play('POST', '/play/challenges/1/accept')).json();
     expect(accepted).toMatchObject({ queued: false });
     const observed = (await play('GET', '/play/observe')).json();
@@ -182,8 +188,14 @@ maybe('rehearsal: the testnet journeys on a local chain, through the site\'s own
       functionName: 'stage', args: [attemptKey(accepted.attemptId)] });
     await settle(async () => (await stage()) === 2
       && (await store.opsOf({ attemptId: accepted.attemptId })).every((o) => o.status === 'confirmed'));
+    // ERC-8004: the win leaves one feedback on the player's identity, from the evaluator, pointing at the record.
+    await settle(async () => (await store.opsOf({ attemptId: accepted.attemptId })).some((o) => o.kind === 'reputation' && o.status === 'confirmed'));
+    const feedback = await reader.getLogs({ address: local.reputation, fromBlock: 0n, event: parseAbi(['event NewFeedback(uint256 indexed agentId, address indexed clientAddress, int128 value, uint8 valueDecimals, string tag1, string tag2, string endpoint, string feedbackURI, bytes32 feedbackHash)'])[0] });
+    expect(feedback.map((l) => [l.args.agentId, l.args.value, l.args.tag2, l.args.feedbackURI, l.args.feedbackHash])).toEqual([[1n, 100n, 'met',
+      `${ORIGIN}/api/challenges/1/attempts/${accepted.attemptId}`, attempt.resultHash]]);
     const page = (await app.inject(`/challenges/1/attempts/${accepted.attemptId}`)).json();
-    expect(page.onChain.map((o: { kind: string; status: string }) => [o.kind, o.status])).toEqual([['record_start', 'confirmed'], ['record_end', 'confirmed']]);
+    expect(page.onChain.map((o: { kind: string; status: string }) => [o.kind, o.status]).sort()).toEqual([['record_end', 'confirmed'],
+      ['record_start', 'confirmed'], ['reputation', 'confirmed']]);
 
     // The owner reviews and posts the "won" post once; the briefing is in none of them.
     await settle(async () => (await social.list()).some((d) => d.kind === 'won'));

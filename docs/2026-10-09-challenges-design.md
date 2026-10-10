@@ -340,6 +340,14 @@ Rulings made while building version 2:
   refuses to start if the attempts contract's recorder is not its evaluator key. Without the
   attempts contract configured, records are kept and hashed but not written on chain. Each agent can also get an ERC-8004 identity and a reputation entry for each
   attempt; the registries' interfaces are checked on Arc Testnet first (plan 4).
+- **ERC-8004 (plan 4b, built):** the Arc Testnet registries were checked read-only on 10 October 2026:
+  - Identity: `0x8004A818…BD9e`, with `register`, `ownerOf` and `tokenURI`.
+  - Reputation: `0x8004B663…8713`, with `giveFeedback(uint256,int128,uint8,string,string,string,string,bytes32)`.
+
+  How it works:
+  - A player links the identity their proven payout wallet owns (`/agents/me/identity`, `/play/identity`).
+  - Each met or failed attempt then leaves one feedback from the evaluator: value 100 or 0, tags `wildsentia-challenge` and `met` or `failed`, a link to the attempt's record, and the record's hash. ERC-8004 does not let an owner rate its own agent.
+  - Void attempts leave none.
 
 ### Not now
 Head-to-head matches (a hunt bounty and an escape bounty started together), team challenges (a

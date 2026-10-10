@@ -23,6 +23,9 @@ export interface ChallengesConfig {
   attemptsContract: Hex | null;
   /** The public site (VANA_PUBLIC_ORIGIN), for links in challenge posts; without it posts carry no link. */
   siteUrl: string | null;
+  /** The ERC-8004 registries (both or neither): players link identities, and attempts leave feedback (with a site URL). */
+  identityRegistry: Hex | null;
+  reputationRegistry: Hex | null;
 }
 
 const loopback = (host: string) => host === 'localhost' || host === '127.0.0.1';
@@ -55,6 +58,10 @@ export function challengesConfig(env: NodeJS.ProcessEnv): ChallengesConfig | und
   const adminToken = need('VANA_CHALLENGES_ADMIN_TOKEN');
   if (adminToken.length < 32 || adminToken.length > 256 || /\s/.test(adminToken)) throw new Error('Invalid VANA_CHALLENGES_ADMIN_TOKEN');
   const attempts = env.VANA_CHALLENGES_ATTEMPTS_CONTRACT?.trim() ? address('VANA_CHALLENGES_ATTEMPTS_CONTRACT') : null;
+  const hasIdentity = !!env.VANA_CHALLENGES_IDENTITY_REGISTRY?.trim(), hasReputation = !!env.VANA_CHALLENGES_REPUTATION_REGISTRY?.trim();
+  if (hasIdentity !== hasReputation) throw new Error('Set both VANA_CHALLENGES_IDENTITY_REGISTRY and VANA_CHALLENGES_REPUTATION_REGISTRY, or neither');
+  const identityRegistry = hasIdentity ? address('VANA_CHALLENGES_IDENTITY_REGISTRY') : null;
+  const reputationRegistry = hasReputation ? address('VANA_CHALLENGES_REPUTATION_REGISTRY') : null;
   const site = env.VANA_PUBLIC_ORIGIN?.trim();
   let siteUrl: string | null = null;
   if (site) {
@@ -69,7 +76,7 @@ export function challengesConfig(env: NodeJS.ProcessEnv): ChallengesConfig | und
     rpcUrl: rpc.href, chainId, contract: address('VANA_CHALLENGES_CONTRACT'), usdc: address('VANA_CHALLENGES_USDC'),
     evaluatorKey: key as Hex, fromBlock, adminToken,
     usdcDomain: { name: need('VANA_CHALLENGES_USDC_DOMAIN_NAME'), version: need('VANA_CHALLENGES_USDC_DOMAIN_VERSION') },
-    explorerUrl: explorer ? explorer.replace(/\/$/, '') : null, attemptsContract: attempts, siteUrl,
+    explorerUrl: explorer ? explorer.replace(/\/$/, '') : null, attemptsContract: attempts, siteUrl, identityRegistry, reputationRegistry,
   };
 }
 
@@ -77,6 +84,8 @@ export interface ChallengesRuntime {
   routes: ChallengeRouteDeps;
   /** X post drafts about challenges, for the owner's review on the social admin page. */
   social: ChallengeSocialStore;
+  /** ERC-8004 identity owners, for the live routes' identity link; null when the registries are not set. */
+  identity: { owner(agentId: bigint): Promise<Hex | null> } | null;
   agent: { accept: ChallengeEngine['accept']; progressOf: ChallengeEngine['progressOf']; waitingOf: ChallengeEngine['waitingOf'];
     leave: ChallengeEngine['leave'] };
   start(): Promise<void>;
@@ -87,7 +96,9 @@ export function challengesRuntime(config: ChallengesConfig,
   deps: { pool: Pool; live: LiveLayer; world: WorldPort; species: () => readonly SpeciesConfig[] },
   chain: ChallengeChain = viemChallengeChain(config)): ChallengesRuntime {
   const store = new ChallengeStore(deps.pool);
-  const engine = new ChallengeEngine(store, deps.live, deps.world, Date.now, { recordOnChain: config.attemptsContract !== null });
+  const engine = new ChallengeEngine(store, deps.live, deps.world, Date.now, { recordOnChain: config.attemptsContract !== null,
+    // Feedback points at the attempt's public record, so it needs the site's address.
+    ...(config.reputationRegistry && config.siteUrl ? { feedback: { siteUrl: config.siteUrl } } : {}) });
   const ops = new ChainOps(store, chain);
   const indexer = new ChallengeIndexer(store, chain, config.fromBlock);
   const configOf = (id: string) => deps.species().find((s) => s.id === id);
@@ -110,6 +121,7 @@ export function challengesRuntime(config: ChallengesConfig,
   const social = new ChallengeSocialStore(deps.pool, catalog, config.siteUrl ?? null, chain.evaluator);
   return {
     social,
+    identity: config.identityRegistry ? { owner: (agentId) => chain.identityOwner(agentId) } : null,
     routes: { store, catalog, drafts, adminToken: config.adminToken, explorerUrl: config.explorerUrl },
     agent: { accept: (player, id) => engine.accept(player, id), progressOf: (agentId) => engine.progressOf(agentId),
       waitingOf: (agentId) => engine.waitingOf(agentId), leave: (agentId) => engine.leave(agentId) },

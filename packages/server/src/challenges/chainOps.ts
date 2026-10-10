@@ -53,6 +53,8 @@ export class ChainOps {
     if (op.status === 'sent') return this.#checkSent(op);
     // Attempt records wait, untouched, while there is no attempts contract or it does not take our key.
     if (isRecord(op) && (this.chain.attempts === null || this.clock() < this.#recordsPausedUntil)) return;
+    // Feedback waits, untouched, while no reputation registry is set.
+    if (op.kind === 'reputation' && !this.chain.reputation) return;
     // Back off after refused tries: 10 s, 20 s, 40 s... up to five minutes.
     const wait = Math.min(MAX_BACKOFF_MS, 10_000 * 2 ** Math.max(0, op.tries - 1));
     if (op.tries > 0 && this.clock() - op.updatedAt.getTime() < wait) return;
@@ -95,6 +97,8 @@ export class ChainOps {
       if (draft?.relayedAt) { await this.store.markOpConfirmed(op.id); return true; }
       return false;
     }
+    // Feedback has no state to read back: a sent one is followed by its receipt, like any other.
+    if (op.kind === 'reputation') return false;
     if (op.kind === 'record_start' || op.kind === 'record_end') {
       const stage = await this.chain.attemptStage(op.attemptId!);
       if (stage >= (op.kind === 'record_start' ? 1 : 2)) { await this.store.markOpConfirmed(op.id); return true; }
@@ -128,6 +132,8 @@ export class ChainOps {
       case 'record_start': return { fn: 'recordStart', attemptId: op.attemptId!, challengeId: op.challengeId!, player: p.player as Hex };
       case 'record_end': return { fn: 'recordEnd', attemptId: op.attemptId!, challengeId: op.challengeId!,
         outcome: Number(p.outcome) as AttemptOutcome, logHash: p.logHash as Hex };
+      case 'reputation': return { fn: 'giveFeedback', agentId: BigInt(p.agentId!), value: BigInt(p.value!), tag2: p.tag2!, endpoint: p.endpoint!,
+        feedbackURI: p.feedbackURI!, feedbackHash: p.feedbackHash as Hex };
       case 'relay_create':
         if (Number(p.validBefore) * 1000 <= this.clock()) { await this.#fail(op, 'authorization_expired'); return null; }
         return { fn: 'createWithAuthorization', creator: p.creator as Hex, rulesHash: p.rulesHash as Hex, prize: BigInt(p.prize!),

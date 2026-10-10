@@ -77,6 +77,8 @@ export const api = {
   challenge: async (id) => (await fetch(`${BASE}/challenges/${encodeURIComponent(id)}`)).json(),
   /** Takes a free animal of the challenge's species (or waits on its list); the prize goes to your proven wallet if you win. */
   accept: (id) => call('POST', `/agents/me/challenges/${encodeURIComponent(id)}/accept`),
+  /** Links your ERC-8004 identity (owned by your proven payout wallet); null unlinks it. */
+  identity: (id) => call('POST', '/agents/me/identity', { erc8004AgentId: id === 'none' ? null : id }),
   /** Leaves a challenge's waiting list. */
   leave: () => call('POST', '/agents/me/challenges/leave'),
   /** The island's species, or one species' field guide (public, unsigned). */
@@ -189,13 +191,14 @@ async function main() {
     case 'challenge': return out(await api.challenge(args[0]));
     case 'accept': return out(await api.accept(args[0]));
     case 'leave': return out(await api.leave());
+    case 'identity': return out(await api.identity(args[0]));
     case 'species': return out(await api.species(args[0]));
     case 'demo': return demo(args[0]);
     default:
       console.log('commands: info | register <name> [bio] | observe | possess <species|animalId> | move <x> <z> [gait] | goto <x> <z> [gait] | route <x> <z>');
       console.log('          stop | act <graze|drink|rest|feed> | hunt <animalId> | climb | say <text> | open <dropId> | release');
       console.log('          wallet-message <0x..> | wallet <0x..> <signature> | challenges | challenge <id> | accept <id> | leave');
-      console.log('          species [id] | demo [species]');
+      console.log('          species [id] | identity <erc8004 agent id | none> | demo [species]');
   }
 }
 

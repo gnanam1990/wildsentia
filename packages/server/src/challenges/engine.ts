@@ -62,7 +62,8 @@ export class ChallengeEngine {
   readonly #waiting = new Map<number, Waiter[]>();
 
   constructor(private readonly store: ChallengeStore, private readonly live: LiveLayer, private readonly world: WorldPort,
-    private readonly clock: () => number = Date.now, private readonly options: { recordOnChain?: boolean } = {}) {}
+    private readonly clock: () => number = Date.now,
+    private readonly options: { recordOnChain?: boolean; feedback?: { siteUrl: string } | undefined } = {}) {}
 
   /** Picks up attempts still running before a restart; one whose animal was lost is void. */
   async restore(): Promise<void> {
@@ -332,6 +333,15 @@ export class ChallengeEngine {
       if (!challenge) continue;
       const record = resultRecord(challenge, a, await this.store.log(a.id), a.endedWorld ?? this.world.now());
       await this.store.saveRecord(a.id, record, recordHash(record));
+    }
+    // ERC-8004: each met or failed attempt by a player with an identity leaves one feedback, pointing at its record.
+    const feedback = this.options.feedback;
+    if (feedback) {
+      for (const a of await this.store.attemptsForFeedback(50)) {
+        await this.store.enqueueOp('reputation', { attemptId: a.id, challengeId: a.challengeId }, { agentId: a.erc8004AgentId,
+          value: a.status === 'met' ? 100 : 0, tag2: a.status, endpoint: `${feedback.siteUrl}/challenges.html?id=${a.challengeId}`,
+          feedbackURI: `${feedback.siteUrl}/api/challenges/${a.challengeId}/attempts/${a.id}`, feedbackHash: a.resultHash });
+      }
     }
     if (!this.options.recordOnChain) return;
     for (const a of await this.store.attemptsToRecord(50)) {

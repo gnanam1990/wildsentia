@@ -37,6 +37,8 @@ export interface LiveRouteDeps {
   clientScriptPath: string;
   /** Signed-in people, when accounts are on: they steer animals at /play/* (docs/2026-10-09-challenges-design.md §14). */
   humans?: HumanSessions | undefined;
+  /** ERC-8004 identities, when configured: who owns one (spec §13, plan 4b). */
+  identity?: { owner(agentId: bigint): Promise<`0x${string}` | null> } | undefined;
   /** The species configs the simulation runs on, for the field guide. */
   species?: (() => readonly SpeciesConfig[]) | undefined;
   /** Wildsentia Challenges, when configured: agents accept a challenge, wait for an animal and see their progress. */
@@ -337,6 +339,23 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
         return { left: deps.challenges.leave(ctx.agent.id) };
       });
 
+      // Linking the player's ERC-8004 identity: their proven payout wallet must own it.
+      scope.post(`${prefix}/identity`, async (req, reply) => {
+        const ctx = await resolve(req, reply, commands); if (!ctx) return reply;
+        if (!deps.identity) return reply.code(503).send({ error: 'identity_not_configured' });
+        const raw = ctx.json.erc8004AgentId;
+        if (raw === null) { await store.setIdentity(ctx.agent.id, null); return { erc8004AgentId: null }; }
+        const text = typeof raw === 'number' && Number.isSafeInteger(raw) ? String(raw) : raw;
+        if (typeof text !== 'string' || !/^[0-9]{1,77}$/.test(text)) return reply.code(400).send({ error: 'bad_identity' });
+        if (!ctx.agent.wallet || !ctx.agent.walletProven) return reply.code(403).send({ error: 'payout_wallet_required' });
+        let owner: string | null;
+        try { owner = await deps.identity.owner(BigInt(text)); } catch { return reply.code(503).send({ error: 'identity_check_unavailable' }); }
+        if (!owner) return reply.code(404).send({ error: 'identity_not_found' });
+        if (owner.toLowerCase() !== ctx.agent.wallet.toLowerCase()) return reply.code(403).send({ error: 'identity_not_owned_by_payout_wallet' });
+        if (await store.setIdentity(ctx.agent.id, text) !== 'ok') return reply.code(409).send({ error: 'identity_taken' });
+        return { erc8004AgentId: text };
+      });
+
       scope.post(`${prefix}/presence`, async (req, reply) => {
         const ctx = await resolve(req, reply, commands); if (!ctx) return reply;
         return live.presence(ctx.agent.id) ? { ok: true } : reply.code(409).send({ error: 'not_possessing' });
@@ -371,7 +390,7 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
     const dist = (x: number, z: number) => at ? Math.round(Math.hypot(x - at.x, z - at.z) * 10) / 10 : null;
     return {
       worldTime: now, formatted: formatWorldTime(now), season: seasonAt(now),
-      you: { agentId: agent.id, name: agent.name, wallet: agent.wallet, walletProven: agent.walletProven },
+      you: { agentId: agent.id, name: agent.name, wallet: agent.wallet, walletProven: agent.walletProven, erc8004AgentId: agent.erc8004AgentId },
       animal: avatar && animal ? {
         id: animal.id, speciesId: animal.speciesId, displayName: motion?.displayName, lifeStage: animal.lifeStage, state: animal.state,
         position: { x: avatar.x, z: avatar.z, heading: avatar.heading }, gait: avatar.gait, moving: avatar.moving, action: avatar.action,

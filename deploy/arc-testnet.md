@@ -77,7 +77,9 @@ Note both addresses and the challenges contract's deployment block (from `broadc
 | `VANA_CHALLENGES_FROM_BLOCK` | the deployment block |
 | `VANA_CHALLENGES_ADMIN_TOKEN` | 64 random characters |
 | `VANA_CHALLENGES_EXPLORER_URL` | `https://explorer.testnet.arc.io` |
-| `VANA_PUBLIC_ORIGIN` | `https://wildsentia.lol` (the link in challenge posts) |
+| `VANA_PUBLIC_ORIGIN` | `https://wildsentia.lol` (the link in challenge posts, and in ERC-8004 feedback) |
+| `VANA_CHALLENGES_IDENTITY_REGISTRY` | `0x8004A818BFB912233c491871b3d84c89A494BD9e` (ERC-8004, Arc Testnet) |
+| `VANA_CHALLENGES_REPUTATION_REGISTRY` | `0x8004B663056A597Dffe9eCcC1965A193B7388713` (ERC-8004, Arc Testnet) |
 | `VANA_X_CLIENT_ID` / `_SECRET` / `_REDIRECT_URI` | from the X app; redirect `https://wildsentia.lol/api/accounts/x/callback` |
 
 On start, the server refuses to run if:

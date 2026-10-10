@@ -10,10 +10,15 @@ import type { Avatar, DropLedger, EndedLife, PlaceDrop } from './liveLayer.js';
 
 /** An outside agent (with its signing key), or a person's own identity in the live world (no key). */
 export type AgentKind = 'agent' | 'human';
-export interface AgentRecord { id: string; kind: AgentKind; publicKey: string | null; name: string; bio: string; wallet: string | null; walletProven: boolean; muted: boolean }
-interface AgentRow { id: string; kind: AgentKind; public_key: string | null; name: string; bio: string; wallet: string | null; wallet_proven: boolean; muted: boolean }
+export interface AgentRecord {
+  id: string; kind: AgentKind; publicKey: string | null; name: string; bio: string; wallet: string | null; walletProven: boolean; muted: boolean;
+  /** The ERC-8004 identity (token id) the player linked, as a decimal string. */
+  erc8004AgentId: string | null;
+}
+interface AgentRow { id: string; kind: AgentKind; public_key: string | null; name: string; bio: string; wallet: string | null; wallet_proven: boolean; muted: boolean;
+  erc8004_agent_id: string | null }
 const record = (r: AgentRow): AgentRecord => ({ id: r.id, kind: r.kind, publicKey: r.public_key, name: r.name, bio: r.bio, wallet: r.wallet,
-  walletProven: r.wallet_proven, muted: r.muted });
+  walletProven: r.wallet_proven, muted: r.muted, erc8004AgentId: r.erc8004_agent_id === null || r.erc8004_agent_id === undefined ? null : String(r.erc8004_agent_id) });
 
 export const NAME_RE = /^[A-Za-z][A-Za-z0-9 _-]{1,19}$/;
 const RESERVED = /^(admin|vana|system|server|moderator|official|support|staff)/i;
@@ -108,6 +113,18 @@ export class AgentStore {
     }
     for (const [key, agent] of this.#byKey) if (agent.id === agentId) this.#byKey.delete(key);
     return changed ? 'ok' : 'wallet_taken';
+  }
+
+  /** Links (or, with null, unlinks) the player's ERC-8004 identity. One player per identity. */
+  async setIdentity(agentId: string, erc8004AgentId: string | null): Promise<'ok' | 'identity_taken'> {
+    try {
+      await this.pool.query('update live_agents set erc8004_agent_id = $2 where id = $1', [agentId, erc8004AgentId]);
+    } catch (error) {
+      if ((error as { code?: string }).code === '23505') return 'identity_taken';
+      throw error;
+    }
+    for (const [key, agent] of this.#byKey) if (agent.id === agentId) this.#byKey.delete(key);
+    return 'ok';
   }
 
   /**
