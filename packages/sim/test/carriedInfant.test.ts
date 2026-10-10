@@ -68,3 +68,31 @@ describe('a langur infant clings to its mother and is carried (sim_0.37.0)', () 
     expect(mother.offspringIds).toContain(infant.id);
   });
 });
+
+describe('a carried infant stays with its carrier for the rest of the hour', () => {
+  it('does not walk back to where its mother set off once she has carried it', () => {
+    // Calm, and too thirsty to care for it, she goes to drink and carries the infant there.
+    let carried = 0;
+    for (let seed = 1; seed <= 24; seed++) {
+      const world = createWorld({ seed, speciesDir: SPECIES_DIR, initialAgents: { langur: 2 }, minPopulation: {} });
+      for (const patch of world.patches) { patch.waterVolume = patch.id === Q ? 5e5 : 0; patch.canopyCover = 0.1; }
+      const [mother, infant] = world.agents.filter(a => a.speciesId === 'langur') as [Agent, Agent];
+      const c = patchCentre(P);
+      Object.assign(mother, { sex: 'female', patchId: P, position: { x: c.x + 120, z: c.z, heading: 0 },
+        drives: { hunger: 0.1, thirst: 0.8, fatigue: 0, fear: 0 }, offspringIds: [infant.id] });
+      Object.assign(infant, makeAgent('langur', { id: infant.id, ageDays: 6, lifeStage: 'newborn', dependentOn: mother.id,
+        motherId: mother.id, massKg: 13 * 0.1, patchId: P, groupId: mother.groupId, position: { x: c.x + 120.2, z: c.z, heading: 0 },
+        drives: { hunger: 0.2, thirst: 0.2, fatigue: 0, fear: 0 } }));
+      world.__reindexForTest();
+      world.step(1);
+      const ride = world.log.all().find(e => e.type === 'moved' && e.actors[0] === infant.id && e.conditions.reason === 'carried');
+      if (!ride) continue;
+      carried++;
+      const own = world.log.all().filter(e => (e.type === 'moved' || e.type === 'fled') && e.actors[0] === infant.id && e !== ride);
+      expect(own).toEqual([]);
+      expect(infant.patchId).toBe(mother.patchId);
+      expect(Math.hypot(infant.position!.x - mother.position!.x, infant.position!.z - mother.position!.z)).toBeLessThan(1);
+    }
+    expect(carried).toBeGreaterThan(20);
+  });
+});

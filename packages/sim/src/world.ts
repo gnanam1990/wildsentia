@@ -281,6 +281,8 @@ export class World {
   /** Decisions already taken this step, and packmates whose decision a pack hunt has spent. */
   #stepProcessed: ReadonlySet<string> = new Set();
   readonly #packHunted = new Set<string>();
+  /** sim_0.38.0: infants their mother carried this step; the ride was their move for the hour. */
+  readonly #carried = new Set<string>();
 
   /**
    * sim_0.36.0: dholes hunt as a pack. Before, each dhole hunted alone and the pack met at a
@@ -325,6 +327,7 @@ export class World {
       child.position = { ...end };
       delete child.journey;
       child.state = mother.state === 'fleeing' ? 'fleeing' : 'travelling';
+      this.#carried.add(child.id);
       this.log.append({ type: 'moved', worldTime: Math.floor(trace.startWorldTime + (trace.samples.at(-1)?.seconds ?? 0)),
         simVersion: SIM_VERSION, patchId: child.patchId, actors: [child.id, mother.id], goal: 'follow_parent',
         conditions: { reason: 'carried', carrierId: mother.id, from: from.patchId, destination: trace.destinationPatchId },
@@ -1121,6 +1124,7 @@ export class World {
     const processedAgents = new Set<string>();
     this.#stepProcessed = processedAgents;
     this.#packHunted.clear();
+    this.#carried.clear();
     const nursingArrivals = new Map<string, CareVisit>();
     const activeNursingParents = () => new Set([...childrenByParent].filter(([, children]) => children.some(c =>
       c.alive && c.dependentOn !== null && needsProvisioning(c, this.species.get(c.speciesId)!))).map(([id]) => id));
@@ -1251,6 +1255,9 @@ export class World {
       if (agent.lastEncounterAt === this.#time) continue;
       // A packmate that joined a pack hunt this hour has spent its decision (sim_0.36.0).
       if (this.#packHunted.has(agent.id)) continue;
+      // sim_0.38.0: so has an infant its mother carried this hour. Deciding afterwards, a calm one
+      // walked straight back to where she set off and lay there alone.
+      if (this.#carried.has(agent.id)) continue;
       // An outside agent steers this animal: the live layer decides where it goes and what
       // it does. Its body has aged, hungered and faced every hazard above like any other.
       if (agent.controller) continue;
