@@ -245,7 +245,7 @@ function connect(): void {
   });
   connection.addEventListener('close', (event) => {
     if (socket !== connection) return;
-    sceneUpdates.reset(); liveEncounters.clear(); liveAgents.clear();
+    sceneUpdates.reset(); liveEncounters.disconnect(); liveAgents.clear();
     // Back off rather than hammer: longer after each failure, much longer when the server is full.
     const wait = reconnect.next(event.code);
     if (event.code === LIVE_BUSY_CLOSE_CODE && event.reason.startsWith('busy')) {

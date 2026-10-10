@@ -150,10 +150,20 @@ export class LiveEncounterPlayer {
   /** Presentation pacing per recorded trace; see pacing.ts. Rebuilt with each new frame. */
   #pacing = new WeakMap<object, Pacing>();
 
-  clear(): void { this.#frame = null; }
+  /** Set while the connection is down: nothing is played, but the shown hour's clock runs on. */
+  #offline = false;
+
+  clear(): void { this.#frame = null; this.#offline = false; }
+
+  /**
+   * The connection dropped. Recorded animals leave the screen, but the island's clock keeps
+   * playing the same hour: falling back to the newest saved hour would jump it ahead, and the
+   * reconnect would then jump it back.
+   */
+  disconnect(): void { if (this.#frame) this.#offline = true; }
 
   current(nowMs: number): LiveEncounterFrame | null {
-    return this.#frame && this.elapsed(nowMs) < 3600 ? this.#frame : null;
+    return this.#frame && !this.#offline && this.elapsed(nowMs) < 3600 ? this.#frame : null;
   }
 
   apply(value: unknown, nowMs: number): boolean {
@@ -165,7 +175,7 @@ export class LiveEncounterPlayer {
       ? Math.max(this.elapsed(nowMs), value.elapsedWorldSeconds) : value.elapsedWorldSeconds;
     this.#receivedAt = nowMs;
     if (this.#frame !== value) this.#pacing = new WeakMap();
-    this.#frame = value;
+    this.#frame = value; this.#offline = false;
     return true;
   }
 
@@ -187,7 +197,7 @@ export class LiveEncounterPlayer {
   poses(nowMs: number, reducedMotion = false): Map<string, LivePose> {
     const result = new Map<string, LivePose>();
     const frame = this.#frame;
-    if (!frame || !finite(nowMs) || reducedMotion) return result;
+    if (!frame || this.#offline || !finite(nowMs) || reducedMotion) return result;
     const shown = this.elapsed(nowMs);
     if (shown >= 3600) return result; // No unlimited extrapolation after disconnection/stall.
     const clipSeconds = shown / frame.rate;

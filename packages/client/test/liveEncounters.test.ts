@@ -225,6 +225,25 @@ describe('checkpointed live encounter playback', () => {
     b.apply({ ...frame(), elapsedWorldSeconds: 60 }, 9000); // a different client monotonic origin
     expect(b.poses(9000)).toEqual(a.poses(5000));
   });
+  it('keeps the clock playing through a dropped connection and never rewinds it on reconnect', () => {
+    const player = new LiveEncounterPlayer();
+    const f = frame();
+    expect(player.apply(f, 0)).toBe(true);
+    expect(player.worldTimeAt(10_000)).toBe(120);
+    player.disconnect();
+    // Not the end of the saved hour, not unknown: the played hour carries on.
+    expect(player.worldTimeAt(20_000)).toBe(240);
+    expect(player.poses(20_000).size).toBe(0);
+    expect(player.current(20_000)).toBeNull();
+    // The server's copy of the same hour is a little behind this viewer: no jump back.
+    player.apply({ ...f, elapsedWorldSeconds: 100 }, 20_000);
+    expect(player.worldTimeAt(20_000)).toBe(240);
+    expect(player.poses(20_000).size).toBeGreaterThan(0);
+    // A later hour from the server moves on as before.
+    player.disconnect();
+    expect(player.apply({ ...f, id: 'stream:7200', startWorldTime: 3600, endWorldTime: 7200, encounters: [] }, 30_000)).toBe(true);
+    expect(player.worldTimeAt(30_000)).toBe(3600);
+  });
   it('bounds disconnected extrapolation and clears on server loss/restart', () => {
     const player = new LiveEncounterPlayer(); player.apply(frame(), 0);
     expect(player.poses(300_000).size).toBe(0);
