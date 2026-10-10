@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import * as THREE from 'three';
 import { LiveAgents, activityOf, isLiveMessage, isRosterMessage, rosterActivity, usdc, type LiveMessage } from '../src/liveAgents.js';
 import type { AnimalState } from '../src/protocol.js';
 
@@ -86,5 +87,24 @@ describe('live agents in the observer', () => {
     expect(live.poses(375, animals).get('chital_0001')!.position.x).toBeCloseTo(5);
     expect(live.poses(375, animals).get('chital_0001')!.animal.state).toBe('stalking');
     expect(activityOf(avatar(0, { action: 'hunt', gait: 'run' }))).toBe('charging');
+  });
+});
+
+describe('drops leaving the island', () => {
+  it('free the GPU resources each drop owned', () => {
+    const live = new LiveAgents(() => 0);
+    const drop = { id: 'd1', amountMicro: '1000000', hint: { x: 10, z: 10, radius: 30 }, expiresAt: 0, spotted: { x: 12, z: 11, by: 'a' } };
+    live.apply({ type: 'live', at: 1, avatars: [], drops: [drop] }, 0);
+    const group = live.root.getObjectByName('drop-d1')!;
+    const meshes = group.children as THREE.Mesh[];
+    const shared = new Set(meshes.filter((m) => m !== meshes[1] && m !== meshes[3]).flatMap((m) => [m.geometry, m.material]));
+    const owned = [meshes[1]!.material as THREE.Material, meshes[3]!.geometry];
+    const disposed = new Set<unknown>();
+    for (const resource of [...owned, ...shared]) (resource as THREE.EventDispatcher<{ dispose: object }>).addEventListener('dispose', () => disposed.add(resource));
+    live.apply({ type: 'live', at: 2, avatars: [], drops: [] }, 100);
+    expect(live.root.getObjectByName('drop-d1')).toBeUndefined();
+    for (const resource of owned) expect(disposed.has(resource)).toBe(true);
+    // Shared by every drop: kept for the next one.
+    for (const resource of shared) expect(disposed.has(resource)).toBe(false);
   });
 });

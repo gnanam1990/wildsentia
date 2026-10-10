@@ -197,7 +197,9 @@ export class LiveAgents {
     const wanted = new Set(drops.map((d) => d.id));
     for (const [id, view] of this.#drops) {
       if (wanted.has(id)) continue;
-      this.root.remove(view.group); view.progress.geometry.dispose(); this.#drops.delete(id);
+      // The beam's material is this drop's own copy (it pulses on its own); the rest is shared.
+      this.root.remove(view.group); view.progress.geometry.dispose(); (view.beam.material as THREE.Material).dispose();
+      this.#drops.delete(id);
     }
     for (const d of drops) {
       let view = this.#drops.get(d.id);
