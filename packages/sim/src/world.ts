@@ -1054,12 +1054,18 @@ export class World {
 
   step(hours: number): void {
     if (!Number.isFinite(hours) || hours <= 0) throw new Error('step hours must be finite and positive');
+    // sim_0.38.0: the clock moves in whole seconds, as every recorded trace starts on one. A
+    // part-hour step such as 0.1 + 0.2 h (1080.0000000000002 s) left it between seconds, and a
+    // later tree descent refused its start time and stopped the world mid-step.
+    const seconds = Math.round(hours * WORLD_SECONDS_PER_HOUR);
+    if (seconds === 0 || Math.abs(hours * WORLD_SECONDS_PER_HOUR - seconds) > 1e-6)
+      throw new Error('step hours must be whole seconds');
     // All ecological cohorts and encounters use the same hourly decision boundary. Long
     // calls cannot skip a fish or contact gate or count an hour twice.
     if (hours > 1) {
-      let remaining = hours;
-      while (remaining > 1) { this.step(1); remaining -= 1; }
-      if (remaining > 0) this.step(remaining);
+      let remaining = seconds;
+      while (remaining > WORLD_SECONDS_PER_HOUR) { this.step(1); remaining -= WORLD_SECONDS_PER_HOUR; }
+      if (remaining > 0) this.step(remaining / WORLD_SECONDS_PER_HOUR);
       return;
     }
     for (const agent of this.agents) locateAgent(agent);
@@ -1554,7 +1560,7 @@ export class World {
     }
     if (Math.floor(decisionEnd / WORLD_SECONDS_PER_DAY) > Math.floor(this.#time / WORLD_SECONDS_PER_DAY))
       this.#islandArrival(decisionEnd);
-    this.#time += hours * WORLD_SECONDS_PER_HOUR;
+    this.#time += seconds;
   }
 }
 

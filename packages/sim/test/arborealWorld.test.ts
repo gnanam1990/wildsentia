@@ -61,6 +61,22 @@ describe('v0.25 authoritative tree ascent and descent', () => {
     expect(patch.id).toBe(langur.patchId);
   });
 
+  it('keeps the clock on whole seconds, so a part-hour step cannot stop a later descent', () => {
+    // 0.1 + 0.2 h is 1080.0000000000002 s: the clock left whole seconds, and the next descent's
+    // trace (which must start on a whole second) threw and stopped the world mid-step.
+    const { world, patch, langur } = threatenedWorld();
+    world.step(0.1 + 0.2);
+    expect(langur.altitudeM).toBeGreaterThan(0);
+    expect(world.now()).toBe(1080);
+    patch.canopyCover = 0;
+    expect(() => world.step(1)).not.toThrow();
+    expect(world.now()).toBe(4680);
+    expect(langur.altitudeM).toBeUndefined();
+    // A step that is not a whole number of seconds is refused before anything changes.
+    expect(() => world.step(1 / 7)).toThrow(/whole seconds/);
+    expect(world.now()).toBe(4680);
+  });
+
   it('descends a depleted-canopy remnant with real time and never takes a ground action in that decision', () => {
     const { world, patch, anchor, langur } = threatenedWorld();
     world.step(1);
