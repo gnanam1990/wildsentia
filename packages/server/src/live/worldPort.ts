@@ -109,7 +109,7 @@ export function worldPort(world: () => World, worldId: () => string | null, play
     },
     waterPoints: (x, z, radius) => world().patches
       .filter((p) => landWalkable(p) && p.waterVolume > 0)
-      .map((p) => ({ patchId: p.id, ...waterAccessPosition(p.id), litres: p.waterVolume }))
+      .map((p) => ({ patchId: p.id, ...waterAccessPosition(p.id, world().patches), litres: p.waterVolume }))
       .filter((w) => Math.hypot(w.x - x, w.z - z) <= radius)
       .map(({ patchId, x: wx, z: wz, litres }) => ({ patchId, x: wx, z: wz, litres })),
     route: (speciesId, from, to) => {
@@ -148,7 +148,7 @@ export function randomLandSpot(world: World, random: () => number = Math.random)
     const x = centre.x + (random() - 0.5) * (PATCH_METRES - 10), z = centre.z + (random() - 0.5) * (PATCH_METRES - 10);
     const at = patchAtPosition({ x, z, heading: 0 });
     if (at !== patch.id) continue;
-    const access = waterAccessPosition(patch.id);
+    const access = waterAccessPosition(patch.id, world.patches);
     if (patch.waterVolume > 0 && Math.hypot(access.x - x, access.z - z) < 45) continue;
     return { x, z };
   }

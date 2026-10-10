@@ -1,16 +1,24 @@
-import { waterAccessPosition } from '@vana/shared';
+import { waterAccessPosition, type WaterGround } from '@vana/shared';
 import type { PatchView } from './terrain.js';
 
 /**
  * The representative drinking pool drawn for an island patch's surface freshwater: a disc at
  * the patch's water access point sized from the stock, not a lake as wide as the patch. Null
- * when the patch holds no surface water or is not on the island.
+ * when the patch holds no surface water or is not on the island. A lake's access point is on its
+ * shore (sim_0.38.0), so pass the patches as `waterGround(patches)`.
  */
-export function islandPool(patch: PatchView): Pool | null {
+export function islandPool(patch: PatchView, ground?: WaterGround): Pool | null {
   if (patch.islandSeed === undefined || (patch.surface !== undefined && patch.surface !== 'land')) return null;
   if (!Number.isFinite(patch.water) || patch.water <= 0) return null;
-  const { x, z } = waterAccessPosition(patch.id);
+  const { x, z } = waterAccessPosition(patch.id, ground);
   return { x, z, radius: Math.max(2, Math.min(40, Math.sqrt(patch.water / 1000 / Math.PI))), seed: patch.id };
+}
+
+/** The patches indexed by id, as waterAccessPosition reads them. */
+export function waterGround(patches: readonly PatchView[]): WaterGround {
+  const ground: PatchView[] = [];
+  for (const patch of patches) ground[patch.id] = patch;
+  return ground;
 }
 
 /** A drinking pool: its centre (the water access point), nominal radius and shape seed. */

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { ISLAND_SEGMENTS, treeAnchorForPatch, treeAnchorRemnantForPatch } from '@vana/shared';
 import { islandHeightField } from './islandHeightField.js';
 import { groundTint } from './groundTint.js';
-import { BANK_CLEAR_M, insidePool, islandPool, type Pool } from './pools.js';
+import { BANK_CLEAR_M, insidePool, islandPool, waterGround, type Pool } from './pools.js';
 import { buildPools, poolPlane } from './poolScene.js';
 import { PATCH_METRES, patchCentre } from './space.js';
 
@@ -333,6 +333,7 @@ export function buildTerrain(patches: readonly PatchView[], layers?: ReadonlySet
   const waterPatches = patches.filter((p) => land(p) && (island
     ? Number.isFinite(p.water) && p.water > 0
     : p.habitat === 'water' || p.water > 20_000));
+  const shores = waterGround(patches);
   const rockPatches = patches.filter((p) => land(p) && p.habitat === 'rock');
   const tuftsPerPatch = TUFTS_PER_PATCH;
   const grassPatches = patches.filter((p) => land(p) && p.grass > 100 && p.habitat !== 'water' && p.water <= 20_000);
@@ -393,7 +394,7 @@ export function buildTerrain(patches: readonly PatchView[], layers?: ReadonlySet
   for (const patch of grass ? grassPatches : []) {
     const centre = patchCentre(patch.id);
     const density = Math.min(1, patch.grass / 6000);
-    const pool = island ? islandPool(patch) : null;
+    const pool = island ? islandPool(patch, shores) : null;
     let seed = patch.id * 2654435761;
     const random = (): number => {
       seed = (seed * 1664525 + 1013904223) >>> 0;
@@ -468,7 +469,7 @@ export function buildTerrain(patches: readonly PatchView[], layers?: ReadonlySet
   }
   for (const mesh of [flow.river, flow.waterfall]) if (mesh) group.add(mesh);
   if (island && wanted('water')) {
-    group.add(buildPools(waterPatches.flatMap((p) => { const pool = islandPool(p); return pool ? [pool as Pool] : []; }), groundAt));
+    group.add(buildPools(waterPatches.flatMap((p) => { const pool = islandPool(p, shores); return pool ? [pool as Pool] : []; }), groundAt));
   }
   // Kept so the far-field can be hidden near the camera and restored exactly (hideFarFieldNear).
   for (const mesh of [grass, rock, trunk, canopy]) {

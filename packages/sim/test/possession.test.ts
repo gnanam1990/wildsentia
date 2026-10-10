@@ -79,7 +79,7 @@ describe('agent-steered animals', () => {
     world.possess(animal.id, 'agent_a');
     const wet = world.patches.filter((p) => landWalkable(p)).sort((a, b) => b.waterVolume - a.waterVolume)[0]!;
     expect(wet.waterVolume).toBeGreaterThan(0);
-    const access = waterAccessPosition(wet.id);
+    const access = waterAccessPosition(wet.id, world.patches);
     world.placeControlled(animal.id, { x: access.x + 20, z: access.z, heading: 0 });
     animal.drives.thirst = 0.6;
     world.applyControlledAction(animal.id, 'drink', 300);

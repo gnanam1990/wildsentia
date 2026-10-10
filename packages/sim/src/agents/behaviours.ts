@@ -233,13 +233,14 @@ function drink(ctx: BehaviourContext, mayMove = true, causalParents: string[] = 
 
   // Same rule as feeding: drink what is here unless there is not enough of it.
   if (mayMove && (patch.waterVolume < wanted || ctx.percept.dangerous.has(patch.id)) && target !== null && target.patchId !== patch.id) {
-    const travel = moveTo(ctx, target.patchId, false, waterContactPosition(ctx.agent.id, target.patchId));
+    const travel = moveTo(ctx, target.patchId, false, waterContactPosition(ctx.agent.id, target.patchId, ctx.patches));
     if (travel.trace.completed && travel.seconds < ctx.hours * 3600) drink(afterTravel(ctx, travel.seconds), false, [travel.eventId]);
     return;
   }
   if (patch.waterVolume <= 0) { ctx.agent.state = 'travelling'; return; }
-  if (!atWaterAccess(locateAgent(ctx.agent), patch.id)) {
-    const travel = moveTo(ctx, patch.id, false, waterContactPosition(ctx.agent.id, patch.id));
+  // sim_0.38.0: a lake's access point is on its shore (waterAccessPosition), so pass the ground.
+  if (!atWaterAccess(locateAgent(ctx.agent), patch.id, ctx.patches)) {
+    const travel = moveTo(ctx, patch.id, false, waterContactPosition(ctx.agent.id, patch.id, ctx.patches));
     if (travel.trace.completed && travel.seconds < ctx.hours * 3600) drink(afterTravel(ctx, travel.seconds), false, [...causalParents, travel.eventId]);
     return;
   }
@@ -252,7 +253,7 @@ function drink(ctx: BehaviourContext, mayMove = true, causalParents: string[] = 
   );
   ctx.agent.state = 'drinking';
   ctx.services.practised(ctx.agent, 'water_locations', true);
-  const source = waterAccessPosition(patch.id), position = locateAgent(ctx.agent);
+  const source = waterAccessPosition(patch.id, ctx.patches), position = locateAgent(ctx.agent);
   position.heading = Math.atan2(source.x - position.x, source.z - position.z);
   ctx.log.append({ type: 'drank', worldTime: Math.floor(ctx.endWorldTime ?? ctx.worldTime + ctx.hours * 3600),
     simVersion: '', patchId: patch.id, position: { ...position }, actors: [ctx.agent.id], goal: ctx.choice.goal,
@@ -765,7 +766,7 @@ export function controlledAction(ctx: BehaviourContext, action: ControlledAction
   if (action === 'graze') feed(ctx, false);
   else if (action === 'drink') {
     // Wild drinking walks to the access point; an agent has to bring its animal there.
-    if (!atWaterAccess(locateAgent(ctx.agent), ctx.agent.patchId)) { ctx.agent.state = 'resting'; return; }
+    if (!atWaterAccess(locateAgent(ctx.agent), ctx.agent.patchId, ctx.patches)) { ctx.agent.state = 'resting'; return; }
     drink(ctx, false);
   } else rest(ctx);
 }

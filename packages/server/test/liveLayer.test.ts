@@ -170,7 +170,7 @@ describe('live layer', () => {
     expect(animal.drives.hunger).toBeLessThan(0.8);
     expect(live.act('ag_1', 'drink')).toBe('not_at_water');
     const wet = world.patches.filter((p) => landWalkable(p)).sort((x, y) => y.waterVolume - x.waterVolume)[0]!;
-    const access = waterAccessPosition(wet.id);
+    const access = waterAccessPosition(wet.id, world.patches);
     world.placeControlled(a.animalId, { x: access.x, z: access.z, heading: 0 }); a.x = access.x; a.z = access.z;
     animal.drives.thirst = 0.6;
     expect(live.act('ag_1', 'drink')).toBeNull();

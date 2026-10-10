@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GRID_SIZE, PATCH_METRES, spatialHash } from '@vana/shared';
 import type { HeightSampler, PatchView } from './terrain.js';
 import { RENDER_BUDGETS, type RenderTier } from './renderQuality.js';
-import { BANK_CLEAR_M, insidePool, islandPool } from './pools.js';
+import { BANK_CLEAR_M, insidePool, islandPool, waterGround } from './pools.js';
 import { SWAY, wind } from './wind.js';
 import { standDensity } from './forestStructure.js';
 
@@ -45,7 +45,8 @@ function* visitGroundCover(
 ): Generator<void> {
   const byId = new Map(patches.map((p) => [p.id, p]));
   // No grass standing in a drinking pool: the pool is a flat disc, so blades would pierce it.
-  const pools = new Map(patches.flatMap((p) => { const pool = islandPool(p); return pool ? [[p.id, pool] as const] : []; }));
+  const ground = waterGround(patches);
+  const pools = new Map(patches.flatMap((p) => { const pool = islandPool(p, ground); return pool ? [[p.id, pool] as const] : []; }));
   let cells = 0;
   // Two fixed world grids extend cover without multiplying close-up cost. The outer
   // clumps overlap the fine carpet's tapered edge rather than leaving a bare ring.

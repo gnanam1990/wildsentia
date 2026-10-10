@@ -1,4 +1,4 @@
-import { isMovementTrace, isDrinkingActivity, positionInPatch, treeAnchorGeometry, waterAccessPosition, WATER_CONTACT_RADIUS_M,
+import { isMovementTrace, isDrinkingActivity, positionInPatch, treeAnchorGeometry, recordedWaterAccessPositions, WATER_CONTACT_RADIUS_M,
   MAX_LIVE_MOVEMENTS, MAX_LIVE_MOVEMENT_SAMPLES,
   type Agent, type EncounterAppearance, type LiveEncounter, type LiveMovement, type WorldEvent, type WorldPosition } from '@vana/shared';
 
@@ -82,9 +82,11 @@ export function indexLiveMovements(
     const endSeconds = arrival + duration - start, timestampRemainder = arrival + duration - e.worldTime;
     const activity = { type: 'drinking' as const, eventId: e.id, startSeconds: arrival - start,
       endSeconds: Math.min(3600, endSeconds), position: { ...e.position }, litres: e.effects.litres! };
-    const source = waterAccessPosition(e.patchId);
+    // A lake's source is on its shore (sim_0.38.0): any recorded access point of the patch.
+    const sourced = recordedWaterAccessPositions(e.patchId)
+      .some(source => e.conditions.sourceX === source.x && e.conditions.sourceZ === source.z);
     if (!isDrinkingActivity(activity) || endSeconds > 3600 + 1e-6 || timestampRemainder < -1e-6 || timestampRemainder >= 1 + 1e-6
-      || e.conditions.sourceX !== source.x || e.conditions.sourceZ !== source.z
+      || !sourced
       || e.conditions.contactRadiusM !== WATER_CONTACT_RADIUS_M) continue;
     const movement = result.get(id);
     if (movement) {

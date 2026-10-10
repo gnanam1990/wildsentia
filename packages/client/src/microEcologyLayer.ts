@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { microCounts, spatialHash, waterAccessPosition, type MicroEcologyState } from '@vana/shared';
+import { microCounts, spatialHash, waterAccessPosition, type MicroEcologyState, type WaterGround } from '@vana/shared';
 import { PATCH_METRES, patchCentre } from './space.js';
 import type { HeightSampler, PatchView } from './terrain.js';
 
@@ -16,9 +16,9 @@ const ROLES = [
  * marker on a centre the island's overview showed a 300 m lattice of dots. Fish stay in the
  * patch's pool (at its access point on the island, at the centre on the mainland plane).
  */
-export function microMarkerPosition(role: string, patchId: number, island: boolean): { x: number; z: number } {
+export function microMarkerPosition(role: string, patchId: number, island: boolean, ground?: WaterGround): { x: number; z: number } {
   if (role === 'fish') {
-    const pool = island ? waterAccessPosition(patchId) : patchCentre(patchId);
+    const pool = island ? waterAccessPosition(patchId, ground) : patchCentre(patchId);
     return { x: pool.x + 0.6, z: pool.z };
   }
   const centre = patchCentre(patchId), h = spatialHash(`micro:${role}:${patchId}`), reach = PATCH_METRES * 0.37;
@@ -68,13 +68,15 @@ export class MicroEcologyLayer {
     const byId = new Map(patches.map((p) => [p.id, p]));
     const rows: Array<{ x: number; y: number; z: number; colour: number }> = [];
     const island = patches[0]?.islandSeed !== undefined;
+    const ground: PatchView[] = [];
+    for (const patch of patches) ground[patch.id] = patch;
     for (const population of state.patches) {
       const patch = byId.get(population.patchId);
       if (!patch || patch.surface === 'ocean') continue;
       const counts = microCounts(population);
       for (const [role, colour] of ROLES) {
         if (counts[role] <= 0) continue;
-        const { x, z } = microMarkerPosition(role, patch.id, island);
+        const { x, z } = microMarkerPosition(role, patch.id, island, ground);
         rows.push({ x, y: groundAt(x, z) + (role === 'fish' ? 0.12 : 0.35), z, colour });
       }
     }
