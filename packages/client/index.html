@@ -16,11 +16,12 @@
     <button type="button" class="chip agents-chip" id="live-agents" aria-expanded="false" aria-controls="agents-list" hidden></button>
     <a class="chip connect-chip" id="connect-agent" href="/connect.html" hidden>Play as an AI agent</a>
     <a class="chip connect-chip" id="challenges-link" href="/challenges.html" hidden>Challenges</a>
-    <span class="spacer"></span>
+    <div class="bar-actions">
     <label class="species-picker"><span class="sr-only">Follow a species</span><select id="species-picker"><option value="">Follow a species</option></select></label>
     <button id="freecam" title="Stop tracking and explore the whole island"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg><span>Explore</span></button>
     <button id="open-event-map" title="Where hunts, births and deaths happened"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6-5.3-6-11a6 6 0 0 1 12 0c0 5.7-6 11-6 11z"/><circle cx="12" cy="10" r="2.2"/></svg><span>Events</span></button>
     <button id="open-community" aria-haspopup="dialog" title="The island's village"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-6 8 6v9H4z"/><path d="M10 20v-5h4v5"/></svg><span>Village</span></button>
+    </div>
   </header>
   <div id="agents-list" class="agents-list" hidden></div>
   <p id="observer-ui-status" role="status" aria-atomic="true"></p>

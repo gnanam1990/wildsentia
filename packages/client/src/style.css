@@ -10,6 +10,8 @@
   --clay: #e0ad63;
   --blood: #d97c68;
   --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* Where the top bar's controls end; main.ts measures it as the bar wraps. */
+  --bar-bottom: 64px;
 }
 /* `hidden` must always win: a component's own display rule (grid, flex) would otherwise show it. */
 [hidden] { display: none !important; }
@@ -64,21 +66,19 @@
 @media(max-width: 600px) {
   .forest-dialog { padding: 16px; }
   .forest-map { margin: 16px; }
-  #reward-total { bottom: 4px; right: 8px; font-size: 11px; }
-  #reward-mine { bottom: 52px; right: 8px; font-size: 11px; }
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1410; color: var(--ink);
   font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif; }
 #view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 #view:focus-visible { outline: 3px solid var(--moss); outline-offset: -3px; }
-#render-stats { position: fixed; top: 86px; left: 16px; z-index: 12; padding: 8px 12px;
+#render-stats { position: fixed; top: calc(var(--bar-bottom) + 22px); left: 16px; z-index: 12; padding: 8px 12px;
   background: #101d15e8; color: #e9f1e9; font: 11px var(--mono); border-radius: 8px; pointer-events: none; }
-#observer-ui-status:not(:empty) { position: fixed; top: 72px; right: 16px; z-index: 12;
+#observer-ui-status:not(:empty) { position: fixed; top: calc(var(--bar-bottom) + 8px); right: 16px; z-index: 12;
   max-width: min(360px, calc(100vw - 32px)); margin: 0; padding: 8px 12px;
   background: var(--dialog-surface); border: 1px solid var(--line); border-radius: 8px;
   color: var(--ink); font-size: 12px; }
-#event-visit { position: fixed; z-index: 12; top: 132px; left: 50%; transform: translateX(-50%);
+#event-visit { position: fixed; z-index: 12; top: calc(var(--bar-bottom) + 68px); left: 50%; transform: translateX(-50%);
   width: min(350px, calc(100vw - 32px)); padding: 12px 14px; border-radius: 12px;
   color: var(--ink); background: var(--dialog-surface); border: 1px solid var(--clay);
   box-shadow: 0 12px 32px rgba(0,0,0,.4); }
@@ -89,14 +89,16 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1410; col
 #event-visit button { min-height: 44px; margin: 0; }
 #event-visit :focus-visible { outline: 3px solid var(--moss); outline-offset: 3px; }
 
-.bar { position: fixed; top: 0; left: 0; right: 0; display: flex; gap: 8px; align-items: center;
+.bar { position: fixed; top: 0; left: 0; right: 0; display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center;
   padding: 12px 16px 28px; z-index: 10; pointer-events: none;
   background: linear-gradient(180deg, rgba(6,12,9,.55), rgba(6,12,9,0)); }
 .bar > * { pointer-events: auto; }
 .brand { font-weight: 700; font-size: 18px; letter-spacing: .01em; margin-right: 6px; text-shadow: 0 1px 8px rgba(0,0,0,.5); }
 .brand small { display: block; font-size: 9.5px; font-weight: 500; letter-spacing: .14em;
   text-transform: uppercase; color: var(--ink-3); }
-.spacer { margin-left: auto; }
+/* The picker and buttons stay together at the right, and wrap as one when the bar runs out of room. */
+.bar-actions { display: flex; gap: 8px; align-items: center; margin-left: auto; }
+.bar-actions > * { flex-shrink: 0; }
 .chip { display: inline-flex; align-items: center; gap: 7px; padding: 8px 13px; min-height: 36px;
   border: 1px solid var(--line); border-radius: 999px; background: var(--panel);
   backdrop-filter: blur(14px); font-size: 12.5px; color: var(--ink-2); }
@@ -129,7 +131,7 @@ button:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid
 .panel { position: fixed; z-index: 10; width: 300px; padding: 14px 16px;
   background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
   backdrop-filter: blur(18px) saturate(1.2); box-shadow: 0 16px 44px rgba(0,0,0,.35); }
-#passport-panel { right: 16px; top: 76px; max-height: calc(100dvh - 150px); overflow-y: auto; scrollbar-width: thin; }
+#passport-panel { right: 16px; top: calc(var(--bar-bottom) + 12px); max-height: calc(100dvh - var(--bar-bottom) - 86px); overflow-y: auto; scrollbar-width: thin; }
 #live-encounter-status { margin: 0 0 10px; padding: 6px 10px; border: 1px solid rgba(132, 200, 220, .35);
   border-radius: 999px; color: var(--mist); background: rgba(20, 44, 37, .6); font-size: 11.5px; line-height: 1.4; width: fit-content; }
 #scene-status, #community-motion-status { margin: 0 0 10px; color: var(--ink-2); font-size: 11.5px; line-height: 1.45; }
@@ -144,7 +146,7 @@ button:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid
 .encounter-label { position: fixed; z-index: 5; transform: translate(-50%, -100%); pointer-events: none;
   padding: 4px 7px; background: #142c25e8; border: 1px solid var(--mist); border-radius: 6px;
   color: var(--ink); font-size: 12px; max-width: 160px; text-align: center; }
-#feed-panel { left: 16px; top: 76px; width: 270px; max-height: 44vh; overflow: auto; scrollbar-width: thin; }
+#feed-panel { left: 16px; top: calc(var(--bar-bottom) + 12px); width: 270px; max-height: min(44vh, calc(100dvh - var(--bar-bottom) - 300px)); overflow: auto; scrollbar-width: thin; }
 .panel h2 { margin: 0 0 2px; font-size: 18px; letter-spacing: .01em; }
 .panel h3 { margin: 0 0 10px; font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
   color: var(--ink-2); font-weight: 650; }
@@ -217,18 +219,27 @@ button:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid
   font-size: 12px; color: var(--ink-2); text-shadow: 0 1px 6px rgba(0,0,0,.7); z-index: 10; }
 
 @media (max-width: 860px) {
-  #event-visit { top: max(150px, calc(env(safe-area-inset-top) + 118px)); }
-  .bar { flex-wrap: wrap; gap: 6px; padding: 10px 12px 20px; }
-  .brand { margin-right: auto; }
-  .spacer { display: none; }
+  #event-visit { top: max(calc(var(--bar-bottom) + 12px), calc(env(safe-area-inset-top) + 12px)); }
+  .bar { gap: 6px; padding: 10px 12px 16px; }
+  .brand { margin-right: auto; font-size: 16px; }
+  .brand small { display: none; }
+  .chip { min-height: 32px; padding: 6px 10px; font-size: 12px; }
   .chip.pop { order: 3; }
-  .species-picker { flex: 1 1 100%; order: 4; }
+  .chip.pop details summary { padding: 6px 10px; }
+  /* One row: the species picker takes the room the icon-only buttons leave. */
+  .bar-actions { flex: 1 1 100%; order: 5; margin-left: 0; gap: 6px; }
+  .species-picker { flex: 1 1 auto; min-width: 0; }
   .species-picker select { max-width: 100%; width: 100%; }
-  .bar > button { order: 5; flex: 1; min-height: 40px; padding: 6px 8px; }
+  .bar-actions > button { flex: none; width: 44px; padding: 0; }
+  .bar-actions > button span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .footer { display: none; }
   .panel { width: calc(100vw - 32px); }
-  #passport-panel { top: auto; bottom: 70px; right: 16px; max-height: 34dvh; }
+  #passport-panel { top: auto; bottom: 64px; right: 16px; max-height: min(34dvh, calc(100dvh - var(--bar-bottom) - 80px)); }
   #feed-panel { display: none; }
+  /* Both reward pills share one row below the passport card instead of sitting on it. */
+  #reward-total { bottom: 8px; right: 8px; font-size: 11px; padding: 6px 12px; max-width: 54vw; }
+  #reward-mine { bottom: 8px; right: auto; left: 8px; min-height: 32px; font-size: 11px; max-width: calc(46vw - 24px);
+    overflow: hidden; white-space: nowrap; text-overflow: ellipsis; display: block; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
@@ -310,7 +321,7 @@ body.is-replaying #passport-panel, body.is-replaying #feed-panel { visibility: h
 .agents-list .drop-row { color: var(--clay); }
 @media (max-width: 860px) {
   .agents-list { left: 12px !important; right: 12px; width: auto; max-height: 45dvh; }
-  .bar > button.agents-chip { flex: 0 0 auto; order: 3; white-space: nowrap; min-height: 36px; padding: 8px 13px; }
+  .bar > button.agents-chip { flex: 0 0 auto; order: 3; white-space: nowrap; min-height: 32px; padding: 6px 10px; font-size: 12px; }
 }
 .agents-chip { white-space: nowrap; }
 .connect-chip { color: #fbe7b0; border-color: #f2c14e66; font-weight: 600; text-decoration: none; white-space: nowrap; }
@@ -338,7 +349,7 @@ body.is-replaying #passport-panel, body.is-replaying #feed-panel { visibility: h
 @media (max-width: 860px) {
   /* A slim column on the right edge, between the top bar and the passport sheet: turn and tilt
      only, since pinching already zooms on a phone. */
-  .camera-pad { left: auto; right: 8px; bottom: auto; top: 28dvh; grid-template-columns: 34px; gap: 4px; padding: 4px; }
+  .camera-pad { left: auto; right: 8px; bottom: auto; top: calc(var(--bar-bottom) + 10px); grid-template-columns: 34px; gap: 4px; padding: 4px; }
   .camera-pad button { width: 34px; height: 34px; }
   .camera-pad .camera-reset, .camera-pad [data-camera^="zoom"] { display: none; }
 }

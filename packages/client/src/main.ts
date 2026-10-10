@@ -51,6 +51,17 @@ const bubbleHeight = (animal: AnimalState | undefined): number => {
 };
 
 const canvas = document.querySelector<HTMLCanvasElement>('#view')!;
+// Panels and the camera pad sit just under the top bar, however many rows it wraps to.
+const topBar = document.querySelector<HTMLElement>('.bar')!;
+function placeUnderBar(): void {
+  let bottom = 0;
+  for (const child of topBar.children) {
+    if (!(child as HTMLElement).hidden) bottom = Math.max(bottom, child.getBoundingClientRect().bottom);
+  }
+  if (bottom > 0) document.documentElement.style.setProperty('--bar-bottom', `${Math.ceil(bottom)}px`);
+}
+if (typeof ResizeObserver === 'function') new ResizeObserver(placeUnderBar).observe(topBar);
+placeUnderBar();
 const { renderer, scene, camera, sun, setQuality, prepareShadows } = createScene(canvas);
 const atmosphere = new Atmosphere(scene, sun);
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
