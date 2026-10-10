@@ -51,7 +51,8 @@ describe('event map projection', () => {
     const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
     expect(map).toContain("history.textContent = 'Read person’s retained history'");
     expect(map).toContain('this.readPersonHistory(personHistoryId)');
-    expect(main).toContain('id => { void personHistoryDialog.open(id); });');
+    // Read from the map, closing the history goes back to the map (not the village list).
+    expect(main).toContain('id => readPersonHistory(id, () => { void mapDialog.open(); }));');
     expect(main).toContain('id => watchSavedPerson(id)');
   });
   it('renders human birth/death history controls and invokes the selected-person callback, not Watch', async () => {

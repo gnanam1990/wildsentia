@@ -39,6 +39,7 @@ import { AdaptiveQuality, qualityMode, RenderPacer } from './renderQuality.js';
 import { MicroEcologyLayer } from './microEcologyLayer.js';
 import { animalFromHash, followedHash, initialFollowId } from './animalLink.js';
 import { LazyDialog } from './lazyDialog.js';
+import { ReturnPath } from './returnPath.js';
 import { renderBaseY } from './space.js';
 import { AmbientAudio, cueFor, type AudioAnimal } from './ambientAudio.js';
 
@@ -174,7 +175,7 @@ const mapDialog = new LazyDialog<[]>('event map', observerUiStatus, async () => 
     eventVisit.show(event, animals.groundHeightAt);
     canvas.focus();
   }, (id) => watch(id), (id, eventId) => { void startReplay(id, eventId); }, id => watchSavedPerson(id),
-  id => { void personHistoryDialog.open(id); });
+  id => readPersonHistory(id, () => { void mapDialog.open(); }));
   map.setPatches(mapPatches);
   eventMap = map;
   return () => map.open();
@@ -187,7 +188,13 @@ function watchSavedPerson(id: string): void {
     followedPersonId = id;
     follow.target.set(position.x, position.y + (position.alive ? 1.1 * position.scale : .2), position.z); follow.distance = 8;
     canvas.focus();
-  } else void personHistoryDialog.open(id);
+  } else readPersonHistory(id, null);
+}
+/** Closing a person's history goes back to the dialog it was read from, and only that one. */
+const personHistoryReturn = new ReturnPath();
+function readPersonHistory(id: string, back: (() => void) | null): void {
+  personHistoryReturn.openedFrom(back);
+  void personHistoryDialog.open(id);
 }
 const communityDialog = new LazyDialog<[]>('community observer', observerUiStatus, async () => {
   const { createCommunityDialog } = await import('./communityObserver.js');
@@ -196,14 +203,14 @@ const communityDialog = new LazyDialog<[]>('community observer', observerUiStatu
     follow.target.set(position.x, animals.groundHeightAt(position.x, position.z), position.z);
     follow.distance = distance;
     canvas.focus();
-  }, id => { void personHistoryDialog.open(id); }, id => watchSavedPerson(id));
+  }, id => readPersonHistory(id, () => {
+    document.querySelector<HTMLButtonElement>('#open-community')?.focus();
+    void communityDialog.open();
+  }), id => watchSavedPerson(id));
 });
 const personHistoryDialog = new LazyDialog<[string]>('person history', observerUiStatus, async () => {
   const { createPersonHistoryDialog } = await import('./personHistory.js');
-  return createPersonHistoryDialog(() => {
-    document.querySelector<HTMLButtonElement>('#open-community')?.focus();
-    void communityDialog.open();
-  }, frame => {
+  return createPersonHistoryDialog(() => { if (!personHistoryReturn.close()) canvas.focus(); }, frame => {
     communityLayer.setHistoricFrame(frame);
     if (!frame) { historicAutofocusId = null; historicCameraOwned = false; return; }
     if (frame.source !== 'recorded') return;
