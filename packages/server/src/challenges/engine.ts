@@ -53,6 +53,8 @@ export class ChallengeEngine {
   #pending: Array<{ attemptId: string; entry: LogEntry }> = [];
   /** Attempts ended by a live-layer hook, still being written; the next tick waits for them. */
   #ending: Array<Promise<void>> = [];
+  /** The log write under way, if any (see #flush). */
+  #flushing: Promise<void> = Promise.resolve();
   /** Attempts whose end could not be written yet (a database blip); retried every tick. */
   #unfinished: Array<{ run: Running; status: 'failed' | 'void'; reason: string; endedWorld: number }> = [];
   /** False until restore() has run (and the hooks are wired): no attempt starts before then. */
@@ -465,7 +467,17 @@ export class ChallengeEngine {
     this.#pending.push({ attemptId: run.attempt.id, entry: { at: new Date(this.clock()), kind, data } });
   }
 
-  async #flush(): Promise<void> {
+  /**
+   * Writes the pending log. Writes run one after another: a win reads the log back to hash it as
+   * soon as its own flush returns, so no earlier batch may still be on its way.
+   */
+  #flush(): Promise<void> {
+    const next = this.#flushing.then(() => this.#flushNow());
+    this.#flushing = next.catch(() => {});
+    return next;
+  }
+
+  async #flushNow(): Promise<void> {
     if (this.#pending.length === 0) return;
     const batch = this.#pending;
     this.#pending = [];

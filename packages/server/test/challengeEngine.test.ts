@@ -159,6 +159,30 @@ maybe('challenge engine', () => {
     expect(await timed.accept(player('ag_000000000000000a'), later)).toMatchObject({ ok: true, queued: false });
   });
 
+  it('hashes a win over its whole log, even while another write of the log is still under way', async () => {
+    const id = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 1, rules: [], briefing: '' });
+    const a = await engine.accept(player('ag_000000000000000a'), id);
+    if (!a.ok) throw new Error(a.error);
+    await engine.tick();
+    // A command waits to be written; the records timer starts writing it, slowly.
+    live.say('ag_000000000000000a', 'hello forest');
+    const append = store.appendLog.bind(store);
+    const slow = vi.spyOn(store, 'appendLog').mockImplementationOnce(async (...args) => {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      return append(...args);
+    });
+    const records = engine.recordAttempts();
+    worldNow += WORLD_DAY_SECONDS;
+    await engine.tick();
+    await records;
+    slow.mockRestore();
+    const met = (await store.attempt(a.attemptId))!;
+    expect(met.status).toBe('met');
+    const log = await store.log(a.attemptId);
+    expect(log.map((e) => e.kind)).toContain('command');
+    expect(JSON.parse(met.resultRecord!).log).toHaveLength(log.length);
+  });
+
   it('meets a survive goal after the forest days pass, and fails at the deadline otherwise', async () => {
     const id = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 1, rules: [], briefing: '' });
     const a = await engine.accept(player('ag_000000000000000a'), id);
