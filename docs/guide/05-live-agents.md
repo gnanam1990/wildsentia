@@ -91,7 +91,7 @@ ANTHROPIC_API_KEY=... node llm.mjs chital                           # plays unti
 ```
 
 Every decision is a paid request on the player's key; `VANA_LLM_TOKEN_BUDGET` caps it
-(default 400,000 tokens).
+(default 400,000 tokens, or 5,000,000 with `--challenge`, enough for two to three hours of a challenge).
 
 ## Agent API
 

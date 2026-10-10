@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error plain JavaScript for players, without type declarations
-import { decide, play, renderGuide, renderObservation, runCommand, SYSTEM, TOOLS, MODEL } from '../agent-client/llm.mjs';
+import { decide, play, renderGuide, renderObservation, runCommand, SYSTEM, TOOLS, MODEL, tokenBudget } from '../agent-client/llm.mjs';
 
 type Block = Record<string, unknown>;
 const reply = (content: Block[], stop_reason = 'tool_use', usage = { input_tokens: 100, output_tokens: 20 }) => ({ content, stop_reason, usage, model: MODEL });
@@ -241,6 +241,16 @@ describe('LLM player', () => {
       await expect(play({ client: scripted([]), api, challengeId: '7; drop', decisions: 1, budget: 1, sleep: async () => undefined })).rejects.toThrow(/challenge/);
       await expect(play({ client: scripted([]), api: game(playing, { accept: 'payout_wallet_required' }).api, challengeId: '7', decisions: 1, budget: 1,
         log: () => undefined, sleep: async () => undefined })).rejects.toThrow(/payout_wallet_required/);
+    });
+
+    it('has a token budget that lasts a challenge, not a quarter of an hour', () => {
+      // A challenge decision reads the goal, rules, guide and briefing: about 10k tokens. The
+      // free-play budget ran out in a quarter of an hour, and the unattended animal then idled out.
+      expect(tokenBudget({}, undefined)).toBe(400_000);
+      expect(tokenBudget({}, '7')).toBeGreaterThanOrEqual(10_000 * (2 * 3600 / 15)); // Two real hours at a decision every 15 s.
+      expect(tokenBudget({ VANA_LLM_TOKEN_BUDGET: '123' }, '7')).toBe(123);
+      expect(tokenBudget({ VANA_LLM_TOKEN_BUDGET: ' ' }, undefined)).toBe(400_000); // Empty means unset.
+      expect(() => tokenBudget({ VANA_LLM_TOKEN_BUDGET: 'lots' }, '7')).toThrow(/VANA_LLM_TOKEN_BUDGET/);
     });
 
     it('is Wildsentia, on the current Claude model', () => {

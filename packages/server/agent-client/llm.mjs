@@ -14,8 +14,9 @@
 // Claude only gets the game's commands: no files, no shell, no wallet. Everything it reads from
 // the world is marked as data, and other agents' names are never instructions.
 //
-// Spending: every decision is a paid Claude request. VANA_LLM_TOKEN_BUDGET (default 400000 tokens)
-// stops the player when used up; --decisions N stops it after N decisions.
+// Spending: every decision is a paid Claude request. VANA_LLM_TOKEN_BUDGET stops the player when
+// used up (default 400000 tokens; 5000000 with --challenge, about two to three hours of play, since
+// a player that stops mid-attempt leaves its animal to idle out); --decisions N stops it sooner.
 import Anthropic from '@anthropic-ai/sdk';
 import { api as signedApi } from './client.mjs';
 
@@ -27,6 +28,19 @@ const ID = /^[a-z][a-z0-9_-]{0,63}$/;
 const CHALLENGE_ID = /^[0-9]{1,15}$/;
 /** How often a player waiting for a challenge's animal looks again. */
 const WAIT_POLL_MS = 15_000;
+/** Tokens a player may spend by default: free play, and a challenge (whose decisions carry more). */
+const TOKEN_BUDGET = 400_000;
+const CHALLENGE_TOKEN_BUDGET = 5_000_000;
+
+/** The spending limit: VANA_LLM_TOKEN_BUDGET if set, else sized for free play or a challenge. */
+export function tokenBudget(env, challengeId) {
+  const raw = env.VANA_LLM_TOKEN_BUDGET?.trim();
+  if (!raw) return challengeId !== undefined ? CHALLENGE_TOKEN_BUDGET : TOKEN_BUDGET;
+  const budget = Number(raw);
+  if (!/^[0-9]+$/.test(raw) || !(budget > 0)) throw new Error('VANA_LLM_TOKEN_BUDGET must be a positive whole number of tokens');
+  return budget;
+}
+
 /** The longest plan kept from one decision to the next. */
 const PLAN_MAX_CHARS = 200;
 
@@ -288,7 +302,7 @@ async function main() {
   const species = args.find((a, i) => !a.startsWith('--') && args[i - 1] !== '--decisions' && args[i - 1] !== '--challenge');
   const challengeId = value('--challenge');
   const decisions = Number(value('--decisions') ?? Infinity);
-  const budget = Number(process.env.VANA_LLM_TOKEN_BUDGET ?? 400_000);
+  const budget = tokenBudget(process.env, challengeId);
   const effort = process.env.VANA_LLM_EFFORT || 'low';
   if (!(decisions > 0) || !(budget > 0)) throw new Error('--decisions and VANA_LLM_TOKEN_BUDGET must be positive');
   const client = new Anthropic();
