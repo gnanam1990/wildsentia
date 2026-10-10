@@ -290,7 +290,7 @@ export class World {
    * piglets (2.5-9 kg), and fell to one to three animals with starving pups. Packmates within
    * the configured radius of a hunter as it commits join it, relay the chase and feed at the
    * kill. A packmate joins only if it is a calm, independent hunter not already busy this hour
-   * (it has not yet decided, or it only rested or wandered), is not carrying food to the den and
+   * (it has not yet decided, or it only rested), is not carrying food to the den and
    * is not the mother of pups too young to follow (she stays at the den). Weaned young old enough
    * to follow come along as followers: they do not add to the chase but feed at the kill (pups
    * leave the den at 70-80 days and help kill only at about seven months, Johnsingh 1982).
@@ -374,7 +374,9 @@ export class World {
       if (!mate?.alive || mate.id === hunter.id || mate.speciesId !== hunter.speciesId || mate.controller
         || this.#packHunted.has(mate.id) || mate.lastEncounterAt === this.#time || (mate.altitudeM ?? 0) > 0
         || mate.packFood || mate.drives.fear >= 0.5 || mate.drives.thirst >= 0.65 || needsProvisioning(mate, cfg)
-        || this.#stepProcessed.has(mate.id) && mate.currentGoal !== 'rest' && mate.currentGoal !== 'wander') continue;
+        // sim_0.38.0: one that already decided this hour joins only if it rested. A wanderer
+        // had walked its hour away, then ran to the kill in the same hour as well.
+        || this.#stepProcessed.has(mate.id) && mate.currentGoal !== 'rest') continue;
       // Weaned young that can keep up follow the hunt and feed at the kill; only adults hunt.
       const follower = !canHuntIndependently(mate, cfg);
       if (follower && !canFollowParent(mate, cfg)) continue;

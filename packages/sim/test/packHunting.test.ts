@@ -55,6 +55,27 @@ describe('dholes hunt as a pack (sim_0.36.0)', () => {
     expect(choosePrey(at('boar', 1), rng).agent.speciesId).toBe('boar');
   });
 
+  it('a packmate that already ranged this hour does not join a later hunt and move again', () => {
+    // Joining was open to a packmate that had already decided to wander this hour, so it walked
+    // its hour away and then ran to the kill in the same hour: two journeys in one decision.
+    let joined = 0;
+    for (let seed = 1; seed <= 40; seed++) {
+      const world = packWorld(seed), start = world.now();
+      // The first dhole decides first: sated, it ranges; the others are hungry and hunt.
+      world.agents.find(a => a.speciesId === 'dhole')!.drives.hunger = 0.05;
+      world.step(1);
+      const events = world.log.all().filter(e => e.worldTime >= start);
+      for (const hunt of events.filter(e => e.type === 'hunt' && typeof e.conditions.packmateIds === 'string')) {
+        for (const mate of String(hunt.conditions.packmateIds).split(',')) {
+          joined++;
+          const journeys = events.filter(e => e.movement?.actorId === mate && e.goal !== 'hunt');
+          expect(journeys.filter(e => e.goal === 'wander'), `seed ${seed} ${mate}`).toEqual([]);
+        }
+      }
+    }
+    expect(joined).toBeGreaterThan(5);
+  });
+
   it('packmates close by join the commit, spend their hour on it and feed together at the kill', () => {
     let seen = false;
     for (let seed = 1; seed <= 40 && !seen; seed++) {
