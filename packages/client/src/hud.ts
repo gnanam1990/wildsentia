@@ -189,6 +189,7 @@ export class Hud {
   #recapAbort: AbortController | null = null;
   #recapRequest = 0;
   #passportRequest = 0;
+  #passportHtml: string | undefined;
   #populationHtml = '';
 
   cancelRecap(): void { this.#recapRequest++; this.#recapAbort?.abort(); this.recap = null; this.recapStatus = null; }
@@ -276,20 +277,23 @@ export class Hud {
         this.elements.population.innerHTML = `<details${open ? ' open' : ''}>${html}</details>`;
         this.#populationHtml = html;
       }
-    } else this.elements.population.innerHTML = UNKNOWN;
+    } else {
+      this.elements.population.innerHTML = UNKNOWN;
+      this.#populationHtml = '';
+    }
 
     this.elements.notice.textContent = this.store.lastError ?? '';
 
     if (followedId === null) {
-      this.elements.passport.innerHTML =
-        '<p class="hint">Tap any animal to follow it, or pick a species above.</p>';
+      this.#setPassport(
+        '<p class="hint">Tap any animal to follow it, or pick a species above.</p>');
       return;
     }
 
     const animal = this.store.animals.get(followedId);
     const p = this.passport?.id === followedId ? this.passport : null;
     if (animal === undefined) {
-      this.elements.passport.innerHTML = p?.death
+      this.#setPassport(p?.death
         ? `<h2>${escape(p.id)}</h2><div class="sub">${escape(p.displayName)} &middot; died aged ${age(p.ageDays)}</div>
            <div class="row"><span>Cause</span><b>${escape(p.death.cause)}</b></div>
            <div class="row"><span>Record</span><b class="eid">${escape(p.death.eventId)}</b></div>
@@ -299,7 +303,7 @@ export class Hud {
            ${this.shareButton(p.id)}`
         : `<p class="hint">${escape(followedId)} is no longer reported by the live simulation.</p>
            ${p ? `${this.#recapCard(followedId)}<button data-history="${escape(p.id)}" aria-haspopup="dialog">Browse retained history</button>
-           <button data-replay="${escape(p.id)}">Replay this life</button>${this.shareButton(p.id)}` : ''}`;
+           <button data-replay="${escape(p.id)}">Replay this life</button>${this.shareButton(p.id)}` : ''}`);
       return;
     }
 
@@ -309,7 +313,7 @@ export class Hud {
       ? `${animal.speciesId} &middot; patch ${animal.patchId}`
       : `${escape(p.sex)} &middot; ${escape(p.lifeStage)} &middot; ${age(p.ageDays)} &middot; generation ${p.generation}`;
     const name = p ? p.displayName : (SPECIES_NAME[animal.speciesId] ?? animal.speciesId).replace(/^./, (c) => c.toUpperCase());
-    this.elements.passport.innerHTML = `${this.#recapCard(followedId)}
+    this.#setPassport(`${this.#recapCard(followedId)}
       <h2>${escape(name)}</h2>
       <div class="sub">${identity} &middot; ${escape(animal.id)}</div>
       ${bar('Hunger', animal.drives.hunger, 'var(--clay)')}
@@ -333,7 +337,24 @@ export class Hud {
       <details class="about"><summary>About this view</summary>
         <p class="prov">Model: ${escape(modelStatusForAnimal(animal))}.
         ${animal.position ? 'The server works the island out an hour at a time and this page plays each hour through as it happens, so the clock, light and feed follow what you see. Paths between points are drawn smoothly.' : 'Legacy patch-only data: within-patch placement is approximate.'} Visual coverage is asset metadata. Narration never changes outcomes.</p>
-      </details>`;
+      </details>`);
+  }
+
+  /**
+   * The page renders every second; rebuilding an unchanged card would close the section the
+   * viewer opened and drop keyboard focus. Rebuild only on change, and restore both.
+   */
+  #setPassport(html: string): void {
+    if (this.#passportHtml === html) return;
+    const el = this.elements.passport;
+    const open = new Set<string>();
+    el.querySelectorAll?.('details[open]').forEach((d) => open.add(d.className));
+    const active = typeof document === 'undefined' ? null : document.activeElement;
+    const focus = active && el.contains?.(active) ? focusSelector(active) : null;
+    el.innerHTML = html;
+    this.#passportHtml = html;
+    el.querySelectorAll?.('details').forEach((d) => { if (open.has(d.className)) (d as HTMLDetailsElement).open = true; });
+    if (focus) el.querySelector?.<HTMLElement>(focus)?.focus();
   }
 
   private shareButton(id: string): string {
@@ -404,4 +425,14 @@ export class Hud {
       this.elements.feed.innerHTML = '<p class="hint">event feed unavailable</p>';
     }
   }
+}
+
+/** A selector that finds the same control again after its card is rebuilt. */
+function focusSelector(node: Element): string | null {
+  for (const attr of ['data-replay', 'data-history', 'data-share', 'data-follow']) {
+    const value = node.getAttribute(attr);
+    if (value !== null) return `[${attr}="${CSS.escape(value)}"]`;
+  }
+  const section = node.tagName === 'SUMMARY' ? node.parentElement?.classList[0] : undefined;
+  return section ? `details.${CSS.escape(section)} > summary` : null;
 }
