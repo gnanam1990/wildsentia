@@ -87,6 +87,8 @@ export class Gateway {
   /** Counted since start, for /metrics (metrics.ts). */
   readonly stats = {
     accepted: 0, refused: { busy: 0, busy_network: 0, world_unavailable: 0 }, messages: 0, bytes: 0, slowConsumerTerminations: 0,
+    /** Sockets ws closed for a bad frame (too large, malformed): each only cut that viewer off. */
+    badFrames: 0,
     broadcastSeconds: { scene: new WindowMax(), live: new WindowMax(), roster: new WindowMax() },
   };
 
@@ -261,7 +263,12 @@ export class Gateway {
       zlibDeflateOptions: { level: 3 },
       serverNoContextTakeover: true,
     } });
+    // A server-level error (the HTTP server failing under it) is logged, never left to crash the process.
+    this.#wss.on('error', (error) => console.error('[gateway] websocket server error', error.message));
     this.#wss.on('connection', (raw: WebSocket, request: IncomingMessage) => {
+      // A frame too large, malformed UTF-8 or an unmasked frame makes ws close that socket and
+      // emit 'error': with no listener that error would end the whole process. Only that viewer goes.
+      raw.on('error', () => { this.stats.badFrames++; });
       // Every new viewer is sent the whole scene, so connections are capped in total and per
       // visitor network. A refused one is told to try later rather than simply dropped.
       const network = networkKey(forwardedClient(request.socket.remoteAddress ?? '', request.headers['x-forwarded-for'], this.#hops));
@@ -293,7 +300,9 @@ export class Gateway {
     });
   }
 
+  /** Stops taking viewers and closes every open one (1001: going away), so the HTTP server can finish closing. */
   close(): void {
+    for (const client of this.#wss?.clients ?? []) client.close(1001, 'restarting');
     this.#wss?.close();
     this.#wss = null;
   }

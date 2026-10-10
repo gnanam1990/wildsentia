@@ -369,6 +369,40 @@ maybe('live agents over the gateway', () => {
     } finally { client.terminate(); isolated.close(); await new Promise((r) => server.close(r)); }
   });
 
+  it('survives a frame too large or malformed: that viewer is cut off, the server and everyone else carry on', async () => {
+    const server = createServer(), isolated = new Gateway(host);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    isolated.attach(server);
+    const port = (server.address() as AddressInfo).port;
+    const open = async () => {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/live`);
+      await new Promise<void>((resolve) => ws.once('message', () => resolve()));
+      return ws;
+    };
+    const bystander = await open(), attacker = await open();
+    try {
+      const cut = new Promise<number>((resolve) => attacker.once('close', (code) => resolve(code)));
+      attacker.send('x'.repeat(4096)); // over the 1 KB limit
+      expect(await cut).toBe(1009);
+      expect(bystander.readyState).toBe(WebSocket.OPEN);
+      const again = await open();
+      expect(again.readyState).toBe(WebSocket.OPEN);
+      again.terminate();
+    } finally { bystander.terminate(); attacker.terminate(); isolated.close(); await new Promise((r) => server.close(r)); }
+  });
+
+  it('closes every viewer when it shuts down, so the server can stop', async () => {
+    const server = createServer(), isolated = new Gateway(host);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    isolated.attach(server);
+    const ws = new WebSocket(`ws://127.0.0.1:${(server.address() as AddressInfo).port}/live`);
+    await new Promise<void>((resolve) => ws.once('message', () => resolve()));
+    const closed = new Promise<number>((resolve) => ws.once('close', (code) => resolve(code)));
+    isolated.close();
+    expect(await closed).toBe(1001);
+    await new Promise((r) => server.close(r));
+  });
+
   it('refuses /live connections past the per-network and total caps with "try again later"', async () => {
     // Workstream D: nothing capped connections, and each new one is sent the whole ~1 MB scene.
     const server = createServer(), capped = new Gateway(host, { maxConnections: 3, maxPerNetwork: 2, trustedProxyHops: 1 });

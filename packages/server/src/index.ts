@@ -86,7 +86,11 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
   let live: LiveRuntime | null = null;
   let challenges: ChallengesRuntime | null = null;
   let closing: Promise<void> | undefined;
-  const onSignal = (): void => { void close().then(() => process.exit(0), () => process.exit(1)); };
+  const onSignal = (): void => {
+    // The checkpoint is what matters; never hang on a stuck socket or query past the platform's kill.
+    setTimeout(() => { console.error('shutdown took too long; exiting'); process.exit(1); }, 25_000).unref();
+    void close().then(() => process.exit(0), () => process.exit(1));
+  };
   const cleanup = async (checkpoint: boolean): Promise<void> => {
     if (broadcastTimer) clearInterval(broadcastTimer);
     if (watchdogTimer) clearInterval(watchdogTimer);
@@ -98,7 +102,12 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
     try {
       if (checkpoint) await host.stop(); else await host.abort();
     } finally {
-      await new Promise<void>((resolve) => { if (server) server.close(() => resolve()); else resolve(); });
+      await new Promise<void>((resolve) => {
+        if (!server) { resolve(); return; }
+        server.close(() => resolve());
+        // Keep-alive sockets would hold close() open until they time out.
+        server.closeAllConnections();
+      });
       try { await api?.close(); } finally { await pool.end(); }
     }
   };
