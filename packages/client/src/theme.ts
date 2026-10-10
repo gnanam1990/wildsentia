@@ -1,15 +1,15 @@
 import { THEME_KEY, nextChoice, parseChoice, themeLabel, type ThemeChoice } from './themeModel.js';
 
-/** The viewer's saved pick; storage may be blocked, and then the device decides. */
+/** The viewer's saved pick; light when there is none, or storage is blocked. */
 export function readTheme(): ThemeChoice {
-  try { return parseChoice(localStorage.getItem(THEME_KEY)); } catch { return 'auto'; }
+  try { return parseChoice(localStorage.getItem(THEME_KEY)); } catch { return 'light'; }
 }
 
 export function applyTheme(choice: ThemeChoice): void {
   if (choice === 'auto') delete document.documentElement.dataset.theme;
   else document.documentElement.dataset.theme = choice;
   try {
-    if (choice === 'auto') localStorage.removeItem(THEME_KEY); else localStorage.setItem(THEME_KEY, choice);
+    localStorage.setItem(THEME_KEY, choice);
   } catch { /* the pick lasts for this page only */ }
 }
 
@@ -19,7 +19,7 @@ const ICON: Record<ThemeChoice, string> = {
   dark: '<svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/></svg>',
 };
 
-/** Turns a button into the theme switch: each press moves auto → light → dark → auto. */
+/** Turns a button into the theme switch: each press moves light → dark → same as device → light. */
 export function mountThemeButton(button: HTMLButtonElement, onChange?: (choice: ThemeChoice) => void): void {
   let choice = readTheme();
   const show = () => {

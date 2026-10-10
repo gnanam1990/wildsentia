@@ -6,11 +6,11 @@ const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.ur
 const PAGES = ['index.html', 'challenges.html', 'play.html', 'challenge-new.html', 'connect.html', 'holder.html'];
 
 describe('theme', () => {
-  it('follows the device unless the viewer picked light or dark, and cycles through all three', () => {
-    expect(['light', 'dark', 'auto', null, 'blue', ''].map(parseChoice)).toEqual(['light', 'dark', 'auto', 'auto', 'auto', 'auto']);
-    expect(nextChoice('auto')).toBe('light');
+  it('is light unless the viewer picked dark or their device setting, and cycles through all three', () => {
+    expect(['light', 'dark', 'auto', null, 'blue', ''].map(parseChoice)).toEqual(['light', 'dark', 'auto', 'light', 'light', 'light']);
     expect(nextChoice('light')).toBe('dark');
     expect(nextChoice('dark')).toBe('auto');
+    expect(nextChoice('auto')).toBe('light');
     expect(themeLabel('auto')).toBe('Theme: same as device');
     expect(themeLabel('light')).toBe('Theme: light');
     expect(themeLabel('dark')).toBe('Theme: dark');
@@ -26,6 +26,8 @@ describe('theme', () => {
     const init = read('public/theme-init.js');
     expect(init).toContain(THEME_KEY);
     expect(init).toMatch(/try\s*\{[\s\S]*localStorage[\s\S]*\}\s*catch/);
+    // With nothing saved, or storage blocked, the page is light.
+    expect(init).toMatch(/var choice = 'light';/);
   });
 
   it('has a light palette for every colour the pages use, chosen or from the device', () => {
@@ -82,5 +84,22 @@ describe('forest settings', () => {
     expect(settings).toContain("'Escape'");
     expect(settings).toContain('pointerdown');
     expect(settings).toContain('applyTheme(');
+  });
+});
+
+describe('forest friendliness', () => {
+  it('hides what does not apply: no rewards pill when rewards are off, no empty "while you were away" card', () => {
+    expect(read('src/rewards.ts')).toMatch(/response\.status === 503\)[\s\S]{0,200}this\.#total\.hidden = true/);
+    const hud = read('src/hud.ts');
+    expect(hud).not.toContain('No narrated significant events');
+    expect(hud).toMatch(/if \(r === null \|\| r\.id !== id \|\| r\.lines\.length === 0\) return '';/);
+  });
+
+  it('keeps labels drawn over the forest readable in either theme', () => {
+    const css = read('src/style.css');
+    for (const rule of ['.encounter-label {', '.footer {']) {
+      const at = css.indexOf(rule), body = css.slice(at, css.indexOf('}', at));
+      expect(body, rule).not.toMatch(/var\(--ink|var\(--text-glow/);
+    }
   });
 });

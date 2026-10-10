@@ -32,11 +32,11 @@ export class RewardObserver {
       const response = await fetch('/api/rewards/summary');
       if (response.status === 503) {
         this.#configured = false; this.#drops = []; this.#badge.hidden = true; this.#panel.replaceChildren();
-        this.#total.textContent = 'Rewards not enabled'; return;
+        this.#total.hidden = true; return;
       }
       if (!response.ok) throw new Error();
       const body = await response.json() as RewardSummary;
-      const was = this.#configured; this.#configured = true;
+      const was = this.#configured; this.#configured = true; this.#total.hidden = false;
       this.#total.textContent = rewardTotalsLine(body);
       this.#total.title = 'Unclaimed: drops still hidden in the forest. Claimed: the first valid claim reserved it and the administrator pays manually. '
         + 'Paid: payment reported by the administrator or verified on Base. Allocations are not a verified treasury balance.';

@@ -447,16 +447,20 @@ export function buildApi({ host, pool, narrator, insights: insightDeps, live, re
       nextCursor: page.after ? historyCursors.encode({ version: 1, scope, boundary, since: -1, sinceSequence: null, after: page.after }) : null,
       retention: 'Retained events only. Older routine feeding, drinking and movement events are pruned; significant life events remain.' };
   }
-  app.get<{ Querystring: { limit?: string; cursor?: string; until?: string } }>('/events', async (request, reply) => {
+  // What the live feed calls news: the recap's events, plus village hunts and scavenging, never routine moves and rests.
+  const NOTABLE_EVENT_TYPES = [...RECAP_EVENT_TYPES, 'human_hunt', 'scavenged'];
+  app.get<{ Querystring: { limit?: string; cursor?: string; until?: string; notable?: string } }>('/events', async (request, reply) => {
     const limit = historyLimit(request.query.limit, 50);
     if (limit === null) return reply.code(400).send({ error: 'invalid_limit' });
     // The live feed: the newest events up to the hour being played on screen, which runs
     // behind the newest saved hour. A plain newest-first page, without history cursors.
     if (request.query.until !== undefined) {
       if (request.query.cursor !== undefined || !/^[0-9]{1,15}$/.test(request.query.until)) return reply.code(400).send({ error: 'invalid_until' });
+      if (request.query.notable !== undefined && request.query.notable !== '1') return reply.code(400).send({ error: 'invalid_notable' });
       const view = observed(request), until = Math.min(Number(request.query.until), view.worldTime);
       const page = await events.page({ actorId: null, boundary: { worldTime: view.worldTime, nextSequence: view.nextSequence },
-        limit, descending: true, after: { worldTime: until + 1, id: '' } });
+        limit, descending: true, after: { worldTime: until + 1, id: '' },
+        ...(request.query.notable === '1' ? { types: NOTABLE_EVENT_TYPES, omitMovement: true } : {}) });
       return { asOfWorldTime: view.worldTime, nextEventSequence: view.nextSequence, source: 'checkpoint', until, events: page.events };
     }
     return await historyPage(null, request.query.cursor, limit, observed(request))

@@ -37,7 +37,7 @@ describe('factual live event feed', () => {
     await new Hud(nodes, new WorldStore()).refreshFeed();
     expect(nodes.feed.innerHTML).toContain('Village hunt');
     expect(nodes.feed.innerHTML).toContain('day 1, 01:00 · failed');
-    expect(nodes.feed.innerHTML).toContain('<summary>Record ID</summary>');
+    expect(nodes.feed.innerHTML).toContain('<summary>Details</summary>');
     expect(nodes.feed.innerHTML).toContain('A village hunt came back empty');
     expect(nodes.feed.innerHTML).not.toContain('<script>');
     expect(nodes.feed.innerHTML).not.toContain('<img>');
@@ -93,5 +93,20 @@ describe('collapsed feed', () => {
   it('stops at the row limit', () => {
     const events = Array.from({ length: 10 }, (_, i) => ({ id: `${i}`, type: 'born', actors: [i % 2 ? 'hare_1' : 'chital_1'], outcome: 'success' }));
     expect(collapseFeed(events, 6)).toHaveLength(6);
+  });
+
+  it('shows what happened, not every animal moving or resting, and says so when it is quiet', async () => {
+    const nodes = elements();
+    const routine = [{ id: 'e1', type: 'moved', actors: ['chital_0001'], worldTime: 3600 }, { id: 'e2', type: 'rested', actors: ['sambar_0001'], worldTime: 3600 },
+      { id: 'e3', type: 'moved', actors: ['langur_0001'], worldTime: 3600 }, { id: 'e5', type: 'fed', actors: ['chital_0002'], worldTime: 3600 }];
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ events: [...routine,
+      { id: 'e4', type: 'hunt', actors: ['tiger_0001', 'chital_0003'], worldTime: 3500, outcome: 'success' }] }) })));
+    await new Hud(nodes, new WorldStore()).refreshFeed();
+    expect(nodes.feed.innerHTML).toContain('A tiger caught a chital');
+    expect(nodes.feed.innerHTML).not.toContain('moved');
+    expect(nodes.feed.innerHTML).not.toContain('rested');
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ events: routine }) })));
+    await new Hud(nodes, new WorldStore()).refreshFeed();
+    expect(nodes.feed.innerHTML).toContain('Quiet for now');
   });
 });

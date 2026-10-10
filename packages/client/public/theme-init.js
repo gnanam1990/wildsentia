@@ -1,8 +1,11 @@
 // Applies the viewer's theme before the page paints (src/themeModel.ts keeps the key in step).
-// Storage can be blocked (private windows, previews); the page then follows the device.
+// Light unless they picked dark or their device's setting; storage can be blocked (private
+// windows, previews), and then the page is light.
 (function () {
+  var choice = 'light';
   try {
-    var choice = localStorage.getItem('wildsentia-theme');
-    if (choice === 'light' || choice === 'dark') document.documentElement.dataset.theme = choice;
-  } catch (e) { /* follow the device */ }
+    var saved = localStorage.getItem('wildsentia-theme');
+    if (saved === 'dark' || saved === 'auto') choice = saved;
+  } catch (e) { /* stays light */ }
+  if (choice !== 'auto') document.documentElement.dataset.theme = choice;
 })();

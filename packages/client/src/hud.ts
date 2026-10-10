@@ -99,7 +99,7 @@ export function feedSentence(event: Record<string, unknown>): string {
       case 'fed': return ['tiger', 'leopard', 'dhole', 'jackal'].includes(first) ? `${an(first)} ate` : `${an(first)} grazed`;
       case 'drank': return `${an(first)} drank water`;
       case 'rested': return actors.length > 1 && first === second ? `Two ${first === 'wild boar' ? 'wild boars' : `${first}s`} rested together` : `${an(first)} rested`;
-      case 'moved': return failed ? `${an(first)} changed course` : `${an(first)} moved on`;
+      case 'moved': return failed ? `${an(first)} changed course` : `${an(first)} moved to new ground`;
       case 'birth': case 'born': return `${an(first)} was born`;
       case 'immigration': return (event.conditions as Record<string, unknown> | undefined)?.route === 'island_crossing'
         ? `${an(first)} swam ashore onto the island` : `${an(first)} walked into the forest`;
@@ -130,6 +130,9 @@ export function feedSentence(event: Record<string, unknown>): string {
   }
   return feedEventSummary(event).title;
 }
+
+/** Everyday events the feed leaves out: every animal moves, rests, eats and drinks all the time. */
+export const ROUTINE_EVENTS = new Set(['moved', 'rested', 'fed', 'drank']);
 
 /** Only what has happened by the played time: the saved hour runs ahead of the screen. */
 export function happenedBy<T extends Record<string, unknown>>(events: readonly T[], time: number | null): T[] {
@@ -367,11 +370,9 @@ export class Hud {
   #recapCard(id: string): string {
     if (this.recapStatus?.id === id) return `<p role="status">${escape(this.recapStatus.text)}</p>`;
     const r = this.recap;
-    if (r === null || r.id !== id) return '';
+    if (r === null || r.id !== id || r.lines.length === 0) return '';
     const away = r.days >= 1 ? `${r.days.toFixed(1)} world days` : `${Math.round(r.days * 24)} world hours`;
-    const body = r.lines.length === 0
-      ? '<p class="hint">No narrated significant events in this retained interval.</p>'
-      : r.lines.slice(-12).map((l) => `<div class="event${l.narrated === true ? ' narrated' : ''}"
+    const body = r.lines.slice(-12).map((l) => `<div class="event${l.narrated === true ? ' narrated' : ''}"
           ${l.narrated === true ? 'title="The event fact clause is unchanged; only a neutral prefix is allowed"' : ''}>
           <div class="etype">${escape(l.text)}</div><div class="eid">${escape(l.eventId)}</div></div>`).join('');
     const reworded = r.lines.some((l) => l.narrated === true);
@@ -406,20 +407,26 @@ export class Hud {
   async refreshFeed(): Promise<void> {
     try {
       const time = this.clockTime();
-      const response = await fetch(`/api/events?limit=40${time === null ? '' : `&until=${Math.floor(time)}`}`);
+      // News only (hunts, births, deaths, arrivals, illness): thousands of animals moving and resting would bury it.
+      const response = await fetch(`/api/events?limit=40${time === null ? '' : `&until=${Math.floor(time)}&notable=1`}`);
       if (!response.ok) throw new Error('Event feed unavailable');
       const body = (await response.json()) as { events: Array<Record<string, unknown>> };
       if (!Array.isArray(body.events)) throw new Error('Invalid event feed');
       // Newest few that have happened by the played clock, in plain words; the factual
       // label and record ID stay one tap away. Later ones appear as the hour plays on.
-      this.elements.feed.innerHTML = collapseFeed(happenedBy(body.events, time), 6)
+      const news = collapseFeed(happenedBy(body.events.filter((e) => !ROUTINE_EVENTS.has(String(e.type))), time), 6);
+      if (news.length === 0) {
+        this.elements.feed.innerHTML = '<p class="hint">Quiet for now: the animals are grazing, resting and moving about. Hunts, births and deaths show up here.</p>';
+        return;
+      }
+      this.elements.feed.innerHTML = news
         .map(({ event, sentence, count }) => {
           const item = feedEventSummary(event);
           const when = typeof event.worldTime === 'number' ? friendlyWorldTime(event.worldTime).replace(/^Year \d+ · /, '') : '';
           return `<div class="event feed-entry"><div>
             <div class="etype">${escape(sentence)}${count > 1 ? ` <span class="feed-count">×${count}</span>` : ''}</div>
             <div class="feed-meta">${escape(when)}
-              <details class="feed-provenance"><summary>Record ID</summary>${escape(item.title)} · ${escape(item.meta)} · <code>${escape(item.id)}</code></details>
+              <details class="feed-provenance"><summary>Details</summary>${escape(item.title)} · ${escape(item.meta)} · <code>${escape(item.id)}</code></details>
             </div>
           </div></div>`;
         })

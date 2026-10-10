@@ -202,4 +202,13 @@ maybe('insight routes', () => {
     expect((await api.inject('/events?until=soon')).statusCode).toBe(400);
     expect((await api.inject(`/events?until=${until}&cursor=x`)).statusCode).toBe(400);
   });
+
+  it('serves only what happened (hunts, births, deaths, arrivals, illness), not routine moving and resting, when asked', async () => {
+    const latest = (await api.inject('/events?limit=1')).json().events[0].worldTime as number;
+    const res = await api.inject(`/events?limit=50&until=${latest}&notable=1`);
+    expect(res.statusCode).toBe(200);
+    const types = (res.json().events as Array<{ type: string }>).map((e) => e.type);
+    for (const routine of ['moved', 'rested', 'fed', 'drank']) expect(types).not.toContain(routine);
+    expect((await api.inject(`/events?limit=50&until=${latest}&notable=yes`)).statusCode).toBe(400);
+  });
 });

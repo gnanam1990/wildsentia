@@ -198,6 +198,8 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); c
   background: linear-gradient(180deg, var(--bar-fade), transparent); }
 .bar > * { pointer-events: auto; }
 .brand { font-weight: 700; font-size: 18px; letter-spacing: .01em; margin-right: 6px; text-shadow: 0 1px 8px var(--text-glow); }
+/* Over the forest the brand sits on a chip like the others, so it reads on any sky. */
+.bar .brand { padding: 4px 12px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); backdrop-filter: blur(14px); text-shadow: none; }
 .brand small { display: block; font-size: 9.5px; font-weight: 500; letter-spacing: .14em;
   text-transform: uppercase; color: var(--ink-3); }
 /* The picker and buttons stay together at the right, and wrap as one when the bar runs out of room. */
@@ -248,8 +250,9 @@ button:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid
 .live-encounters select:disabled { opacity: .65; }
 .live-encounters summary:focus-visible { outline: 2px solid var(--moss); }
 .encounter-label { position: fixed; z-index: 5; transform: translate(-50%, -100%); pointer-events: none;
-  padding: 4px 7px; background: #142c25e8; border: 1px solid var(--mist); border-radius: 6px;
-  color: var(--ink); font-size: 12px; max-width: 160px; text-align: center; }
+  padding: 4px 7px; background: #142c25e8; border: 1px solid #84c8dc; border-radius: 6px;
+  /* Drawn over the forest itself: the same light-on-dark label in either theme. */
+  color: #ecf3ec; font-size: 12px; max-width: 160px; text-align: center; }
 #feed-panel { left: 16px; top: calc(var(--bar-bottom) + 12px); width: 270px; max-height: min(44vh, calc(100dvh - var(--bar-bottom) - 300px)); overflow: auto; scrollbar-width: thin; }
 .panel h2 { margin: 0 0 2px; font-size: 18px; letter-spacing: .01em; }
 .panel h3 { margin: 0 0 10px; font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
@@ -320,7 +323,7 @@ button:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid
 #notice { position: fixed; bottom: 42px; left: 16px; right: 16px; text-align: center;
   color: var(--blood); font-family: var(--mono); font-size: 11px; z-index: 10; }
 .footer { position: fixed; bottom: 18px; left: 0; right: 0; text-align: center; margin: 0;
-  font-size: 12px; color: var(--ink-2); text-shadow: 0 1px 6px var(--text-glow); z-index: 10; }
+  font-size: 12px; color: #dfe9e0; text-shadow: 0 1px 6px rgba(0, 0, 0, .8); z-index: 10; }
 
 @media (max-width: 860px) {
   /* The feed is hidden and the passport sits at the bottom; keep clear of the camera pad on the right. */
@@ -436,7 +439,7 @@ body.is-replaying #passport-panel, body.is-replaying #feed-panel { visibility: h
 .agent-tag { position: fixed; z-index: 5; transform: translate(-50%, -100%); pointer-events: none; padding: 2px 7px;
   background: #1a1408d9; border: 1px solid #f2c14e99; border-radius: 6px; color: #fbe7b0; font-size: 11px; white-space: nowrap; }
 .agent-tag b { font-weight: 600; }
-.agent-tag .said { display: block; max-width: 220px; white-space: normal; color: var(--ink); font-size: 11.5px; line-height: 1.35; margin-top: 2px; }
+.agent-tag .said { display: block; max-width: 220px; white-space: normal; color: #ecf3ec; font-size: 11.5px; line-height: 1.35; margin-top: 2px; }
 .agent-tag .said::before { content: '\201C'; } .agent-tag .said::after { content: '\201D'; }
 .row b.agent-name { text-transform: none; color: var(--gold-ink); }
 
