@@ -1090,6 +1090,17 @@ agentsChip.addEventListener('click', () => {
   if (!agentsList.hidden) placeAgentsList();
 });
 addEventListener('resize', () => { if (!agentsList.hidden) placeAgentsList(); });
+// Like any dropdown: a press elsewhere or Escape closes it (Escape returns focus to the chip).
+function closeAgentsList(returnFocus = false): void {
+  if (agentsList.hidden) return;
+  agentsList.hidden = true; agentsChip.setAttribute('aria-expanded', 'false');
+  if (returnFocus) agentsChip.focus();
+}
+document.addEventListener('pointerdown', (event) => {
+  const target = event.target as Node | null;
+  if (target && !agentsList.contains(target) && !agentsChip.contains(target)) closeAgentsList();
+});
+document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeAgentsList(!agentsList.hidden); });
 agentsList.addEventListener('click', (event) => {
   const target = event.target as HTMLElement;
   const animal = target.closest<HTMLElement>('[data-follow-animal]')?.dataset.followAnimal;
@@ -1098,7 +1109,7 @@ agentsList.addEventListener('click', (event) => {
     const at = liveAgents.roster.find((a) => a.animalId === animal);
     if (at) follow.target.set(at.x, animals.groundHeightAt(at.x, at.z), at.z);
     watch(animal); sendView(true);
-    agentsList.hidden = true; agentsChip.setAttribute('aria-expanded', 'false');
+    closeAgentsList();
     return;
   }
   const dropId = target.closest<HTMLElement>('[data-look-drop]')?.dataset.lookDrop;
@@ -1108,7 +1119,7 @@ agentsList.addEventListener('click', (event) => {
     const at = drop.spotted ?? drop.hint;
     follow.target.set(at.x, animals.groundHeightAt(at.x, at.z), at.z);
     follow.flyToDistance(drop.spotted ? 40 : drop.hint.radius * 3);
-    agentsList.hidden = true; agentsChip.setAttribute('aria-expanded', 'false');
+    closeAgentsList();
   }
 });
 
