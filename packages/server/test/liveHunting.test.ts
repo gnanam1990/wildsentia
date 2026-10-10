@@ -105,4 +105,46 @@ describe('live hunting', () => {
     expect(live.notices('ag_c').at(-1)!.text).toContain('gave up');
     void advance;
   });
+
+  it('an agent’s hunter that is out of breath trots on, and sprints again only once it has recovered', () => {
+    const { world, live, put, run, adult } = setup(() => 0);
+    const tiger = adult('tiger'), chital = adult('chital');
+    for (const t of world.agents) if (t.speciesId === 'tiger') t.drives.hunger = 0; // No wild tiger joins in.
+    put(tiger.id, 0); put(chital.id, 24); // Inside the tiger's commit distance: it charges.
+    live.possess('ag_t', 'Stripe', { animalId: tiger.id });
+    live.possess('ag_c', 'Doe', { animalId: chital.id }); // Steered, standing still: no wild bolt.
+    const hunter = live.avatars.get('ag_t')!;
+    expect(live.hunt('ag_t', chital.id)).toBeNull();
+    hunter.stamina = 0; // Spent.
+    const trot = world.species.get('tiger')!.locomotion.trotMs;
+    for (let i = 0; i < 30; i++) {
+      const before = { x: hunter.x, z: hunter.z };
+      run(0.1);
+      expect(hunter.gait).toBe('trot');
+      expect(Math.hypot(hunter.x - before.x, hunter.z - before.z)).toBeLessThanOrEqual(trot * 0.1 + 1e-6);
+    }
+    expect(hunter.hunt?.targetId).toBe(chital.id); // Still after it, only slower.
+    hunter.stamina = 0.5; // Rested enough to charge again.
+    run(0.1);
+    expect(hunter.gait).toBe('run');
+  });
+
+  it('a fleeing wild animal that is out of breath trots, not sprints', () => {
+    const { world, live, put, run, adult } = setup(() => 0);
+    const tiger = adult('tiger'), chital = adult('chital');
+    for (const t of world.agents) if (t.speciesId === 'tiger') t.drives.hunger = 0;
+    put(tiger.id, 0); put(chital.id, 30);
+    live.possess('ag_t', 'Stripe', { animalId: tiger.id });
+    const at = world.animal(chital.id)!.position!;
+    live.wild.set(chital.id, { animalId: chital.id, speciesId: 'chital', x: at.x, z: at.z, heading: 0,
+      mode: 'flee', otherId: tiger.id, stamina: 0, stunnedUntil: 0 });
+    const runner = live.wild.get(chital.id)!;
+    const trot = world.species.get('chital')!.locomotion.trotMs;
+    for (let i = 0; i < 20; i++) {
+      const before = { x: runner.x, z: runner.z };
+      run(0.1);
+      expect(runner.mode).toBe('flee');
+      expect(Math.hypot(runner.x - before.x, runner.z - before.z)).toBeLessThanOrEqual(trot * 0.1 + 1e-6);
+    }
+  });
 });

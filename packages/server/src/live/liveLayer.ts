@@ -102,6 +102,8 @@ export interface Avatar {
   /** When it last moved at sprint speed (a run, or a hunt's charge): challenge rules judge this. */
   sprintedAt?: number;
   alarmedAt?: number;
+  /** Ran its breath out in a hunt: it trots until it has recovered enough to sprint again. */
+  winded?: boolean;
 }
 export interface Notice { at: number; text: string }
 /** A line an agent's animal said, heard by agents nearby. */
@@ -124,10 +126,20 @@ export interface WildRunner {
   mode: 'flee' | 'chase' | 'idle'; otherId: string | null; stamina: number; stunnedUntil: number;
   /** A hunting runner creeps up first and only sprints once it commits. */
   committed?: boolean;
+  /** Ran its breath out: it trots until it has recovered enough to sprint again. */
+  winded?: boolean;
 }
 
 export const DEATH_COOLDOWN_MS = 2 * 60_000;
 const SCAN_SECONDS = 1;
+/** How much breath a winded animal needs back before it sprints again. */
+const RECOVERED_STAMINA = 0.25;
+
+/** Out of breath at zero; able to sprint again only once it has recovered some. */
+const winded = (stamina: number, was: boolean | undefined) => stamina <= 0 || (!!was && stamina < RECOVERED_STAMINA);
+/** Breath comes back fastest standing or walking, slowly at a trot, never at a sprint. */
+const recover = (stamina: number, dt: number, sprintStaminaS: number, gait: Gait) =>
+  gait === 'run' ? stamina : Math.min(1, stamina + dt / (3 * sprintStaminaS) * (gait === 'walk' ? 1 : 0.3));
 
 export class LiveLayer {
   readonly avatars = new Map<string, Avatar>();
@@ -432,7 +444,10 @@ export class LiveLayer {
     const prey = this.world.species(target.speciesId)!;
     // Stalk (walk, hidden) until close enough to commit, then sprint.
     const committed = gap <= motion.commitDistanceM;
-    if (!committed || avatar.stamina <= 0) avatar.stamina = Math.min(1, avatar.stamina + dt / (3 * motion.sprintStaminaS));
+    // Spent, it keeps after its prey at a trot until it has its breath back.
+    avatar.winded = winded(avatar.stamina, avatar.winded);
+    const gait: Gait = !committed ? 'walk' : avatar.winded ? 'trot' : 'run';
+    avatar.stamina = recover(avatar.stamina, dt, motion.sprintStaminaS, gait);
     // Prey spots a sprinting hunter at its detection distance, a stalker only when it is close.
     const spotAt = committed ? prey.detectionM : prey.flightInitiationM * (1 - motion.stalkConcealment);
     if (gap <= spotAt) {
@@ -445,7 +460,6 @@ export class LiveLayer {
     }
     const reach = this.#contact(motion, prey);
     if (gap <= reach) { this.#reach(avatar.animalId, targetId, at); return; }
-    const gait: Gait = committed && avatar.stamina > 0 ? 'run' : committed ? 'trot' : 'walk';
     if (gait === 'run') { avatar.stamina = Math.max(0, avatar.stamina - dt / motion.sprintStaminaS); avatar.sprintedAt = this.clock(); }
     const speed = (gait === 'run' ? motion.sprintMs : gait === 'trot' ? motion.trotMs : motion.walkMs) * this.world.speedFactor(avatar.animalId, avatar.x, avatar.z);
     const next = this.#stepToward(avatar.animalId, avatar, at, Math.min(speed * dt, Math.max(0, gap - reach * 0.5)), false, false);
@@ -479,9 +493,10 @@ export class LiveLayer {
       const quarry = this.#avatarOf(r.otherId!);
       if (quarry) this.notify(quarry.agentId, `A ${motion.displayName.toLowerCase()} is charging at you. Run!`);
     }
-    const running = !stalking && r.stamina > 0;
+    r.winded = winded(r.stamina, r.winded);
+    const running = !stalking && !r.winded;
     if (running) r.stamina = Math.max(0, r.stamina - dt / motion.sprintStaminaS);
-    else r.stamina = Math.min(1, r.stamina + dt / (3 * motion.sprintStaminaS));
+    else r.stamina = recover(r.stamina, dt, motion.sprintStaminaS, stalking ? 'walk' : 'trot');
     const speed = (stalking ? motion.walkMs : running ? motion.sprintMs : motion.trotMs) * this.world.speedFactor(r.animalId, r.x, r.z);
     if (r.mode === 'flee') {
       if (gap > Math.max(3 * motion.flightInitiationM, 80)) { r.mode = 'idle'; return; }
