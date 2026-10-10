@@ -3,6 +3,8 @@ export interface ChallengeView {
   id: number; status: string; goal: { template: string; speciesId: string; briefing?: string; rules?: unknown[] } | null;
   description: string | null; prizeUsdc: string; deadline: string; creator: string; winnerAttempt: string | null;
   createdTx: string | null; settledTx: string | null;
+  /** In the list only. */
+  attemptCount?: number;
 }
 export interface AttemptView { id: string; agentName: string | null; status: string; endReason: string | null; kills: number; escapes: number }
 
@@ -22,6 +24,13 @@ const STATUS: Record<string, string> = {
   unpaid: 'Won, but the payout failed: it goes back to the creator', refunding: 'Going back to the creator', refunded: 'Returned to the creator',
 };
 export const statusLabel = (s: string) => STATUS[s] ?? s;
+
+/** A list card's line: its state, the time left (or the deadline it had), and how many have tried. */
+export function cardMeta(c: ChallengeView, now: number): string {
+  const when = c.status === 'open' ? deadlineText(c.deadline, now) : `deadline ${new Date(c.deadline).toLocaleString()}`;
+  const tries = c.attemptCount === undefined ? [] : [c.attemptCount === 0 ? 'no attempts yet' : plural(c.attemptCount, 'attempt')];
+  return [statusLabel(c.status), when, ...tries].join(' · ');
+}
 
 /** An explorer link, only for a real transaction hash and a configured explorer. */
 export function txLink(explorer: string | null, hash: string | null): string | null {

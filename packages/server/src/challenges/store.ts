@@ -24,6 +24,8 @@ export interface Challenge {
   createdTx: Hex; createdBlock: number; settledTx: Hex | null;
   /** The live identity of the account that drafted it, if a signed-in person did (read by challenge(id) only). */
   creatorAgentId?: string | null;
+  /** How many attempts it has had (in lists). */
+  attemptCount?: number;
 }
 export interface Attempt {
   id: string; challengeId: number; agentId: string; animalId: string; payoutWallet: string; startedAt: Date; startedWorld: number;
@@ -192,9 +194,10 @@ export class ChallengeStore {
 
   /** Open challenges first (soonest deadline first), then the most recently settled. */
   async listChallenges(limit = 50): Promise<Challenge[]> {
-    const { rows } = await this.pool.query(`select * from challenges where status <> 'unrecognised'
+    const { rows } = await this.pool.query(`select c.*, (select count(*) from challenge_attempts a where a.challenge_id = c.id)::int as attempt_count
+      from challenges c where status <> 'unrecognised'
       order by (status = 'open') desc, case when status = 'open' then deadline end asc, id desc limit $1`, [limit]);
-    return rows.map(challenge);
+    return rows.map((r) => ({ ...challenge(r), attemptCount: r.attempt_count as number }));
   }
 
   /** Unwon (open, unrecognised, unpaid or refunding) challenges whose deadline and grace have passed. */

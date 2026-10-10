@@ -1,6 +1,6 @@
 import { api, mountAccountBox } from './account.js';
 import type { AccountView } from './accountModel.js';
-import { acceptErrors, attemptRow, deadlineText, signinMessage, statusLabel, txLink, type AttemptView, type ChallengeView } from './challengesModel.js';
+import { acceptErrors, attemptRow, cardMeta, deadlineText, signinMessage, statusLabel, txLink, type AttemptView, type ChallengeView } from './challengesModel.js';
 
 /** The challenges page: open and settled challenges, and one challenge with its attempts (spec §8). */
 const $ = <T extends HTMLElement>(id: string) => document.querySelector<T>(`#${id}`)!;
@@ -19,7 +19,7 @@ function listCard(c: ChallengeView): HTMLElement {
   const card = el('a', undefined, 'challenge-card');
   card.href = `/challenges.html?id=${c.id}`;
   card.append(el('span', `${c.prizeUsdc} USDC`, 'prize'), el('strong', c.description ?? `Challenge ${c.id}`),
-    el('span', `${statusLabel(c.status)} · ${c.status === 'open' ? deadlineText(c.deadline, Date.now()) : `deadline ${new Date(c.deadline).toLocaleString()}`}`, 'meta'));
+    el('span', cardMeta(c, Date.now()), 'meta'));
   return card;
 }
 

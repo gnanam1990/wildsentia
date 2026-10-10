@@ -61,7 +61,7 @@ export function installChallenges(app: FastifyInstance, deps: ChallengeRouteDeps
   const view = (c: Challenge) => ({
     id: c.id, status: c.status, goal: c.terms, description: c.terms ? describeTerms(c.terms, catalog) : null,
     prizeUsdc: formatUsdc(c.prizeAtomic), deadline: c.deadline.toISOString(), creator: c.creatorWallet, winnerAttempt: c.winnerAttempt,
-    createdTx: c.createdTx, settledTx: c.settledTx,
+    createdTx: c.createdTx, settledTx: c.settledTx, ...(c.attemptCount === undefined ? {} : { attemptCount: c.attemptCount }),
   });
   const attemptView = (a: Attempt & { agentName?: string }) => ({
     id: a.id, agentId: a.agentId, agentName: a.agentName ?? null, animalId: a.animalId, status: a.status, endReason: a.endReason,

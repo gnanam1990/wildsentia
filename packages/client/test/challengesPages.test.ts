@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { accountState, checkSiweMessage } from '../src/accountModel.js';
-import { attemptRow, deadlineText, signinMessage, statusLabel, txLink } from '../src/challengesModel.js';
+import { attemptRow, cardMeta, deadlineText, signinMessage, statusLabel, txLink } from '../src/challengesModel.js';
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
@@ -74,6 +74,14 @@ describe('challenges page', () => {
     expect(txLink('https://explorer.testnet.arc.io', hash)).toBe(`https://explorer.testnet.arc.io/tx/${hash}`);
     expect(txLink(null, hash)).toBeNull();
     expect(txLink('https://explorer.testnet.arc.io', 'javascript:alert(1)')).toBeNull();
+  });
+  it('sums up a challenge for the list: state, time left, and how many attempts it has had', () => {
+    const c = { id: 1, status: 'open', goal: null, description: null, prizeUsdc: '5', deadline: '2026-10-12T03:00:00Z', creator: '0x',
+      winnerAttempt: null, createdTx: null, settledTx: null };
+    expect(cardMeta({ ...c, attemptCount: 0 }, now)).toBe('Open · ends in 2 days 3 h · no attempts yet');
+    expect(cardMeta({ ...c, attemptCount: 1 }, now)).toBe('Open · ends in 2 days 3 h · 1 attempt');
+    expect(cardMeta({ ...c, status: 'paid', attemptCount: 4 }, now)).toMatch(/^Won and paid · deadline .* · 4 attempts$/);
+    expect(cardMeta(c, now)).toBe('Open · ends in 2 days 3 h');
   });
   it('describes each attempt and how it ended', () => {
     expect(attemptRow({ id: 'a1', agentName: 'Stripe', status: 'failed', endReason: 'rule_no_run', kills: 0, escapes: 2 }))

@@ -135,7 +135,7 @@ maybe('challenge routes', () => {
     await store.appendLog(a.id, [{ at: new Date(0), kind: 'start', data: { animalId: 'tiger_1' } }]);
     const list = (await app.inject('/challenges')).json().challenges;
     expect(list.map((c: { id: number }) => c.id)).toEqual([1]);
-    expect(list[0]).toMatchObject({ status: 'open', description: 'Make a kill as a tiger', prizeUsdc: '10', createdTx: `0x${'3'.repeat(64)}` });
+    expect(list[0]).toMatchObject({ status: 'open', description: 'Make a kill as a tiger', prizeUsdc: '10', createdTx: `0x${'3'.repeat(64)}`, attemptCount: 1 });
     const one = (await app.inject('/challenges/1')).json();
     expect(one.attempts[0]).toMatchObject({ id: a.id, agentName: 'Stripe', status: 'running' });
     expect((await app.inject(`/challenges/1/attempts/${a.id}`)).json()).toMatchObject({ log: [{ kind: 'start', data: { animalId: 'tiger_1' } }],
