@@ -4,6 +4,7 @@ import type { PlaceDropLedger } from './live/liveStore.js';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Pool } from './db/pool.js';
 import { baseReceiptRpc, matchBaseUsdcReceipt, type ReceiptRpc } from './baseReceipt.js';
+import { WindowRateLimit } from './limits.js';
 import { networkKey } from './network.js';
 
 export type RewardNetwork = 'base';
@@ -135,7 +136,7 @@ export function installRewards(app: FastifyInstance, deps: {
   const receiptFor = (claimId: string): string => createHmac('sha256', receiptKey).update(claimId).digest('hex');
   const clientHash = (req: FastifyRequest): string => hash(`claim-client:${config?.adminToken ?? ''}:${networkKey(req.ip)}`);
   const receiptRpc = deps.receiptRpc ?? (config?.receiptRpcUrl ? baseReceiptRpc(config.receiptRpcUrl) : undefined);
-  const limits = new Map<string, { count: number; until: number }>();
+  const limits = new WindowRateLimit(120);
   app.addHook('onRequest', async (req, reply) => {
     // The route the request was dispatched to, not its raw URL: the router decodes
     // percent-escapes, so "/%61dmin/rewards" reaches /admin/rewards too.
@@ -145,12 +146,7 @@ export function installRewards(app: FastifyInstance, deps: {
     reply.header('Referrer-Policy', 'no-referrer');
     if (req.headers['sec-fetch-site'] === 'cross-site') return reply.code(403).send({ error: 'same_origin_required' });
     if (!config) return reply.code(503).send({ error: 'rewards_not_configured' });
-    const now = Date.now();
-    for (const [key, value] of limits) if (value.until < now) limits.delete(key);
-    const key = networkKey(req.ip);
-    const window = limits.get(key) ?? { count: 0, until: now + 60_000 };
-    if (!limits.has(key) && limits.size >= 5000 || ++window.count > 120) return reply.code(429).send({ error: 'rate_limited' });
-    limits.set(key, window);
+    if (!limits.take(networkKey(req.ip))) return reply.code(429).send({ error: 'rate_limited' });
     // Count rejected admin attempts too; otherwise guesses bypass the per-IP limit.
     if (route.startsWith('/admin/')) {
       const actual = Buffer.from(hash(bearer(req))), expected = Buffer.from(hash(config.adminToken));

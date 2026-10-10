@@ -78,6 +78,33 @@ export class NetworkRateLimit {
 }
 
 /**
+ * At most `perMinute` requests per visitor network in each minute-long window. The table is
+ * bounded: once full, it is cleared rather than refusing every newcomer (which would lock out
+ * the owner the moment enough addresses had visited, the very thing an attacker can arrange).
+ */
+export class WindowRateLimit {
+  readonly #windows = new Map<string, { count: number; until: number }>();
+
+  constructor(readonly perMinute: number, private readonly maxNetworks = 5000) {}
+
+  take(key: string, now = Date.now()): boolean {
+    let window = this.#windows.get(key);
+    if (window && window.until <= now) window = undefined;
+    if (!window) {
+      if (this.#windows.size >= this.maxNetworks) {
+        for (const [k, w] of this.#windows) if (w.until <= now) this.#windows.delete(k);
+        if (this.#windows.size >= this.maxNetworks) this.#windows.clear();
+      }
+      window = { count: 0, until: now + 60_000 };
+      this.#windows.set(key, window);
+    }
+    return ++window.count <= this.perMinute;
+  }
+
+  get size(): number { return this.#windows.size; }
+}
+
+/**
  * Concurrent connections, in total and per visitor network. `admit` reserves a place or says
  * which cap refused it; `release` gives the place back when the connection ends.
  */

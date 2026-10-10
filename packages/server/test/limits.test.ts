@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { buildApi } from '../src/api.js';
-import { ConnectionCaps, GENERAL_LIMIT_DEFAULTS, NetworkRateLimit, generalLimits } from '../src/limits.js';
+import { ConnectionCaps, GENERAL_LIMIT_DEFAULTS, NetworkRateLimit, WindowRateLimit, generalLimits } from '../src/limits.js';
 import { forwardedClient } from '../src/network.js';
 import type { Pool } from '../src/db/pool.js';
 import type { SimHost } from '../src/simHost.js';
@@ -15,6 +15,22 @@ import type { SimHost } from '../src/simHost.js';
 const host = { worldId: null, rewardSubject: () => null, observation: () => null, isWriterActive: true,
   lastError: null, hasFreshCheckpoint: true, checkpointTime: 0 } as unknown as SimHost;
 const pool = { query: async () => ({ rows: [] }) } as unknown as Pool;
+
+describe('WindowRateLimit', () => {
+  it('allows the per-minute count in each window, per network', () => {
+    const limit = new WindowRateLimit(3);
+    expect([1, 2, 3, 4].map(() => limit.take('a', 0))).toEqual([true, true, true, false]);
+    expect(limit.take('b', 0)).toBe(true);
+    expect(limit.take('a', 60_000)).toBe(true);
+  });
+
+  it('never refuses a newcomer because the table is full, so the owner cannot be locked out', () => {
+    const limit = new WindowRateLimit(120, 100);
+    for (let i = 0; i < 100; i++) limit.take(`net-${i}`, 0);
+    expect(limit.take('owner', 1000)).toBe(true);
+    expect(limit.size).toBeLessThanOrEqual(100);
+  });
+});
 
 describe('NetworkRateLimit', () => {
   it('allows a burst of a quarter minute, then refills at the per-minute rate', () => {
