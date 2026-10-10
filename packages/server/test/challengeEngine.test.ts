@@ -270,6 +270,27 @@ maybe('challenge engine', () => {
     return r;
   };
 
+  it('ends an attempt for good, with its whole log, even when the database fails the first time', async () => {
+    const id = await challenge({ template: 'hunt', version: 1, speciesId: 'tiger', count: 1, rules: [], briefing: '' });
+    const started = await accepted('ag_000000000000000a', id);
+    await engine.tick();
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const append = vi.spyOn(store, 'appendLog').mockRejectedValueOnce(new Error('Connection terminated unexpectedly'));
+    const end = vi.spyOn(store, 'endAttempt').mockRejectedValueOnce(new Error('Connection terminated unexpectedly'));
+    try {
+      live.release('ag_000000000000000a');
+      await engine.tick();
+      expect(end).toHaveBeenCalled();
+      expect((await pool!.query('select status from challenge_attempts where id = $1', [started.attemptId])).rows[0].status).toBe('running');
+      await engine.tick();
+      await engine.tick();
+      expect((await pool!.query('select status, end_reason from challenge_attempts where id = $1', [started.attemptId])).rows[0])
+        .toEqual({ status: 'failed', end_reason: 'released' });
+      expect((await store.log(started.attemptId)).map((e) => e.kind)).toContain('end');
+      expect(append).toHaveBeenCalled();
+    } finally { errors.mockRestore(); append.mockRestore(); end.mockRestore(); }
+  });
+
   it('fails an attempt that leaves its zone, and leaves the animal with the player', async () => {
     const at = wildChital().position;
     const id = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 1, briefing: '',

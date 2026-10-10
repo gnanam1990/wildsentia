@@ -53,6 +53,8 @@ export class ChallengeEngine {
   #pending: Array<{ attemptId: string; entry: LogEntry }> = [];
   /** Attempts ended by a live-layer hook, still being written; the next tick waits for them. */
   #ending: Array<Promise<void>> = [];
+  /** Attempts whose end could not be written yet (a database blip); retried every tick. */
+  #unfinished: Array<{ run: Running; status: 'failed' | 'void'; reason: string; endedWorld: number }> = [];
   /** False until restore() has run (and the hooks are wired): no attempt starts before then. */
   #ready = false;
   /**
@@ -249,6 +251,7 @@ export class ChallengeEngine {
     const ending = this.#ending;
     this.#ending = [];
     await Promise.all(ending);
+    for (const u of this.#unfinished.splice(0)) await this.#finish(u.run, u.status, u.reason, u.endedWorld);
     await this.#flush();
     const worldNow = this.world.now();
     for (const [agentId, run] of [...this.#running]) {
@@ -418,11 +421,15 @@ export class ChallengeEngine {
     }
   }
 
-  async #finish(run: Running, status: 'failed' | 'void', reason: string): Promise<void> {
+  async #finish(run: Running, status: 'failed' | 'void', reason: string, endedWorld = this.world.now()): Promise<void> {
     try {
       await this.#flush();
-      await this.store.endAttempt(run.attempt.id, status, reason, this.world.now());
-    } catch (error) { console.error('[challenges] ending an attempt failed', (error as Error).message); }
+      await this.store.endAttempt(run.attempt.id, status, reason, endedWorld);
+    } catch (error) {
+      // Never leave it running in the database: the next tick tries again, with the same end time.
+      console.error('[challenges] ending an attempt failed; trying again', (error as Error).message);
+      this.#unfinished.push({ run, status, reason, endedWorld });
+    }
   }
 
   /** What the rules are judged on: where the animal is, how it moves, how near its kin are. */
@@ -464,7 +471,17 @@ export class ChallengeEngine {
     this.#pending = [];
     const byAttempt = new Map<string, LogEntry[]>();
     for (const { attemptId, entry } of batch) byAttempt.set(attemptId, [...(byAttempt.get(attemptId) ?? []), entry]);
-    for (const [attemptId, entries] of byAttempt) await this.store.appendLog(attemptId, entries);
+    const left = [...byAttempt];
+    try {
+      while (left.length) {
+        const [attemptId, entries] = left[0]!;
+        await this.store.appendLog(attemptId, entries);
+        left.shift();
+      }
+    } finally {
+      // Entries not written go back first in line, in order: a record is hashed over the whole log.
+      if (left.length) this.#pending = [...left.flatMap(([attemptId, entries]) => entries.map((entry) => ({ attemptId, entry }))), ...this.#pending];
+    }
   }
 }
 
