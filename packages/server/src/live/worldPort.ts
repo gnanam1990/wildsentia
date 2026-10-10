@@ -35,6 +35,8 @@ function patchIndex(w: World): Map<number, Agent[]> {
 export interface PlayedClock {
   position(id: string): { x: number; z: number; heading: number } | null;
   time(): number;
+  /** World seconds per real second: the world clock's speed. */
+  rate?(): number;
 }
 
 export function worldPort(world: () => World, worldId: () => string | null, played?: PlayedClock): WorldPort {
@@ -51,6 +53,7 @@ export function worldPort(world: () => World, worldId: () => string | null, play
       return anchor ? { x: anchor.x, z: anchor.z } : null;
     },
     now: () => world().now(),
+    worldRate: () => played?.rate?.() ?? 1,
     animal: (id) => { const a = world().animal(id); return a ? view(a) : null; },
     species: (id): SpeciesMotion | null => {
       const cfg = world().species.get(id);

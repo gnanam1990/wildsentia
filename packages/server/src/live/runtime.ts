@@ -56,6 +56,7 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
   const inner = worldPort(() => host.world, () => host.worldId, {
     position: (id) => host.playedPosition(id),
     time: () => { const f = host.liveEncounterFrame(); return f ? f.startWorldTime + f.elapsedWorldSeconds : host.world.now(); },
+    rate: () => host.worldHoursPerRealHour,
   });
   const port: typeof inner = { ...inner,
     resolveHunt: (...args) => { huntPending = true; changedAt = Date.now(); return inner.resolveHunt(...args); },

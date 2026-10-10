@@ -36,6 +36,8 @@ export interface WorldPort {
   /** The tree this patch's climbers use, if it has one. */
   treeAt(x: number, z: number): { x: number; z: number } | null;
   now(): number;
+  /** World seconds that pass in one real second (12 at 12 world hours per real hour); 1 if unset. */
+  worldRate?(): number;
   animal(id: string): AnimalView | null;
   species(id: string): SpeciesMotion | null;
   possessionBlock(id: string): string | null;
@@ -635,14 +637,23 @@ export class LiveLayer {
     if (!avatar.path.length) { avatar.moving = false; avatar.flying = false; }
   }
 
+  /**
+   * Hands the time spent grazing, drinking, resting or feeding to the ecology. The body hungers
+   * and tires at the world's pace, so real seconds count as world seconds at the world's speed,
+   * an hour at most per call.
+   */
   #flushAction(avatar: Avatar): void {
     const action = avatar.action;
-    if ((action === 'graze' || action === 'drink' || action === 'rest') && avatar.pendingSeconds > 0) {
-      this.world.act(avatar.animalId, action, Math.min(3600, avatar.pendingSeconds));
-    } else if (action === 'feed' && avatar.pendingSeconds > 0) {
-      this.world.feed(avatar.animalId, Math.min(3600, avatar.pendingSeconds));
-    }
+    const rate = this.world.worldRate?.() ?? 1;
+    let seconds = avatar.pendingSeconds * (Number.isFinite(rate) && rate > 0 ? rate : 1);
     avatar.pendingSeconds = 0;
+    if (action !== 'graze' && action !== 'drink' && action !== 'rest' && action !== 'feed') return;
+    while (seconds > 1e-9) {
+      const part = Math.min(3600, seconds);
+      seconds -= part;
+      const done = action === 'feed' ? this.world.feed(avatar.animalId, part) : this.world.act(avatar.animalId, action, part);
+      if (!done) return;
+    }
   }
 
   #advanceOpening(avatar: Avatar, dt: number): void {

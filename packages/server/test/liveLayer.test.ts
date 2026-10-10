@@ -115,6 +115,23 @@ describe('live layer', () => {
     expect(animal.drives.thirst).toBeLessThan(0.6);
   });
 
+  it('counts grazing, resting and feeding in world time, at the speed the world runs', () => {
+    // At 12 world hours per real hour a body hungers 12 times faster than the wall clock, so
+    // half a real minute of grazing must count as six world minutes, not thirty world seconds.
+    for (const [rate, expected] of [[12, [360]], [200, [3600, 2400]]] as const) {
+      const world = island();
+      let now = 1_000_000;
+      const port = worldPort(() => world, () => 'w1', { position: () => null, time: () => world.now(), rate: () => rate });
+      const acted: number[] = [];
+      const live = new LiveLayer({ ...port, act: (id, action, seconds) => { acted.push(seconds); return port.act(id, action, seconds); } }, null, () => now);
+      live.possess('ag_1', 'Sora', { speciesId: 'sambar' });
+      expect(live.act('ag_1', 'graze')).toBeNull();
+      for (let i = 0; i < 300; i++) { now += 100; live.tick(0.1); }
+      expect(acted.reduce((s, v) => s + v, 0)).toBeCloseTo(30 * rate, 3);
+      expect(acted.map((v) => Math.round(v))).toEqual(expected); // Never more than an hour in one go.
+    }
+  });
+
   it('keeps the saved idle clock across a restart', () => {
     // A restart used to reset every possession's idle timer, so an abandoned animal was never freed
     // while the server kept being redeployed.
