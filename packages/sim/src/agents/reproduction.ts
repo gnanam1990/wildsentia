@@ -93,18 +93,20 @@ export function assessMate(
  * `localDensity` is how many of the same species share this animal's patch. Crowding suppresses
  * conception well before scarcity starves anyone — which is the density-dependent regulation the
  * spec asks for (§6.3), and the reason a population settles instead of overshooting and crashing.
+ * sim_0.38.0: the count includes the pair, so only the others crowd them; the mate in contact
+ * was counted as a crowd of one, cutting a lone pair's chance by a seventh.
  */
 export function attemptCourtship(
   chooser: Agent,
   candidate: Agent,
   rng: Rng,
-  localDensity = 1,
+  localDensity = 2,
   crowdingThreshold = 6,
   fertility = 1,
 ): boolean {
   const chooserCondition = 1 - Math.max(chooser.drives.hunger, chooser.drives.thirst);
   const candidateCondition = 1 - Math.max(candidate.drives.hunger, candidate.drives.thirst);
-  const crowding = 1 / (1 + Math.max(0, localDensity - 1) / crowdingThreshold);
+  const crowding = 1 / (1 + Math.max(0, localDensity - 2) / crowdingThreshold);
   // sim_0.37.0: `fertility` (0-1) is the female's breeding readiness from body condition.
   const chance = (0.35 + chooserCondition * 0.25 + candidateCondition * 0.25) * crowding * fertility;
   return rng.bool(Math.min(0.92, chance));

@@ -207,6 +207,22 @@ describe('courtship and birth', () => {
     expect(rate(40)).toBeLessThan(rate(1));
   });
 
+  it('does not count the courting pair themselves as crowding', () => {
+    // The density the world passes counts every animal of the species around the female, the
+    // male she is in contact with included. A pair alone is not a crowd.
+    const a = makeAgent('chital', { id: 'a', sex: 'female', drives: { hunger: 0, thirst: 0, fatigue: 0, fear: 0 } });
+    const b = makeAgent('chital', { id: 'b', sex: 'male', drives: { hunger: 0, thirst: 0, fatigue: 0, fear: 0 } });
+    const rate = (density: number): number => {
+      const rng = createRng(3, 'c');
+      let yes = 0;
+      for (let i = 0; i < 4000; i++) if (attemptCourtship(a, b, rng, density, 6)) yes++;
+      return yes / 4000;
+    };
+    expect(rate(2)).toBeCloseTo(0.85, 1);
+    expect(rate(2)).toBe(rate(1));
+    expect(rate(3)).toBeLessThan(rate(2));
+  });
+
   it('carries a pregnancy for the configured gestation', () => {
     const mother = makeAgent('chital', { id: 'm', sex: 'female' });
     const father = makeAgent('chital', { id: 'f', sex: 'male' });
