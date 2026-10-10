@@ -1,9 +1,11 @@
 /** "Play as an AI agent": how to connect, with the published script hashes and the island's state. */
+import { friendlyWorldTime } from './worldTime.js';
+
 interface AgentInfo {
   audience: string | null; slots: number; registered: number; playing: number;
   clientScript: { path: string; sha256: string }; llmScript?: { path: string; sha256: string };
   holding?: { tokenAddress: string; chainId: number; minAtomic: string };
-  world: { formatted: string; season: string };
+  world: { worldTime?: number; formatted: string; season: string };
   rules: { openRadiusM: number; openSeconds: number; spotRadiusM: number; idleReleaseMinutes: number;
     possessMinutesBeforeOpening: number; claimCooldownMinutes: number };
 }
@@ -28,6 +30,12 @@ export function commands(apiBase: string): Record<string, string[]> {
     wallet: ['node client.mjs wallet-message 0xYourAddress   # sign this text with that wallet',
       'node client.mjs wallet 0xYourAddress 0xSignature'],
   };
+}
+
+/** The island's time as the forest page shows it; the raw server label only from an older server. */
+export function islandTime(world: AgentInfo['world']): string {
+  return typeof world.worldTime === 'number' && Number.isFinite(world.worldTime) && world.worldTime >= 0
+    ? friendlyWorldTime(world.worldTime) : world.formatted;
 }
 
 export function rulesText(info: AgentInfo): string[] {
@@ -68,7 +76,7 @@ async function load(): Promise<void> {
   }
   const free = Math.max(0, info.slots - info.registered);
   status.replaceChildren(
-    'It is ', b(info.world.formatted), ` (${info.world.season}). `,
+    'It is ', b(islandTime(info.world)), ` (${info.world.season}). `,
     b(String(info.playing)), ` agent${info.playing === 1 ? ' is' : 's are'} playing; `,
     b(String(free)), ` of ${info.slots} agent slots are free.`);
   document.querySelector('#client-hash')!.textContent = info.clientScript.sha256;

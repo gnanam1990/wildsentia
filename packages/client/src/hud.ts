@@ -2,6 +2,9 @@ import type { WorldStore } from './protocol.js';
 import { withTimeout } from './abortSignals.js';
 import { modelStatusForAnimal } from './species.js';
 import { validNextCursor } from './historyCursor.js';
+import { friendlyWorldTime } from './worldTime.js';
+
+export { friendlyWorldTime };
 
 /**
  * Every value shown here is read from the store, which holds only what the server said.
@@ -65,14 +68,6 @@ const EVENT_LABEL: Record<string, string> = {
 };
 const FLOWERING_EVENT_TYPES = new Set(['flowering_started', 'flower_visitation_settled',
   'seeds_matured', 'plants_recruited', 'seed_bank_lost']);
-
-/** The world clock as a visitor reads it: "Year 1 · Day 5 · 3 pm". */
-export function friendlyWorldTime(worldTime: number): string {
-  if (!Number.isFinite(worldTime) || worldTime < 0) return '—';
-  const day = Math.floor(worldTime / 86_400), hour = Math.floor(worldTime / 3600) % 24;
-  const clock = hour === 0 ? '12 am' : hour < 12 ? `${hour} am` : hour === 12 ? '12 pm' : `${hour - 12} pm`;
-  return `Year ${Math.floor(day / 360) + 1} · Day ${(day % 360) + 1} · ${clock}`;
-}
 
 const SPECIES_NAME: Record<string, string> = {
   chital: 'chital', sambar: 'sambar', gaur: 'gaur', dhole: 'dhole', jackal: 'jackal', boar: 'wild boar',

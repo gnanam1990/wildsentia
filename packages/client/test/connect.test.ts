@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { commands, lifeLength, rulesText, shortUsdc } from '../src/connect.js';
+import { commands, islandTime, lifeLength, rulesText, shortUsdc } from '../src/connect.js';
+import { friendlyWorldTime } from '../src/hud.js';
 
 describe('Connect page', () => {
   it('writes every command for this server, with the Claude player starting as a dry run', () => {
@@ -21,5 +22,13 @@ describe('Connect page', () => {
     expect([lifeLength(42), lifeLength(12 * 60 + 5), lifeLength(3 * 3600 + 20 * 60), lifeLength(3 * 86_400 + 5 * 3600)])
       .toEqual(['42 s', '12 min', '3 h 20 min', '3 days 5 h']);
     expect([shortUsdc('2.500000'), shortUsdc('10.000000'), shortUsdc('0.000001')]).toEqual(['2.5', '10', '0.000001']);
+  });
+
+  it('tells the island time the way the forest page does, not as the raw server label', () => {
+    const t = 3 * 3600;
+    expect(islandTime({ worldTime: t, formatted: 'Y01-monsoon-D01 03:00', season: 'monsoon' })).toBe('Year 1 · Day 1 · 3 am');
+    expect(islandTime({ worldTime: t, formatted: 'x', season: 'monsoon' })).toBe(friendlyWorldTime(t));
+    // An older server without worldTime still says something.
+    expect(islandTime({ formatted: 'Y01-monsoon-D01 03:00', season: 'monsoon' })).toBe('Y01-monsoon-D01 03:00');
   });
 });
