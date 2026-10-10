@@ -155,15 +155,31 @@ export class ChallengeEngine {
   /** A free animal of the challenge's species that may start it: inside its zone, far enough from its target. */
   #freeAnimal(terms: ChallengeTerms): string | null {
     const zone = terms.rules.find((r) => r.type === 'zone');
+    const herd = terms.rules.find((r) => r.type === 'herd');
+    let best: { id: string; kin: number } | null = null;
     // Judged where possess places the animal (its saved position), over every free one of the species.
     for (const a of this.world.candidates(terms.speciesId, Number.MAX_SAFE_INTEGER)) {
       if (this.live.wild.has(a.id)) continue;
       const at = a.position;
       if (zone && zone.type === 'zone' && Math.hypot(at.x - zone.x, at.z - zone.z) > zone.radiusM) continue;
       if (terms.template === 'reach' && Math.hypot(at.x - terms.x, at.z - terms.z) < REACH_MIN_START_M) continue;
-      return a.id;
+      if (!herd || herd.type !== 'herd') return a.id;
+      // Under the herd rule, start with one that is with its kind: a lone animal would fail through no fault of the player.
+      const kin = this.#nearestKin(a.id, terms.speciesId, at, herd.maxDistanceM);
+      if (kin <= herd.maxDistanceM) return a.id;
+      if (!best || kin < best.kin) best = { id: a.id, kin };
     }
-    return null;
+    return best?.id ?? null;
+  }
+
+  /** How far the nearest other live animal of the species is from a point, by saved positions (Infinity if none near). */
+  #nearestKin(animalId: string, speciesId: string, at: { x: number; z: number }, withinM: number): number {
+    let nearest = Number.POSITIVE_INFINITY;
+    for (const k of this.world.nearby(at.x, at.z, withinM + KIN_SEARCH_SLACK_M, KIN_SEARCH_LIMIT)) {
+      if (k.id === animalId || k.speciesId !== speciesId || !k.alive) continue;
+      nearest = Math.min(nearest, Math.hypot(k.position.x - at.x, k.position.z - at.z));
+    }
+    return nearest;
   }
 
   async #start(player: Player, c: Challenge, animalId: string): Promise<AcceptResult> {

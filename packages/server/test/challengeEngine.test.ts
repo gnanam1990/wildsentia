@@ -6,7 +6,7 @@ import { createWorld, type World } from '@vana/sim';
 import { createPool } from '../src/db/pool.js';
 import { migrate } from '../src/db/migrate.js';
 import { LiveLayer } from '../src/live/liveLayer.js';
-import { worldPort } from '../src/live/worldPort.js';
+import { forgetPatchIndex, worldPort } from '../src/live/worldPort.js';
 import { ChallengeStore } from '../src/challenges/store.js';
 import { ChallengeEngine, GRACE_SECONDS, MAX_ATTEMPTS_PER_CHALLENGE, REFUND_MARGIN_SECONDS, WAIT_MS, type Player } from '../src/challenges/engine.js';
 import { HERD_GRACE_MS } from '../src/challenges/rules.js';
@@ -42,7 +42,9 @@ maybe('challenge engine', () => {
     const open = world.patches.find((p) => landWalkable(p) && p.neighbours.every((n) => landWalkable(world.patches[n])))!;
     openPatch = open.id; centre = patchCentre(open.id);
     now = T0; worldNow = 1_000_000; random = 0; nextId = 0;
-    port = { ...worldPort(() => world, () => 'w'), now: () => worldNow };
+    const base = worldPort(() => world, () => 'w');
+    // Tests move animals by hand; the port's half-second index must see each move at once.
+    port = { ...base, now: () => worldNow, nearby: (x, z, radius, limit) => { forgetPatchIndex(); return base.nearby(x, z, radius, limit); } };
     live = new LiveLayer(port, null, () => now, () => random);
     store = new ChallengeStore(pool!);
     engine = new ChallengeEngine(store, live, port, () => now, { recordOnChain: true });
@@ -181,6 +183,18 @@ maybe('challenge engine', () => {
     const log = await store.log(a.attemptId);
     expect(log.map((e) => e.kind)).toContain('command');
     expect(JSON.parse(met.resultRecord!).log).toHaveLength(log.length);
+  });
+
+  it('starts a herd-rule attempt with an animal that is with its herd, not one alone across the island', async () => {
+    const chital = world.agents.filter((a) => a.alive && a.speciesId === 'chital' && a.lifeStage === 'adult' && !a.controller);
+    const far = world.patches.find((p) => landWalkable(p) && Math.hypot(patchCentre(p.id).x - centre.x, patchCentre(p.id).z - centre.z) > 3000)!;
+    // The first candidate stands alone, far off; the rest graze together.
+    chital[0]!.patchId = far.id; chital[0]!.position = { ...patchCentre(far.id), heading: 0 };
+    chital.slice(1).forEach((a, i) => put(a.id, i * 5));
+    const id = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 1, rules: [{ type: 'herd', maxDistanceM: 50 }], briefing: '' });
+    const started = await accepted('ag_000000000000000a', id);
+    expect(started.animalId).not.toBe(chital[0]!.id);
+    expect(chital.slice(1).map((a) => a.id)).toContain(started.animalId);
   });
 
   it('meets a survive goal after the forest days pass, and fails at the deadline otherwise', async () => {

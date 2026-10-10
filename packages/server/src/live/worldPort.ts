@@ -13,6 +13,9 @@ const inWorld = (x: number, z: number) => {
 };
 
 let indexed: { world: World; at: number; byPatch: Map<number, Agent[]> } | null = null;
+/** Drops the cached index: for tests that move animals by hand between two calls. */
+export function forgetPatchIndex(): void { indexed = null; }
+
 /** Animals by the patch they stand in; agents' animals move, so it is rebuilt every half second. */
 function patchIndex(w: World): Map<number, Agent[]> {
   const now = Date.now();
