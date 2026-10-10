@@ -60,6 +60,23 @@ describe('live layer', () => {
     expect(live.possess('ag_3', 'Ren', { speciesId: 'chital' })).toEqual({ ok: false, reason: 'queued:1' });
   });
 
+  it('forgets old notices, spent cooldowns and chat gaps, so nothing grows without end', () => {
+    const { live, world, run, advance } = setup();
+    expect(live.possess('ag_1', 'Sora', { speciesId: 'chital' }).ok).toBe(true);
+    expect(live.say('ag_1', 'Water by the fig tree')).toBeNull();
+    live.release('ag_1');
+    expect(live.possess('ag_2', 'Kai', { speciesId: 'chital' }).ok).toBe(true);
+    world.animal(live.avatars.get('ag_2')!.animalId)!.alive = false;
+    run(0.1); // Its death starts a cooldown.
+    expect(live.possess('ag_3', 'Ren', { speciesId: 'sambar' }).ok).toBe(true);
+    expect(live.__sizesForTest()).toEqual({ notices: 3, cooldowns: 1, lastSaid: 1, queues: 0 });
+    advance(2 * 3_600_000);
+    run(0.1);
+    // Ren went idle just now: that notice is fresh and kept; the rest are long past.
+    expect(live.__sizesForTest()).toEqual({ notices: 1, cooldowns: 0, lastSaid: 0, queues: 0 });
+    expect(live.notices('ag_3').at(-1)!.text).toContain('idle');
+  });
+
   it('takes an animal over where it is being shown, so it does not jump on screen', () => {
     const world = island();
     const animal = world.agents.find((a) => a.speciesId === 'chital' && world.possessionBlock(a.id) === null)!;

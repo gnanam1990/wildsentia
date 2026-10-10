@@ -162,6 +162,9 @@ export class AvatarMap extends Map<string, Avatar> {
 
 export const DEATH_COOLDOWN_MS = 2 * 60_000;
 const SCAN_SECONDS = 1;
+/** How long an agent with no animal keeps its notices, and how often old entries are swept. */
+const NOTICE_KEEP_MS = 60 * 60_000;
+const PRUNE_EVERY_MS = 60_000;
 /** How much breath a winded animal needs back before it sprints again. */
 const RECOVERED_STAMINA = 0.25;
 
@@ -182,6 +185,7 @@ export class LiveLayer {
   #claiming = new Set<string>();
   #scanIn = 0;
   #hour = Number.NaN;
+  #pruneAt = 0;
   readonly #said: Said[] = [];
   readonly #lastSaid = new Map<string, number>();
   /** Told whenever an agent's time with an animal ends (the runtime records it). */
@@ -464,6 +468,16 @@ export class LiveLayer {
     this.#scanIn -= dt;
     if (this.#scanIn <= 0) { this.#scanIn = SCAN_SECONDS; this.#scanForWildHunters(); this.#herdAlarm(now); }
     this.#spot();
+    if (now >= this.#pruneAt) { this.#pruneAt = now + PRUNE_EVERY_MS; this.#prune(now); }
+  }
+
+  /** Forgets what no longer matters, so per-agent state does not grow with every agent ever seen. */
+  #prune(now: number): void {
+    for (const [agentId, until] of this.#cooldowns) if (until <= now) this.#cooldowns.delete(agentId);
+    for (const [agentId, at] of this.#lastSaid) if (now - at >= CHAT_GAP_MS) this.#lastSaid.delete(agentId);
+    for (const [agentId, list] of this.#notices) {
+      if (!this.avatars.has(agentId) && now - (list.at(-1)?.at ?? 0) > NOTICE_KEEP_MS) this.#notices.delete(agentId);
+    }
   }
 
   // ---- Hunting (Phase 2) -------------------------------------------------------------------
@@ -807,6 +821,11 @@ export class LiveLayer {
       this.notify(agentId, `The ${this.world.species(r.speciesId)?.displayName.toLowerCase()} cannot follow you up the tree.`);
     }
     return null;
+  }
+
+  /** @internal How many entries the per-agent maps hold (tests check they stay bounded). */
+  __sizesForTest(): { notices: number; cooldowns: number; lastSaid: number; queues: number } {
+    return { notices: this.#notices.size, cooldowns: this.#cooldowns.size, lastSaid: this.#lastSaid.size, queues: this.#queues.size };
   }
 
   /** What spectators see: every avatar and every live drop, positions only where public. */
