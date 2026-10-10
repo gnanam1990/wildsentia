@@ -8,6 +8,7 @@ import { ChainOps } from './chainOps.js';
 import { ChallengeEngine } from './engine.js';
 import { ChallengeIndexer } from './indexer.js';
 import type { ChallengeRouteDeps } from './routes.js';
+import { ChallengeSocialStore } from './social.js';
 import { ChallengeStore } from './store.js';
 import type { SpeciesCatalog } from './terms.js';
 
@@ -20,6 +21,8 @@ export interface ChallengesConfig {
   usdcDomain: { name: string; version: string }; explorerUrl: string | null;
   /** The WildsentiaAttempts contract; without it attempts are kept and hashed here but not written on chain. */
   attemptsContract: Hex | null;
+  /** The public site (VANA_PUBLIC_ORIGIN), for links in challenge posts; without it posts carry no link. */
+  siteUrl: string | null;
 }
 
 const loopback = (host: string) => host === 'localhost' || host === '127.0.0.1';
@@ -52,18 +55,28 @@ export function challengesConfig(env: NodeJS.ProcessEnv): ChallengesConfig | und
   const adminToken = need('VANA_CHALLENGES_ADMIN_TOKEN');
   if (adminToken.length < 32 || adminToken.length > 256 || /\s/.test(adminToken)) throw new Error('Invalid VANA_CHALLENGES_ADMIN_TOKEN');
   const attempts = env.VANA_CHALLENGES_ATTEMPTS_CONTRACT?.trim() ? address('VANA_CHALLENGES_ATTEMPTS_CONTRACT') : null;
+  const site = env.VANA_PUBLIC_ORIGIN?.trim();
+  let siteUrl: string | null = null;
+  if (site) {
+    let u: URL;
+    try { u = new URL(site); } catch { throw new Error('Invalid VANA_PUBLIC_ORIGIN'); }
+    if (u.protocol !== 'https:' || u.username || u.password || u.search || u.hash || u.pathname !== '/') throw new Error('Invalid VANA_PUBLIC_ORIGIN');
+    siteUrl = u.origin;
+  }
   const explorer = env.VANA_CHALLENGES_EXPLORER_URL?.trim();
   if (explorer && !/^https:\/\/[^\s/]+(\/[^\s]*)?$/.test(explorer)) throw new Error('Invalid VANA_CHALLENGES_EXPLORER_URL');
   return {
     rpcUrl: rpc.href, chainId, contract: address('VANA_CHALLENGES_CONTRACT'), usdc: address('VANA_CHALLENGES_USDC'),
     evaluatorKey: key as Hex, fromBlock, adminToken,
     usdcDomain: { name: need('VANA_CHALLENGES_USDC_DOMAIN_NAME'), version: need('VANA_CHALLENGES_USDC_DOMAIN_VERSION') },
-    explorerUrl: explorer ? explorer.replace(/\/$/, '') : null, attemptsContract: attempts,
+    explorerUrl: explorer ? explorer.replace(/\/$/, '') : null, attemptsContract: attempts, siteUrl,
   };
 }
 
 export interface ChallengesRuntime {
   routes: ChallengeRouteDeps;
+  /** X post drafts about challenges, for the owner's review on the social admin page. */
+  social: ChallengeSocialStore;
   agent: { accept: ChallengeEngine['accept']; progressOf: ChallengeEngine['progressOf']; waitingOf: ChallengeEngine['waitingOf'];
     leave: ChallengeEngine['leave'] };
   start(): Promise<void>;
@@ -94,7 +107,9 @@ export function challengesRuntime(config: ChallengesConfig,
       void fn().catch((e) => console.error(`[challenges] ${what} failed`, (e as Error).message)).finally(() => { running = false; });
     }, ms));
   };
+  const social = new ChallengeSocialStore(deps.pool, catalog, config.siteUrl ?? null);
   return {
+    social,
     routes: { store, catalog, drafts, adminToken: config.adminToken, explorerUrl: config.explorerUrl },
     agent: { accept: (player, id) => engine.accept(player, id), progressOf: (agentId) => engine.progressOf(agentId),
       waitingOf: (agentId) => engine.waitingOf(agentId), leave: (agentId) => engine.leave(agentId) },
@@ -127,6 +142,7 @@ export function challengesRuntime(config: ChallengesConfig,
       every(3000, 'chain operations', () => ops.processOnce());
       every(30_000, 'sweep', () => engine.sweep());
       every(5000, 'attempt records', () => engine.recordAttempts());
+      every(30_000, 'challenge posts', () => social.sweep());
       console.log(`challenges: on (contract ${config.contract}, chain ${config.chainId}, evaluator ${chain.evaluator}, `
         + `attempts ${config.attemptsContract ?? 'kept off chain'})`);
     },

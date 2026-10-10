@@ -43,6 +43,7 @@ stops the server. Use Arc Testnet until the mainnet review is done.
 | `VANA_CHALLENGES_FROM_BLOCK` | the contract's deployment block |
 | `VANA_CHALLENGES_ADMIN_TOKEN` | a random 64-character token for drafting challenges |
 | `VANA_CHALLENGES_EXPLORER_URL` | optional, e.g. `https://explorer.testnet.arc.io` |
+| `VANA_PUBLIC_ORIGIN` | optional, `https://wildsentia.lol`: the link in challenge posts |
 | `VANA_CHALLENGES_ATTEMPTS_CONTRACT` | optional: the deployed `WildsentiaAttempts` address. Its recorder must be the evaluator key; without it, attempt records are kept but not written on chain |
 
 People's accounts (sign in with X, link a wallet, play and create challenges in the browser)

@@ -46,6 +46,10 @@ describe('challenges configuration', () => {
     expect(() => challengesConfig({ ...full, VANA_CHALLENGES_ADMIN_TOKEN: 'short' })).toThrow('ADMIN_TOKEN');
     expect(() => challengesConfig({ ...full, VANA_CHALLENGES: 'yes' })).toThrow('VANA_CHALLENGES');
     expect(() => challengesConfig({ ...full, VANA_CHALLENGES_ATTEMPTS_CONTRACT: '0x12' })).toThrow('VANA_CHALLENGES_ATTEMPTS_CONTRACT');
+    expect(challengesConfig(full)!.siteUrl).toBeNull();
+    expect(challengesConfig({ ...full, VANA_PUBLIC_ORIGIN: 'https://wildsentia.lol/' })!.siteUrl).toBe('https://wildsentia.lol');
+    expect(() => challengesConfig({ ...full, VANA_PUBLIC_ORIGIN: 'http://wildsentia.lol' })).toThrow('VANA_PUBLIC_ORIGIN');
+    expect(() => challengesConfig({ ...full, VANA_PUBLIC_ORIGIN: 'https://wildsentia.lol/x?y' })).toThrow('VANA_PUBLIC_ORIGIN');
     expect(() => challengesConfig({ ...full, VANA_CHALLENGES_ATTEMPTS_CONTRACT: '0x' + '0'.repeat(40) })).toThrow('VANA_CHALLENGES_ATTEMPTS_CONTRACT');
   });
 });
@@ -316,6 +320,8 @@ maybe('challenges runtime', () => {
     await ok.start();
     ok.stop();
     expect(ok.routes.drafts).toMatchObject({ minPrizeAtomic: 2_000_000n, maxPrizeAtomic: 50_000_000n });
+    // Challenge posts are drafted beside it, for the owner's review.
+    expect(typeof ok.social.sweep).toBe('function');
 
     // A database that holds another contract's challenges is refused; ours, by an old evaluator, become unplayable.
     await pool!.query('truncate challenge_attempt_log, challenge_chain_ops, challenge_attempts, challenges, challenge_drafts, challenge_index_cursor cascade');

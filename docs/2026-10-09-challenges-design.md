@@ -403,8 +403,14 @@ router, and a social outbox whose drafts must each match a simulation event.
   - A zone is picked on the island map.
   - Before the user signs, the page shows the description the server will lock in.
 
-### Not in plan 3
-- **X post drafts for challenges:** created, won and refunded drafts need the social outbox to accept drafts that are not simulation events (a migration and a second validator). That is a separate small plan; nothing is ever posted without the owner's approval either way.
+### X post drafts (plan 3c)
+- **Drafting:** the server drafts one post per challenge when it is created, when it is won and paid, and when it is refunded.
+  - The text comes from the challenge's own facts: the goal and rules as the server describes them, the prize, the deadline, the winner's player name, and a link.
+  - The creator's briefing is never used.
+- **Admin page:** drafts appear under "Challenge posts" on the social admin page. The owner approves, rejects or withdraws each one.
+- **Posting:** an approved post goes to X only when the owner presses publish, and only if it still matches the challenge.
+  - Each post is sent at most once.
+  - If X's answer is unclear, the post is marked unknown and never sent again by itself. The owner checks X and records what they found.
 
 ### Plans
 - **3a (server):**

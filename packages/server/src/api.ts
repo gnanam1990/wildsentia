@@ -18,6 +18,8 @@ import { Insights } from './insights/insights.js';
 import { installLiveAgents, type LiveRouteDeps } from './live/routes.js';
 import { installAccounts, type AccountRouteDeps } from './accounts/routes.js';
 import { installChallenges, type ChallengeRouteDeps } from './challenges/routes.js';
+import type { ChallengeSocialStore } from './challenges/social.js';
+import { installChallengeSocial } from './challenges/socialRoutes.js';
 import type { PlaceDropLedger } from './live/liveStore.js';
 import { GENERAL_LIMIT_DEFAULTS, NetworkRateLimit, type GeneralLimits } from './limits.js';
 import { networkKey } from './network.js';
@@ -50,6 +52,8 @@ export interface ApiDeps {
   challenges?: ChallengeRouteDeps | undefined;
   /** People's accounts: X sign-in and wallet link (spec §14); absent unless configured. */
   accounts?: AccountRouteDeps | undefined;
+  /** Challenge X post drafts, reviewed behind the social admin token (plan 3c). */
+  challengeSocial?: ChallengeSocialStore | undefined;
 }
 
 /**
@@ -70,7 +74,7 @@ export function trustedProxyHops(env: NodeJS.ProcessEnv): number {
  * World routes are read-only. The optional reward ledger has independent write routes and
  * receives only a read-only subject visibility adapter, never a simulation mutation capability.
  */
-export function buildApi({ host, pool, narrator, insights: insightDeps, live, rewards, receiptRpc, social, holder, holderChain, trustedProxyHops: hops = 0, limits, httpStats, challenges, accounts }: ApiDeps): FastifyInstance {
+export function buildApi({ host, pool, narrator, insights: insightDeps, live, rewards, receiptRpc, social, holder, holderChain, trustedProxyHops: hops = 0, limits, httpStats, challenges, accounts, challengeSocial }: ApiDeps): FastifyInstance {
   // Without this, behind Caddy every visitor has the proxy's address and shares one rate limit.
   const app = Fastify({ logger: false, trustProxy: hops > 0 ? (_address: string, hop: number) => hop < hops : false });
   if (httpStats) app.addHook('onResponse', async (_req, reply) => { countResponse(httpStats, reply.statusCode); });
@@ -107,6 +111,7 @@ export function buildApi({ host, pool, narrator, insights: insightDeps, live, re
   if (live) installLiveAgents(app, live);
   if (challenges) installChallenges(app, challenges);
   if (accounts) installAccounts(app, accounts);
+  if (challengeSocial) installChallengeSocial(app, { social: challengeSocial, publisher: social?.xPublisher });
   installSocialOutbox(app, { pool, config: social, boundary: () => {
     const view = host.observation();
     return view ? { worldTime: view.worldTime, nextSequence: view.nextSequence } : null;

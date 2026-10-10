@@ -143,7 +143,7 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
       ...(live ? { live: { ...live.routes, spot: live.spot, species, ...(challenges ? { challenges: challenges.agent } : {}),
         ...(accounts ? { humans: accounts.humans } : {}) } } : {}),
       ...(challenges ? { challenges: { ...challenges.routes, ...(accounts ? { creators: accounts.creators } : {}) } } : {}),
-      ...(accounts ? { accounts: accounts.routes } : {}) });
+      ...(accounts ? { accounts: accounts.routes } : {}), ...(challenges ? { challengeSocial: challenges.social } : {}) });
     await api.ready();
 
     server = createServer((req, res) => { api!.server.emit('request', req, res); });
