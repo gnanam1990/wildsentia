@@ -86,3 +86,20 @@ describe('decayCarcass', () => {
     expect(changes).toBe(4);
   });
 });
+
+describe('carcass pathogen load', () => {
+  it('grows as the carcass ages, faster in warm, wet weather, and never past one', () => {
+    const patches = grid(), patch = patches[5]!;
+    patch.soilMoisture = 0.6;
+    const monsoon = fresh(200, patch.id), dry = fresh(200, patch.id);
+    expect(monsoon.pathogenLoad).toBeCloseTo(0.1, 9);
+    for (let h = 0; h < 48; h++) { decayCarcass(monsoon, patch, 1, 'monsoon'); decayCarcass(dry, patch, 1, 'dry'); }
+    expect(dry.pathogenLoad).toBeGreaterThan(0.1);
+    expect(monsoon.pathogenLoad).toBeGreaterThan(dry.pathogenLoad);
+    // A two-day-old monsoon kill is still within a tiger's tolerance (0.6), a jackal's (0.45) not for long.
+    expect(monsoon.pathogenLoad).toBeLessThan(0.6);
+    for (let h = 0; h < 24 * 30; h++) decayCarcass(monsoon, patch, 1, 'monsoon');
+    expect(monsoon.pathogenLoad).toBeGreaterThan(0.98);
+    expect(monsoon.pathogenLoad).toBeLessThanOrEqual(1);
+  });
+});
