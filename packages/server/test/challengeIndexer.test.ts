@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createPool } from '../src/db/pool.js';
 import { migrate } from '../src/db/migrate.js';
-import { ChallengeStore, type CreatedEvent } from '../src/challenges/store.js';
+import { ChallengeStore, type CreatedEvent, type SettledEvent } from '../src/challenges/store.js';
 import { ChallengeIndexer, INDEX_LAG_BLOCKS } from '../src/challenges/indexer.js';
 import type { ChallengeChain } from '../src/challenges/chain.js';
 import { testDatabaseUrl } from './testDatabase.js';
@@ -19,13 +19,15 @@ const event = (id: number, blockNumber: number): CreatedEvent => ({ id, creator:
 /** A chain whose RPC node may lag: it reports the head but can return no logs for the newest blocks. */
 class LaggingChain {
   readonly contract = CONTRACT; readonly evaluator = EVALUATOR; readonly chainId = 1;
-  headBlock = 100; events: CreatedEvent[] = []; laggingUntil = 0;
+  headBlock = 100; created: CreatedEvent[] = []; laggingUntil = 0;
+  settled: Array<SettledEvent & { blockNumber: number }> = [];
   async head() { return this.headBlock; }
-  async createdEvents(from: number, to: number) {
-    return this.events.filter((e) => e.blockNumber >= from && e.blockNumber <= to && e.blockNumber > this.laggingUntil);
+  async events(from: number, to: number) {
+    const seen = (e: { blockNumber: number }) => e.blockNumber >= from && e.blockNumber <= to && e.blockNumber > this.laggingUntil;
+    return { created: this.created.filter(seen), settled: this.settled.filter(seen).map(({ blockNumber: _, ...e }) => e) };
   }
   async status() { return { status: 'open' as const, evaluator: EVALUATOR, winner: ('0x' + '0'.repeat(40)) as Hex, prize: 1n }; }
-  async challengeCount(atBlock: number) { return this.events.filter((e) => e.blockNumber <= atBlock).length; }
+  async challengeCount(atBlock: number) { return this.created.filter((e) => e.blockNumber <= atBlock).length; }
 }
 
 maybe('challenge indexer', () => {
@@ -39,7 +41,7 @@ maybe('challenge indexer', () => {
   });
 
   it('reads only up to a few blocks behind the head', async () => {
-    chain.events = [event(1, 50), event(2, 99)];
+    chain.created = [event(1, 50), event(2, 99)];
     expect(await indexer.pollOnce()).toBe(1);
     expect(await store.cursor(CONTRACT)).toBe(100 - INDEX_LAG_BLOCKS + 1);
     chain.headBlock = 120;
@@ -48,7 +50,7 @@ maybe('challenge indexer', () => {
   });
 
   it('reads again from the start when the contract has more challenges than it indexed', async () => {
-    chain.events = [event(1, 50)];
+    chain.created = [event(1, 50)];
     chain.laggingUntil = 60; // the node answering getLogs had not reached block 50 yet
     expect(await indexer.pollOnce()).toBe(0);
     chain.laggingUntil = 0;
@@ -56,5 +58,18 @@ maybe('challenge indexer', () => {
     await indexer.pollOnce(); // notices the gap and rewinds
     await indexer.pollOnce();
     expect((await store.challenge(1))).not.toBeNull();
+  });
+
+  it('records the transaction that settled each challenge, whoever sent it', async () => {
+    chain.created = [event(1, 50), event(2, 51)];
+    chain.settled = [{ id: 1, kind: 'resolved', txHash: `0x${'9'.repeat(64)}`, blockNumber: 60 }];
+    await indexer.pollOnce();
+    expect((await store.challenge(1))!.settledTx).toBe(`0x${'9'.repeat(64)}`);
+    // One the server already recorded is kept as it is.
+    await pool!.query(`update challenges set settled_tx = $1 where id = 2`, [`0x${'8'.repeat(64)}`]);
+    await store.resetCursor(CONTRACT, 0);
+    chain.settled.push({ id: 2, kind: 'refunded', txHash: `0x${'7'.repeat(64)}`, blockNumber: 70 });
+    await indexer.pollOnce();
+    expect((await store.challenge(2))!.settledTx).toBe(`0x${'8'.repeat(64)}`);
   });
 });

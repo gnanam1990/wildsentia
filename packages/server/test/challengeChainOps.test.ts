@@ -30,7 +30,7 @@ class FakeChain implements ChallengeChain {
   failPrepare: string | null = null; failBroadcast = false; dropNext = false; revertNext = false; stuck = false;
   #n = 0; #nonce = 0; #calls = new Map<Hex, ChainCall>();
   async head() { return 0; }
-  async createdEvents() { return []; }
+  async events() { return { created: [], settled: [] }; }
   async status(id: number) { return { status: this.state.get(id) ?? 'open' as OnChainStatus, evaluator: this.evaluator, winner: WINNER, prize: 1n }; }
   async appointedEvaluator() { return this.evaluator; }
   async prizeLimits() { return { min: 1n, max: 100n }; }

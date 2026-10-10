@@ -3,7 +3,7 @@ import { BaseError, createPublicClient, decodeErrorResult, encodeFunctionData, g
 import { privateKeyToAccount } from 'viem/accounts';
 import { attemptsAbi } from './attemptsAbi.js';
 import { challengesAbi } from './challengesAbi.js';
-import type { CreatedEvent } from './store.js';
+import type { CreatedEvent, SettledEvent } from './store.js';
 
 /**
  * The WildsentiaChallenges contract as the server sees it: reading ChallengeCreated events and
@@ -70,7 +70,8 @@ export interface ChallengeChain {
   readonly evaluator: Hex;
   readonly chainId: number;
   head(): Promise<number>;
-  createdEvents(fromBlock: number, toBlock: number): Promise<CreatedEvent[]>;
+  /** The contract's creations and settlements in a block range. */
+  events(fromBlock: number, toBlock: number): Promise<{ created: CreatedEvent[]; settled: SettledEvent[] }>;
   status(id: number): Promise<{ status: OnChainStatus; evaluator: Hex; winner: Hex; prize: bigint }>;
   /** The evaluator the contract appoints for new challenges. */
   appointedEvaluator(): Promise<Hex>;
@@ -133,13 +134,17 @@ export function viemChallengeChain(config: ChainConfig): ChallengeChain {
   return {
     contract, attempts, reputation, evaluator: account.address, chainId: config.chainId,
     async head() { return Number(await client.getBlockNumber()); },
-    async createdEvents(fromBlock, toBlock) {
-      if (toBlock < fromBlock) return [];
+    async events(fromBlock, toBlock) {
+      if (toBlock < fromBlock) return { created: [], settled: [] };
       const logs = await client.getLogs({ address: contract, fromBlock: BigInt(fromBlock), toBlock: BigInt(toBlock) });
-      return parseEventLogs({ abi: challengesAbi, logs, eventName: 'ChallengeCreated' }).map((l) => ({
+      const created = parseEventLogs({ abi: challengesAbi, logs, eventName: 'ChallengeCreated' }).map((l) => ({
         id: Number(l.args.id), creator: l.args.creator.toLowerCase(), prizeAtomic: l.args.prize.toString(), deadline: Number(l.args.deadline),
         rulesHash: l.args.rulesHash, authNonce: l.args.authNonce, txHash: l.transactionHash, blockNumber: Number(l.blockNumber),
       }));
+      const settled = parseEventLogs({ abi: challengesAbi, logs, eventName: ['ChallengeResolved', 'ChallengeRefunded'] }).map((l) => ({
+        id: Number(l.args.id), kind: l.eventName === 'ChallengeResolved' ? 'resolved' as const : 'refunded' as const, txHash: l.transactionHash,
+      }));
+      return { created, settled };
     },
     async status(id) {
       const c = await client.readContract({ address: contract, abi: challengesAbi, functionName: 'challenge', args: [BigInt(id)] });

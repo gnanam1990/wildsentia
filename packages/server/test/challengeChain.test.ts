@@ -35,7 +35,7 @@ maybe('challenge chain client (local anvil)', () => {
     const created = await reader.waitForTransactionReceipt({ hash: await creator.writeContract({ address: local.contract, abi: createAbi,
       functionName: 'create', args: [RULES, 10_000_000n, deadline], chain: null }) });
     expect(created.status).toBe('success');
-    const events = await chain.createdEvents(0, await chain.head());
+    const events = (await chain.events(0, await chain.head())).created;
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ id: 1, creator: local.addresses.creator.toLowerCase(), prizeAtomic: '10000000', deadline: Number(deadline),
       rulesHash: RULES, authNonce: `0x${'0'.repeat(64)}` });
@@ -48,6 +48,8 @@ maybe('challenge chain client (local anvil)', () => {
     expect(await chain.known(paid.hash)).toBe(true);
     expect(await usdcBalance(local, local.addresses.player)).toBe(10_000_000n);
     expect((await chain.status(1)).status).toBe('resolved');
+    // The settlement is read from the contract's logs too, with the transaction that made it.
+    expect((await chain.events(0, await chain.head())).settled).toEqual([{ id: 1, kind: 'resolved', txHash: paid.hash }]);
   });
 
   it('signs at no less than Arc’s fee floor and can broadcast the same transaction twice', async () => {
@@ -68,7 +70,7 @@ maybe('challenge chain client (local anvil)', () => {
     expect(receipt).toBe('success');
     const fee = await createPublicClient({ transport: http(local.url) }).getTransaction({ hash: tx.hash });
     expect(fee.maxFeePerGas! >= ARC_MIN_FEE_PER_GAS).toBe(true);
-    const events = await chain.createdEvents(0, await chain.head());
+    const events = (await chain.events(0, await chain.head())).created;
     expect(events.at(-1)).toMatchObject({ id: 2, authNonce: nonce, prizeAtomic: '5000000' });
   });
 

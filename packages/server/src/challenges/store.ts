@@ -39,6 +39,9 @@ export interface ChainOp {
   updatedAt: Date;
 }
 /** A ChallengeCreated event as the indexer read it. */
+/** A challenge paid out or refunded on chain, and the transaction that did it. */
+export interface SettledEvent { id: number; kind: 'resolved' | 'refunded'; txHash: Hex }
+
 export interface CreatedEvent {
   id: number; creator: string; prizeAtomic: string; deadline: number; rulesHash: Hex; authNonce: Hex; txHash: Hex; blockNumber: number;
 }
@@ -199,6 +202,12 @@ export class ChallengeStore {
     const { rows } = await this.pool.query(`select * from challenges where status in ('open', 'unrecognised', 'unpaid', 'refunding')
       and deadline + make_interval(secs => $2) < $1 order by id`, [now, graceSeconds]);
     return rows.map(challenge);
+  }
+
+  /** Keeps the transaction that settled a challenge, unless one is already recorded. */
+  async recordSettledTx(contract: string, id: number, txHash: Hex): Promise<void> {
+    await this.pool.query('update challenges set settled_tx = $3 where contract = $1 and id = $2 and settled_tx is null',
+      [contract.toLowerCase(), id, txHash.toLowerCase()]);
   }
 
   async setStatus(id: number, from: ChallengeStatus[], to: ChallengeStatus, settledTx?: Hex): Promise<boolean> {
