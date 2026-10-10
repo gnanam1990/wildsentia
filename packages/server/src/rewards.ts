@@ -466,6 +466,10 @@ export function installRewards(app: FastifyInstance, deps: {
       const ok = b.action === 'cancel' ? drop.status === 'open'
         : drop.status === 'reserved' && claim?.status === 'reserved';
       if (!ok) { await db.query('rollback'); return reply.code(409).send({ error: 'state_changed_refresh_before_action' }); }
+      // A transfer verified as one claim's payout cannot also stand as another's manual report.
+      if (b.action === 'report_paid' && (await db.query('select 1 from reward_verified_payouts where tx_hash=$1 and claim_id<>$2', [tx, claim!.id])).rowCount) {
+        await db.query('rollback'); return reply.code(409).send({ error: 'transaction_already_verified_for_another_claim' });
+      }
       if (b.action === 'cancel') {
         await db.query("update reward_drops set status='cancelled' where id=$1", [drop.id]);
       } else if (b.action === 'reject') {
