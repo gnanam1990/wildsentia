@@ -114,6 +114,10 @@ describe('challenge terms', () => {
     if (!t.ok || !r.ok || !h.ok) throw new Error('parse failed');
     expect(describeTerms(t.terms, catalog)).toBe('Escape 1 predator attack as a chital');
     expect(describeTerms(h.terms, catalog)).toBe('Make 2 kills as a tiger');
+    // "an" before a vowel, and a proper adjective keeps its capital.
+    const e = parseTerms({ template: 'survive', speciesId: 'elephant', days: 3 }, catalog);
+    if (!e.ok) throw new Error('parse failed');
+    expect(describeTerms(e.terms, catalog)).toBe('Keep an Asian elephant alive for 3 forest days');
     expect(describeTerms(r.terms, catalog)).toBe('Reach (1200, 300) alive as a chital; never run; stay within 60 m of your own kind; '
       + 'stay within 800 m of (1000, 300)');
   });

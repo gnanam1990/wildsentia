@@ -152,14 +152,20 @@ export function describeRule(rule: Rule): string {
   }
 }
 
+/** A species name inside a sentence: lower case, but a proper adjective (Asian) keeps its capital. */
+function speciesInSentence(displayName: string): string {
+  return displayName.split(' ').map((word, i) => (i === 0 && /^(Asian)$/.test(word) ? word : word.toLowerCase())).join(' ');
+}
+const article = (noun: string) => (/^[aeiou]/i.test(noun) ? `an ${noun}` : `a ${noun}`);
+
 export function describeTerms(terms: ChallengeTerms, catalog: SpeciesCatalog): string {
-  const name = catalog.displayName(terms.speciesId).toLowerCase();
+  const name = speciesInSentence(catalog.displayName(terms.speciesId)), aName = article(name);
   const goal = (() => {
     switch (terms.template) {
-      case 'survive': return `Keep a ${name} alive for ${plural(terms.days, 'forest day')}`;
-      case 'hunt': return terms.count === 1 ? `Make a kill as a ${name}` : `Make ${terms.count} kills as a ${name}`;
-      case 'escape': return `Escape ${plural(terms.count, 'predator attack')} as a ${name}`;
-      case 'reach': return `Reach (${terms.x}, ${terms.z}) alive as a ${name}`;
+      case 'survive': return `Keep ${aName} alive for ${plural(terms.days, 'forest day')}`;
+      case 'hunt': return terms.count === 1 ? `Make a kill as ${aName}` : `Make ${terms.count} kills as ${aName}`;
+      case 'escape': return `Escape ${plural(terms.count, 'predator attack')} as ${aName}`;
+      case 'reach': return `Reach (${terms.x}, ${terms.z}) alive as ${aName}`;
     }
   })();
   return terms.rules.length ? `${goal}; ${terms.rules.map(describeRule).join('; ')}` : goal;
