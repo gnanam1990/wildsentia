@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { buildApi } from '../src/api.js';
 import { ConnectionCaps, GENERAL_LIMIT_DEFAULTS, NetworkRateLimit, WindowRateLimit, generalLimits } from '../src/limits.js';
@@ -149,7 +149,13 @@ describe('public read limit', () => {
     const defaults = buildApi({ host, pool });
     await defaults.ready();
     const statuses: number[] = [];
-    for (let i = 0; i < GENERAL_LIMIT_DEFAULTS.publicReadsPerMinute / 4 + 1; i++) statuses.push((await defaults.inject({ url: '/world' })).statusCode);
+    // The burst is judged at one moment: on a slow machine 300 requests take long enough for the
+    // bucket to refill a token, and the last one would get through. So the clock stands still.
+    const at = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(at);
+    try {
+      for (let i = 0; i < GENERAL_LIMIT_DEFAULTS.publicReadsPerMinute / 4 + 1; i++) statuses.push((await defaults.inject({ url: '/world' })).statusCode);
+    } finally { clock.mockRestore(); }
     expect(statuses.at(-2)).not.toBe(429);
     expect(statuses.at(-1)).toBe(429);
     await defaults.close();
