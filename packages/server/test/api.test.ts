@@ -27,7 +27,8 @@ beforeAll(async () => {
   });
   await host.boot();
   await host.advance(24);
-  api = buildApi({ host, pool: pool! });
+  // Hundreds of reads from one address in seconds: the general read limit is tested in limits.test.ts.
+  api = buildApi({ host, pool: pool!, limits: { publicReadsPerMinute: 0 } });
   await api.ready();
 });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createXPublisher } from '../src/xPublisher.js';
+import { createXPublisher, sameTextIgnoringLinks } from '../src/xPublisher.js';
 
 describe('X transport boundary', () => {
   it('sends only the text-only create shape and validates the X response', async () => {
@@ -36,5 +36,16 @@ describe('X transport boundary', () => {
     expect(request).toHaveBeenCalledOnce();
     expect(request.mock.calls[0]![0]).toBe('https://api.x.com/2/users/me');
     expect(request.mock.calls[0]![1]?.method).toBe('GET');
+  });
+
+  it('accepts the text X returns with its links rewritten to t.co, and nothing else', async () => {
+    const sent = 'Challenge 7 was won. https://wildsentia.lol/challenges.html?id=7';
+    const back = 'Challenge 7 was won. https://t.co/AbC123xyz';
+    expect(sameTextIgnoringLinks(sent, back)).toBe(true);
+    expect(sameTextIgnoringLinks(sent, 'Challenge 8 was won. https://t.co/AbC123xyz')).toBe(false);
+    expect(sameTextIgnoringLinks('No link.', 'No link.')).toBe(true);
+    expect(sameTextIgnoringLinks(sent, 'Challenge 7 was won.')).toBe(false);
+    const request = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ data: { id: '9', text: back } }), { status: 201 }));
+    expect(await createXPublisher('456', 'fixture-token', request).create(sent)).toEqual({ id: '9', text: sent });
   });
 });

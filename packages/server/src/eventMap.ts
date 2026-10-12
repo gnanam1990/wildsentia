@@ -1,6 +1,6 @@
 import { GRID_SIZE, PATCH_METRES, patchCentre, positionInPatch, type WorldEvent } from '@vana/shared';
 
-export const MAP_EVENT_TYPES = ['hunt', 'human_hunt', 'born', 'human_born', 'died', 'human_died'] as const;
+export const MAP_EVENT_TYPES = ['hunt', 'human_hunt', 'born', 'human_born', 'died', 'human_died', 'immigration'] as const;
 
 /** Historical marker coordinates must never be substituted with an animal's current location. */
 export function eventMarker(event: WorldEvent) {
@@ -19,7 +19,9 @@ export function eventMarker(event: WorldEvent) {
     label: event.type === 'hunt' ? 'Animal hunt / attack'
       : event.type === 'human_hunt' ? event.outcome === 'success' ? 'Human hunt / catch' : 'Human hunt attempt'
         : event.type === 'born' ? 'Birth' : event.type === 'human_born' ? 'Human birth'
-          : event.type === 'human_died' ? 'Human death' : 'Death',
+          : event.type === 'human_died' ? 'Human death'
+            : event.type === 'immigration' ? event.conditions.route === 'island_crossing' ? 'Arrived across the water' : 'Arrival'
+              : 'Death',
     patchMetres: PATCH_METRES,
   };
 }

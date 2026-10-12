@@ -38,6 +38,8 @@ describe('event map projection', () => {
     expect(mapMarkerGlyph('human_died')).toBe('X');
     expect(mapMarkerSubject({ ...marker, type: 'died', actorId: 'hare_1' })).toEqual({ kind: 'animal', id: 'hare_1' });
     expect(mapMarkerGlyph('died')).toBe('D');
+    expect(mapMarkerSubject({ ...marker, type: 'immigration', actorId: 'tiger_0f00' })).toEqual({ kind: 'animal', id: 'tiger_0f00' });
+    expect(mapMarkerGlyph('immigration')).toBe('A');
     expect(mapMarkerSubject({ ...marker, type: 'human_hunt', actorId: 'hare_1' })).toEqual({ kind: 'animal', id: 'hare_1' });
     expect(mapMarkerPersonHistory({ ...marker, type: 'human_hunt', actorId: 'hare_1' })).toBeNull();
     expect(mapMarkerPersonHistory({ ...marker, type: 'born', actorId: 'hare_1' })).toBeNull();
@@ -49,7 +51,8 @@ describe('event map projection', () => {
     const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
     expect(map).toContain("history.textContent = 'Read person’s retained history'");
     expect(map).toContain('this.readPersonHistory(personHistoryId)');
-    expect(main).toContain('id => { void personHistoryDialog.open(id); });');
+    // Read from the map, closing the history goes back to the map (not the village list).
+    expect(main).toContain('id => readPersonHistory(id, () => { void mapDialog.open(); }));');
     expect(main).toContain('id => watchSavedPerson(id)');
   });
   it('renders human birth/death history controls and invokes the selected-person callback, not Watch', async () => {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { feedEventSummary, feedSentence, friendlyWorldTime, groupFeedEvents, Hud, type HudElements } from '../src/hud.js';
+import { collapseFeed, happenedBy, feedEventSummary, feedSentence, friendlyWorldTime, groupFeedEvents, Hud, type HudElements } from '../src/hud.js';
 import { WorldStore } from '../src/protocol.js';
 
 const elements = (): HudElements => ({
@@ -70,7 +70,7 @@ describe('factual live event feed', () => {
       },
     });
     nodes.feed.querySelectorAll = ((selector: string) => selector.endsWith('[open]') && !detail.open ? [] : [detail]) as unknown as HTMLElement['querySelectorAll'];
-    let events: Array<Record<string, unknown>> = [{ id: 'drink_one', type: 'drank', actors: ['elephant_1'], worldTime: 4500 }];
+    let events: Array<Record<string, unknown>> = [{ id: 'drink_one', type: 'fled', actors: ['elephant_1'], worldTime: 4500 }];
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ events }) })));
     const hud = new Hud(nodes, new WorldStore());
     await hud.refreshFeed();
@@ -82,7 +82,7 @@ describe('factual live event feed', () => {
     expect(detail.open).toBe(true);
 
     // A newer, different entry updates the feed but leaves this event's disclosure expanded.
-    events = [{ id: 'rest_one', type: 'rested', actors: ['boar_1'], worldTime: 4600 }, ...events];
+    events = [{ id: 'rest_one', type: 'born', actors: ['boar_1'], worldTime: 4600 }, ...events];
     await hud.refreshFeed();
     expect(writes).toBe(2);
     expect(detail).not.toBe(originalDetail);
@@ -122,8 +122,8 @@ describe('factual live event feed', () => {
   it('counts records rather than animals and discloses every grouped original record', async () => {
     const nodes = elements();
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ events: [
-      { id: 'drink_<first>', type: 'drank', actors: ['elephant_same'], worldTime: 4500, outcome: 'success' },
-      { id: 'drink_<second>', type: 'drank', actors: ['elephant_same'], worldTime: 4000, outcome: 'success' },
+      { id: 'drink_<first>', type: 'fled', actors: ['elephant_same'], worldTime: 4500, outcome: 'success' },
+      { id: 'drink_<second>', type: 'fled', actors: ['elephant_same'], worldTime: 4000, outcome: 'success' },
     ] }) })));
     await new Hud(nodes, new WorldStore()).refreshFeed();
     expect(nodes.feed.innerHTML.match(/class="event feed-entry"/g)).toHaveLength(1);
@@ -139,10 +139,18 @@ describe('factual live event feed', () => {
   it('tells visitors what happened in plain words', () => {
     expect(feedSentence({ type: 'scavenged', actors: ['vulture_0721', 'sambar_0339'], outcome: 'success' })).toBe('A vulture fed on a sambar carcass');
     expect(feedSentence({ type: 'hunt', actors: ['dhole_01', 'hare_02'], outcome: 'success' })).toBe('A dhole caught a hare');
+    expect(feedSentence({ type: 'died', actors: ['boar_05ec', 'dhole_0703'], outcome: 'success', conditions: { cause: 'predation' } }))
+      .toBe('A wild boar was killed by a dhole');
+    expect(feedSentence({ type: 'died', actors: ['boar_05ec'], outcome: 'success', conditions: { cause: 'starvation' } })).toBe('A wild boar died');
+    expect(feedSentence({ type: 'born', actors: ['chital_0102'], outcome: 'success' })).toBe('A chital was born');
+    expect(feedSentence({ type: 'parent_lost', actors: ['sambar_0102'], outcome: 'success' })).toBe('A young sambar lost its mother');
     expect(feedSentence({ type: 'hunt', actors: ['tiger_01', 'elephant_02'], outcome: 'failed' })).toBe("A tiger's hunt for an elephant failed");
     expect(feedSentence({ type: 'rested', actors: ['squirrel_1', 'squirrel_2'] })).toBe('Two giant squirrels rested together');
     expect(feedSentence({ type: 'drank', actors: ['elephant_06fc'] })).toBe('An elephant drank water');
     expect(feedSentence({ type: 'birth', actors: ['boar_1'] })).toBe('A wild boar was born');
+    expect(feedSentence({ type: 'immigration', actors: ['tiger_0f00'], conditions: { route: 'island_crossing' } }))
+      .toBe('A tiger swam ashore onto the island');
+    expect(feedSentence({ type: 'immigration', actors: ['chital_0f00'], conditions: {} })).toBe('A chital walked into the forest');
     // Unknown actors or types keep the factual label.
     expect(feedSentence({ type: 'flowering_started', actors: [] })).toBe('Modelled flowering began');
     expect(feedSentence({ type: 'mystery', actors: ['chital_1'] })).toBe('Mystery');
@@ -152,5 +160,40 @@ describe('factual live event feed', () => {
     expect(friendlyWorldTime(0)).toBe('Year 1 · Day 1 · 12 am');
     expect(friendlyWorldTime(360 * 86400 + 12 * 3600)).toBe('Year 2 · Day 1 · 12 pm');
     expect(friendlyWorldTime(Number.NaN)).toBe('—');
+  });
+
+  it('holds back events the played hour has not reached yet', () => {
+    const events = [{ id: 'later', worldTime: 9000 }, { id: 'now', worldTime: 7300 }, { id: 'undated' }];
+    expect(happenedBy(events, 7300).map((e) => e.id)).toEqual(['now', 'undated']);
+    expect(happenedBy(events, null).map((e) => e.id)).toEqual(['later', 'now', 'undated']);
+  });
+});
+
+describe('collapsed feed', () => {
+  it('shows neighbouring identical sentences once with a count and keeps other events in view', () => {
+    const rested = (id: number) => ({ id: `r${id}`, type: 'rested', actors: ['squirrel_1', 'squirrel_2'] });
+    const rows = collapseFeed([rested(1), rested(2), rested(3), { id: 'h', type: 'hunt', actors: ['dhole_01', 'hare_02'], outcome: 'success' }, rested(4)], 6);
+    expect(rows.map((r) => [r.sentence, r.count])).toEqual([
+      ['Two giant squirrels rested together', 3], ['A dhole caught a hare', 1], ['Two giant squirrels rested together', 1]]);
+    expect(rows[0]!.event.id).toBe('r1');
+  });
+  it('stops at the row limit', () => {
+    const events = Array.from({ length: 10 }, (_, i) => ({ id: `${i}`, type: 'born', actors: [i % 2 ? 'hare_1' : 'chital_1'], outcome: 'success' }));
+    expect(collapseFeed(events, 6)).toHaveLength(6);
+  });
+
+  it('shows what happened, not every animal moving or resting, and says so when it is quiet', async () => {
+    const nodes = elements();
+    const routine = [{ id: 'e1', type: 'moved', actors: ['chital_0001'], worldTime: 3600 }, { id: 'e2', type: 'rested', actors: ['sambar_0001'], worldTime: 3600 },
+      { id: 'e3', type: 'moved', actors: ['langur_0001'], worldTime: 3600 }, { id: 'e5', type: 'fed', actors: ['chital_0002'], worldTime: 3600 }];
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ events: [...routine,
+      { id: 'e4', type: 'hunt', actors: ['tiger_0001', 'chital_0003'], worldTime: 3500, outcome: 'success' }] }) })));
+    await new Hud(nodes, new WorldStore()).refreshFeed();
+    expect(nodes.feed.innerHTML).toContain('A tiger caught a chital');
+    expect(nodes.feed.innerHTML).not.toContain('moved');
+    expect(nodes.feed.innerHTML).not.toContain('rested');
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ events: routine }) })));
+    await new Hud(nodes, new WorldStore()).refreshFeed();
+    expect(nodes.feed.innerHTML).toContain('Quiet for now');
   });
 });

@@ -1,6 +1,6 @@
 import {
   GRID_SIZE, PATCH_COUNT, createRng, islandPatchSurface, islandHeightAt, patchCentre, landWalkable,
-  type HabitatType, type Patch,
+  isIslandProfile, islandGeometrySeed, type HabitatType, type Patch, type TerrainProfile,
 } from '@vana/shared';
 
 /** Six 300 m cardinal patches keep the two perennial basins in separate local ranges. */
@@ -63,7 +63,8 @@ function habitatFor(elevation: number, moisture: number): HabitatType {
   return 'shola';
 }
 
-export function buildGrid(seed: number, profile: 'mainland' | 'island_v1' = 'mainland'): Patch[] {
+export function buildGrid(seed: number, profile: TerrainProfile = 'mainland'): Patch[] {
+  const island = isIslandProfile(profile), geometry = island ? islandGeometrySeed(seed, profile) : seed;
   const rng = createRng(seed, 'grid');
   const elevationNoise = Array.from({ length: PATCH_COUNT }, () => rng.next());
   const moistureNoise = Array.from({ length: PATCH_COUNT }, () => rng.next());
@@ -111,17 +112,17 @@ export function buildGrid(seed: number, profile: 'mainland' | 'island_v1' = 'mai
       neighbours,
     });
   }
-  if (profile === 'island_v1') for (const p of patches) {
-    p.islandSeed = seed; p.surface = islandPatchSurface(seed, p.id);
+  if (island) for (const p of patches) {
+    p.islandSeed = geometry; p.surface = islandPatchSurface(geometry, p.id);
     const centre = patchCentre(p.id);
-    p.elevation = Math.max(0, islandHeightAt(seed, centre.x, centre.z)) / 90;
+    p.elevation = Math.max(0, islandHeightAt(geometry, centre.x, centre.z)) / 90;
     if (p.surface !== 'land') {
       p.habitat = p.surface === 'ocean' ? 'water' : 'rock';
       p.canopyCover = 0; p.plant = { grass: 0, browse: 0 }; p.capacity = { grass: 0, browse: 0 };
       p.waterVolume = 0; p.soilNutrients = 0; p.soilMoisture = 0;
     }
   }
-  if (profile === 'island_v1') for (const id of islandFreshwaterBasinIds(patches)) {
+  if (island) for (const id of islandFreshwaterBasinIds(patches)) {
     const patch = patches[id]!;
     patch.habitat = 'water'; patch.canopyCover = 0;
     patch.plant = { grass: 0, browse: 0 };

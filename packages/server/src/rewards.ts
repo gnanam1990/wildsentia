@@ -1,8 +1,11 @@
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { keccak_256 } from '@noble/hashes/sha3.js';
+import type { PlaceDropLedger } from './live/liveStore.js';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Pool } from './db/pool.js';
 import { baseReceiptRpc, matchBaseUsdcReceipt, type ReceiptRpc } from './baseReceipt.js';
+import { WindowRateLimit } from './limits.js';
+import { networkKey } from './network.js';
 
 export type RewardNetwork = 'base';
 export interface RewardConfig {
@@ -74,11 +77,14 @@ const bodyOf = (request: FastifyRequest): Record<string, unknown> =>
   typeof request.body === 'object' && request.body !== null && !Array.isArray(request.body)
     ? request.body as Record<string, unknown> : {};
 const bearer = (r: FastifyRequest): string => r.headers.authorization?.match(/^Bearer ([^\s]{1,256})$/)?.[1] ?? '';
-interface Drop { id: string; actor_id: string; amount_micro: string; network: RewardNetwork; reveal_when: string; status: string; world_id?: string | null }
+interface Drop { id: string; actor_id: string; amount_micro: string; network: RewardNetwork; reveal_when: string; status: string; world_id?: string | null;
+  kind?: 'animal' | 'place'; place_x?: number | null; place_z?: number | null; appears_at?: Date | null; expires_at?: Date | null; spotted_by?: string | null }
 interface ReservedPayout { amount_micro: string; wallet: string; drop_status: string; claim_status: string }
 interface StoredPayout { claim_id: string; tx_hash: string; log_index: number; block_number: string; block_hash: string }
 const publicDrop = (d: Drop) => ({ id: d.id, actorId: d.actor_id, amount: displayAmount(d.amount_micro), network: d.network,
-  status: d.status, revealWhen: d.reveal_when });
+  status: d.status, revealWhen: d.reveal_when, kind: d.kind ?? 'animal',
+  ...(d.kind === 'place' ? { place: { x: d.place_x, z: d.place_z }, appearsAt: d.appears_at ?? null, expiresAt: d.expires_at ?? null,
+    spottedBy: d.spotted_by ?? null } : {}) });
 type PageKind = 'drops' | 'claims' | 'audit';
 type PageRow = { id: string; cursor_time?: string } & Record<string, unknown>;
 const PAGE_SIZE = 100;
@@ -106,6 +112,10 @@ export function installRewards(app: FastifyInstance, deps: {
   subject: (id: string) => { alive: boolean; carcass: boolean } | null;
   /** The running world's durable identity, or null before it is known. Rewards fail closed without it. */
   world?: () => string | null;
+  /** Place drops opened by live agents (docs/2026-09-26-live-agents-design.md), when enabled. */
+  placeDrops?: { ledger: PlaceDropLedger; spot: () => { x: number; z: number } | null };
+  /** Silencing a live agent's chat (it keeps playing). */
+  agents?: { mute(idOrName: string, muted: boolean): Promise<string | null> };
 }): void {
   const { pool, config, subject } = deps;
   const minWatchSeconds = config?.minWatchSeconds ?? 0;
@@ -124,23 +134,21 @@ export function installRewards(app: FastifyInstance, deps: {
   /** A receipt lets a claimant check their own claim later. Derived, so a retried claim gets the same one. */
   const receiptKey = hash(`claim-receipt:${config?.adminToken ?? ''}`);
   const receiptFor = (claimId: string): string => createHmac('sha256', receiptKey).update(claimId).digest('hex');
-  const clientHash = (req: FastifyRequest): string => hash(`claim-client:${config?.adminToken ?? ''}:${req.ip}`);
+  const clientHash = (req: FastifyRequest): string => hash(`claim-client:${config?.adminToken ?? ''}:${networkKey(req.ip)}`);
   const receiptRpc = deps.receiptRpc ?? (config?.receiptRpcUrl ? baseReceiptRpc(config.receiptRpcUrl) : undefined);
-  const limits = new Map<string, { count: number; until: number }>();
+  const limits = new WindowRateLimit(120);
   app.addHook('onRequest', async (req, reply) => {
-    if (!/^\/(rewards|admin\/rewards)(\/|\?|$)/.test(req.url)) return;
+    // The route the request was dispatched to, not its raw URL: the router decodes
+    // percent-escapes, so "/%61dmin/rewards" reaches /admin/rewards too.
+    const route = req.routeOptions.url ?? '';
+    if (!/^\/(rewards|admin\/rewards)(\/|$)/.test(route)) return;
     reply.header('Cache-Control', 'no-store');
     reply.header('Referrer-Policy', 'no-referrer');
     if (req.headers['sec-fetch-site'] === 'cross-site') return reply.code(403).send({ error: 'same_origin_required' });
     if (!config) return reply.code(503).send({ error: 'rewards_not_configured' });
-    const now = Date.now();
-    for (const [key, value] of limits) if (value.until < now) limits.delete(key);
-    const key = req.ip;
-    const window = limits.get(key) ?? { count: 0, until: now + 60_000 };
-    if (!limits.has(key) && limits.size >= 5000 || ++window.count > 120) return reply.code(429).send({ error: 'rate_limited' });
-    limits.set(key, window);
+    if (!limits.take(networkKey(req.ip))) return reply.code(429).send({ error: 'rate_limited' });
     // Count rejected admin attempts too; otherwise guesses bypass the per-IP limit.
-    if (req.url.startsWith('/admin/')) {
+    if (route.startsWith('/admin/')) {
       const actual = Buffer.from(hash(bearer(req))), expected = Buffer.from(hash(config.adminToken));
       if (!timingSafeEqual(actual, expected)) return reply.code(401).send({ error: 'admin_auth_required' });
     }
@@ -218,7 +226,7 @@ export function installRewards(app: FastifyInstance, deps: {
         return { claimId: previous.id, status: previous.status, amount: displayAmount(drop.amount_micro), network: drop.network,
           receipt: receiptFor(previous.id) };
       }
-      if (!drop || drop.network !== config!.network || drop.world_id !== world
+      if (!drop || drop.kind === 'place' || drop.network !== config!.network || drop.world_id !== world
         || currentViewer.actor_id !== drop.actor_id || !visible(drop)) {
         await db.query('rollback'); return reply.code(404).send({ error: 'watch_subject_to_claim' });
       }
@@ -278,7 +286,8 @@ export function installRewards(app: FastifyInstance, deps: {
     if (kind === 'drops') rows = (await pool.query<PageRow>(`select *, ${utcCursorTime} as cursor_time from reward_drops
       where network=$1 and ($2::timestamptz is null or (created_at,id) < ($2::timestamptz,$3::uuid))
       order by created_at desc,id desc limit $4`, [config!.network, before?.t ?? null, before?.id ?? null, limit])).rows;
-    else if (kind === 'claims') rows = (await pool.query<PageRow>(`select c.id,c.drop_id,c.wallet,c.status,c.created_at,d.actor_id,
+    else if (kind === 'claims') rows = (await pool.query<PageRow>(`select c.id,c.drop_id,c.wallet,c.status,c.created_at,d.actor_id,d.kind,
+      c.agent_id,(select name from live_agents a where a.id=c.agent_id) as agent_name,
       d.amount_micro::text,d.network,p.tx_hash as verified_tx_hash,p.log_index as verified_log_index,
       p.block_number as verified_block_number,p.block_hash as verified_block_hash,p.verified_at,
       ${utcCursorTime.replace('created_at', 'c.created_at')} as cursor_time
@@ -380,7 +389,7 @@ export function installRewards(app: FastifyInstance, deps: {
       await db.query("update reward_drops set status='verified_paid' where id=$1 and status='reserved'", [b.dropId]);
       await db.query("update reward_claims set status='verified_paid' where id=$1 and status='reserved'", [b.claimId]);
       await db.query(`insert into reward_audit(drop_id,claim_id,action,network,note)
-        values ($1,$2,'verified_paid','base','Exact finalized native Base USDC Transfer recorded; no transfer initiated by VANA')`, keys);
+        values ($1,$2,'verified_paid','base','Exact finalized native Base USDC Transfer recorded; no transfer initiated by WILDSENTIA')`, keys);
       await db.query('commit'); committed = true;
       return { ok: true, paymentVerified: true, alreadyRecorded: false, txHash, logIndex,
         blockNumber: matched.blockNumber, blockHash: matched.blockHash };
@@ -409,6 +418,31 @@ export function installRewards(app: FastifyInstance, deps: {
     } catch { await db.query('rollback'); return reply.code(503).send({ error: 'allocation_unavailable_retry_same_id' }); }
     finally { db.release(); }
   });
+  // A batch of place drops at random land spots, for live agents to find and open.
+  app.post('/admin/rewards/place-drops', { bodyLimit: 2048 }, async (req, reply) => {
+    if (!deps.placeDrops) return reply.code(503).send({ error: 'live_agents_not_enabled' });
+    const b = bodyOf(req), amount = microAmount(b.amount);
+    const count = Number(b.count ?? 1), spacing = Number(b.spacingMinutes ?? 10), lifetime = Number(b.lifetimeMinutes ?? 60);
+    if (!uuid(b.batchId) || !amount || !Number.isInteger(count) || count < 1 || count > 50
+      || !Number.isInteger(spacing) || spacing < 0 || spacing > 1440 || !Number.isInteger(lifetime) || lifetime < 5 || lifetime > 1440)
+      return reply.code(400).send({ error: 'invalid_place_drops' });
+    if (await currentWorld() === null) return reply.code(503).send({ error: 'world_unavailable' });
+    try {
+      const result = await deps.placeDrops.ledger.createBatch({ batchId: b.batchId, amountMicro: amount, count,
+        spacingMinutes: spacing, lifetimeMinutes: lifetime }, deps.placeDrops.spot);
+      await deps.placeDrops.ledger.refresh();
+      return { ...result, amount: displayAmount(amount) };
+    } catch { return reply.code(503).send({ error: 'place_drops_unavailable_retry_same_batch' }); }
+  });
+  // Under /admin/rewards so the same token check, rate limit and same-origin rule guard it.
+  app.post('/admin/rewards/agents/mute', { bodyLimit: 1024 }, async (req, reply) => {
+    if (!deps.agents) return reply.code(503).send({ error: 'live_agents_not_enabled' });
+    const b = bodyOf(req);
+    if (typeof b.agent !== 'string' || !/^[A-Za-z0-9 _-]{2,40}$/.test(b.agent) || typeof b.muted !== 'boolean')
+      return reply.code(400).send({ error: 'agent_and_muted_required' });
+    const id = await deps.agents.mute(b.agent, b.muted);
+    return id ? { agentId: id, muted: b.muted } : reply.code(404).send({ error: 'no_such_agent' });
+  });
   app.post('/admin/rewards/review', { bodyLimit: 2048 }, async (req, reply) => {
     const b = bodyOf(req);
     if (!uuid(b.dropId) || !['reject', 'cancel', 'report_paid'].includes(String(b.action))
@@ -428,6 +462,10 @@ export function installRewards(app: FastifyInstance, deps: {
       const ok = b.action === 'cancel' ? drop.status === 'open'
         : drop.status === 'reserved' && claim?.status === 'reserved';
       if (!ok) { await db.query('rollback'); return reply.code(409).send({ error: 'state_changed_refresh_before_action' }); }
+      // A transfer verified as one claim's payout cannot also stand as another's manual report.
+      if (b.action === 'report_paid' && (await db.query('select 1 from reward_verified_payouts where tx_hash=$1 and claim_id<>$2', [tx, claim!.id])).rowCount) {
+        await db.query('rollback'); return reply.code(409).send({ error: 'transaction_already_verified_for_another_claim' });
+      }
       if (b.action === 'cancel') {
         await db.query("update reward_drops set status='cancelled' where id=$1", [drop.id]);
       } else if (b.action === 'reject') {

@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { ISLAND_SEGMENTS, treeAnchorForPatch, treeAnchorRemnantForPatch } from '@vana/shared';
 import { islandHeightField } from './islandHeightField.js';
 import { groundTint } from './groundTint.js';
-import { islandPool } from './pools.js';
+import { BANK_CLEAR_M, insidePool, islandPool, waterGround, type Pool } from './pools.js';
+import { buildPools, poolPlane } from './poolScene.js';
 import { PATCH_METRES, patchCentre } from './space.js';
 
 export interface PatchView {
@@ -311,23 +312,8 @@ function buildIslandGround(patches: readonly PatchView[], seed: number): THREE.M
   mesh.name = 'ground'; mesh.receiveShadow = true; return mesh;
 }
 
-/**
- * A pool disc laid on the ground's slope around it, not level: a level disc on a hillside
- * sinks under the uphill ground and shows only a sliced-off part. It is lifted just enough to
- * clear the ground at its rim, which a plane fit leaves close to the surface.
- */
-export function poolMatrix(pool: { x: number; z: number; radius: number }, groundAt: HeightSampler, out = new THREE.Matrix4()): THREE.Matrix4 {
-  const { x, z, radius: r } = pool, y = groundAt(x, z);
-  const sx = (groundAt(x + r, z) - groundAt(x - r, z)) / (2 * r), sz = (groundAt(x, z + r) - groundAt(x, z - r)) / (2 * r);
-  let lift = 0;
-  for (let k = 0; k < 12; k++) {
-    const a = k / 12 * Math.PI * 2, dx = Math.cos(a) * r, dz = Math.sin(a) * r;
-    lift = Math.max(lift, groundAt(x + dx, z + dz) - (y + sx * dx + sz * dz));
-  }
-  const normal = new THREE.Vector3(-sx, 1, -sz).normalize();
-  const tilt = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
-  return out.compose(new THREE.Vector3(x, y + Math.min(lift, 1.5) + 0.04, z), tilt, new THREE.Vector3(r, 1, r));
-}
+/** An island pool's water plane (see poolScene.ts): tilted to the slope, turned and stretched to its shore. */
+export const poolMatrix = poolPlane;
 
 export const TERRAIN_LAYERS = ['ground', 'grass', 'water', 'rock', 'trunk', 'canopy', 'ocean'] as const;
 export type TerrainLayer = typeof TERRAIN_LAYERS[number];
@@ -347,6 +333,7 @@ export function buildTerrain(patches: readonly PatchView[], layers?: ReadonlySet
   const waterPatches = patches.filter((p) => land(p) && (island
     ? Number.isFinite(p.water) && p.water > 0
     : p.habitat === 'water' || p.water > 20_000));
+  const shores = waterGround(patches);
   const rockPatches = patches.filter((p) => land(p) && p.habitat === 'rock');
   const tuftsPerPatch = TUFTS_PER_PATCH;
   const grassPatches = patches.filter((p) => land(p) && p.grass > 100 && p.habitat !== 'water' && p.water <= 20_000);
@@ -361,8 +348,9 @@ export function buildTerrain(patches: readonly PatchView[], layers?: ReadonlySet
     grassPatches.length * tuftsPerPatch,
     'grass',
   ) : null;
-  const water = wanted('water') ? instanced(
-    (island ? new THREE.CircleGeometry(1, 32) : new THREE.PlaneGeometry(PATCH_METRES, PATCH_METRES)).rotateX(-Math.PI / 2),
+  // The island's pools are drawn as waterholes (poolScene.ts) once the ground can be sampled.
+  const water = wanted('water') && !island ? instanced(
+    new THREE.PlaneGeometry(PATCH_METRES, PATCH_METRES).rotateX(-Math.PI / 2),
     new THREE.MeshStandardMaterial({
       color: 0x2f6f86, roughness: 0.15, metalness: 0.3, transparent: true, opacity: 0.85,
     }),
@@ -406,7 +394,7 @@ export function buildTerrain(patches: readonly PatchView[], layers?: ReadonlySet
   for (const patch of grass ? grassPatches : []) {
     const centre = patchCentre(patch.id);
     const density = Math.min(1, patch.grass / 6000);
-    const pool = island ? islandPool(patch) : null;
+    const pool = island ? islandPool(patch, shores) : null;
     let seed = patch.id * 2654435761;
     const random = (): number => {
       seed = (seed * 1664525 + 1013904223) >>> 0;
@@ -417,7 +405,7 @@ export function buildTerrain(patches: readonly PatchView[], layers?: ReadonlySet
       const gx = centre.x + (random() - 0.5) * PATCH_METRES;
       const gz = centre.z + (random() - 0.5) * PATCH_METRES;
       // A tuft that would stand in the pool is sunk out of sight; the instance count stays fixed.
-      const wet = pool !== null && Math.hypot(gx - pool.x, gz - pool.z) < pool.radius + 0.4;
+      const wet = pool !== null && insidePool(pool, gx, gz, BANK_CLEAR_M(pool));
       if (wet) matrix.makeScale(0, 0, 0);
       matrix.setPosition(gx, groundAt(gx, gz), gz);
       grass!.setMatrixAt(g++, matrix);
@@ -425,14 +413,9 @@ export function buildTerrain(patches: readonly PatchView[], layers?: ReadonlySet
   }
 
   (water ? waterPatches : []).forEach((patch, index) => {
-    const pool = island ? islandPool(patch) : null;
-    if (pool) {
-      // Representative small pool, not a 300 m square lake invented from a few thousand litres.
-      poolMatrix(pool, groundAt, matrix);
-    } else {
-      const centre = patchCentre(patch.id);
-      matrix.makeTranslation(centre.x, patchHeight(patch) + 0.4, centre.z);
-    }
+    // The mainland's legacy full-patch water; island pools are drawn by buildPools.
+    const centre = patchCentre(patch.id);
+    matrix.makeTranslation(centre.x, patchHeight(patch) + 0.4, centre.z);
     water!.setMatrixAt(index, matrix);
   });
 
@@ -485,6 +468,9 @@ export function buildTerrain(patches: readonly PatchView[], layers?: ReadonlySet
     group.add(mesh);
   }
   for (const mesh of [flow.river, flow.waterfall]) if (mesh) group.add(mesh);
+  if (island && wanted('water')) {
+    group.add(buildPools(waterPatches.flatMap((p) => { const pool = islandPool(p, shores); return pool ? [pool as Pool] : []; }), groundAt));
+  }
   // Kept so the far-field can be hidden near the camera and restored exactly (hideFarFieldNear).
   for (const mesh of [grass, rock, trunk, canopy]) {
     if (!mesh) continue;

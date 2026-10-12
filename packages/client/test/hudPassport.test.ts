@@ -27,6 +27,33 @@ const setup = () => {
 };
 
 describe('compact observer passport', () => {
+  it('retains played activity, escaped AI attribution and current clock in the tabbed inspector', () => {
+    const { nodes, hud } = setup();
+    hud.liveActivity = () => ({ state: 'running_away', goal: 'find_shelter', agent: '<script>pilot</script>' });
+    let played: number | null = 3600;
+    hud.clockTime = () => played;
+    hud.render('boar_01');
+    expect(nodes.clock.innerHTML).toContain('1 am');
+    expect(nodes.passport.innerHTML).toContain('Running away');
+    expect(nodes.passport.innerHTML).toContain('Find shelter');
+    expect(nodes.passport.innerHTML).toContain('Steered by &#60;script&#62;pilot&#60;/script&#62; (AI agent)');
+    expect(nodes.passport.innerHTML).not.toContain('<script>');
+    expect(nodes.passport.innerHTML).toContain('data-passport-tab="record"');
+    played = null; hud.render('boar_01');
+    expect(nodes.clock.innerHTML).toContain('not reported by the simulation');
+    expect(nodes.clock.innerHTML).not.toContain('1 am');
+  });
+
+  it('does not rebuild the tabbed inspector on unchanged one-second refreshes', () => {
+    const { nodes, hud } = setup();
+    let writes = 0, html = '';
+    Object.defineProperty(nodes.passport, 'innerHTML', { get: () => html, set: (value: string) => { html = value; writes++; } });
+    hud.render('boar_01'); hud.render('boar_01'); hud.render('boar_01');
+    expect(writes).toBe(1);
+    hud.liveActivity = () => ({ state: 'resting', goal: 'rest' });
+    hud.render('boar_01');
+    expect(writes).toBe(2);
+  });
   it('sends factual population totals and an explicit unknown state to a custom counter', () => {
     const { nodes, hud, store } = setup();
     const states: Array<{ total: number | null; listHtml: string }> = [];

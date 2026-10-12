@@ -27,8 +27,9 @@ describe('shared island presentation', () => {
   });
   it('does not draw freshwater tiles or vegetation on the ocean/coastal mask', () => {
     const ocean = patches.filter(p => p.surface !== 'land'), root = buildTerrain(ocean);
-    for (const name of ['water', 'grass', 'trunk', 'canopy', 'rock'])
+    for (const name of ['grass', 'trunk', 'canopy', 'rock'])
       expect((root.getObjectByName(name) as THREE.InstancedMesh).count).toBe(0);
+    expect(root.getObjectByName('water')!.userData.pools).toBe(0);
     expect(planVegetation(ocean, { x: 2850, z: 2850 }, 10000, () => 0).size).toBe(0);
     disposeTerrain(root);
   });

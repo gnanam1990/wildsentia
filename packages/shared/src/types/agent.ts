@@ -118,6 +118,23 @@ export interface Agent {
   generation: number;
   /** Set while this animal still depends on its mother. */
   dependentOn: string | null;
+  /**
+   * sim_0.35.0: meat eaten beyond the day's hunger, held in the stomach and digested at the
+   * daily intake rate. A predator with food in its gut is sated and does not start a hunt.
+   * An energy-equivalent drive buffer; the meat's nutrients already went to soil when eaten.
+   */
+  gutKg?: number;
+  /**
+   * sim_0.37.0: body condition, 0-1, a running mean of the share of daily food need met by the
+   * species' natural diet, for species whose reproduction tracks food (lifecycle.condition).
+   * Absent until the first day is folded in (it then starts full).
+   */
+  condition?: number;
+  /**
+   * sim_0.37.0: the world day `day`'s food tally: kilograms eaten (bounded by a daily gut limit)
+   * and the need they met from the natural diet (rooting and mast food).
+   */
+  gutFill?: { day: number; kg: number; naturalKg: number };
   /** Last completed boar maternal water transfer. Optional on old saves; birth time is the fresh-born baseline. */
   lastMaternalWaterAt?: WorldTime;
   /** Persistent rendezvous, never a position override. Established sites are not historical birth locations. */
@@ -147,6 +164,12 @@ export interface Agent {
   bornAt: WorldTime;
   massKg: number;
   patchId: PatchId;
+  /**
+   * The outside agent steering this animal, if any (docs/2026-09-26-live-agents-design.md).
+   * Its body still ages, hungers and can die in the hourly step; where it goes and what it
+   * does come from the live layer. Absent for every wild animal.
+   */
+  controller?: string;
   /** Optional only for legacy snapshots; initialized deterministically by the simulation. */
   position?: WorldPosition;
   /** Authoritative non-ground travel state. Absent on old/ground-only checkpoints. */

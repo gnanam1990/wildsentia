@@ -40,7 +40,7 @@ maybe('X publication reservation and reconciliation', () => {
     app = buildApi({ host, pool, social: { adminToken, xPublisher: publisher } });
     await app.ready();
     const draft = (await post('/admin/social/drafts', { eventId: event.id })).json();
-    draftId = draft.id; body = draft.body; outbound = `${body} [VANA record ${draftId}]`;
+    draftId = draft.id; body = draft.body; outbound = `${body} [WILDSENTIA record ${draftId}]`;
   });
   afterAll(async () => { await app?.close(); await host?.abort(); await pool.end(); });
 

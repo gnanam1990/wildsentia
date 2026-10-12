@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       ecology:
-        description: Also run the slow 360-day multi-seed ecology gate
+        description: Also run the slow ecology gates (360-day mainland, three-year island)
         type: boolean
         default: false
 
@@ -20,7 +20,9 @@ concurrency:
 jobs:
   regression:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The regression gate includes three 90-day island_v2 pack-viability cohorts.
+    # Both PR #28 runs hit the former 20-minute job limit while those tests ran.
+    timeout-minutes: 60
     services:
       postgres:
         image: postgres:17-alpine
@@ -44,6 +46,10 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --no-audit --no-fund
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.8.3
+      - run: npm ci --prefix contracts --no-audit --no-fund
       - run: npm run verify:ci
       - name: Retain test evidence
         if: always()
@@ -57,7 +63,11 @@ jobs:
   ecology:
     if: github.event_name == 'workflow_dispatch' && inputs.ecology
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # Measured 2026-10-05 on a 10-core development Mac at load 17-27: the 360-day mainland gate
+    # 54.5 minutes, each three-year island seed 26-37 minutes (the three run side by side). An
+    # unloaded runner is faster per core but has 2-4 vCPUs, so the old 60 minutes is too tight
+    # for both steps; 120 leaves room without letting a hung run hold a runner indefinitely.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -70,11 +80,34 @@ jobs:
       - run: mkdir -p .ci-artifacts
       - name: Run multi-seed ecology gate (not the 50-year release gate)
         run: npm exec -- vitest run packages/runner/test/soak.test.ts --reporter=default --reporter=json --outputFile.json=.ci-artifacts/ecology.json
+      - name: Run three-seed, three-world-year island gate
+        # Runs even when the mainland gate failed, so both sets of evidence are kept.
+        if: success() || failure()
+        env:
+          VANA_LONG_SOAK: '1'
+          VANA_LONG_SOAK_TERRAIN: island_v2
+          VANA_LONG_SOAK_DAYS: '1080'
+          VANA_LONG_SOAK_OUTPUT: .ci-artifacts/multi-year
+        run: |
+          mkdir -p .ci-artifacts/multi-year
+          pids=()
+          for seed in 1 2 3; do
+            VANA_LONG_SOAK_SEEDS=$seed npm exec -- vitest run packages/runner/test/soak-long.test.ts \
+              --reporter=default --reporter=json --outputFile.json=.ci-artifacts/multi-year/seed$seed-tests.json \
+              > .ci-artifacts/multi-year/seed$seed.log 2>&1 &
+            pids+=($!)
+          done
+          status=0
+          for pid in "${pids[@]}"; do wait "$pid" || status=1; done
+          tail -n 60 .ci-artifacts/multi-year/seed*.log
+          exit $status
       - name: Retain ecology test evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ecology-evidence
-          path: .ci-artifacts/ecology.json
+          path: |
+            .ci-artifacts/ecology.json
+            .ci-artifacts/multi-year/**
           if-no-files-found: warn
           retention-days: 14

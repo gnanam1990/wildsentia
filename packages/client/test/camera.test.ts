@@ -201,3 +201,88 @@ describe('tapping an animal', () => {
     expect(follow.distance).toBe(30);
   });
 });
+
+describe('turning the view without a right mouse button', () => {
+  it('circles a followed animal on a plain drag instead of leaving it', () => {
+    const target = surface();
+    const follow = new FollowCamera(new THREE.PerspectiveCamera(), target);
+    let explored = false; follow.onExplore = () => { explored = true; };
+    follow.reducedMotion = true;
+    follow.follow({ x: 0, z: 0, heading: 0, moving: false }, 1);
+    const theta = follow.theta;
+    dispatch(target, 'pointerdown', { pointerId: 1, clientX: 100, clientY: 100, button: 0 });
+    dispatch(target, 'pointermove', { pointerId: 1, clientX: 160, clientY: 100 });
+    dispatch(target, 'pointerup', { pointerId: 1, clientX: 160, clientY: 100 });
+    expect(follow.theta).not.toBe(theta);
+    expect(explored).toBe(false);
+  });
+  it('turns the way the mouse moves, like grabbing the scene: drag down to see it from higher up', () => {
+    const target = surface();
+    const follow = new FollowCamera(new THREE.PerspectiveCamera(), target);
+    follow.reducedMotion = true;
+    follow.follow({ x: 0, z: 0, heading: 0, moving: false }, 1);
+    const theta = follow.theta, phi = follow.phi;
+    dispatch(target, 'pointerdown', { pointerId: 1, clientX: 100, clientY: 100, button: 0 });
+    dispatch(target, 'pointermove', { pointerId: 1, clientX: 100, clientY: 160 });
+    expect(follow.phi).toBeGreaterThan(phi); // dragged down: looking from higher, as in other 3D viewers
+    dispatch(target, 'pointermove', { pointerId: 1, clientX: 100, clientY: 60 });
+    expect(follow.phi).toBeLessThan(phi);    // dragged up past the start: lower again
+    dispatch(target, 'pointermove', { pointerId: 1, clientX: 160, clientY: 60 });
+    expect(follow.theta).toBeLessThan(theta); // dragged right: the scene turns with the cursor
+    dispatch(target, 'pointerup', { pointerId: 1, clientX: 160, clientY: 60 });
+  });
+  it('pans the map on a plain drag while exploring', () => {
+    const target = surface();
+    const follow = new FollowCamera(new THREE.PerspectiveCamera(), target);
+    let explored = false; follow.onExplore = () => { explored = true; };
+    follow.freeLook(1 / 60);
+    const theta = follow.theta;
+    dispatch(target, 'pointerdown', { pointerId: 1, clientX: 100, clientY: 100, button: 0 });
+    dispatch(target, 'pointermove', { pointerId: 1, clientX: 160, clientY: 120 });
+    expect(follow.theta).toBe(theta);
+    expect(explored).toBe(true);
+  });
+  it('turns on a sideways trackpad swipe and zooms on an upward one', () => {
+    const target = surface();
+    const follow = new FollowCamera(new THREE.PerspectiveCamera(), target);
+    const theta = follow.theta, distance = follow.distance;
+    dispatch(target, 'wheel', { deltaX: 40, deltaY: 2, clientX: 0, clientY: 0 });
+    expect(follow.theta).toBeGreaterThan(theta);
+    expect(follow.distance).toBe(distance);
+    dispatch(target, 'wheel', { deltaX: 0, deltaY: 100, clientX: 0, clientY: 0 });
+    expect(follow.distance).toBeGreaterThan(distance);
+  });
+  it('steps, clamps and resets from the on-screen pad', () => {
+    const follow = new FollowCamera(new THREE.PerspectiveCamera(), surface());
+    follow.rotateBy(1); follow.tiltBy(10); follow.zoomBy(1e-6);
+    expect(follow.phi).toBe(1.45);
+    expect(follow.distance).toBeGreaterThan(0);
+    follow.resetView();
+    expect(follow.theta).toBe(0.9); expect(follow.phi).toBe(0.55);
+  });
+});
+
+describe('following an animal whose position is not known this frame', () => {
+  it('keeps applying zoom, turns and flights while holding the last framing', () => {
+    const camera = new THREE.PerspectiveCamera(50, 1, .1, 1000);
+    const target = surface();
+    const follow = new FollowCamera(camera, target);
+    follow.reducedMotion = true;
+    follow.follow({ x: 10, z: 20, heading: 0, moving: false }, 1);
+    const at = follow.target.clone(), before = camera.position.clone();
+    follow.zoomBy(2); follow.rotateBy(.5);
+    follow.hold(1 / 60);
+    expect(camera.position.distanceTo(before)).toBeGreaterThan(1);
+    expect(camera.position.distanceTo(follow.target)).toBeCloseTo(follow.distance, 3);
+    expect(follow.target.toArray()).toEqual(at.toArray());
+    // Still following: a plain drag circles the held point rather than exploring away.
+    let explored = false; follow.onExplore = () => { explored = true; };
+    dispatch(target, 'pointerdown', { pointerId: 1, clientX: 100, clientY: 100, button: 0 });
+    dispatch(target, 'pointermove', { pointerId: 1, clientX: 160, clientY: 100 });
+    expect(explored).toBe(false);
+    follow.reducedMotion = false; follow.flyToDistance(80);
+    const distance = follow.distance;
+    follow.hold(1 / 60);
+    expect(follow.distance).toBeGreaterThan(distance);
+  });
+});

@@ -86,6 +86,21 @@ describe('local water access contact', () => {
     expect(s.log.all().filter((e) => e.type === 'moved')).toHaveLength(1);
   });
 
+  it('drinks from a lake at its shore with dry land, not standing out in the lake', () => {
+    // chital_01d9 drank standing inside island_v2 patch 367, a lake patch, 30-95 m from any land.
+    const s = fixture(3600, 21);
+    s.patches[21]!.habitat = 'water'; s.patches[20]!.habitat = 'water'; s.patches[1]!.habitat = 'water';
+    s.agent.position = { x: 21 % 20 * 300, z: 300, heading: 0 }; // the middle of the lake
+    executeGoal(s.ctx);
+    const event = drank(s.log.all())!;
+    expect(event.patchId).toBe(21);
+    expect(atWaterAccess(event.position!, 21, s.patches)).toBe(true);
+    // The dry sides are east (patch 22) and south (patch 41): the drinker stands at one of them.
+    const east = 300 + 150 - event.position!.x, south = 300 + 150 - event.position!.z;
+    expect(Math.min(east, south)).toBeLessThan(5);
+    expect(s.agent.position).toEqual(event.position);
+  });
+
   it('continues a partially completed water approach identically across a JSON world checkpoint', () => {
     const options = { seed: 8, speciesDir: SPECIES_DIR, initialAgents: { sambar: 4 }, minPopulation: {} };
     const world = createWorld(options), s = fixture(10);

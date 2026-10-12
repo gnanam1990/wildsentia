@@ -12,6 +12,17 @@ const sambar = speciesOf('sambar');
 const tiger = speciesOf('tiger');
 const vulture = speciesOf('vulture');
 
+describe('predator recovery before hunting', () => {
+  it('recovers from exhaustion before continuing a costly hunt', () => {
+    const hunter = makeAgent('tiger', { patchId: 10, drives: { hunger: 0.7, thirst: 0.1, fatigue: 0.95, fear: 0 }, stamina: 1 });
+    const prey = [0, 1, 2].map(i => makeAgent('sambar', { id: `s${i}`, patchId: 10 }));
+    const percept = perceive(hunter, tiger, makeView(patches, [hunter, ...prey]));
+    expect(selectGoal(hunter, tiger, percept, createRng(1, 'recovery')).goal).toBe('rest');
+    hunter.drives.fatigue = 0.05;
+    expect(selectGoal(hunter, tiger, percept, createRng(1, 'recovery')).goal).toBe('hunt');
+  });
+});
+
 describe('perceive', () => {
   it('sees only the current patch and its neighbours', () => {
     const agent = makeAgent('sambar', { patchId: 42 });

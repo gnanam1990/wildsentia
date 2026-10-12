@@ -3,6 +3,11 @@ import { GRID_SIZE, PATCH_METRES } from '@vana/shared';
 
 /** Observer framing only. The elephant needs a closer adult-body view than the generic
  * small-animal rule; this never changes its authoritative position or movement. */
+const DEFAULT_THETA = 0.9;
+const DEFAULT_PHI = 0.55;
+/** How long a viewer's own camera angle is kept before it drifts back behind a moving animal. */
+export const MANUAL_HOLD_MS = 10_000;
+
 export function followDistanceFor(speciesId: string, heightM: number): number {
   return Math.max(2.5, Math.min(22, heightM * (speciesId === 'elephant' ? 5 : 9)));
 }
@@ -49,8 +54,8 @@ interface Pointer { x: number; y: number }
  * pan. Panning while following hands control back to the viewer through `onExplore`.
  */
 export class FollowCamera {
-  theta = 0.9;
-  phi = 0.55;
+  theta = DEFAULT_THETA;
+  phi = DEFAULT_PHI;
   distance = 22;
 
   readonly target = new THREE.Vector3();
@@ -93,7 +98,9 @@ export class FollowCamera {
         return;
       }
       this.#multiTouch = false;
-      this.#mode = e.button === 2 || e.button === 1 || e.shiftKey || e.ctrlKey || e.altKey ? 'rotate' : 'pan';
+      // While following an animal a plain drag circles it, as in most 3D viewers; while
+      // exploring it moves over the map. Right/middle button or a modifier always rotates.
+      this.#mode = e.button === 2 || e.button === 1 || e.shiftKey || e.ctrlKey || e.altKey || this.#following ? 'rotate' : 'pan';
       this.#lastX = this.#pressX = e.clientX;
       this.#lastY = this.#pressY = e.clientY;
       this.#panStarted = false;
@@ -117,7 +124,7 @@ export class FollowCamera {
       if (this.#pointers.has(e.pointerId)) this.#pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (this.#pointers.size >= 2) { this.#applyPinch(); return; }
       if (this.#mode === null) return;
-      if (this.#mode === 'pan' && !this.#panStarted) {
+      if (!this.#panStarted) {
         if (Math.hypot(e.clientX - this.#pressX, e.clientY - this.#pressY) < 5) return;
         this.#panStarted = true;
       }
@@ -126,15 +133,18 @@ export class FollowCamera {
       this.#lastX = e.clientX;
       this.#lastY = e.clientY;
       if (this.#mode === 'rotate') {
-        this.theta -= dx * 0.005;
-        this.phi = Math.min(1.45, Math.max(0.08, this.phi - dy * 0.004));
-        this.#manualAt = performance.now();
+        // As if grabbing the scene, the way other 3D viewers turn: it follows the cursor sideways,
+        // and dragging down lifts the view to look from higher (it used to sink toward the ground).
+        this.rotateBy(-dx * 0.005);
+        this.tiltBy(dy * 0.004);
       } else {
         this.panBy(dx, dy);
       }
     });
     element.addEventListener('wheel', (e) => {
       e.preventDefault();
+      // A sideways two-finger swipe on a trackpad turns the view; it has no other meaning here.
+      if (!e.ctrlKey && Math.abs(e.deltaX) > Math.abs(e.deltaY) * 1.5) { this.rotateBy(e.deltaX * 0.004); return; }
       // Trackpad pinch arrives as a ctrl-wheel; both zoom toward the cursor.
       const scale = Math.exp(e.deltaY * (e.ctrlKey ? 0.01 : 0.0012));
       this.zoomAt(this.distance * scale, e.clientX, e.clientY);
@@ -144,13 +154,13 @@ export class FollowCamera {
       const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
       if (['w', 'a', 's', 'd'].includes(key)) { e.preventDefault(); this.#keys.add(key); return; }
       if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', '+', '=', '-', 'q', 'e'].includes(key)) return;
-      e.preventDefault(); this.#manualAt = performance.now(); this.#distanceGoal = null;
-      if (key === 'ArrowLeft' || key === 'q') this.theta -= 0.12;
-      if (key === 'ArrowRight' || key === 'e') this.theta += 0.12;
-      if (key === 'ArrowUp') this.phi = Math.min(1.45, this.phi + 0.08);
-      if (key === 'ArrowDown') this.phi = Math.max(0.08, this.phi - 0.08);
-      if (key === '+' || key === '=') this.distance = Math.max(MIN_DISTANCE, this.distance / 1.2);
-      if (key === '-') this.distance = Math.min(MAX_DISTANCE, this.distance * 1.2);
+      e.preventDefault();
+      if (key === 'ArrowLeft' || key === 'q') this.rotateBy(-0.12);
+      if (key === 'ArrowRight' || key === 'e') this.rotateBy(0.12);
+      if (key === 'ArrowUp') this.tiltBy(0.08);
+      if (key === 'ArrowDown') this.tiltBy(-0.08);
+      if (key === '+' || key === '=') this.zoomBy(1 / 1.2);
+      if (key === '-') this.zoomBy(1.2);
     });
     element.addEventListener('keyup', (e) => { this.#keys.delete(e.key.length === 1 ? e.key.toLowerCase() : e.key); });
     element.addEventListener('blur', () => { this.#keys.clear(); });
@@ -159,6 +169,31 @@ export class FollowCamera {
   /** True when the press that just ended was a two-finger gesture, not a tap on an animal. */
   get wasGesture(): boolean {
     return this.#multiTouch;
+  }
+
+  /** Turns the view around its centre (radians, positive is clockwise from above). */
+  rotateBy(radians: number): void {
+    this.theta += radians;
+    this.#manualAt = performance.now();
+  }
+
+  /** Raises (positive) or lowers the viewing angle, between near the ground and overhead. */
+  tiltBy(radians: number): void {
+    this.phi = Math.min(1.45, Math.max(0.08, this.phi + radians));
+    this.#manualAt = performance.now();
+  }
+
+  /** Zooms about the view's centre: below 1 moves in, above 1 moves out. */
+  zoomBy(factor: number): void {
+    this.#distanceGoal = null;
+    this.distance = Math.min(MAX_DISTANCE, Math.max(MIN_DISTANCE, this.distance * factor));
+    this.#manualAt = performance.now();
+  }
+
+  /** Back to the default viewing angle and distance. */
+  resetView(): void {
+    this.theta = DEFAULT_THETA; this.phi = DEFAULT_PHI;
+    this.#manualAt = -Infinity;
   }
 
   /** Eases the zoom to `distance` over about a second, so choosing an animal reads as a flight. */
@@ -207,11 +242,22 @@ export class FollowCamera {
       Math.min(1, dt * 3),
     );
 
-    if (!this.reducedMotion && position.moving && performance.now() - this.#manualAt > 3500) {
+    // Drift back behind a moving animal only after the viewer has left the view alone a while.
+    if (!this.reducedMotion && position.moving && performance.now() - this.#manualAt > MANUAL_HOLD_MS) {
       const want = position.heading + Math.PI;
       const diff = ((want - this.theta + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
       this.theta += diff * Math.min(1, dt * 0.5);
     }
+    this.#apply(dt);
+  }
+
+  /**
+   * Keeps following but holds the last framing, for a frame where the followed animal's
+   * position is not known. Zoom, turns and flights still apply, so the view never freezes.
+   */
+  hold(dt: number): void {
+    this.#following = true;
+    this.#velocity.set(0, 0);
     this.#apply(dt);
   }
 

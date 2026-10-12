@@ -7,7 +7,7 @@ export function populationCounter(host: HTMLElement): (total: number | null, lis
   const count = document.createElement('number-flow');
   const list = document.createElement('div');
   const unknown = document.createElement('span');
-  count.locales = 'en-IN';
+  count.locales = 'en-US';
   count.format = { maximumFractionDigits: 0 };
   count.respectMotionPreference = true;
   count.transformTiming = { duration: 450, easing: 'ease-out' };

@@ -25,6 +25,15 @@ const SEASON_DECAY_FACTOR: Record<Season, number> = {
   dry: 0.35,
 };
 
+/**
+ * sim_0.38.0: pathogen load gained per hour at a decay rate of one, from 0.1 at death. Bacteria
+ * multiply as the carcass rots, so the load follows the same warmth and damp as decay: a monsoon
+ * kill passes a jackal's tolerance (0.45) in three to four days and a tiger's (0.6) in four to five;
+ * a dry-season one takes weeks. Before, it stayed at 0.1, so no carcass was ever too far gone.
+ * Uncalibrated modelling choice, not a measured microbial growth rate.
+ */
+const PATHOGEN_PER_HOUR = 0.004;
+
 const STAGE_THRESHOLDS: ReadonlyArray<{ stage: DecayStage; remaining: number }> = [
   { stage: 1, remaining: 0.92 },
   { stage: 2, remaining: 0.55 },
@@ -89,6 +98,7 @@ export function decayCarcass(
   }
 
   patch.soilNutrients += removed * NUTRIENT_PER_KG_BIOMASS;
+  carcass.pathogenLoad = Math.min(1, carcass.pathogenLoad + PATHOGEN_PER_HOUR * rate * hours);
 
   const fraction = carcassMass(carcass.biomass) / Math.max(carcass.originalMassKg, 1e-9);
 

@@ -1,11 +1,13 @@
 import type { Agent, Carcass, Patch, RngState, WorldTime, WaterBudget, TerrainProfile, MicroEcologyState } from '@vana/shared';
-import { yearOf } from '@vana/shared';
+import { isIslandProfile, islandGeometrySeed, yearOf } from '@vana/shared';
 import { positionInPatch, patchAtPosition, isCommunityState, type CommunityState } from '@vana/shared';
 import { humanWalkable } from './communityNavigation.js';
 import { validateIllness } from './agents/illness.js';
 import { validateWound } from './agents/wound.js';
 import { validateVerticalCheckpoint } from './agents/arboreal.js';
 import { islandFreshwaterBasinIds } from './grid.js';
+import { loadSpeciesDir } from './config/loader.js';
+import { establishRooting, validateRooting } from './fields/rooting.js';
 import { newWaterBudget } from './fields/drainage.js';
 import { establishFloweringGuild, floweringEligible, validateFloweringGuild } from './fields/floweringGuild.js';
 import type { NutrientLedger } from './fields/nutrients.js';
@@ -32,6 +34,13 @@ export interface Snapshot {
   groupSeq: number;
   groups: Array<[string, { speciesId: string; memberIds: string[] }]>;
   pedigree: Array<[string, { mother: string | null; father: string | null }]>;
+  /** sim_0.33.0 island only: last arrival time per species, present once any has arrived. */
+  islandArrivals?: Record<string, WorldTime>;
+  /**
+   * sim_0.37.0: recorded arrivals an explicit upgrade scheduled (an upgraded island's leopard
+   * pair). They come ashore at the next day boundary; absent once they have.
+   */
+  pendingArrivals?: Array<{ speciesId: string; sex: 'female' | 'male'; trigger: string }>;
 }
 
 export function takeSnapshot(world: World): Snapshot {
@@ -56,6 +65,8 @@ export function takeSnapshot(world: World): Snapshot {
     groupSeq: state.groupSeq,
     groups: structuredClone(state.groups),
     pedigree: structuredClone(state.pedigree),
+    ...(Object.keys(world.islandArrivals).length ? { islandArrivals: { ...world.islandArrivals } } : {}),
+    ...(world.pendingArrivals.length ? { pendingArrivals: structuredClone(world.pendingArrivals) } : {}),
   };
 }
 
@@ -92,10 +103,11 @@ export function restoreSnapshot(snapshot: Snapshot, options: WorldOptions): Worl
       || !['water', 'marsh', 'riparian'].includes(snapshot.patches[patch.patchId]?.habitat ?? '')
       || (snapshot.patches[patch.patchId]?.waterVolume ?? 0) < 20)))
     throw new Error('invalid fish recruitment checkpoint');
+  const climbers = new Set([...loadSpeciesDir(options.speciesDir)].filter(([, cfg]) => cfg.locomotion.climbsTrees).map(([id]) => id));
   for (const agent of [...snapshot.agents, ...snapshot.deceased]) {
     validateIllness(agent.illness, snapshot.worldTime);
     validateWound(agent.wound, snapshot.worldTime);
-    validateVerticalCheckpoint(agent, snapshot.patches[agent.patchId]);
+    validateVerticalCheckpoint(agent, snapshot.patches[agent.patchId], climbers.has(agent.speciesId));
     if (agent.lastMaternalWaterAt !== undefined
       && (!Number.isFinite(agent.lastMaternalWaterAt) || agent.lastMaternalWaterAt < agent.bornAt
         || agent.lastMaternalWaterAt > snapshot.worldTime || agent.speciesId !== 'boar'))
@@ -105,13 +117,15 @@ export function restoreSnapshot(snapshot: Snapshot, options: WorldOptions): Worl
     if (floweringEligible(patch) !== (patch.floweringGuild !== undefined))
       throw new Error('missing or misplaced flowering guild checkpoint');
     validateFloweringGuild(patch, snapshot.worldTime);
+    // sim_0.37.0: rooting food only on eligible land, never negative or above its capacity.
+    validateRooting(patch);
   }
 
   // Build an empty world, then overwrite its state from the snapshot.
   // Restore never re-founds a household or emits a second founding event.
   const world = new World({ ...options, seed: snapshot.seed, initialAgents: {}, communityProfile: 'none' });
-  if (world.terrainProfile === 'island_v1' && (snapshot.patches.length !== world.patches.length
-    || snapshot.patches.some((p, i) => p.id !== i || p.islandSeed !== snapshot.seed
+  if (isIslandProfile(world.terrainProfile) && (snapshot.patches.length !== world.patches.length
+    || snapshot.patches.some((p, i) => p.id !== i || p.islandSeed !== islandGeometrySeed(snapshot.seed, world.terrainProfile)
       || p.surface !== world.patches[i]!.surface || p.elevation !== world.patches[i]!.elevation
       || p.habitat !== world.patches[i]!.habitat)))
     throw new Error('island checkpoint geometry does not match its versioned seed');
@@ -134,6 +148,8 @@ export function restoreSnapshot(snapshot: Snapshot, options: WorldOptions): Worl
   world.agents.push(...structuredClone(snapshot.agents));
   world.carcasses.length = 0;
   world.carcasses.push(...structuredClone(snapshot.carcasses ?? []));
+  if (world.carcasses.some(c => c.cachedBy !== undefined && (typeof c.cachedBy !== 'string' || !c.cachedBy || c.cause !== 'predation')))
+    throw new Error('invalid cached kill checkpoint');
   world.deceased.length = 0;
   world.deceased.push(...structuredClone(snapshot.deceased ?? []));
   // Old snapshots overloaded the hunt target. Recover only an unambiguous same-species sire;
@@ -144,6 +160,38 @@ export function restoreSnapshot(snapshot: Snapshot, options: WorldOptions): Worl
     const candidate = ancestors.get(mother.targetId ?? '');
     mother.pregnancyFatherId = candidate?.sex === 'male' && candidate.speciesId === mother.speciesId
       ? candidate.id : null;
+  }
+  if (snapshot.islandArrivals !== undefined) {
+    if (!isIslandProfile(world.terrainProfile) || Object.entries(snapshot.islandArrivals).some(([speciesId, at]) =>
+      !world.species.get(speciesId)?.islandArrival || !Number.isFinite(at) || at < 0 || at > snapshot.worldTime))
+      throw new Error('invalid island arrival checkpoint');
+    Object.assign(world.islandArrivals, snapshot.islandArrivals);
+  }
+  if (snapshot.pendingArrivals !== undefined) {
+    if (!isIslandProfile(world.terrainProfile) || !Array.isArray(snapshot.pendingArrivals)
+      || snapshot.pendingArrivals.some(a => !world.species.has(a?.speciesId) || !['female', 'male'].includes(a.sex)
+        || typeof a.trigger !== 'string' || !a.trigger))
+      throw new Error('invalid pending arrival checkpoint');
+    world.pendingArrivals.push(...structuredClone(snapshot.pendingArrivals));
+  }
+  for (const agent of [...world.agents, ...world.deceased]) {
+    if (agent.condition === undefined) continue;
+    if (!world.species.get(agent.speciesId)?.lifecycle.condition || !Number.isFinite(agent.condition)
+      || agent.condition < 0 || agent.condition > 1) throw new Error('invalid body condition checkpoint');
+  }
+  for (const agent of [...world.agents, ...world.deceased]) {
+    if (agent.gutFill === undefined) continue;
+    if (world.species.get(agent.speciesId)?.diet.maxDailyIntakeKg === undefined || !Number.isSafeInteger(agent.gutFill.day)
+      || agent.gutFill.day < 0 || agent.gutFill.day * 86400 > snapshot.worldTime || !Number.isFinite(agent.gutFill.kg)
+      || agent.gutFill.kg < 0 || !Number.isFinite(agent.gutFill.naturalKg) || agent.gutFill.naturalKg < 0)
+      throw new Error('invalid daily gut fill checkpoint');
+  }
+  for (const agent of world.agents) {
+    if (agent.gutKg === undefined) continue;
+    const cfg = world.species.get(agent.speciesId);
+    const capacity = cfg?.diet.gutCapacityBodyFraction ? agent.massKg * cfg.diet.gutCapacityBodyFraction : 0;
+    if (!Number.isFinite(agent.gutKg) || !(agent.gutKg > 0) || agent.gutKg > capacity + 1e-9)
+      throw new Error('invalid stomach checkpoint');
   }
   world.ledger.imported = snapshot.ledger.imported;
   world.ledger.exported = snapshot.ledger.exported;
@@ -197,6 +245,30 @@ function initializeLegacyFishRecruitment(snapshot: Snapshot): void {
 /** Split saved browse only at an explicitly authorized rules boundary. */
 function finishFloweringUpgrade(snapshot: Snapshot): void {
   establishFloweringGuild(snapshot.patches, snapshot.worldTime, true);
+  finishCurrentUpgrade(snapshot);
+}
+
+/**
+ * sim_0.37.0: the pair of leopards an upgraded island receives. A closed island gains a species
+ * only by a recorded arrival, so the upgrade schedules one male and one female to come ashore at
+ * the first day boundary after the world restarts, each an authoritative, ledgered `immigration`
+ * event (route `island_crossing`, trigger `rules_upgrade`). A mainland world gains its leopards
+ * through its own recorded dispersal from the surrounding landscape.
+ */
+export const UPGRADE_ISLAND_ARRIVALS: ReadonlyArray<{ speciesId: string; sex: 'female' | 'male' }> = [
+  { speciesId: 'leopard', sex: 'male' }, { speciesId: 'leopard', sex: 'female' },
+];
+
+/**
+ * Every explicit upgrade lands on the current rules through here. sim_0.37.0 establishes each
+ * land patch's rooting food out of its own soil nutrients (the world's nutrient total is
+ * unchanged), and schedules the leopard pair's arrival on an island that has none.
+ */
+function finishCurrentUpgrade(snapshot: Snapshot): void {
+  establishRooting(snapshot.patches);
+  if (snapshot.terrainProfile === 'island_v1' && !snapshot.agents.some(a => a.alive && a.speciesId === 'leopard')
+    && !snapshot.pendingArrivals?.length)
+    snapshot.pendingArrivals = UPGRADE_ISLAND_ARRIVALS.map(a => ({ ...a, trigger: 'rules_upgrade' }));
   snapshot.simVersion = SIM_VERSION;
 }
 
@@ -402,6 +474,112 @@ export function upgradeV27Snapshot(snapshot: Snapshot): Snapshot {
 }
 
 /**
+ * v0.38 corrects decisions the audit of v0.37 found wrong; see each rule's own comment. Future
+ * decisions only: no state is added or reshaped, so every v0.37 state byte is kept and nothing
+ * is scheduled. The upgrade exists so a saved v0.37 world, whose recorded history was made by the
+ * old rules, moves to these only by explicit operator choice.
+ */
+export function upgradeV37Snapshot(snapshot: Snapshot): Snapshot {
+  if (snapshot.simVersion !== 'sim_0.37.0') throw new Error('only sim_0.37.0 snapshots can use this upgrade');
+  const upgraded = structuredClone(snapshot);
+  upgraded.simVersion = SIM_VERSION;
+  return upgraded;
+}
+
+/**
+ * v0.37 adds the leopard, a den mother fed by a larger dhole pack, and a food limit on wild boar:
+ * each land patch gets its rooting and mast food (paid out of its own soil nutrients), and an
+ * island with no leopards receives a recorded male and female at the next day boundary. Saved
+ * dholes, boar and every other animal are kept as they are; body condition starts from each
+ * boar's current hunger when it is first needed.
+ */
+export function upgradeV36Snapshot(snapshot: Snapshot): Snapshot {
+  if (snapshot.simVersion !== 'sim_0.36.0') throw new Error('only sim_0.36.0 snapshots can use this upgrade');
+  const upgraded = structuredClone(snapshot);
+  finishCurrentUpgrade(upgraded);
+  return upgraded;
+}
+
+/**
+ * v0.36 gathers litters to their parent's care point, feeds a once-daily nursing to repletion,
+ * hunts dholes as a pack with field prey selection and calibrates boar piglet survival. Future
+ * decisions only; every v0.35 state byte is kept and nothing new is persisted.
+ */
+export function upgradeV35Snapshot(snapshot: Snapshot): Snapshot {
+  if (snapshot.simVersion !== 'sim_0.35.0') throw new Error('only sim_0.35.0 snapshots can use this upgrade');
+  const upgraded = structuredClone(snapshot);
+  finishCurrentUpgrade(upgraded);
+  return upgraded;
+}
+
+/**
+ * v0.35 calibrates predator feeding to field intake: meat beyond the day's hunger fills a
+ * stomach (tiger 14%, dhole 20% of body mass) digested at the daily rate, and a predator with
+ * food in its stomach does not start a hunt. Future decisions only; every v0.34 state byte is
+ * kept (no saved animal has a stomach until it next eats).
+ */
+export function upgradeV34Snapshot(snapshot: Snapshot): Snapshot {
+  if (snapshot.simVersion !== 'sim_0.34.0') throw new Error('only sim_0.34.0 snapshots can use this upgrade');
+  const upgraded = structuredClone(snapshot);
+  finishCurrentUpgrade(upgraded);
+  return upgraded;
+}
+
+/**
+ * v0.34 gives prey a landscape of fear: they detect predators that hunt them within their own
+ * senses (concealment hides a stalker), fear at once by distance and posture, flee from the
+ * seen predator, keep out of patches where one stands unless desperate, and chital and langur
+ * heed each other's alarms. Future decisions only; every v0.33 state byte is kept.
+ */
+export function upgradeV33Snapshot(snapshot: Snapshot): Snapshot {
+  if (snapshot.simVersion !== 'sim_0.33.0') throw new Error('only sim_0.33.0 snapshots can use this upgrade');
+  const upgraded = structuredClone(snapshot);
+  finishCurrentUpgrade(upgraded);
+  return upgraded;
+}
+
+/**
+ * v0.33 calibrates the island's predators and admits rare recorded arrivals: a pack's range
+ * holds only the land inside it (packCapacity), and tigers, elephants and jackals may swim ashore
+ * when locally scarce (World islandArrival). The founding cohort change applies to new worlds
+ * only; a saved world keeps every animal it has. Future decisions only; every v0.32 state byte
+ * is kept, and no animal, arrival or event is granted retroactively.
+ */
+export function upgradeV32Snapshot(snapshot: Snapshot): Snapshot {
+  if (snapshot.simVersion !== 'sim_0.32.0') throw new Error('only sim_0.32.0 snapshots can use this upgrade');
+  const upgraded = structuredClone(snapshot);
+  finishCurrentUpgrade(upgraded);
+  return upgraded;
+}
+
+/**
+ * v0.32 changes three care decisions: hunger alone no longer stops a parent answering a
+ * dependent's hydration emergency (availableForCare); a predator sharing the parent's patch
+ * stops care only through the parent's fear, as it stops everything else; and a parent of
+ * young that cannot yet follow wanders only within perceiving range of them (idleRangeAnchor).
+ * Future decisions only; every v0.31 state byte is kept, and no care, water, movement or event
+ * is granted retroactively.
+ */
+export function upgradeV31Snapshot(snapshot: Snapshot): Snapshot {
+  if (snapshot.simVersion !== 'sim_0.31.0') throw new Error('only sim_0.31.0 snapshots can use this upgrade');
+  const upgraded = structuredClone(snapshot);
+  finishCurrentUpgrade(upgraded);
+  return upgraded;
+}
+
+/**
+ * v0.31: nothing feeds at a carcass a predator of its kind fed from in the past hour, and
+ * an outside agent may steer an animal (the optional `controller` field). Future decisions
+ * only; every v0.30 state byte is kept.
+ */
+export function upgradeV30Snapshot(snapshot: Snapshot): Snapshot {
+  if (snapshot.simVersion !== 'sim_0.30.0') throw new Error('only sim_0.30.0 snapshots can use this upgrade');
+  const upgraded = structuredClone(snapshot);
+  finishCurrentUpgrade(upgraded);
+  return upgraded;
+}
+
+/**
  * v0.30 moves each patch's water access point off its centre. Every state byte is kept; an
  * animal or person standing at an old centre simply walks to the new point when it next
  * drinks or fishes. Recorded history keeps its old positions and still validates.
@@ -409,7 +587,7 @@ export function upgradeV27Snapshot(snapshot: Snapshot): Snapshot {
 export function upgradeV29Snapshot(snapshot: Snapshot): Snapshot {
   if (snapshot.simVersion !== 'sim_0.29.0') throw new Error('only sim_0.29.0 snapshots can use this upgrade');
   const upgraded = structuredClone(snapshot);
-  upgraded.simVersion = SIM_VERSION;
+  finishCurrentUpgrade(upgraded);
   return upgraded;
 }
 
@@ -417,6 +595,6 @@ export function upgradeV29Snapshot(snapshot: Snapshot): Snapshot {
 export function upgradeV28Snapshot(snapshot: Snapshot): Snapshot {
   if (snapshot.simVersion !== 'sim_0.28.0') throw new Error('only sim_0.28.0 snapshots can use this upgrade');
   const upgraded = structuredClone(snapshot);
-  upgraded.simVersion = SIM_VERSION;
+  finishCurrentUpgrade(upgraded);
   return upgraded;
 }

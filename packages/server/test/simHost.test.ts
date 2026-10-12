@@ -5,13 +5,13 @@ import { migrate } from '../src/db/migrate.js';
 import { EventStore } from '../src/db/eventStore.js';
 import { LifeStore } from '../src/db/lifeStore.js';
 import { SimHost } from './trackedHost.js';
-import { FOREST_LANDSCAPE, FOREST_POPULATION, SIM_VERSION, takeSnapshot, restoreSnapshot } from '@vana/sim';
+import { FOREST_LANDSCAPE, FOREST_POPULATION, ISLAND_V2_POPULATION, SIM_VERSION, takeSnapshot, restoreSnapshot } from '@vana/sim';
 import { SnapshotStore } from '../src/db/snapshotStore.js';
 import { testDatabaseUrl } from './testDatabase.js';
 import { isLiveEncounterFrame, LiveEncounterPlayer } from '../../client/src/liveEncounters.js';
 import { Gateway } from '../src/gateway.js';
-import type { LiveEncounterFrame } from '@vana/shared';
-import { asLegacySnapshot } from '../../sim/test/legacySnapshot.js';
+import { islandGeometrySeed, type LiveEncounterFrame } from '@vana/shared';
+import { asLegacySnapshot, stripV37State } from '../../sim/test/legacySnapshot.js';
 
 const url = testDatabaseUrl();
 const maybe = url ? describe : describe.skip;
@@ -183,6 +183,51 @@ maybe('SimHost', () => {
     await upgraded.abort();
     const restored = new SimHost(options()); await restored.boot();
     expect(restored.world.microEcology).toEqual(upgraded.world.microEcology);
+  });
+
+  it('refuses a v0.36 island save without VANA_ALLOW_V36_UPGRADE, and upgrades it to rooting food and a recorded leopard pair', async () => {
+    const island = { ...options(), seed: 2, terrainProfile: 'island_v1' as const,
+      initialAgents: { boar: 3, tiger: 2 }, minPopulation: {} };
+    const first = new SimHost(island); await first.boot();
+    const old = structuredClone(takeSnapshot(first.world)); old.simVersion = 'sim_0.36.0'; stripV37State(old);
+    expect(old.patches.some(p => p.rooting)).toBe(false);
+    await first.abort();
+    await new SnapshotStore(pool!).save(old);
+    await expect(new SimHost(island).boot()).rejects.toThrow(/refusing to boot/);
+    const upgraded = new SimHost({ ...island, allowV36Upgrade: true }); await upgraded.boot();
+    expect(upgraded.world.patches.some(p => p.rooting)).toBe(true);
+    expect(upgraded.world.agents.map(a => a.id)).toEqual(old.agents.map(a => a.id));
+    expect(upgraded.world.pendingArrivals.map(a => `${a.speciesId}/${a.sex}`)).toEqual(['leopard/male', 'leopard/female']);
+    expect((await new SnapshotStore(pool!).loadLatest())!.simVersion).toBe(SIM_VERSION);
+    expect((await new SnapshotStore(pool!).loadLatest())!.pendingArrivals).toHaveLength(2);
+    upgraded.world.step(24);
+    expect(upgraded.world.livingCount('leopard')).toBe(2);
+    await upgraded.abort();
+  });
+
+  it('founds an island_v2 world with its own cohort, and refuses to boot it as island_v1', async () => {
+    const island = { pool: pool!, seed: 4, speciesDir, snapshotEveryWorldHours: 24, terrainProfile: 'island_v2' as const };
+    const first = new SimHost(island); await first.boot();
+    for (const [speciesId, count] of Object.entries(ISLAND_V2_POPULATION))
+      expect(first.world.livingCount(speciesId), speciesId).toBe(count);
+    expect(first.world.patches[0]!.islandSeed).toBe(islandGeometrySeed(4, 'island_v2'));
+    await first.abort();
+    await expect(new SimHost({ ...island, terrainProfile: 'island_v1' }).boot()).rejects.toThrow(/terrain profile mismatch/);
+    const restarted = new SimHost(island); await restarted.boot();
+    expect(restarted.world.terrainProfile).toBe('island_v2');
+    await restarted.abort();
+  });
+
+  it('refuses a v0.37 save without VANA_ALLOW_V37_UPGRADE, and upgrades it keeping every animal', async () => {
+    const first = new SimHost(options()); await first.boot();
+    const old = structuredClone(takeSnapshot(first.world)); old.simVersion = 'sim_0.37.0';
+    await first.abort();
+    await new SnapshotStore(pool!).save(old);
+    await expect(new SimHost(options()).boot()).rejects.toThrow(/refusing to boot/);
+    const upgraded = new SimHost({ ...options(), allowV37Upgrade: true }); await upgraded.boot();
+    expect(upgraded.world.agents).toEqual(old.agents);
+    expect((await new SnapshotStore(pool!).loadLatest())!.simVersion).toBe(SIM_VERSION);
+    await upgraded.abort();
   });
 
   it('refuses a v0.19 island save without explicit freshwater-basin upgrade opt-in', async () => {
@@ -401,6 +446,18 @@ maybe('SimHost', () => {
     await upgraded.abort();
   });
 
+  it('plays a fresh hour straight after start instead of freezing every animal for a whole interval', async () => {
+    // At one world hour per real hour, waiting a full interval for the first tick left a
+    // restarted world with no movement frame, and every wild animal standing still, for an hour.
+    const host = new SimHost({ ...options(), snapshotEveryWorldHours: 1, worldHoursPerRealHour: 1 });
+    await host.boot();
+    const before = host.world.now();
+    expect(host.liveEncounterFrame()).toBeNull();
+    host.start();
+    await expect.poll(() => host.liveEncounterFrame()?.endWorldTime ?? null, { timeout: 20_000 }).toBe(before + 3600);
+    await host.stop();
+  });
+
   it('can restart before its first tick without regenerating founder event IDs', async () => {
     const first = new SimHost(options());
     await first.boot();
@@ -417,7 +474,7 @@ maybe('SimHost', () => {
     await host.boot();
 
     const present = new Set(host.world.agents.map((a) => a.speciesId));
-    expect(present.size).toBe(12);
+    expect(present.size).toBe(13);
     expect([...present].sort()).toEqual([...host.world.species.keys()].sort());
     for (const [speciesId, count] of Object.entries(FOREST_POPULATION)) {
       expect(host.world.livingCount(speciesId)).toBe(count);

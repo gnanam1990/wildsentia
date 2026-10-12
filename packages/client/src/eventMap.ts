@@ -25,7 +25,7 @@ export function mapMarkerPersonHistory(marker: MapMarker): string | null {
   return marker.actorId && (marker.type === 'human_born' || marker.type === 'human_died') ? marker.actorId : null;
 }
 export function mapMarkerGlyph(type: string): string {
-  return type === 'hunt' ? 'H' : type === 'human_hunt' ? 'P' : type === 'human_born' ? 'C' : type === 'human_died' ? 'X' : type === 'born' ? 'B' : 'D';
+  return type === 'hunt' ? 'H' : type === 'human_hunt' ? 'P' : type === 'human_born' ? 'C' : type === 'human_died' ? 'X' : type === 'born' ? 'B' : type === 'immigration' ? 'A' : 'D';
 }
 export function mapPercent(position: { x: number; z: number }): { left: number; top: number } {
   const span = GRID_SIZE * PATCH_METRES;
@@ -52,7 +52,7 @@ export class EventMap {
     header.append(title, close);
     this.#status.className = 'dialog-status'; this.#status.setAttribute('role', 'status');
     const label = document.createElement('label'); label.className = 'map-filter'; label.textContent = 'Show events ';
-    for (const [value, text] of [['all', 'All events'], ['hunt', 'Animal hunts / attacks'], ['human_hunt', 'Human hunts'], ['born', 'Animal births'], ['human_born', 'Human births'], ['died', 'Animal deaths'], ['human_died', 'Human deaths']])
+    for (const [value, text] of [['all', 'All events'], ['hunt', 'Animal hunts / attacks'], ['human_hunt', 'Human hunts'], ['born', 'Animal births'], ['human_born', 'Human births'], ['died', 'Animal deaths'], ['human_died', 'Human deaths'], ['immigration', 'Animal arrivals']])
       this.#filter.add(new Option(text, value));
     label.append(this.#filter); this.#filter.onchange = () => this.#render();
     this.#map.className = 'forest-map'; this.#map.setAttribute('aria-label', 'Event locations; equivalent actions in the list below');
@@ -70,7 +70,7 @@ export class EventMap {
       const response = await fetch('/api/event-map'); if (!response.ok) throw new Error('map unavailable');
       const data = await response.json() as { worldTime: number; markers: MapMarker[] };
       this.#markers = data.markers; this.#worldTime = data.worldTime; this.#render();
-      this.#status.textContent = `${data.markers.length} recent events · refreshed ${new Date().toLocaleTimeString()}. H = animal hunt, P = person hunt, B = animal birth, C = human birth, D = animal death, X = human death.`;
+      this.#status.textContent = `${data.markers.length} recent events · refreshed ${new Date().toLocaleTimeString()}. H = animal hunt, P = person hunt, B = animal birth, C = human birth, D = animal death, X = human death, A = animal arrival.`;
     } catch { this.#status.textContent = 'Map update unavailable. Any markers below are from the last successful update.'; }
     finally { this.#busy = false; }
   }

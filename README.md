@@ -1,6 +1,10 @@
-# Vana — The Living Wild
+# Wildsentia — The Living Wild
 
 One shared, server-authoritative wildlife simulation. You can watch it. You cannot control it.
+
+**Start here: [the end-to-end guide](docs/guide/README.md)** covers what Wildsentia is, the
+architecture, the simulation, the observer, live agents, the API, running it locally, deploying
+and operating it, art and video, and current status.
 
 - **Design spec:** [`docs/2026-09-22-vana-design.md`](docs/2026-09-22-vana-design.md)
 - **M1 plan:** [`docs/superpowers/plans/2026-09-22-vana-m1-simulation-core.md`](docs/superpowers/plans/2026-09-22-vana-m1-simulation-core.md)
@@ -345,11 +349,54 @@ of the 63 starvation deaths.
 
 ### Running an existing world on new code
 
-The current runtime identifies as `sim_0.30.0`. Its only rule change from `sim_0.29.0` is the
-position of each patch's water access point (30–95 m off the centre instead of on it), so
-drinkers no longer line up on a grid; older recordings at the centre still validate. A saved
-0.29 world starts on this code only with `VANA_ALLOW_V29_UPGRADE=1`, and each older version
-has its own flag. The 26 September staging world was upgraded this way after a backup.
+The current runtime identifies as `sim_0.38.0`. Its rule changes from `sim_0.37.0` correct
+decisions an audit of `sim_0.37.0` found wrong; no saved state changes, and a saved 0.37 world starts
+on this code only with `VANA_ALLOW_V37_UPGRADE=1`. `sim_0.37.0`'s rule changes from `sim_0.36.0` add the
+leopard (a thirteenth species: an ambush cat that keeps away from tigers, climbs to escape
+them, caches its kills in trees and hunts for its weaned cubs), found the dholes as a pack of five
+(the smallest working pack) whose den mother stays with her pups and is fed by the pack,
+while helpers rejoin their packmates before hunting rather than hunt alone, and limit wild boar by
+food: a finite,
+regrowing rooting and mast food per land patch, a daily gut limit that grass cannot make up, and
+breeding and litter size that follow body condition. A saved 0.36 world starts on this code only
+with `VANA_ALLOW_V36_UPGRADE=1`: its land patches get their rooting food out of their own soil, and
+an island receives a recorded leopard pair at the next day boundary; its dholes and boar are kept
+as they are. `sim_0.37.0` also adds the `island_v2` terrain, a larger island (about 26 km² of land
+against about 12 km²) in the same 20 × 20 grid, with its own founding cohort; `deploy/compose.yml`
+founds new worlds on it. A saved world keeps its terrain: a database holding an `island_v1` world
+must run with `VANA_TERRAIN_PROFILE=island_v1`, and the server refuses a mismatch. `sim_0.36.0`'s rule changes from `sim_0.35.0` were on young
+care, pack hunting and the kill itself: a litter gathers to its mother's care point (piglets from
+birth, jackal pups from ten days, dhole pups from three weeks, langur infants are carried), a pup
+that cannot yet walk does not run from an attack, leverets suckle at birth and a once-daily
+nursing feeds to repletion; dholes hunt as a pack (packmates join the chase, relay it and feed
+at the kill; weaned pups follow and eat), with field prey selection for dholes and tigers;
+boar piglet survival follows the field; and a seized prey is subdued (a recorded `subdue` hold
+after contact) and dies at its end, not on touch. A saved 0.35 world starts on this code only
+with `VANA_ALLOW_V35_UPGRADE=1`. `sim_0.35.0`'s change from `sim_0.34.0` calibrated
+predator feeding to field intake: meat beyond the day's hunger fills a stomach (tiger 14%, dhole
+20% of body mass) digested at the daily rate, and a predator does not start a hunt while sated or
+below its hunting hunger, so a tiger kills about once a week, as at Nagarahole. A saved 0.34 world
+starts on this code only with `VANA_ALLOW_V34_UPGRADE=1`. `sim_0.34.0`'s change from `sim_0.33.0` was a landscape
+of fear: prey detect the predators that hunt them within their own senses (a stalker's
+concealment hides it until close), fear at once by distance and posture, flee a spotted hunter
+that hour, keep out of patches where one stands unless desperate, and chital and langur heed each
+other's alarms; young too small to follow lie still. A saved 0.33 world starts on this code
+with `VANA_ALLOW_V33_UPGRADE=1`. `sim_0.33.0`'s changes from `sim_0.32.0` were on the
+closed island: a pack's range holds only the land inside it (so the island holds one pack of four
+adult dholes); new islands are founded at the forest's density per km² of land, with predators
+at field densities (2 tigers, 4 dholes, 14 jackals); an idle hunter stays and feeds from an
+unfinished kill instead of wandering off; and tigers, elephants and jackals can rarely swim
+ashore while scarce, each arrival a recorded, positioned `immigration` event whose body the
+nutrient ledger imports. A saved 0.32
+world starts on this code with `VANA_ALLOW_V32_UPGRADE=1`; it keeps every animal it has.
+`sim_0.32.0`'s changes from `sim_0.31.0` were three parental-care decisions: hunger alone no longer stops a parent answering a dependent young
+animal's hydration emergency (thirst 0.5 or more); a predator sharing the parent's patch stops
+care only through the parent's fear, as it stops everything else; and a parent of young that
+cannot yet follow it wanders only within perceiving range of them. What a parent gives is still
+bounded by her own reserves (see `docs/2026-10-05-multi-year-ecology.md`). A saved
+0.31 world starts on this code with `VANA_ALLOW_V31_UPGRADE=1`, and each older version
+has its own flag (`sim_0.31.0` held kills: `VANA_ALLOW_V30_UPGRADE`; `sim_0.30.0` off-centre
+water access points: `VANA_ALLOW_V29_UPGRADE`). The 26 September staging world was upgraded this way after a backup.
 Do not upgrade a
 saved or preview world without backup, explicit operator choice, and a restore
 drill; future in-progress `SIM_VERSION` values are not release approvals.

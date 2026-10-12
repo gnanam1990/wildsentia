@@ -3,6 +3,7 @@ import type { EventLog } from '../events/log.js';
 import { navigate } from './navigation.js';
 import { locateAgent, placeBeside } from './spatial.js';
 import { attemptCourtship, conceive, endOestrus, isReceptive } from './reproduction.js';
+import { breedingFertility } from './needs.js';
 
 export interface CourtshipVisit {
   female: Agent; male: Agent; arrival: number; radius: number; relatedness: number; routeId?: string;
@@ -45,7 +46,8 @@ export function finishCourtship(visit: CourtshipVisit, cfg: SpeciesConfig, start
     && Math.hypot(female.position.x - male.position.x, female.position.z - male.position.z) <= radius + 1e-8;
   const receptive = contact && breedingAllowed && isReceptive(female, cfg, end) && isReceptive(male, cfg, end)
     && female.drives.fear < .5 && male.drives.fear < .5 && female.lastEncounterAt !== start && male.lastEncounterAt !== start;
-  const success = receptive && attemptCourtship(female, male, rng, localDensity, cfg.social.groupSize[1]);
+  const success = receptive && attemptCourtship(female, male, rng, localDensity, cfg.social.groupSize[1],
+    breedingFertility(female, cfg));
   log.append({ type: 'courtship', worldTime: end, simVersion: '', patchId: female.patchId,
     ...(positionInPatch(female.position, female.patchId) ? { position: { ...female.position } } : {}),
     actors: [female.id, male.id], goal: 'breed',

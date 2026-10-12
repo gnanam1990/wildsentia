@@ -1,0 +1,1354 @@
+{
+ "spectators_final": {
+  "base": "http://localhost",
+  "hardware": {
+   "host": "unknown x4",
+   "docker": "unknown"
+  },
+  "opts": {
+   "duration": 330,
+   "workers": 4,
+   "ramp": 50,
+   "container": "vana-load-server-1"
+  },
+  "results": [
+   {
+    "spectators": 50,
+    "agents": 0,
+    "rampSeconds": 1.7,
+    "measuredSeconds": 330,
+    "connected": 50,
+    "refused": {},
+    "closed": {},
+    "wsErrors": 0,
+    "possessing": 0,
+    "queued": 0,
+    "cpuPercent": {
+     "mean": 6,
+     "max": 26
+    },
+    "rssMB": {
+     "max": 201
+    },
+    "eventLoopP99Ms": 22.1,
+    "eventLoopMaxMs": 158.2,
+    "liveTickLagMaxMs": 130.3,
+    "broadcastMaxMs": {
+     "live": 9.2,
+     "roster": 0,
+     "scene": 56.8
+    },
+    "worldClockLagMaxS": 0,
+    "worldTickMaxS": 0.6,
+    "dbPoolWaitingMax": 0,
+    "serverSentMBps": 3.16,
+    "serverMessagesPerS": 51,
+    "wireTxMBps": null,
+    "slowConsumerTerminations": 0,
+    "http5xx": 0,
+    "http429": 0,
+    "healthOk": true,
+    "healthMaxMs": 27,
+    "liveLatencyMs": {
+     "n": 0,
+     "p50": null,
+     "p95": null,
+     "p99": null
+    },
+    "firstSceneMs": {
+     "n": 50,
+     "p50": 322,
+     "p95": 499
+    },
+    "checkpointFanout": [
+     {
+      "spreadMs": 508,
+      "viewers": 50
+     }
+    ],
+    "receivedMBps": 3.16,
+    "messagesReceived": {
+     "viewers": 15842,
+     "scene": 579,
+     "heartbeat": 305
+    },
+    "agentCalls": {},
+    "loadGeneratorCpu": 1
+   },
+   {
+    "spectators": 200,
+    "agents": 0,
+    "rampSeconds": 4.8,
+    "measuredSeconds": 330,
+    "connected": 200,
+    "refused": {},
+    "closed": {},
+    "wsErrors": 0,
+    "possessing": 0,
+    "queued": 0,
+    "cpuPercent": {
+     "mean": 13,
+     "max": 68
+    },
+    "rssMB": {
+     "max": 263
+    },
+    "eventLoopP99Ms": 19,
+    "eventLoopMaxMs": 150.1,
+    "liveTickLagMaxMs": 120.5,
+    "broadcastMaxMs": {
+     "live": 9.2,
+     "roster": 0,
+     "scene": 37.9
+    },
+    "worldClockLagMaxS": 0,
+    "worldTickMaxS": 0.44,
+    "dbPoolWaitingMax": 0,
+    "serverSentMBps": 12.44,
+    "serverMessagesPerS": 206,
+    "wireTxMBps": null,
+    "slowConsumerTerminations": 0,
+    "http5xx": 0,
+    "http429": 0,
+    "healthOk": true,
+    "healthMaxMs": 34,
+    "liveLatencyMs": {
+     "n": 0,
+     "p50": null,
+     "p95": null,
+     "p99": null
+    },
+    "firstSceneMs": {
+     "n": 200,
+     "p50": 61,
+     "p95": 485
+    },
+    "checkpointFanout": [
+     {
+      "spreadMs": 1622,
+      "viewers": 200
+     }
+    ],
+    "receivedMBps": 12.44,
+    "messagesReceived": {
+     "viewers": 64328,
+     "scene": 2375,
+     "heartbeat": 1159
+    },
+    "agentCalls": {},
+    "loadGeneratorCpu": 3
+   },
+   {
+    "spectators": 500,
+    "agents": 0,
+    "rampSeconds": 10.4,
+    "measuredSeconds": 330,
+    "connected": 500,
+    "refused": {},
+    "closed": {},
+    "wsErrors": 0,
+    "possessing": 0,
+    "queued": 0,
+    "cpuPercent": {
+     "mean": 27,
+     "max": 169
+    },
+    "rssMB": {
+     "max": 376
+    },
+    "eventLoopP99Ms": 28.5,
+    "eventLoopMaxMs": 228.1,
+    "liveTickLagMaxMs": 184.7,
+    "broadcastMaxMs": {
+     "live": 4.8,
+     "roster": 0,
+     "scene": 62.1
+    },
+    "worldClockLagMaxS": 0,
+    "worldTickMaxS": 0.66,
+    "dbPoolWaitingMax": 0,
+    "serverSentMBps": 31.64,
+    "serverMessagesPerS": 515,
+    "wireTxMBps": null,
+    "slowConsumerTerminations": 0,
+    "http5xx": 0,
+    "http429": 0,
+    "healthOk": true,
+    "healthMaxMs": 104,
+    "liveLatencyMs": {
+     "n": 0,
+     "p50": null,
+     "p95": null,
+     "p99": null
+    },
+    "firstSceneMs": {
+     "n": 500,
+     "p50": 57,
+     "p95": 102
+    },
+    "checkpointFanout": [
+     {
+      "spreadMs": 3550,
+      "viewers": 500
+     },
+     {
+      "spreadMs": 6356,
+      "viewers": 500
+     }
+    ],
+    "receivedMBps": 31.64,
+    "messagesReceived": {
+     "viewers": 161002,
+     "scene": 6191,
+     "heartbeat": 2846
+    },
+    "agentCalls": {},
+    "loadGeneratorCpu": 6
+   },
+   {
+    "spectators": 1000,
+    "agents": 0,
+    "rampSeconds": 20.6,
+    "measuredSeconds": 330,
+    "connected": 1000,
+    "refused": {},
+    "closed": {},
+    "wsErrors": 0,
+    "possessing": 0,
+    "queued": 0,
+    "cpuPercent": {
+     "mean": 43,
+     "max": 197
+    },
+    "rssMB": {
+     "max": 538
+    },
+    "eventLoopP99Ms": 45.9,
+    "eventLoopMaxMs": 258.3,
+    "liveTickLagMaxMs": 176.2,
+    "broadcastMaxMs": {
+     "live": 39.4,
+     "roster": 0,
+     "scene": 257.8
+    },
+    "worldClockLagMaxS": 0,
+    "worldTickMaxS": 0.66,
+    "dbPoolWaitingMax": 0,
+    "serverSentMBps": 59.98,
+    "serverMessagesPerS": 1035,
+    "wireTxMBps": null,
+    "slowConsumerTerminations": 0,
+    "http5xx": 0,
+    "http429": 0,
+    "healthOk": true,
+    "healthMaxMs": 107,
+    "liveLatencyMs": {
+     "n": 0,
+     "p50": null,
+     "p95": null,
+     "p99": null
+    },
+    "firstSceneMs": {
+     "n": 1000,
+     "p50": 42,
+     "p95": 138
+    },
+    "checkpointFanout": [
+     {
+      "spreadMs": 9793,
+      "viewers": 1000
+     }
+    ],
+    "receivedMBps": 59.98,
+    "messagesReceived": {
+     "viewers": 324179,
+     "heartbeat": 5984,
+     "scene": 11612
+    },
+    "agentCalls": {},
+    "loadGeneratorCpu": 10
+   }
+  ]
+ },
+ "agents_final": {
+  "base": "http://localhost",
+  "hardware": {
+   "host": "unknown x4",
+   "docker": "unknown"
+  },
+  "opts": {
+   "duration": 150,
+   "workers": 4,
+   "ramp": 50,
+   "container": "vana-load-server-1"
+  },
+  "results": [
+   {
+    "spectators": 20,
+    "agents": 25,
+    "rampSeconds": 1.2,
+    "measuredSeconds": 150,
+    "connected": 20,
+    "refused": {},
+    "closed": {},
+    "wsErrors": 0,
+    "possessing": 25,
+    "queued": 0,
+    "cpuPercent": {
+     "mean": 8,
+     "max": 10
+    },
+    "rssMB": {
+     "max": 151
+    },
+    "eventLoopP99Ms": 18.5,
+    "eventLoopMaxMs": 39,
+    "liveTickLagMaxMs": 17.8,
+    "broadcastMaxMs": {
+     "live": 6.1,
+     "roster": 4.3,
+     "scene": 16.7
+    },
+    "worldClockLagMaxS": 0,
+    "worldTickMaxS": 0.42,
+    "dbPoolWaitingMax": 0,
+    "serverSentMBps": 1.25,
+    "serverMessagesPerS": 106,
+    "wireTxMBps": null,
+    "slowConsumerTerminations": 0,
+    "http5xx": 0,
+    "http429": 0,
+    "healthOk": true,
+    "healthMaxMs": 12,
+    "liveLatencyMs": {
+     "n": 11575,
+     "p50": 1,
+     "p95": 2,
+     "p99": 4
+    },
+    "firstSceneMs": {
+     "n": 20,
+     "p50": 301,
+     "p95": 514
+    },
+    "checkpointFanout": [],
+    "receivedMBps": 1.25,
+    "messagesReceived": {
+     "live": 11575,
+     "viewers": 2705,
+     "live-roster": 1500,
+     "heartbeat": 54,
+     "scene": 94
+    },
+    "agentCalls": {
+     "observe": {
+      "ok": 1777,
+      "failed": {},
+      "p50": 6.0118749999965075,
+      "p95": 9.236250000001746,
+      "p99": 13.58116699999664
+     },
+     "move": {
+      "ok": 749,
+      "failed": {},
+      "p50": 4.337166999990586,
+      "p95": 6.6884160000008706,
+      "p99": 9.383832999999868
+     }
+    },
+    "loadGeneratorCpu": 1
+   },
+   {
+    "spectators": 20,
+    "agents": 100,
+    "rampSeconds": 1.2,
+    "measuredSeconds": 150,
+    "connected": 20,
+    "refused": {},
+    "closed": {},
+    "wsErrors": 0,
+    "possessing": 100,
+    "queued": 0,
+    "cpuPercent": {
+     "mean": 15,
+     "max": 28
+    },
+    "rssMB": {
+     "max": 174
+    },
+    "eventLoopP99Ms": 25.7,
+    "eventLoopMaxMs": 197.7,
+    "liveTickLagMaxMs": 109.3,
+    "broadcastMaxMs": {
+     "live": 7.6,
+     "roster": 2.7,
+     "scene": 24.4
+    },
+    "worldClockLagMaxS": 0,
+    "worldTickMaxS": 0.44,
+    "dbPoolWaitingMax": 0,
+    "serverSentMBps": 1.77,
+    "serverMessagesPerS": 107,
+    "wireTxMBps": null,
+    "slowConsumerTerminations": 0,
+    "http5xx": 0,
+    "http429": 0,
+    "healthOk": true,
+    "healthMaxMs": 8,
+    "liveLatencyMs": {
+     "n": 11798,
+     "p50": 1,
+     "p95": 2,
+     "p99": 4
+    },
+    "firstSceneMs": {
+     "n": 20,
+     "p50": 209,
+     "p95": 307
+    },
+    "checkpointFanout": [
+     {
+      "spreadMs": 156,
+      "viewers": 20
+     }
+    ],
+    "receivedMBps": 1.77,
+    "messagesReceived": {
+     "live": 11798,
+     "live-roster": 1500,
+     "viewers": 2535,
+     "heartbeat": 48,
+     "scene": 111
+    },
+    "agentCalls": {
+     "observe": {
+      "ok": 7108,
+      "failed": {},
+      "p50": 5.660875000001397,
+      "p95": 9.91649999999936,
+      "p99": 24.756707999993523
+     },
+     "move": {
+      "ok": 2987,
+      "failed": {
+       "409 not_on_land": 3
+      },
+      "p50": 3.996041000005789,
+      "p95": 6.4465410000120755,
+      "p99": 12.75108299999556
+     }
+    },
+    "loadGeneratorCpu": 4
+   },
+   {
+    "spectators": 20,
+    "agents": 250,
+    "rampSeconds": 1.3,
+    "measuredSeconds": 150,
+    "connected": 20,
+    "refused": {},
+    "closed": {},
+    "wsErrors": 0,
+    "possessing": 250,
+    "queued": 0,
+    "cpuPercent": {
+     "mean": 28,
+     "max": 36
+    },
+    "rssMB": {
+     "max": 181
+    },
+    "eventLoopP99Ms": 43.6,
+    "eventLoopMaxMs": 138.1,
+    "liveTickLagMaxMs": 47.2,
+    "broadcastMaxMs": {
+     "live": 10.3,
+     "roster": 11.2,
+     "scene": 16
+    },
+    "worldClockLagMaxS": 0,
+    "worldTickMaxS": 0.44,
+    "dbPoolWaitingMax": 0,
+    "serverSentMBps": 2.25,
+    "serverMessagesPerS": 108,
+    "wireTxMBps": null,
+    "slowConsumerTerminations": 0,
+    "http5xx": 0,
+    "http429": 0,
+    "healthOk": true,
+    "healthMaxMs": 37,
+    "liveLatencyMs": {
+     "n": 11934,
+     "p50": 2,
+     "p95": 3,
+     "p99": 6
+    },
+    "firstSceneMs": {
+     "n": 20,
+     "p50": 228,
+     "p95": 606
+    },
+    "checkpointFanout": [],
+    "receivedMBps": 2.25,
+    "messagesReceived": {
+     "live": 11934,
+     "viewers": 2649,
+     "live-roster": 1500,
+     "scene": 99,
+     "heartbeat": 55
+    },
+    "agentCalls": {
+     "observe": {
+      "ok": 17808,
+      "failed": {},
+      "p50": 5.735124999999243,
+      "p95": 13.596958999998606,
+      "p99": 39.45974999999453
+     },
+     "move": {
+      "ok": 7437,
+      "failed": {
+       "409 not_on_land": 3
+      },
+      "p50": 3.8972910000011325,
+      "p95": 7.52941699999792,
+      "p99": 16.043582999991486
+     }
+    },
+    "loadGeneratorCpu": 9
+   },
+   {
+    "spectators": 20,
+    "agents": 500,
+    "rampSeconds": 1.8,
+    "measuredSeconds": 150,
+    "connected": 20,
+    "refused": {},
+    "closed": {},
+    "wsErrors": 0,
+    "possessing": 354,
+    "queued": 146,
+    "cpuPercent": {
+     "mean": 45,
+     "max": 52
+    },
+    "rssMB": {
+     "max": 203
+    },
+    "eventLoopP99Ms": 61.5,
+    "eventLoopMaxMs": 155.3,
+    "liveTickLagMaxMs": 119.2,
+    "broadcastMaxMs": {
+     "live": 19.6,
+     "roster": 4,
+     "scene": 8.5
+    },
+    "worldClockLagMaxS": 0,
+    "worldTickMaxS": 0.33,
+    "dbPoolWaitingMax": 0,
+    "serverSentMBps": 2.72,
+    "serverMessagesPerS": 108,
+    "wireTxMBps": null,
+    "slowConsumerTerminations": 0,
+    "http5xx": 0,
+    "http429": 0,
+    "healthOk": true,
+    "healthMaxMs": 17,
+    "liveLatencyMs": {
+     "n": 11937,
+     "p50": 2,
+     "p95": 4,
+     "p99": 12
+    },
+    "firstSceneMs": {
+     "n": 20,
+     "p50": 197,
+     "p95": 224
+    },
+    "checkpointFanout": [],
+    "receivedMBps": 2.72,
+    "messagesReceived": {
+     "live": 11937,
+     "live-roster": 1500,
+     "viewers": 2648,
+     "scene": 92,
+     "heartbeat": 59
+    },
+    "agentCalls": {
+     "move": {
+      "ok": 10481,
+      "failed": {
+       "409 not_on_land": 2
+      },
+      "p50": 3.9726249999985157,
+      "p95": 11.208165999996709,
+      "p99": 37.897209000002476
+     },
+     "observe": {
+      "ok": 35540,
+      "failed": {},
+      "p50": 5.800250000000233,
+      "p95": 33.18899999999849,
+      "p99": 66.9970420000027
+     },
+     "possess": {
+      "ok": 1314,
+      "failed": {},
+      "p50": 4.623207999997248,
+      "p95": 27.80829100000119,
+      "p99": 67.69566700000723
+     }
+    },
+    "loadGeneratorCpu": 15
+   },
+   {
+    "spectators": 500,
+    "agents": 250,
+    "rampSeconds": 12.1,
+    "measuredSeconds": 150,
+    "connected": 500,
+    "refused": {},
+    "closed": {},
+    "wsErrors": 0,
+    "possessing": 245,
+    "queued": 5,
+    "cpuPercent": {
+     "mean": 57,
+     "max": 110
+    },
+    "rssMB": {
+     "max": 401
+    },
+    "eventLoopP99Ms": 53.2,
+    "eventLoopMaxMs": 143,
+    "liveTickLagMaxMs": 110.4,
+    "broadcastMaxMs": {
+     "live": 56.3,
+     "roster": 35.3,
+     "scene": 29.5
+    },
+    "worldClockLagMaxS": 0,
+    "worldTickMaxS": 0.42,
+    "dbPoolWaitingMax": 0,
+    "serverSentMBps": 62.59,
+    "serverMessagesPerS": 2696,
+    "wireTxMBps": null,
+    "slowConsumerTerminations": 0,
+    "http5xx": 0,
+    "http429": 0,
+    "healthOk": true,
+    "healthMaxMs": 24,
+    "liveLatencyMs": {
+     "n": 80000,
+     "p50": 13,
+     "p95": 34,
+     "p99": 1026
+    },
+    "firstSceneMs": {
+     "n": 500,
+     "p50": 148,
+     "p95": 388
+    },
+    "checkpointFanout": [
+     {
+      "spreadMs": 4600,
+      "viewers": 500
+     }
+    ],
+    "receivedMBps": 62.59,
+    "messagesReceived": {
+     "live": 295857,
+     "viewers": 67521,
+     "scene": 2914,
+     "live-roster": 37000,
+     "heartbeat": 1194
+    },
+    "agentCalls": {
+     "observe": {
+      "ok": 17677,
+      "failed": {},
+      "p50": 6.004958999998053,
+      "p95": 33.89033299998846,
+      "p99": 288.940208
+     },
+     "move": {
+      "ok": 7289,
+      "failed": {
+       "409 not_on_land": 5
+      },
+      "p50": 3.948792000010144,
+      "p95": 28.045458000000508,
+      "p99": 182.51245799999742
+     },
+     "possess": {
+      "ok": 45,
+      "failed": {},
+      "p50": 4.579375000001164,
+      "p95": 46.16066700000374,
+      "p99": 55.017957999996725
+     }
+    },
+    "loadGeneratorCpu": 8
+   },
+   {
+    "spectators": 1000,
+    "agents": 500,
+    "rampSeconds": 25,
+    "measuredSeconds": 150,
+    "connected": 1000,
+    "refused": {},
+    "closed": {},
+    "wsErrors": 0,
+    "possessing": 354,
+    "queued": 146,
+    "cpuPercent": {
+     "mean": 84,
+     "max": 93
+    },
+    "rssMB": {
+     "max": 551
+    },
+    "eventLoopP99Ms": 103.2,
+    "eventLoopMaxMs": 171.7,
+    "liveTickLagMaxMs": 107.6,
+    "broadcastMaxMs": {
+     "live": 96.4,
+     "roster": 65.4,
+     "scene": 34
+    },
+    "worldClockLagMaxS": 0,
+    "worldTickMaxS": 0.42,
+    "dbPoolWaitingMax": 0,
+    "serverSentMBps": 132.29,
+    "serverMessagesPerS": 5426,
+    "wireTxMBps": null,
+    "slowConsumerTerminations": 0,
+    "http5xx": 0,
+    "http429": 0,
+    "healthOk": true,
+    "healthMaxMs": 80,
+    "liveLatencyMs": {
+     "n": 80000,
+     "p50": 36,
+     "p95": 100,
+     "p99": 126
+    },
+    "firstSceneMs": {
+     "n": 1000,
+     "p50": 221,
+     "p95": 1140
+    },
+    "checkpointFanout": [],
+    "receivedMBps": 132.58,
+    "messagesReceived": {
+     "viewers": 136970,
+     "heartbeat": 2899,
+     "scene": 4791,
+     "live": 595847,
+     "live-roster": 74000
+    },
+    "agentCalls": {
+     "observe": {
+      "ok": 34591,
+      "failed": {},
+      "p50": 17.912624999997206,
+      "p95": 180.81762499999604,
+      "p99": 391.32074999999895
+     },
+     "move": {
+      "ok": 10471,
+      "failed": {
+       "409 not_on_land": 15
+      },
+      "p50": 7.513916999996582,
+      "p95": 97.83954199999425,
+      "p99": 193.75370900000416
+     },
+     "possess": {
+      "ok": 1424,
+      "failed": {},
+      "p50": 8.913667000000714,
+      "p95": 117.41224999999395,
+      "p99": 283.8060419999965
+     }
+    },
+    "loadGeneratorCpu": 12
+   }
+  ]
+ },
+ "agents_before_live_fixes": {
+  "base": "http://localhost",
+  "hardware": {
+   "host": "unknown x4",
+   "docker": "unknown"
+  },
+  "opts": {
+   "duration": 150,
+   "workers": 4,
+   "ramp": 50,
+   "container": "vana-load-server-1"
+  },
+  "results": [
+   {
+    "spectators": 20,
+    "agents": 25,
+    "rampSeconds": 1.2,
+    "measuredSeconds": 150,
+    "connected": 20,
+    "refused": {},
+    "closed": {},
+    "wsErrors": 0,
+    "possessing": 25,
+    "queued": 0,
+    "cpuPercent": {
+     "mean": 10,
+     "max": 20
+    },
+    "rssMB": {
+     "max": 178
+    },
+    "eventLoopP99Ms": 52.4,
+    "eventLoopMaxMs": 173.5,
+    "liveTickLagMaxMs": 126.1,
+    "broadcastMaxMs": {
+     "live": 37,
+     "roster": 2.8,
+     "scene": 122.5
+    },
+    "worldClockLagMaxS": 0,
+    "worldTickMaxS": 0.39,
+    "dbPoolWaitingMax": 0,
+    "serverSentMBps": 1.24,
+    "serverMessagesPerS": 102,
+    "wireTxMBps": null,
+    "slowConsumerTerminations": 0,
+    "http5xx": 0,
+    "http429": 0,
+    "healthOk": true,
+    "healthMaxMs": 43,
+    "liveLatencyMs": {
+     "n": 10917,
+     "p50": 1,
+     "p95": 4,
+     "p99": 11
+    },
+    "firstSceneMs": {
+     "n": 20,
+     "p50": 209,
+     "p95": 312
+    },
+    "checkpointFanout": [],
+    "receivedMBps": 1.27,
+    "messagesReceived": {
+     "live": 10917,
+     "live-roster": 1500,
+     "viewers": 2747,
+     "scene": 101,
+     "heartbeat": 49
+    },
+    "agentCalls": {
+     "observe": {
+      "ok": 1775,
+      "failed": {},
+      "p50": 7.060291000001598,
+      "p95": 26.71583400000236,
+      "p99": 100.57537500000035
+     },
+     "move": {
+      "ok": 748,
+      "failed": {},
+      "p50": 4.3101670000032755,
+      "p95": 13.932249999983469,
+      "p99": 49.36029199999757
+     }
+    },
+    "loadGeneratorCpu": 2
+   },
+   {
+    "spectators": 20,
+    "agents": 100,
+    "rampSeconds": 1.4,
+    "measuredSeconds": 150,
+    "connected": 20,
+    "refused": {},
+    "closed": {},
+    "wsErrors": 0,
+    "possessing": 100,
+    "queued": 0,
+    "cpuPercent": {
+     "mean": 25,
+     "max": 59
+    },
+    "rssMB": {
+     "max": 176
+    },
+    "eventLoopP99Ms": 130.9,
+    "eventLoopMaxMs": 1190.1,
+    "liveTickLagMaxMs": 1134.3,
+    "broadcastMaxMs": {
+     "live": 82.6,
+     "roster": 11.5,
+     "scene": 94.8
+    },
+    "worldClockLagMaxS": 0,
+    "worldTickMaxS": 0.63,
+    "dbPoolWaitingMax": 0,
+    "serverSentMBps": 1.83,
+    "serverMessagesPerS": 107,
+    "wireTxMBps": null,
+    "slowConsumerTerminations": 0,
+    "http5xx": 0,
+    "http429": 0,
+    "healthOk": true,
+    "healthMaxMs": 180,
+    "liveLatencyMs": {
+     "n": 11530,
+     "p50": 1,
+     "p95": 8,
+     "p99": 56
+    },
+    "firstSceneMs": {
+     "n": 20,
+     "p50": 890,
+     "p95": 1229
+    },
+    "checkpointFanout": [
+     {
+      "spreadMs": 577,
+      "viewers": 20
+     }
+    ],
+    "receivedMBps": 1.83,
+    "messagesReceived": {
+     "live": 11530,
+     "viewers": 2831,
+     "scene": 119,
+     "live-roster": 1480,
+     "heartbeat": 44
+    },
+    "agentCalls": {
+     "observe": {
+      "ok": 7022,
+      "failed": {},
+      "p50": 6.573750000010477,
+      "p95": 127.81949999999779,
+      "p99": 589.8604170000035
+     },
+     "move": {
+      "ok": 2985,
+      "failed": {},
+      "p50": 4.231375000003027,
+      "p95": 64.40012500000012,
+      "p99": 305.1076249999969
+     }
+    },
+    "loadGeneratorCpu": 5
+   },
+   {
+    "spectators": 20,
+    "agents": 250,
+    "rampSeconds": 1.5,
+    "measuredSeconds": 150,
+    "connected": 20,
+    "refused": {},
+    "closed": {},
+    "wsErrors": 0,
+    "possessing": 250,
+    "queued": 0,
+    "cpuPercent": {
+     "mean": 42,
+     "max": 94
+    },
+    "rssMB": {
+     "max": 213
+    },
+    "eventLoopP99Ms": 197.1,
+    "eventLoopMaxMs": 633.3,
+    "liveTickLagMaxMs": 541.4,
+    "broadcastMaxMs": {
+     "live": 26.6,
+     "roster": 4.3,
+     "scene": 69.8
+    },
+    "worldClockLagMaxS": 0,
+    "worldTickMaxS": 0.63,
+    "dbPoolWaitingMax": 84,
+    "serverSentMBps": 2.39,
+    "serverMessagesPerS": 102,
+    "wireTxMBps": null,
+    "slowConsumerTerminations": 0,
+    "http5xx": 0,
+    "http429": 0,
+    "healthOk": true,
+    "healthMaxMs": 247,
+    "liveLatencyMs": {
+     "n": 11265,
+     "p50": 2,
+     "p95": 5,
+     "p99": 50
+    },
+    "firstSceneMs": {
+     "n": 20,
+     "p50": 418,
+     "p95": 712
+    },
+    "checkpointFanout": [
+     {
+      "spreadMs": 280,
+      "viewers": 20
+     }
+    ],
+    "receivedMBps": 2.39,
+    "messagesReceived": {
+     "live-roster": 1460,
+     "viewers": 2487,
+     "live": 11265,
+     "scene": 113,
+     "heartbeat": 47
+    },
+    "agentCalls": {
+     "move": {
+      "ok": 7366,
+      "failed": {
+       "409 not_on_land": 5
+      },
+      "p50": 3.7032909999979893,
+      "p95": 28.120499999997264,
+      "p99": 222.40999999998894
+     },
+     "observe": {
+      "ok": 17584,
+      "failed": {},
+      "p50": 5.70024999999805,
+      "p95": 100.37200000000303,
+      "p99": 621.9480419999963
+     }
+    },
+    "loadGeneratorCpu": 9
+   },
+   {
+    "spectators": 20,
+    "agents": 500,
+    "rampSeconds": 2.5,
+    "measuredSeconds": 150,
+    "connected": 20,
+    "refused": {},
+    "closed": {},
+    "wsErrors": 0,
+    "possessing": 354,
+    "queued": 146,
+    "cpuPercent": {
+     "mean": 70,
+     "max": 105
+    },
+    "rssMB": {
+     "max": 213
+    },
+    "eventLoopP99Ms": 458.2,
+    "eventLoopMaxMs": 952.1,
+    "liveTickLagMaxMs": 964.8,
+    "broadcastMaxMs": {
+     "live": 75.1,
+     "roster": 25.2,
+     "scene": 65.8
+    },
+    "worldClockLagMaxS": 0,
+    "worldTickMaxS": 0.47,
+    "dbPoolWaitingMax": 98,
+    "serverSentMBps": 2.47,
+    "serverMessagesPerS": 94,
+    "wireTxMBps": null,
+    "slowConsumerTerminations": 0,
+    "http5xx": 0,
+    "http429": 0,
+    "healthOk": true,
+    "healthMaxMs": 561,
+    "liveLatencyMs": {
+     "n": 10060,
+     "p50": 3,
+     "p95": 34,
+     "p99": 67
+    },
+    "firstSceneMs": {
+     "n": 20,
+     "p50": 414,
+     "p95": 788
+    },
+    "checkpointFanout": [],
+    "receivedMBps": 2.49,
+    "messagesReceived": {
+     "live-roster": 1457,
+     "viewers": 2572,
+     "live": 10060,
+     "scene": 97,
+     "heartbeat": 52
+    },
+    "agentCalls": {
+     "observe": {
+      "ok": 31667,
+      "failed": {},
+      "p50": 15.5459170000031,
+      "p95": 827.3451669999995,
+      "p99": 3086.1353339999987
+     },
+     "move": {
+      "ok": 10231,
+      "failed": {
+       "502 HTTP 502": 1,
+       "409 not_on_land": 9
+      },
+      "p50": 11.495167000000947,
+      "p95": 464.3776249999937,
+      "p99": 2482.417917999999
+     },
+     "possess": {
+      "ok": 1317,
+      "failed": {},
+      "p50": 13.927500000005239,
+      "p95": 693.038833999999,
+      "p99": 5081.487918999999
+     }
+    },
+    "loadGeneratorCpu": 15
+   },
+   {
+    "spectators": 500,
+    "agents": 250,
+    "rampSeconds": 12.9,
+    "measuredSeconds": 154,
+    "connected": 0,
+    "refused": {},
+    "closed": {
+     "1006": 500
+    },
+    "wsErrors": 0,
+    "possessing": 239,
+    "queued": 11,
+    "cpuPercent": {
+     "mean": 102,
+     "max": 174
+    },
+    "rssMB": {
+     "max": 1489
+    },
+    "eventLoopP99Ms": 1767.9,
+    "eventLoopMaxMs": 2273.3,
+    "liveTickLagMaxMs": 2166.3,
+    "broadcastMaxMs": {
+     "live": 838.2,
+     "roster": 173.2,
+     "scene": 304.8
+    },
+    "worldClockLagMaxS": 0,
+    "worldTickMaxS": 1.94,
+    "dbPoolWaitingMax": 537,
+    "serverSentMBps": -282.89,
+    "serverMessagesPerS": -4569,
+    "wireTxMBps": null,
+    "slowConsumerTerminations": 0,
+    "http5xx": 0,
+    "http429": 0,
+    "healthOk": false,
+    "healthMaxMs": null,
+    "liveLatencyMs": {
+     "n": 61926,
+     "p50": 90,
+     "p95": 30401,
+     "p99": 71223
+    },
+    "firstSceneMs": {
+     "n": 500,
+     "p50": 6804,
+     "p95": 13373
+    },
+    "checkpointFanout": [],
+    "receivedMBps": 16.9,
+    "messagesReceived": {
+     "live": 61926,
+     "viewers": 14240,
+     "live-roster": 11360,
+     "scene": 862,
+     "heartbeat": 478
+    },
+    "agentCalls": {
+     "observe": {
+      "ok": 10203,
+      "failed": {
+       "502 HTTP 502": 493
+      },
+      "p50": 169.23483299999498,
+      "p95": 8706.533045999997,
+      "p99": 13313.910297999995
+     },
+     "move": {
+      "ok": 5210,
+      "failed": {
+       "502 HTTP 502": 7,
+       "409 not_on_land": 2
+      },
+      "p50": 81.40858299999672,
+      "p95": 1039.358334000004,
+      "p99": 5584.620669000025
+     },
+     "possess": {
+      "ok": 92,
+      "failed": {},
+      "p50": 80.18633400001272,
+      "p95": 1061.9814169999881,
+      "p99": 14362.471297999997
+     }
+    },
+    "loadGeneratorCpu": 10
+   }
+  ]
+ },
+ "spectators_before_gateway_fix_e2e": {
+  "base": "http://localhost:28080",
+  "hardware": {
+   "host": "Apple M4 x10",
+   "docker": "4 CPUs, 8307167232 bytes, Ubuntu 24.04.4 LTS"
+  },
+  "opts": {
+   "duration": 300,
+   "workers": 4,
+   "ramp": 50,
+   "container": "vana-e2e-server-1"
+  },
+  "results": [
+   {
+    "spectators": 50,
+    "agents": 0,
+    "rampSeconds": 1.4,
+    "measuredSeconds": 300,
+    "connected": 50,
+    "refused": {},
+    "closed": {},
+    "wsErrors": 0,
+    "possessing": 0,
+    "queued": 0,
+    "cpuPercent": {
+     "mean": 33,
+     "max": 288
+    },
+    "rssMB": {
+     "max": 271
+    },
+    "eventLoopP99Ms": 166.7,
+    "eventLoopMaxMs": 782.2,
+    "liveTickLagMaxMs": 739.8,
+    "broadcastMaxMs": {
+     "live": 37.7,
+     "roster": 0,
+     "scene": 672.8
+    },
+    "worldClockLagMaxS": 0,
+    "worldTickMaxS": 1.09,
+    "dbPoolWaitingMax": 0,
+    "serverSentMBps": 3.15,
+    "serverMessagesPerS": 51,
+    "wireTxMBps": 0.53,
+    "slowConsumerTerminations": 0,
+    "http5xx": 0,
+    "http429": 44,
+    "healthOk": true,
+    "healthMaxMs": 289,
+    "liveLatencyMs": {
+     "n": 0,
+     "p50": null,
+     "p95": null,
+     "p99": null
+    },
+    "firstSceneMs": {
+     "n": 50,
+     "p50": 1018,
+     "p95": 1135
+    },
+    "checkpointFanout": [
+     {
+      "spreadMs": 167141,
+      "viewers": 309
+     },
+     {
+      "spreadMs": 131215,
+      "viewers": 250
+     }
+    ],
+    "receivedMBps": 3.15,
+    "messagesReceived": {
+     "viewers": 14502,
+     "scene": 559,
+     "heartbeat": 256
+    },
+    "agentCalls": {},
+    "loadGeneratorCpu": 1
+   },
+   {
+    "spectators": 200,
+    "agents": 0,
+    "rampSeconds": 4.8,
+    "measuredSeconds": 303,
+    "connected": 200,
+    "refused": {},
+    "closed": {},
+    "wsErrors": 0,
+    "possessing": 0,
+    "queued": 0,
+    "cpuPercent": {
+     "mean": 46,
+     "max": 277
+    },
+    "rssMB": {
+     "max": 504
+    },
+    "eventLoopP99Ms": 1713.4,
+    "eventLoopMaxMs": 1713.4,
+    "liveTickLagMaxMs": 1612.7,
+    "broadcastMaxMs": {
+     "live": 5.8,
+     "roster": 0,
+     "scene": 1542.2
+    },
+    "worldClockLagMaxS": 0,
+    "worldTickMaxS": 0.74,
+    "dbPoolWaitingMax": 0,
+    "serverSentMBps": 12.22,
+    "serverMessagesPerS": 194,
+    "wireTxMBps": 2.09,
+    "slowConsumerTerminations": 0,
+    "http5xx": 0,
+    "http429": 45,
+    "healthOk": true,
+    "healthMaxMs": 8019,
+    "liveLatencyMs": {
+     "n": 0,
+     "p50": null,
+     "p95": null,
+     "p99": null
+    },
+    "firstSceneMs": {
+     "n": 200,
+     "p50": 24062,
+     "p95": 26658
+    },
+    "checkpointFanout": [
+     {
+      "spreadMs": 125286,
+      "viewers": 822
+     },
+     {
+      "spreadMs": 165732,
+      "viewers": 1282
+     }
+    ],
+    "receivedMBps": 12.87,
+    "messagesReceived": {
+     "scene": 2288,
+     "viewers": 55928,
+     "heartbeat": 1047
+    },
+    "agentCalls": {},
+    "loadGeneratorCpu": 2
+   }
+  ]
+ }
+}

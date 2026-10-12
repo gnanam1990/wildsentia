@@ -55,7 +55,8 @@
       6,
       25
     ],
-    "alarmSharing": true
+    "alarmSharing": true,
+    "heedsAlarmOf": ["langur"]
   },
   "learning": {
     "innate": {
@@ -67,35 +68,35 @@
   },
   "lifecycle": {
     "maxAgeDays": 4300,
-    "baselineMortalityPerDay": 0.00042,
+    "baselineMortalityPerDay": 0.00015,
     "stages": [
       {
         "name": "newborn",
         "startDays": 0,
         "sizeFactor": 0.12,
         "dependent": true,
-        "mortalityPerDay": 0.00252
+        "mortalityPerDay": 0.001
       },
       {
         "name": "juvenile",
         "startDays": 75,
         "sizeFactor": 0.35,
         "dependent": true,
-        "mortalityPerDay": 0.00126
+        "mortalityPerDay": 0.0005
       },
       {
         "name": "subadult",
         "startDays": 330,
         "sizeFactor": 0.72,
         "dependent": false,
-        "mortalityPerDay": 0.00063
+        "mortalityPerDay": 0.00025
       },
       {
         "name": "adult",
         "startDays": 500,
         "sizeFactor": 1.0,
         "dependent": false,
-        "mortalityPerDay": 0.00042
+        "mortalityPerDay": 0.00015
       },
       {
         "name": "elder",
@@ -106,14 +107,17 @@
       }
     ],
     "sexualMaturityDays": 500,
-    "gestationDays": 230,
+    "gestationDays": 235,
     "litterSize": [
       1,
       1
     ],
-    "interBirthIntervalDays": 300,
+    "interBirthIntervalDays": 255,
     "oestrusCycleDays": 21,
     "weanDays": 150,
+    "followFromDays": 28,
+    "gatherFromDays": 14,
+    "forageFromDays": 90,
     "dispersalDays": 330
   }
 }

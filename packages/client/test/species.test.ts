@@ -32,8 +32,20 @@ describe('species visuals', () => {
     expect(visualFor('unknown_species').model).toBeNull();
   });
   it('uses shoulder reference heights instead of raised tails for the small mammals', () => {
-    expect(visualFor('langur').model?.referenceHeightM).toBe(0.77);
-    expect(visualFor('squirrel').model?.referenceHeightM).toBe(0.42);
+    // Front-half (head and shoulders) heights of the generated models, measured in Blender.
+    expect(visualFor('langur').model?.referenceHeightM).toBe(0.699);
+    expect(visualFor('squirrel').model?.referenceHeightM).toBe(0.794);
+  });
+  it('draws adult chital hinds without antlers', () => {
+    expect(visualForAnimal({ speciesId: 'chital', sex: 'female', lifeStage: 'adult' }).model?.file).toBe('/assets/animals/ChitalHind.glb');
+    expect(visualForAnimal({ speciesId: 'chital', sex: 'male', lifeStage: 'adult' }).model?.file).toBe('/assets/animals/Chital.glb');
+    expect(existsSync(`${publicDir}/assets/animals/ChitalHind.glb`)).toBe(true);
+  });
+  it('draws a vulture in the air with the rig that can spread its wings', () => {
+    const vulture = { speciesId: 'vulture', sex: 'female', lifeStage: 'adult' } as const;
+    expect(visualForAnimal(vulture).model?.file).toBe('/assets/animals/WhiteRumpedVulture.glb');
+    expect(visualForAnimal(vulture, true).model?.file).toBe('/assets/animals/Vulture.glb');
+    expect(existsSync(`${publicDir}/assets/animals/WhiteRumpedVulture.glb`)).toBe(true);
   });
   it('selects distinct interim adult, subadult and calf-proportion elephant variants', () => {
     const male = { speciesId: 'elephant', sex: 'male', lifeStage: 'adult' };

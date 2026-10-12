@@ -49,6 +49,41 @@ function scenario(
   };
 }
 
+describe('hunting after travel', () => {
+  const approach = (hours = 1) => {
+    const s = scenario('tiger', 'hunt', { drives: { hunger: 0.7, fatigue: 0, thirst: 0.1 }, others: [makeAgent('sambar', { id: 'quarry' })] });
+    for (const p of s.patches) p.habitat = 'grassland';
+    const prey = s.others[0]!;
+    prey.patchId = s.patches[s.agent.patchId]!.neighbours[0]!;
+    prey.position = { ...patchCentre(prey.patchId), heading: 0 };
+    s.ctx.percept = perceive(s.agent, s.ctx.species, s.ctx.view);
+    s.ctx.hours = hours;
+    executeGoal(s.ctx);
+    return s;
+  };
+  it('continues after arriving at neighbouring prey, within the same original hour', () => {
+    const s = approach();
+    const move = s.log.all().find(e => e.movement?.goal === 'hunt')!;
+    expect(move.movement!.completed).toBe(true);
+    const hunt = s.log.all().find(e => e.type === 'hunt')!;
+    expect(hunt).toBeDefined();
+    expect(hunt.causalParents).toContain(move.id);
+    expect(hunt.encounter!.startWorldTime).toBeGreaterThanOrEqual(s.ctx.worldTime + move.effects.durationSeconds! - 1e-6);
+    expect(hunt.encounter!.startWorldTime + hunt.encounter!.samples.at(-1)!.seconds).toBeLessThanOrEqual(s.ctx.worldTime + 3600 + 1e-6);
+    if (hunt.encounter!.samples.some(sample => sample.phase === 'chase' || sample.phase === 'escape'))
+      expect(s.others[0]!.lastEncounterAt).toBe(s.ctx.worldTime);
+  });
+  it('does not get another hour when travel uses the entire available budget', () => {
+    const full = approach();
+    const seconds = full.log.all().find(e => e.movement?.goal === 'hunt')!.effects.durationSeconds!;
+    const exact = approach(seconds / 3600);
+    expect(exact.log.all().some(e => e.type === 'hunt')).toBe(false);
+    const partial = approach(1 / 3600);
+    expect(partial.log.all().some(e => e.type === 'hunt')).toBe(false);
+    expect(partial.log.all().some(e => e.movement?.completed)).toBe(false);
+  });
+});
+
 describe('grazing and drinking', () => {
   it('preserves a partial wander until arrival and abandons it when a higher need wins', () => {
     const s = scenario('sambar', 'wander');
@@ -198,15 +233,21 @@ describe('hunting', () => {
     throw new Error('no successful hunt fixture');
   });
   it('keeps a visible approach target rather than changing prey on every travel tick', () => {
-    const s = scenario('dhole', 'hunt', { others: [makeAgent('chital', { id: 'c1' }), makeAgent('chital', { id: 'c2' })] });
-    const destination = s.percept.patch.neighbours[0]!;
-    s.others[1]!.patchId = destination;
-    s.percept.prey = s.others.map((agent) => ({ agent, patchId: agent.patchId, herdSize: 1 }));
-    s.agent.targetId = 'c2';
-    executeGoal(s.ctx);
-    expect(s.agent.targetId).toBe('c2');
-    expect(s.agent.patchId).toBe(destination);
-    expect(s.log.all().some((e) => e.type === 'hunt')).toBe(false);
+    const run = (hours: number) => {
+      const s = scenario('dhole', 'hunt', { others: [makeAgent('chital', { id: 'c1' }), makeAgent('chital', { id: 'c2' })] });
+      const destination = s.percept.patch.neighbours[0]!;
+      s.others[1]!.patchId = destination;
+      s.others[1]!.position = { ...patchCentre(destination), heading: 0 };
+      s.percept.prey = s.others.map((agent) => ({ agent, patchId: agent.patchId, herdSize: 1 }));
+      s.agent.targetId = 'c2'; s.ctx.hours = hours;
+      executeGoal(s.ctx);
+      return { s, destination };
+    };
+    const partial = run(1 / 3600);
+    expect(partial.s.agent.targetId).toBe('c2');
+    expect(partial.s.log.all().some(e => e.type === 'hunt')).toBe(false);
+    const full = run(1);
+    expect(full.s.log.all().find(e => e.type === 'hunt')!.actors[1]).toBe('c2');
   });
 
   it('leaves to search after an edge escape instead of retrying the same trapped encounter next hour', () => {
@@ -273,7 +314,8 @@ describe('hunting', () => {
       expect(carcassMass(carcass.biomass)).toBeLessThanOrEqual(carcass.originalMassKg);
       expect(carcass.consumers.length).toBeGreaterThan(0);
       const event = s.log.all().find((e) => e.type === 'hunt')!;
-      expect(event.encounter!.samples.at(-1)!.phase).toBe('contact');
+      expect(event.encounter!.samples.at(-1)!.phase).toBe('subdue'); // sim_0.36.0: death ends the hold after contact
+      expect(event.encounter!.samples.some(s => s.phase === 'contact')).toBe(true);
       expect(carcass.position).toEqual(event.encounter!.samples.at(-1)!.prey);
       expect(carcass.diedAt).toBe(event.worldTime);
       expect(carcass.consumers.every((c) => c.at >= carcass.diedAt)).toBe(true);
@@ -412,6 +454,29 @@ describe('fleeing', () => {
     expect(s.agent.patchId).not.toBe(start);
     expect(s.agent.state).toBe('fleeing');
     expect(s.agent.stamina!).toBeLessThan(1);
+  });
+
+  it('runs away from a predator in its own patch, whichever side the predator is on', () => {
+    // Every neighbour lies the same number of patches from a predator sharing the patch, so
+    // the old tie-break sent prey to the lowest-numbered one: north, even past the tiger.
+    for (const [dx, dz] of [[-80, 0], [80, 0], [0, -80], [0, 80]] as const) {
+      const tiger = makeAgent('tiger', { id: 'tiger_1', currentGoal: 'wander', state: 'travelling',
+        drives: { hunger: 0.6, thirst: 0, fatigue: 0, fear: 0 } });
+      const s = scenario('chital', 'flee', { drives: { fear: 0.9 }, others: [tiger] });
+      // An inland patch with four walkable neighbours, so every direction is open.
+      const start = s.patches.find(p => p.neighbours.length === 4
+        && [p, ...p.neighbours.map(n => s.patches[n]!)].every(q => q.habitat !== 'water'))!.id;
+      const c = patchCentre(start);
+      s.agent.patchId = start; s.others[0]!.patchId = start;
+      s.agent.position = { x: c.x, z: c.z, heading: 0 };
+      s.others[0]!.position = { x: c.x + dx, z: c.z + dz, heading: 0 };
+      s.ctx.percept = perceive(s.agent, s.ctx.species, s.ctx.view);
+      expect(s.ctx.percept.threat?.patchId).toBe(start);
+      executeGoal(s.ctx);
+      const fled = s.log.all().find(e => e.type === 'fled')!;
+      const to = s.patches[fled.conditions.destination as number]!, from = s.patches[start]!;
+      expect([to.x - from.x, to.y - from.y]).toEqual([-Math.sign(dx) || 0, -Math.sign(dz) || 0]);
+    }
   });
 
   it('logs where it fled from', () => {

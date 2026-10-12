@@ -146,13 +146,16 @@ function navigateFlight(
   };
   const cruise = Math.max(20, Math.min(120, cfg.escape.flightInitiationM * 1.5));
   const completed = fraction >= 1 - 1e-9;
+  // sim_0.38.0: the climb starts from where the bird is. One already aloft that resumes with only
+  // seconds to fly stayed on a climb from the ground and sank mid-air.
+  const startAltitude = Math.min(cruise, agent.altitudeM ?? 0);
   const altitudeAt = (seconds: number): number => {
     const climbSeconds = Math.min(20, Math.max(4, gap / speed * 0.15));
     if (completed && seconds >= travelSeconds - climbSeconds) {
       const landing = Math.max(0, (travelSeconds - seconds) / climbSeconds);
-      return cruise * landing;
+      return Math.max(startAltitude, cruise) * landing;
     }
-    return cruise * Math.min(1, seconds / climbSeconds);
+    return startAltitude + (cruise - startAltitude) * Math.min(1, seconds / climbSeconds);
   };
   const samples = [{ seconds: 0, position: from, altitudeM: agent.altitudeM ?? 0 }];
   // A completed flight starts and ends on the ground. Recording only those endpoints erased

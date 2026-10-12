@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { RenderTier } from './renderQuality.js';
+import { SWAY, wind } from './wind.js';
 
 /** One shared transition for full geometry and its own atlas, not unrelated placeholder trees. */
 export const TREE_FADE_START_M = 50;
@@ -88,6 +89,10 @@ export interface AtlasBakeOptions {
   signal?: AbortSignal;
   /** Injectable frame boundary for deterministic, GPU-free scheduling tests. */
   nextFrame?: (signal?: AbortSignal) => Promise<void>;
+  /** Local height below which the source is left out of the atlas: a scan's soil skirt. The
+   * placed tree is sunk by this much, so a distant card showing it drew a pale ring at every
+   * trunk from above. Near geometry is unchanged. */
+  clipBelow?: number;
 }
 
 /** Bake identical local views, one view per animation-frame boundary. A single GPU draw or
@@ -105,6 +110,9 @@ export async function bakeTreeAtlas(renderer: THREE.WebGLRenderer, source: reado
   const sphere = bounds.getBoundingSphere(new THREE.Sphere());
   const radius = sphere.radius * 1.05;
   const camera = new THREE.OrthographicCamera(-radius, radius, radius, -radius, 0.01, radius * 8);
+  const clipped = options.clipBelow === undefined ? [] : [...new Set(source.flatMap((mesh) =>
+    Array.isArray(mesh.material) ? mesh.material : [mesh.material]))];
+  const clipPlanes = clipped.length ? [new THREE.Plane(new THREE.Vector3(0, 1, 0), -options.clipBelow!)] : null;
   const target = new THREE.WebGLRenderTarget(TILE * TREE_VIEWS, TILE * TREE_ELEVATIONS, {
     minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, generateMipmaps: false,
   });
@@ -125,6 +133,7 @@ export async function bakeTreeAtlas(renderer: THREE.WebGLRenderer, source: reado
           viewport: renderer.getViewport(new THREE.Vector4()), scissor: renderer.getScissor(new THREE.Vector4()),
           scissorTest: renderer.getScissorTest(), clear: renderer.getClearColor(new THREE.Color()),
           alpha: renderer.getClearAlpha(), autoClear: renderer.autoClear, tone: renderer.toneMapping,
+          localClipping: renderer.localClippingEnabled,
         };
         try {
           renderer.setRenderTarget(target);
@@ -132,6 +141,10 @@ export async function bakeTreeAtlas(renderer: THREE.WebGLRenderer, source: reado
             renderer.setScissorTest(false); renderer.setClearColor(0x000000, 0); renderer.clear();
           }
           renderer.autoClear = false; renderer.toneMapping = THREE.NoToneMapping;
+          if (clipPlanes) {
+            renderer.localClippingEnabled = true;
+            for (const material of clipped) material.clippingPlanes = clipPlanes;
+          }
           renderer.setScissorTest(true);
           renderer.setViewport(column * TILE, row * TILE, TILE, TILE);
           renderer.setScissor(column * TILE, row * TILE, TILE, TILE);
@@ -146,6 +159,9 @@ export async function bakeTreeAtlas(renderer: THREE.WebGLRenderer, source: reado
           renderer.setViewport(previous.viewport); renderer.setScissor(previous.scissor);
           renderer.setScissorTest(previous.scissorTest); renderer.setClearColor(previous.clear, previous.alpha);
           renderer.autoClear = previous.autoClear; renderer.toneMapping = previous.tone;
+          renderer.localClippingEnabled = previous.localClipping;
+          // The live scene shares these materials; never leave them clipped across a yield.
+          for (const material of clipped) material.clippingPlanes = null;
         }
       }
     }
@@ -162,7 +178,9 @@ export function treeImpostorMaterial(atlas: TreeAtlas,
     shader.uniforms.treeCentre = { value: atlas.centre };
     shader.uniforms.treeDiameter = { value: atlas.diameter };
     shader.uniforms.treeFadeRange = fadeRange;
+    Object.assign(shader.uniforms, { windTime: wind.time, windStrength: wind.strength, windDirection: wind.direction });
     shader.vertexShader = `uniform vec3 treeCentre; uniform float treeDiameter;
+      uniform float windTime; uniform float windStrength; uniform vec2 windDirection;
       varying float vTreeDistance; varying vec2 vTreeTile;\n` + shader.vertexShader;
     shader.vertexShader = shader.vertexShader.replace('#include <project_vertex>', `
       vec4 treeWorld = modelMatrix * instanceMatrix * vec4(treeCentre, 1.0);
@@ -174,7 +192,13 @@ export function treeImpostorMaterial(atlas: TreeAtlas,
       float row = clamp(floor(elevation / 0.78539816339 + 0.5), 0.0, 2.0);
       vTreeTile = vec2(column, row);
       vTreeDistance = distance((modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz, cameraPosition);
-      vec4 mvPosition = viewMatrix * treeWorld;
+      // The same downwind lean as the near crown (wind.ts), from the card's top only.
+      float windTop = clamp(position.y + 0.5, 0.0, 1.0);
+      float windPhase = dot(treeWorld.xz, vec2(0.071, 0.053));
+      float windGust = 0.6 + 0.4 * sin(windTime * 0.83 + windPhase);
+      vec3 windLean = vec3(windDirection.x, 0.0, windDirection.y) * windStrength * windGust * windTop * windTop
+        * ${SWAY.leaves.bend.toFixed(4)} * treeDiameter * length(instanceMatrix[0].xyz);
+      vec4 mvPosition = viewMatrix * vec4(treeWorld.xyz + windLean, 1.0);
       mvPosition.xy += position.xy * treeDiameter * length(instanceMatrix[0].xyz);
       gl_Position = projectionMatrix * mvPosition;
     `);
@@ -190,6 +214,6 @@ export function treeImpostorMaterial(atlas: TreeAtlas,
       if (screenNoise < detail) discard;
     `);
   };
-  material.customProgramCacheKey = () => 'vana-tree-impostor-v2';
+  material.customProgramCacheKey = () => 'vana-tree-impostor-v3';
   return material;
 }

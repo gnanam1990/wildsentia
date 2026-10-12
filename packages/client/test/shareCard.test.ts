@@ -14,7 +14,7 @@ afterEach(() => vi.unstubAllGlobals());
 describe('checkpoint story and observation links', () => {
   it('exports an excerpt with identity, source time, intact event IDs and a usable link', () => {
     const text = card(passport());
-    expect(text).toContain('VANA · Tiger (tiger)'); expect(text).toContain('Animal: tiger_01');
+    expect(text).toContain('WILDSENTIA · Tiger (tiger)'); expect(text).toContain('Animal: tiger_01');
     expect(text).toContain('hunt (failure) · evt-1 · world second 12');
     expect(text).toContain('Checkpoint world time: 20 · next event 3');
     expect(text).toContain('Simulation outcomes are authoritative');

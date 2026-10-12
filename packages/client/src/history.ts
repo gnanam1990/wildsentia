@@ -1,4 +1,5 @@
 import { validNextCursor } from './historyCursor.js';
+import { withTimeout } from './abortSignals.js';
 export { validNextCursor } from './historyCursor.js';
 
 export interface HistoryEvent { id: string; type: string; worldTime: number; outcome: string;
@@ -61,7 +62,7 @@ export class HistoryPager {
     this.#abort?.abort(); this.#abort = new AbortController();
     this.loading = true; this.error = ''; this.change();
     try {
-      const response = await fetch(this.source.url(id, cursor), { signal: AbortSignal.any([this.#abort.signal, AbortSignal.timeout(15000)]) });
+      const response = await fetch(this.source.url(id, cursor), { signal: withTimeout(this.#abort.signal, 15000) });
       if (!response.ok) throw new Error(response.status === 400 ? 'History cursor expired. Start again to read the recovered history.' : 'History unavailable. Retry the page or start again.');
       const page: unknown = await response.json();
       if (revision !== this.#revision) return;

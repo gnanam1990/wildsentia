@@ -1,5 +1,6 @@
 import { emptyPage, exportAuditFacts, exportDocument, newerPage, olderPage, reviewActions, sections, worldClock,
   type AuditEntry, type Candidate, type Draft, type ExportAuditEntry, type PageState, type ReviewAction, type SocialSection } from './socialAdminModel.js';
+import { clearChallengePosts, loadChallengePosts } from './socialChallenges.js';
 
 const $ = <T extends HTMLElement>(selector: string): T => document.querySelector<T>(selector)!;
 const paragraph = (text: string, className = ''): HTMLParagraphElement => {
@@ -50,6 +51,7 @@ function lock(message = 'Tab locked. Private outbox content cleared.'): void {
     updatePageControls(kind);
   }
   $<HTMLButtonElement>('#social-download').disabled = true;
+  clearChallengePosts();
   $('#social-work').hidden = true; $('#social-login').hidden = false;
   status.textContent = message;
 }
@@ -137,7 +139,7 @@ async function openX(item: Draft, button: HTMLButtonElement): Promise<void> {
     let publication: XPublication | null = null;
     try { publication = await api(`/admin/social/x-publications/${item.id}`) as XPublication; }
     catch (error) { if ((error as { status?: number }).status !== 404) throw error; }
-    let outgoing = `${item.body} [VANA record ${item.id}]`;
+    let outgoing = `${item.body} [WILDSENTIA record ${item.id}]`;
     if (!publication && !xAttempted.has(item.id)) {
       const plan = await api('/admin/social/x-prepare', { draftId: item.id }) as XPlan;
       if (plan.draftId !== item.id || typeof plan.request?.body?.text !== 'string')
@@ -244,6 +246,7 @@ async function refreshAll(): Promise<void> {
   // The export fetch itself creates an access record; load that audit page afterwards.
   const results = await Promise.all(sections.filter((kind) => kind !== 'export-audit').map((kind) => load(kind)));
   results.push(await load('export-audit'));
+  results.push(await loadChallengePosts(api, () => !!token && currentGeneration === generation));
   if (token && currentGeneration === generation) status.textContent = results.every(Boolean)
     ? 'Private outbox refreshed. Nothing was posted externally.'
     : 'Some sections could not refresh. Check each section status; nothing was posted externally.';

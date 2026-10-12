@@ -59,7 +59,7 @@ describe('contact-grounded survivor wound', () => {
     executeGoal({ agent: predator, species, patches, view: makeView(patches, [predator, prey]),
       percept: { patch, neighbours: [], bestFood: null, bestWater: null,
         prey: [{ agent: prey, patchId: patch.id, herdSize: 1 }], carrion: null,
-        threat: null, herdSize: 1 }, choice: { goal: 'hunt', score: 1, alternative: null },
+        threat: null, dangerous: new Set(), herdSize: 1 }, choice: { goal: 'hunt', score: 1, alternative: null },
       hours: 1, worldTime: 3600, log, rng, services: makeServices(carcasses) });
     const hunt = log.all().find(event => event.type === 'hunt')!;
     const wound = log.all().find(event => event.type === 'wounded')!;

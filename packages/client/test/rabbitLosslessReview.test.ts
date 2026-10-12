@@ -31,7 +31,8 @@ describe('review-only lossless Rabbit texture payload', () => {
     expect(sha(review)).toBe('a6bf4165eba72356738954a79231f4c7034e0f40df2a01c6d894458acd699453');
     expect(review.length).toBe(3_309_144);
     expect(source.length).toBeLessThan(review.length);
-    expect(visualFor('hare').model?.file).toBe('/assets/animals/Rabbit.glb');
+    // Since 5 October 2026 the live hare is the generated Hare.glb; this review is historical.
+    expect(visualFor('hare').model?.file).toBe('/assets/animals/Hare.glb');
   });
 
   it('preserves every non-image buffer view and all mesh/skin/animation/material semantics', () => {

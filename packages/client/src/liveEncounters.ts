@@ -4,9 +4,10 @@ import { patchAtPosition, isMovementTrace, isDrinkingActivity, movementAt, treeA
 import { encounterAt, isRecordedEncounter } from './encounterReplay.js';
 import type { AnimalState } from './protocol.js';
 import type { RenderPosition } from './space.js';
-import type { ClimbVisualPhase, FlightVisualPhase } from './animation.js';
+import { climbs, type ClimbVisualPhase, type FlightVisualPhase } from './animation.js';
 import type { MovementTrace } from '@vana/shared';
-import { paceEncounter, paceMovement, recordedSecondAt, walkingPace, type Pacing } from './pacing.js';
+import { displaySecondAt, paceEncounter, paceMovement, recordedSecondAt, walkingPace, type Pacing } from '@vana/shared';
+import { huntMoment } from './huntActs.js';
 
 /** A wing pose may follow only two explicit adjacent altitude samples from the saved route. */
 export function recordedFlightPhase(trace: MovementTrace, seconds: number): FlightVisualPhase | null {
@@ -121,6 +122,9 @@ export interface LivePose {
    * rig runs instead. Clip choice only.
    */
   hurried?: boolean;
+  /** Real seconds into a hunt act (huntActs.ts), and a struggling prey's remaining strength. */
+  act?: number;
+  actWeight?: number;
   partnerId: string;
   eventId: string;
   phase: string;
@@ -146,10 +150,20 @@ export class LiveEncounterPlayer {
   /** Presentation pacing per recorded trace; see pacing.ts. Rebuilt with each new frame. */
   #pacing = new WeakMap<object, Pacing>();
 
-  clear(): void { this.#frame = null; }
+  /** Set while the connection is down: nothing is played, but the shown hour's clock runs on. */
+  #offline = false;
+
+  clear(): void { this.#frame = null; this.#offline = false; }
+
+  /**
+   * The connection dropped. Recorded animals leave the screen, but the island's clock keeps
+   * playing the same hour: falling back to the newest saved hour would jump it ahead, and the
+   * reconnect would then jump it back.
+   */
+  disconnect(): void { if (this.#frame) this.#offline = true; }
 
   current(nowMs: number): LiveEncounterFrame | null {
-    return this.#frame && this.elapsed(nowMs) < 3600 ? this.#frame : null;
+    return this.#frame && !this.#offline && this.elapsed(nowMs) < 3600 ? this.#frame : null;
   }
 
   apply(value: unknown, nowMs: number): boolean {
@@ -161,8 +175,19 @@ export class LiveEncounterPlayer {
       ? Math.max(this.elapsed(nowMs), value.elapsedWorldSeconds) : value.elapsedWorldSeconds;
     this.#receivedAt = nowMs;
     if (this.#frame !== value) this.#pacing = new WeakMap();
-    this.#frame = value;
+    this.#frame = value; this.#offline = false;
     return true;
+  }
+
+  /**
+   * The island's time as shown: the hour being played, advancing with it. The server works
+   * each hour out ahead and the browser plays it through, so this — not the newest saved
+   * hour's end — is "now" for everything on screen: clock, light, weather and feed.
+   */
+  worldTimeAt(nowMs: number): number | null {
+    const frame = this.#frame;
+    if (!frame || !finite(nowMs)) return null;
+    return Math.min(frame.endWorldTime, frame.startWorldTime + Math.max(0, this.elapsed(nowMs)));
   }
 
   elapsed(nowMs: number): number {
@@ -172,7 +197,7 @@ export class LiveEncounterPlayer {
   poses(nowMs: number, reducedMotion = false): Map<string, LivePose> {
     const result = new Map<string, LivePose>();
     const frame = this.#frame;
-    if (!frame || !finite(nowMs) || reducedMotion) return result;
+    if (!frame || this.#offline || !finite(nowMs) || reducedMotion) return result;
     const shown = this.elapsed(nowMs);
     if (shown >= 3600) return result; // No unlimited extrapolation after disconnection/stall.
     const clipSeconds = shown / frame.rate;
@@ -184,14 +209,23 @@ export class LiveEncounterPlayer {
     for (const e of frame.encounters) {
       const seconds = paced(e.trace, () => paceEncounter(e.trace, frame.rate));
       const at = encounterAt(e.trace, seconds);
-      const add = (body: EncounterAppearance, position: RenderPosition, state: string, partnerId: string): void => {
+      // Acts (the spring, the hold, the prey's fall) keep real time, whatever pace the hour plays at.
+      const pacing = this.#pacing.get(e.trace)!;
+      const moment = huntMoment(e.trace, e.outcome, seconds,
+        { phase: at.phase, predatorMoving: at.predator.moving, preyMoving: at.prey.moving, finished: at.finished },
+        (recorded) => clipSeconds - displaySecondAt(pacing, recorded) / frame.rate);
+      const predatorAt = moment.facePrey
+        ? { ...at.predator, heading: Math.atan2(at.prey.x - at.predator.x, at.prey.z - at.predator.z) } : at.predator;
+      const add = (body: EncounterAppearance, position: RenderPosition, act: { state: string; act?: number; weight?: number },
+        partnerId: string): void => {
         result.set(body.id, { animal: { ...body, patchId: patchAtPosition(position), position,
-          state, currentGoal: '', drives: { hunger: 0, thirst: 0, fatigue: 0, fear: 0 } },
+          state: act.state, currentGoal: '', drives: { hunger: 0, thirst: 0, fatigue: 0, fear: 0 } },
           position, seconds: Math.min(seconds, e.trace.samples.at(-1)!.seconds), clipSeconds, partnerId,
+          ...(act.act === undefined ? {} : { act: act.act }), ...(act.weight === undefined ? {} : { actWeight: act.weight }),
           eventId: e.eventId, phase: at.finished ? `recorded ${e.outcome}` : at.phase });
       };
-      add(e.predator, at.predator, at.predator.moving ? at.phase === 'chase' ? 'chasing' : 'stalking' : 'resting', e.prey.id);
-      add(e.prey, at.prey, at.finished && e.outcome === 'success' ? 'dead' : at.prey.moving ? 'fleeing' : 'resting', e.predator.id);
+      add(e.predator, predatorAt, moment.predator, e.prey.id);
+      add(e.prey, at.prey, moment.prey, e.predator.id);
     }
     for (const m of frame.movements ?? []) {
       const seconds = paced(m.trace, () => paceMovement(m.trace, m.actor.speciesId, frame.rate));
@@ -204,7 +238,7 @@ export class LiveEncounterPlayer {
       if (activity && seconds >= activity.startSeconds) position = { ...activity.position, moving: false };
       const flightVisualPhase = m.actor.speciesId === 'vulture' && !drinking
         ? recordedFlightPhase(m.trace, seconds) : null;
-      const climbVisualPhase = (m.actor.speciesId === 'langur' || m.actor.speciesId === 'squirrel') && !drinking
+      const climbVisualPhase = climbs(m.actor.speciesId) && !drinking
         ? recordedClimbPhase(m.trace, seconds) : null;
       // Only explicitly recorded drinking gets an action window. Other endpoints stay
       // neutral rather than displaying the newer checkpoint's unrecorded action early.

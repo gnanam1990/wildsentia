@@ -193,6 +193,17 @@ maybe('private manual Base reward ledger', () => {
     }
     expect((await app.inject('/rewards/summary')).json()).toMatchObject({ reserved: '5.000001', paidReported: '5.000001' });
   });
+  it('refuses to report a manual payment with a transaction already recorded as another claim\'s verified payout', async () => {
+    const token = await session(); const tx = '0x' + '6'.repeat(64);
+    const paid = await allocate(), paidClaim = (await post('/rewards/claims', { dropId: paid, wallet: wallet(1) }, token)).json();
+    await pool!.query(`insert into reward_verified_payouts (drop_id,claim_id,network,tx_hash,log_index,block_number,block_hash,token,from_wallet,to_wallet,amount_micro)
+      values ($1,$2,'base',$3,0,'0x1',$4,$5,$6,$7,5000001)`, [paid, paidClaim.claimId, tx, '0x' + '7'.repeat(64), '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', wallet(9).toLowerCase(), wallet(1).toLowerCase()]);
+    const id = await allocate(), claim = (await post('/rewards/claims', { dropId: id, wallet: wallet(1) }, token)).json();
+    const res = await post('/admin/rewards/review', { dropId: id, claimId: claim.claimId, action: 'report_paid', transactionRef: tx, note: 'Local test only' }, adminToken);
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({ error: 'transaction_already_verified_for_another_claim' });
+    expect((await pool!.query('select status from reward_claims where id=$1', [claim.claimId])).rows[0].status).toBe('reserved');
+  });
   it('offers a read-only finalized receipt check bound to the current claim and configured payout sender', async () => {
     const id = await allocate(), token = await session();
     const claim = (await post('/rewards/claims', { dropId: id, wallet: wallet(1) }, token)).json();

@@ -107,4 +107,11 @@ describe('choosePrey', () => {
     const seen = [candidate('fit', 'boar', 0.1), candidate('tired', 'boar', 0.9)];
     expect(choosePrey(seen, createRng(1, 'switch')).agent.id).toBe('tired');
   });
+
+  it('takes the unwary animal before the frightened, watchful one', () => {
+    const calm = candidate('calm', 'chital'), wary = candidate('wary', 'chital');
+    wary.agent.drives.fear = 0.9;
+    expect(choosePrey([wary, calm], createRng(1, 'switch')).agent.id).toBe('calm');
+    expect(choosePrey([calm, wary], createRng(1, 'switch')).agent.id).toBe('calm');
+  });
 });

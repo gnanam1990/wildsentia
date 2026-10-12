@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { fileURLToPath } from 'node:url';
 import { WORLD_SECONDS_PER_DAY } from '@vana/shared';
 import { createWorld } from '../src/world.js';
+import { takeSnapshot } from '../src/snapshot.js';
 import { assertNutrientsConserved } from '../src/fields/nutrients.js';
 
 const speciesDir = fileURLToPath(new URL('../../../config/species', import.meta.url));
@@ -16,6 +17,33 @@ describe('World', () => {
     const w = createWorld(options);
     w.step(24);
     expect(w.now()).toBe(WORLD_SECONDS_PER_DAY);
+  });
+
+  it('finds an animal in the patch it moved to during the hour, not the one it left', () => {
+    const w = createWorld(options);
+    w.step(1);
+    const mover = w.agents.find((a) => a.alive)!, from = mover.patchId;
+    const to = w.patches.find((p) => p.id !== from && w.__viewForTest().agentsInPatch(p.id).length === 0 && p.neighbours.length > 0)!.id;
+    expect(w.__viewForTest().agentsInPatch(from)).toContain(mover);
+    // Moving mid-hour, as a route or a chase does: the index is not rebuilt until the next hour.
+    mover.patchId = to;
+    const view = w.__viewForTest();
+    expect(view.agentsInPatch(to)).toEqual([mover]);
+    expect(view.agentsInPatch(from)).not.toContain(mover);
+  });
+
+  it('grounds a vulture that dies in flight: no dead bird is left on record in the air', () => {
+    const w = createWorld({ seed: 5, speciesDir, initialAgents: { vulture: 3 }, minPopulation: {} });
+    const bird = w.agents.find((a) => a.speciesId === 'vulture')!;
+    bird.altitudeM = 60; bird.locomotionMode = 'flight';
+    bird.journey = { goal: 'scavenge', destinationPatchId: bird.patchId, route: [bird.patchId] };
+    bird.ageDays = w.species.get('vulture')!.lifecycle.maxAgeDays;
+    w.step(1);
+    const dead = bird;
+    expect(dead.alive).toBe(false);
+    expect(dead.altitudeM).toBeUndefined();
+    expect(dead.locomotionMode).toBeUndefined();
+    expect(dead.journey).toBeUndefined();
   });
 
   it('is deterministic for a given seed', () => {
@@ -35,7 +63,8 @@ describe('World', () => {
   });
 
   it('sustains the population and breeds rather than importing', () => {
-    const w = createWorld({ ...options, minPopulation: { sambar: 10 } });
+    // Hares as well (sim_0.37.0): sambar now die rarely of anything but predation and want.
+    const w = createWorld({ ...options, initialAgents: { sambar: 40, hare: 40 }, minPopulation: { sambar: 10 } });
     for (let h = 0; h < 400 * 24; h++) w.step(1);
     expect(w.livingCount('sambar')).toBeGreaterThanOrEqual(10);
     expect(w.births).toBeGreaterThan(0);
@@ -67,7 +96,8 @@ describe('World', () => {
   it('has mothers teach their dependent young what they do well', () => {
     // The owner's central idea (spec §8): parents teach their young, and what they teach shapes
     // who the young become. Every lesson that moves a pupil a tenth is recorded, naming both.
-    const w = createWorld({ ...options, minPopulation: { sambar: 10 } });
+    // Hares as well (sim_0.37.0): sambar now die rarely of anything but predation and want.
+    const w = createWorld({ ...options, initialAgents: { sambar: 40, hare: 40 }, minPopulation: { sambar: 10 } });
     const lessons: Array<{ pupil: string; teacher: string; skill: string }> = [];
     for (let h = 0; h < 400 * 24; h++) {
       w.step(1);
@@ -87,7 +117,8 @@ describe('World', () => {
     // A world that runs for years kept every animal that ever died in memory and in every
     // hourly snapshot. The host archives them to the database and releases them here, but only
     // once they are old enough that no pregnancy can still name them as the father.
-    const w = createWorld({ ...options, minPopulation: { sambar: 10 } });
+    // Hares as well (sim_0.37.0): sambar now die rarely of anything but predation and want.
+    const w = createWorld({ ...options, initialAgents: { sambar: 40, hare: 40 }, minPopulation: { sambar: 10 } });
     for (let h = 0; h < 200 * 24; h++) w.step(1);
     expect(w.deceased.length).toBeGreaterThan(0);
     for (const dead of w.deceased) expect(typeof dead.departedAt).toBe('number');
@@ -99,3 +130,34 @@ describe('World', () => {
   });
 });
 
+
+describe('spawn records', () => {
+  it('names the patch the animal was placed in, after it joined its group', () => {
+    // A founding herd or pack member is moved to its group's home when it joins it; the record
+    // named the patch drawn before that move. (An immigrant stays at the edge it crossed.)
+    const world = createWorld({ seed: 3, speciesDir, initialAgents: { chital: 12, dhole: 5, tiger: 2 }, minPopulation: {} });
+    const spawned = world.log.all().filter(e => e.type === 'agent_spawned');
+    expect(spawned).toHaveLength(19);
+    for (const event of spawned) expect(event.patchId).toBe(world.agents.find(a => a.id === event.actors[0])!.patchId);
+  });
+});
+
+describe('social groups', () => {
+  it('drop members that have died, and a group none of whose members live', () => {
+    // Every death stayed listed in its group forever, and a group whose members had all died
+    // stayed open: the next founder or immigrant of its kind joined the dead group.
+    const world = createWorld({ seed: 4, speciesDir, initialAgents: { dhole: 5 }, minPopulation: {} });
+    const pack = world.agents.filter(a => a.speciesId === 'dhole');
+    const groupId = pack[0]!.groupId!;
+    expect(pack.every(a => a.groupId === groupId)).toBe(true);
+    for (const dhole of pack.slice(0, 2)) dhole.drives.hunger = 1;
+    world.step(1);
+    const living = pack.filter(a => a.alive).map(a => a.id);
+    expect(living).toHaveLength(3);
+    const group = () => takeSnapshot(world).groups.find(([id]) => id === groupId)?.[1];
+    expect(group()!.memberIds).toEqual(living);
+    for (const dhole of pack) dhole.drives.hunger = 1;
+    world.step(1);
+    expect(group()).toBeUndefined();
+  });
+});

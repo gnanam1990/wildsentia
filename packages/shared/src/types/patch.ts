@@ -40,6 +40,13 @@ export interface Patch {
   canopyCover: number;
   plant: PlantBiomass;
   capacity: PlantBiomass;
+  /**
+   * sim_0.37.0: the finite rooting and mast food of a land patch: underground storage organs,
+   * soil invertebrates, fallen fruit and seed, which wild boar dig and pick up. It regrows from
+   * the soil's nutrients like the plants above it, and boar deplete it. Absent off land and on
+   * pre-0.37 checkpoints until an explicit upgrade establishes it.
+   */
+  rooting?: { kg: number; capacityKg: number };
   /** Reserved out of generic browse at world founding or an explicit rules upgrade. */
   floweringGuild?: FloweringGuildState;
   soilMoisture: number;

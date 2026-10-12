@@ -27,6 +27,8 @@ describe('observer exposure', () => {
   it('brightens the night for the viewer without touching daylight', () => {
     expect(observerExposure(1)).toBeCloseTo(1.1);
     expect(observerExposure(0)).toBeGreaterThan(1.7);
+    // Close up at night the eye adapts well: dark coats and ground stay readable.
+    expect(observerExposure(0, 20)).toBeGreaterThanOrEqual(2.1);
     expect(observerExposure(0.5)).toBeGreaterThan(observerExposure(1));
     expect(observerExposure(-3)).toBe(observerExposure(0));
     // From the island overview the night is darker than close up.

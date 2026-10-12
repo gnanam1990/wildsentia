@@ -93,7 +93,7 @@ describe('animal layer render lifecycle', () => {
     expect(source.customProgramCacheKey()).not.toBe('vana-elephant-earth-grey-v2');
     layer.sync(new Map(), 2, null, { x: 0, z: 0 });
   });
-  it('places a recorded langur climb above terrain and holds neutral pose without a climb clip', async () => {
+  it('stands a recorded langur climb upright on its trunk above terrain, gripping with its walk cycle', async () => {
     const scene = new THREE.Group();
     scene.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial()));
     const paw = new THREE.Group(); paw.name = 'paw'; scene.add(paw);
@@ -114,10 +114,29 @@ describe('animal layer render lifecycle', () => {
     await ready(layer); layer.sync(living, 1, 'l', { x: 0, z: 0 }, poses);
     const rig = layer.root.getObjectByName('l')!;
     expect(rig.position.y).toBe(13);
-    expect(rig.getObjectByName('paw')!.position.x).toBe(1); // Idle, never mid-air Walk.
+    expect(rig.getObjectByName('paw')!.position.x).toBe(5); // Walk, as hand-over-hand gripping.
+    const visual = rig.children[0]!;
+    expect(visual.rotation.x).toBeCloseTo(-Math.PI / 2); // upright, belly to the trunk
+    expect(visual.position.z).toBeLessThan(0); // held clear of the trunk's centre
     delete pose.climbVisualPhase;
     layer.sync(living, 2, 'l', { x: 0, z: 0 }, poses);
+    expect(visual.rotation.x).toBeCloseTo(0);
+    expect(visual.position.z).toBeCloseTo(0);
     expect(rig.getObjectByName('paw')!.position.x).not.toBe(5);
+    layer.sync(new Map(), 3, null, { x: 0, z: 0 }); await ready(layer);
+  });
+  it('keeps the model root rotation (an export axis fix) when nothing is climbing', async () => {
+    // The Asian elephant ships with a Sketchfab root turned -90 degrees about X; an earlier climb
+    // reset zeroed it and drew every elephant on its side beneath the ground.
+    const scene = new THREE.Group(); scene.rotation.x = -Math.PI / 2;
+    scene.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial()));
+    const load = vi.spyOn(GLTFLoader.prototype, 'loadAsync').mockResolvedValue({ scene, animations: [] } as never);
+    const layer = new AnimalLayer(new THREE.Texture()); layer.groundHeightAt = () => 0;
+    const living = new Map([['e', { ...animal('e'), speciesId: 'gaur' }]]);
+    layer.sync(living, 0, 'e', { x: 0, z: 0 });
+    await vi.waitFor(() => expect(load).toHaveBeenCalled(), { timeout: 1000, interval: 2 });
+    await ready(layer); layer.sync(living, 1, 'e', { x: 0, z: 0 }); layer.sync(living, 2, 'e', { x: 0, z: 0 });
+    expect(layer.root.getObjectByName('e')!.children[0]!.rotation.x).toBeCloseTo(-Math.PI / 2);
     layer.sync(new Map(), 3, null, { x: 0, z: 0 }); await ready(layer);
   });
   it('samples real Flap/Glide clips only for recorded vulture phases, not a later checkpoint state', async () => {
@@ -140,13 +159,16 @@ describe('animal layer render lifecycle', () => {
     await ready(layer);
     const wingX = () => layer.root.getObjectByName('v')!.getObjectByName('wing')!.position.x;
     layer.sync(living, 1, 'v', { x: 0, z: 0 }, poses);
-    expect(wingX()).toBeCloseTo(.5);
+    // Each animal has its own phase in a clip, so only the clip's range is fixed: Flap is 0..1,
+    // where Glide, Walk and Death hold 2, 3 and 4.
+    const flapping = () => { expect(wingX()).toBeGreaterThanOrEqual(0); expect(wingX()).toBeLessThanOrEqual(1); };
+    flapping();
     poses.get('v')!.flightVisualPhase = 'gliding'; poses.get('v')!.seconds = 1;
     layer.sync(living, 2, 'v', { x: 0, z: 0 }, poses);
     expect(wingX()).toBeCloseTo(2);
     poses.get('v')!.flightVisualPhase = 'descending'; poses.get('v')!.seconds = 1.5;
     layer.sync(living, 3, 'v', { x: 0, z: 0 }, poses);
-    expect(wingX()).toBeCloseTo(.5);
+    flapping();
     delete poses.get('v')!.flightVisualPhase;
     layer.sync(living, 4, 'v', { x: 0, z: 0 }, poses);
     expect(wingX()).not.toBeCloseTo(3); // unknown airborne segment must not walk mid-air

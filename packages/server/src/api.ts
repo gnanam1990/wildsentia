@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
+import Fastify, { type FastifyError, type FastifyInstance, type FastifyRequest } from 'fastify';
 import { RECAP_EVENT_TYPES, SKILL_IDS, formatWorldTime, seasonAt, thoughtFor, type Agent } from '@vana/shared';
 import { confidenceOf } from '@vana/sim';
 import type { Pool } from './db/pool.js';
@@ -14,12 +14,26 @@ import { installSocialOutbox, type SocialConfig } from './socialOutbox.js';
 import { HistoryCursors, historyLimit } from './historyCursor.js';
 import { floweringGuildSummary } from './floweringObservation.js';
 import { installHolder, type HolderChain, type HolderConfig } from './holder.js';
+import { Insights } from './insights/insights.js';
+import { installLiveAgents, type LiveRouteDeps } from './live/routes.js';
+import { installAccounts, type AccountRouteDeps } from './accounts/routes.js';
+import { installChallenges, type ChallengeRouteDeps } from './challenges/routes.js';
+import type { ChallengeSocialStore } from './challenges/social.js';
+import { installChallengeSocial } from './challenges/socialRoutes.js';
+import type { PlaceDropLedger } from './live/liveStore.js';
+import { GENERAL_LIMIT_DEFAULTS, NetworkRateLimit, type GeneralLimits } from './limits.js';
+import { networkKey } from './network.js';
+import { countResponse, type HttpStats } from './metrics.js';
 
 export interface ApiDeps {
   host: SimHost;
   pool: Pool;
   /** Rewords recap lines through the grounding check. Without one, recaps are templates. */
   narrator?: Narrator;
+  /** Outside agents steering animals (docs/2026-09-26-live-agents-design.md); absent unless enabled. */
+  live?: (LiveRouteDeps & { spot: () => { x: number; z: number } | null }) | undefined;
+  /** Observer insights (TypeSafe AI); absent insights are reported as not configured. */
+  insights?: Insights;
   rewards?: RewardConfig | undefined;
   receiptRpc?: ReceiptRpc;
   social?: SocialConfig | undefined;
@@ -30,7 +44,23 @@ export interface ApiDeps {
    * per-visitor limits see the visitor rather than the proxy. 0 (default) trusts none.
    */
   trustedProxyHops?: number;
+  /** Per-visitor limit on public reads (VANA_PUBLIC_READS_PER_MINUTE); generous by default. */
+  limits?: Partial<Pick<GeneralLimits, 'publicReadsPerMinute'>>;
+  /** Response counts by status class, for /metrics. */
+  httpStats?: HttpStats;
+  /** Wildsentia Challenges (docs/2026-10-09-challenges-design.md); absent unless configured. */
+  challenges?: ChallengeRouteDeps | undefined;
+  /** People's accounts: X sign-in and wallet link (spec §14); absent unless configured. */
+  accounts?: AccountRouteDeps | undefined;
+  /** Challenge X post drafts, reviewed behind the social admin token (plan 3c). */
+  challengeSocial?: ChallengeSocialStore | undefined;
 }
+
+/**
+ * Routes outside the general public-read limit: health checks (monitors poll them), and routes
+ * with limits of their own (rewards, admin and holder per network; signed agent calls per agent).
+ */
+const OWN_LIMITS = /^\/(health|rewards|admin|holder|agents\/me|play|challenges\/drafts)(\/|$)/;
 
 /** VANA_TRUSTED_PROXY_HOPS: how many proxies (e.g. 1 for Caddy in deploy/) to trust. */
 export function trustedProxyHops(env: NodeJS.ProcessEnv): number {
@@ -44,14 +74,44 @@ export function trustedProxyHops(env: NodeJS.ProcessEnv): number {
  * World routes are read-only. The optional reward ledger has independent write routes and
  * receives only a read-only subject visibility adapter, never a simulation mutation capability.
  */
-export function buildApi({ host, pool, narrator, rewards, receiptRpc, social, holder, holderChain, trustedProxyHops: hops = 0 }: ApiDeps): FastifyInstance {
+export function buildApi({ host, pool, narrator, insights: insightDeps, live, rewards, receiptRpc, social, holder, holderChain, trustedProxyHops: hops = 0, limits, httpStats, challenges, accounts, challengeSocial }: ApiDeps): FastifyInstance {
   // Without this, behind Caddy every visitor has the proxy's address and shares one rate limit.
   const app = Fastify({ logger: false, trustProxy: hops > 0 ? (_address: string, hop: number) => hop < hops : false });
+  if (httpStats) app.addHook('onResponse', async (_req, reply) => { countResponse(httpStats, reply.statusCode); });
+  // History routes read the database on every request; one visitor network gets a generous
+  // share. Counted on the dispatched route (not the raw URL), and unknown paths count too.
+  const perMinute = limits?.publicReadsPerMinute ?? GENERAL_LIMIT_DEFAULTS.publicReadsPerMinute;
+  if (perMinute > 0) {
+    const reads = new NetworkRateLimit(perMinute);
+    app.addHook('onRequest', async (req, reply) => {
+      if (req.method !== 'GET' && req.method !== 'HEAD') return;
+      if (OWN_LIMITS.test(req.routeOptions.url ?? '')) return;
+      const taken = reads.take(networkKey(req.ip));
+      if (!taken.ok) return reply.code(429).header('Retry-After', String(taken.retryAfterSeconds)).send({ error: 'rate_limited' });
+    });
+  }
+  // An unexpected failure's message can name database hosts, tables and constraints: log it
+  // here and send a plain error. Client mistakes (bad JSON, too large) keep Fastify's reply.
+  app.setErrorHandler<FastifyError>((error, _request, reply) => {
+    if ((error.statusCode ?? 500) < 500) return reply.send(error);
+    console.error('[api] request failed', error);
+    return reply.code(500).send({ error: 'internal_error' });
+  });
   const events = new EventStore(pool);
   const life = new LifeStore(pool);
   const humanMotion = new HumanMotionStore(pool);
   const historyCursors = new HistoryCursors();
-  installRewards(app, { pool, config: rewards, ...(receiptRpc ? { receiptRpc } : {}), subject: (id) => host.rewardSubject(id), world: () => host.worldId });
+  installRewards(app, { pool, config: rewards, ...(receiptRpc ? { receiptRpc } : {}), subject: (id) => host.rewardSubject(id), world: () => host.worldId,
+    ...(live?.ledger ? { placeDrops: { ledger: live.ledger as PlaceDropLedger, spot: live.spot } } : {}),
+    ...(live ? { agents: { mute: async (idOrName: string, muted: boolean) => {
+      const id = await live.store.setMuted(idOrName, muted);
+      if (id && muted) live.live.forgetSaid(id);
+      return id;
+    } } } : {}) });
+  if (live) installLiveAgents(app, live);
+  if (challenges) installChallenges(app, challenges);
+  if (accounts) installAccounts(app, accounts);
+  if (challengeSocial) installChallengeSocial(app, { social: challengeSocial, publisher: social?.xPublisher });
   installSocialOutbox(app, { pool, config: social, boundary: () => {
     const view = host.observation();
     return view ? { worldTime: view.worldTime, nextSequence: view.nextSequence } : null;
@@ -67,6 +127,8 @@ export function buildApi({ host, pool, narrator, rewards, receiptRpc, social, ho
   observationRoutes.add('/people/:id');
   observationRoutes.add('/people/:id/events');
   observationRoutes.add('/people/:id/motion');
+  observationRoutes.add('/insights/animals/:id/outlook');
+  observationRoutes.add('/insights/highlights');
   app.addHook('preHandler', async (request, reply) => {
     if (!observationRoutes.has(request.routeOptions.url ?? '')) return;
     reply.header('Cache-Control', 'no-store');
@@ -385,11 +447,52 @@ export function buildApi({ host, pool, narrator, rewards, receiptRpc, social, ho
       nextCursor: page.after ? historyCursors.encode({ version: 1, scope, boundary, since: -1, sinceSequence: null, after: page.after }) : null,
       retention: 'Retained events only. Older routine feeding, drinking and movement events are pruned; significant life events remain.' };
   }
-  app.get<{ Querystring: { limit?: string; cursor?: string } }>('/events', async (request, reply) => {
+  // What the live feed calls news: the recap's events, plus village hunts and scavenging, never routine moves and rests.
+  const NOTABLE_EVENT_TYPES = [...RECAP_EVENT_TYPES, 'human_hunt', 'scavenged'];
+  app.get<{ Querystring: { limit?: string; cursor?: string; until?: string; notable?: string } }>('/events', async (request, reply) => {
     const limit = historyLimit(request.query.limit, 50);
     if (limit === null) return reply.code(400).send({ error: 'invalid_limit' });
+    // The live feed: the newest events up to the hour being played on screen, which runs
+    // behind the newest saved hour. A plain newest-first page, without history cursors.
+    if (request.query.until !== undefined) {
+      if (request.query.cursor !== undefined || !/^[0-9]{1,15}$/.test(request.query.until)) return reply.code(400).send({ error: 'invalid_until' });
+      if (request.query.notable !== undefined && request.query.notable !== '1') return reply.code(400).send({ error: 'invalid_notable' });
+      const view = observed(request), until = Math.min(Number(request.query.until), view.worldTime);
+      const page = await events.page({ actorId: null, boundary: { worldTime: view.worldTime, nextSequence: view.nextSequence },
+        limit, descending: true, after: { worldTime: until + 1, id: '' },
+        ...(request.query.notable === '1' ? { types: NOTABLE_EVENT_TYPES, omitMovement: true } : {}) });
+      return { asOfWorldTime: view.worldTime, nextEventSequence: view.nextSequence, source: 'checkpoint', until, events: page.events };
+    }
     return await historyPage(null, request.query.cursor, limit, observed(request))
       ?? reply.code(400).send({ error: 'invalid_history_cursor', restart: true });
+  });
+
+  // Observer insights: estimates from TypeSafe AI's Jev about saved state, shown to viewers
+  // and never read by the simulation. Absent unless a key is configured.
+  const insights = insightDeps ?? new Insights(null);
+  const speciesFacts = (id: string) => {
+    const config = host.world.species.get(id);
+    return { displayName: config?.displayName ?? id, hunts: config?.hunting !== undefined, scavenges: config?.diet.canScavenge ?? false };
+  };
+  const INSIGHT_NOTICE = 'An estimate by TypeSafe AI (Jev) from saved checkpoint state. The simulation decides what actually happens.';
+  app.get<{ Params: { id: string } }>('/insights/animals/:id/outlook', async (request, reply) => {
+    if (!insights.configured) return { available: false, reason: 'not_configured' };
+    const view = observed(request), agent = view.animal(request.params.id);
+    if (!agent) return reply.code(404).send({ error: 'not_found' });
+    const patch = view.patches().find((p) => p.id === agent.patchId);
+    const result = await insights.outlook(agent, speciesFacts(agent.speciesId), view.worldTime,
+      patch && { habitat: patch.habitat, waterVolume: patch.waterVolume, grass: patch.plant.grass });
+    return result.ok ? { available: true, ...result.value, notice: INSIGHT_NOTICE } : { available: false, reason: result.reason };
+  });
+  app.get('/insights/highlights', async (request) => {
+    const view = observed(request);
+    if (!insights.configured) return { available: false, reason: 'not_configured' };
+    // Candidates are the life events of the past world-day (hunts, births, deaths, illness,
+    // climbs...); the latest few hundred records are nearly all drinking and grazing.
+    const page = await events.page({ actorId: null, boundary: { worldTime: view.worldTime, nextSequence: view.nextSequence },
+      limit: 60, descending: true, summary: true, since: view.worldTime - 86_400, types: RECAP_EVENT_TYPES });
+    const result = await insights.highlights(page.events, view.worldTime, view.nextSequence, (id) => speciesFacts(id).displayName);
+    return result.ok ? { available: true, ...result.value, notice: INSIGHT_NOTICE } : { available: false, reason: result.reason };
   });
 
   app.get('/patches', async (request) => ({

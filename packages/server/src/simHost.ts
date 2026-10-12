@@ -1,12 +1,14 @@
-import type { Agent, Carcass, Patch, WorldEvent, LiveEncounterFrame, LiveMovement, WaterBudget, TerrainProfile, MicroEcologyState, CommunityProfile, CommunityState, CommunityMotion } from '@vana/shared';
+import type { Agent, Carcass, Patch, WorldEvent, LiveEncounterFrame, LiveMovement, WaterBudget, TerrainProfile, MicroEcologyState, CommunityProfile, CommunityState, CommunityMotion, WorldPosition } from '@vana/shared';
+import { movementAt, paceMovement, recordedSecondAt, type Pacing } from '@vana/shared';
 import { randomUUID } from 'node:crypto';
 import { collectLiveEncounters, indexLiveMovements, selectLiveMovements, encounterAppearance } from './liveEncounters.js';
 import {
-  FOREST_FLOOR, FOREST_LANDSCAPE, FOREST_POPULATION, ISLAND_POPULATION, SIM_VERSION,
-  upgradeV16Snapshot, upgradeV17Snapshot, upgradeV18Snapshot, upgradeV19Snapshot, upgradeV20Snapshot, upgradeV21Snapshot, upgradeV22Snapshot, upgradeV23Snapshot, upgradeV24Snapshot, upgradeV25Snapshot, upgradeV26Snapshot, upgradeV27Snapshot, upgradeV28Snapshot, upgradeV29Snapshot,
+  FOREST_FLOOR, FOREST_LANDSCAPE, FOREST_POPULATION, SIM_VERSION, islandPopulation,
+  upgradeV16Snapshot, upgradeV17Snapshot, upgradeV18Snapshot, upgradeV19Snapshot, upgradeV20Snapshot, upgradeV21Snapshot, upgradeV22Snapshot, upgradeV23Snapshot, upgradeV24Snapshot, upgradeV25Snapshot, upgradeV26Snapshot, upgradeV27Snapshot, upgradeV28Snapshot, upgradeV29Snapshot, upgradeV30Snapshot, upgradeV31Snapshot, upgradeV32Snapshot, upgradeV33Snapshot, upgradeV34Snapshot, upgradeV35Snapshot, upgradeV36Snapshot, upgradeV37Snapshot,
   createWorld, restoreSnapshot, takeSnapshot, totalNutrients, upgradeV5Snapshot, upgradeV6Snapshot, upgradeV7Snapshot, upgradeV8Snapshot, upgradeV9Snapshot, upgradeV10Snapshot, upgradeV11Snapshot, upgradeV12Snapshot, upgradeV13Snapshot, upgradeV14Snapshot, upgradeV15Snapshot, type Snapshot, type World, type WorldOptions,
 } from '@vana/sim';
 import type { Pool } from './db/pool.js';
+import { isIslandProfile } from '@vana/shared';
 import { EventStore } from './db/eventStore.js';
 import { SnapshotStore } from './db/snapshotStore.js';
 import { LifeStore } from './db/lifeStore.js';
@@ -45,6 +47,25 @@ export interface SimHostOptions {
   allowV28Upgrade?: boolean;
   /** v0.30 moves water access points off patch centres; see upgradeV29Snapshot. */
   allowV29Upgrade?: boolean;
+  /** v0.31 keeps prey off a predator's kill and allows agent-steered animals; see upgradeV30Snapshot. */
+  allowV30Upgrade?: boolean;
+  /** v0.32 changes three parental-care decisions (hunger, predator presence, idle range); see upgradeV31Snapshot. */
+  allowV31Upgrade?: boolean;
+  /** v0.33 calibrates island predator ranges and admits rare recorded island arrivals; see upgradeV32Snapshot. */
+  allowV32Upgrade?: boolean;
+  /** v0.34 gives prey a landscape of fear (detection, immediate fear, avoidance); see upgradeV33Snapshot. */
+  allowV33Upgrade?: boolean;
+  /** v0.35 calibrates predator feeding (stomach satiety); see upgradeV34Snapshot. */
+  allowV34Upgrade?: boolean;
+  /** v0.36 gathers litters, nurses to repletion, hunts dholes as a pack; see upgradeV35Snapshot. */
+  allowV35Upgrade?: boolean;
+  /**
+   * v0.37 adds the leopard (an upgraded island receives a recorded pair), a den mother and a larger
+   * founding pack for dholes, and a rooting-food limit on wild boar; see upgradeV36Snapshot.
+   */
+  allowV36Upgrade?: boolean;
+  /** v0.38 corrects decisions the v0.37 audit found wrong; see upgradeV37Snapshot. */
+  allowV37Upgrade?: boolean;
   allowV15Upgrade?: boolean;
   allowV14Upgrade?: boolean;
   /** Explicit rules-change acknowledgement. Back up the database before enabling. Default false. */
@@ -70,6 +91,8 @@ export interface SimHostOptions {
   speciesDir: string;
   /** Live acceleration. 12 means one world hour every 5 real minutes, independent of route length. */
   worldHoursPerRealHour?: number;
+  /** How long boot waits for another writer to let go of the world (0: refuse at once). */
+  writerWaitMs?: number;
   snapshotEveryWorldHours?: number;
   /** How often every animal's position and drives are sampled for life replay. */
   trackEveryWorldHours?: number;
@@ -149,8 +172,24 @@ export class SimHost {
   #checkpointCommunity: CommunityState | null = null;
   #checkpointRevision = 0;
   #lastCheckpointWallMs = 0;
+  /** Where the clock stood when start() began scheduling hours, for vana_world_clock_lag_seconds. */
+  #schedule: { wallMs: number; worldTime: number } | null = null;
+  /** Figures for /metrics (metrics.ts); counted since this process started. */
+  readonly stats = { tickFailures: 0, ticksSkipped: 0, lastTickSeconds: 0, maxTickSeconds: 0 };
+  readonly simVersion = SIM_VERSION;
 
   get checkpointTime(): number | null { return this.#checkpointTime; }
+  /** Wall-clock milliseconds of the last durable checkpoint; 0 before the first. */
+  get lastCheckpointAt(): number { return this.#lastCheckpointWallMs; }
+  /**
+   * World seconds the clock is behind the hours it should have stepped since start(): 0 while
+   * every scheduled hour has run, an hour while one is in flight, more once hours fail or pile up.
+   */
+  clockLagSeconds(now = Date.now()): number {
+    if (!this.#schedule) return 0;
+    const due = Math.floor((now - this.#schedule.wallMs) * this.#options.worldHoursPerRealHour / 3_600_000);
+    return Math.max(0, this.#schedule.worldTime + due * 3600 - this.world.now());
+  }
   get checkpointEventSequence(): number { return this.#checkpointEventSequence; }
   /** A healthy HTTP listener is not proof that the autonomous clock is still advancing. */
   get hasFreshCheckpoint(): boolean {
@@ -252,6 +291,14 @@ export class SimHost {
       allowV27Upgrade: false,
       allowV28Upgrade: false,
       allowV29Upgrade: false,
+      allowV30Upgrade: false,
+      allowV31Upgrade: false,
+      allowV32Upgrade: false,
+      allowV33Upgrade: false,
+      allowV34Upgrade: false,
+      allowV35Upgrade: false,
+      allowV36Upgrade: false,
+      allowV37Upgrade: false,
       allowV5Upgrade: false,
       allowV6Upgrade: false,
       allowV7Upgrade: false,
@@ -262,14 +309,15 @@ export class SimHost {
       allowV12Upgrade: false,
       allowV13Upgrade: false,
       worldHoursPerRealHour: 12,
+      writerWaitMs: 0,
       snapshotEveryWorldHours: 1,
       trackEveryWorldHours: 6,
       housekeepingEveryWorldHours: 24,
       routineRetentionWorldDays: 3,
       archiveAfterWorldDays: 730,
-      initialAgents: options.terrainProfile === 'island_v1' ? ISLAND_POPULATION : FOREST_POPULATION,
-      minPopulation: options.terrainProfile === 'island_v1' ? {} : FOREST_FLOOR,
-      landscape: options.terrainProfile === 'island_v1' ? null : FOREST_LANDSCAPE,
+      initialAgents: isIslandProfile(options.terrainProfile) ? islandPopulation(options.terrainProfile as 'island_v1' | 'island_v2') : FOREST_POPULATION,
+      minPopulation: isIslandProfile(options.terrainProfile) ? {} : FOREST_FLOOR,
+      landscape: isIslandProfile(options.terrainProfile) ? null : FOREST_LANDSCAPE,
       ...options,
     };
     this.#writer = new WorldWriter(options.pool, () => {
@@ -305,6 +353,28 @@ export class SimHost {
   get consecutiveTickFailures(): number { return this.#consecutiveTickFailures; }
 
   /** A monotonic server-relative clock lets joins/repeated broadcasts share the same playhead. */
+  readonly #pacing = new WeakMap<object, Pacing>();
+  /**
+   * Where a wild animal is being shown right now: on its recorded route at the moment being
+   * played, paced exactly as the observer paces it, or else where it was last saved. The live
+   * layer uses this to tell whether a predator has really reached its prey.
+   */
+  playedPosition(id: string): WorldPosition | null {
+    const frame = this.liveEncounterFrame();
+    const movement = frame ? this.#movementIndex.get(id) : undefined;
+    if (frame && movement) {
+      let pacing = this.#pacing.get(movement.trace);
+      if (!pacing) { pacing = paceMovement(movement.trace, movement.actor.speciesId, frame.rate); this.#pacing.set(movement.trace, pacing); }
+      const seconds = recordedSecondAt(pacing, frame.elapsedWorldSeconds);
+      const activity = movement.activity;
+      if (activity && seconds >= activity.startSeconds) return { ...activity.position };
+      const at = movementAt(movement.trace, seconds);
+      return { x: at.x, z: at.z, heading: at.heading };
+    }
+    const agent = this.world.animal(id);
+    return agent?.alive && agent.position ? { ...agent.position } : null;
+  }
+
   liveEncounterFrame(priorityActorId: string | null = null): LiveEncounterFrame | null {
     const frame = this.#encounterFrame;
     if (!this.isWriterActive || this.lastError || !frame) return null;
@@ -321,7 +391,7 @@ export class SimHost {
       if (this.#lifecycle !== 'new') throw new Error('world host has already booted or closed');
       this.#lifecycle = 'booting';
       try {
-        await this.#writer.acquire();
+        await this.#writer.acquire(this.#options.writerWaitMs);
         await migrateOwned(this.#writer);
         const result = await this.#boot();
         this.#lifecycle = 'running';
@@ -350,13 +420,13 @@ export class SimHost {
     if (snapshot.simVersion !== SIM_VERSION) {
       // Wounds first existed in v0.26. Pre-v0.26 direct jumps must not smuggle them in;
       // a genuine v0.26 checkpoint may preserve its active wound across this upgrade.
-      if (!['sim_0.26.0', 'sim_0.27.0', 'sim_0.28.0', 'sim_0.29.0'].includes(snapshot.simVersion)
+      if (!['sim_0.26.0', 'sim_0.27.0', 'sim_0.28.0', 'sim_0.29.0', 'sim_0.30.0', 'sim_0.31.0', 'sim_0.32.0', 'sim_0.33.0', 'sim_0.34.0', 'sim_0.35.0', 'sim_0.36.0', 'sim_0.37.0'].includes(snapshot.simVersion)
         && snapshot.agents.some(agent => agent.wound !== undefined))
         throw new Error('refusing to upgrade: old snapshot contains future wound state');
-      if (!['sim_0.27.0', 'sim_0.28.0', 'sim_0.29.0'].includes(snapshot.simVersion)
+      if (!['sim_0.27.0', 'sim_0.28.0', 'sim_0.29.0', 'sim_0.30.0', 'sim_0.31.0', 'sim_0.32.0', 'sim_0.33.0', 'sim_0.34.0', 'sim_0.35.0', 'sim_0.36.0', 'sim_0.37.0'].includes(snapshot.simVersion)
         && snapshot.microEcology?.patches.some(patch => patch.fishCohort !== undefined))
         throw new Error('refusing to upgrade: old snapshot contains future fish cohort state');
-      if (!['sim_0.28.0', 'sim_0.29.0'].includes(snapshot.simVersion)
+      if (!['sim_0.28.0', 'sim_0.29.0', 'sim_0.30.0', 'sim_0.31.0', 'sim_0.32.0', 'sim_0.33.0', 'sim_0.34.0', 'sim_0.35.0', 'sim_0.36.0', 'sim_0.37.0'].includes(snapshot.simVersion)
         && snapshot.patches.some(patch => patch.floweringGuild !== undefined))
         throw new Error('refusing to upgrade: old snapshot contains future flowering guild state');
       if (this.#options.allowV5Upgrade && snapshot.simVersion === 'sim_0.5.0') {
@@ -434,6 +504,30 @@ export class SimHost {
       } else if (this.#options.allowV29Upgrade && snapshot.simVersion === 'sim_0.29.0') {
         upgradedFrom = snapshot.simVersion;
         snapshot = upgradeV29Snapshot(snapshot);
+      } else if (this.#options.allowV30Upgrade && snapshot.simVersion === 'sim_0.30.0') {
+        upgradedFrom = snapshot.simVersion;
+        snapshot = upgradeV30Snapshot(snapshot);
+      } else if (this.#options.allowV31Upgrade && snapshot.simVersion === 'sim_0.31.0') {
+        upgradedFrom = snapshot.simVersion;
+        snapshot = upgradeV31Snapshot(snapshot);
+      } else if (this.#options.allowV32Upgrade && snapshot.simVersion === 'sim_0.32.0') {
+        upgradedFrom = snapshot.simVersion;
+        snapshot = upgradeV32Snapshot(snapshot);
+      } else if (this.#options.allowV33Upgrade && snapshot.simVersion === 'sim_0.33.0') {
+        upgradedFrom = snapshot.simVersion;
+        snapshot = upgradeV33Snapshot(snapshot);
+      } else if (this.#options.allowV34Upgrade && snapshot.simVersion === 'sim_0.34.0') {
+        upgradedFrom = snapshot.simVersion;
+        snapshot = upgradeV34Snapshot(snapshot);
+      } else if (this.#options.allowV35Upgrade && snapshot.simVersion === 'sim_0.35.0') {
+        upgradedFrom = snapshot.simVersion;
+        snapshot = upgradeV35Snapshot(snapshot);
+      } else if (this.#options.allowV36Upgrade && snapshot.simVersion === 'sim_0.36.0') {
+        upgradedFrom = snapshot.simVersion;
+        snapshot = upgradeV36Snapshot(snapshot);
+      } else if (this.#options.allowV37Upgrade && snapshot.simVersion === 'sim_0.37.0') {
+        upgradedFrom = snapshot.simVersion;
+        snapshot = upgradeV37Snapshot(snapshot);
       } else throw new Error(
         `refusing to boot: snapshot ${snapshot.simVersion} predates runtime ${SIM_VERSION}`,
       );
@@ -598,17 +692,29 @@ export class SimHost {
     this.#writer.assertActive();
     if (this.#timer !== null) return;
     const realMsPerWorldHour = 3_600_000 / this.#options.worldHoursPerRealHour;
-    this.#timer = setInterval(() => {
-      if (this.#ticking) return;
+    this.#schedule = { wallMs: Date.now(), worldTime: this.world.now() };
+    const tick = (): void => {
+      if (this.#ticking) { this.stats.ticksSkipped++; return; }
       this.#ticking = true;
+      const startedAt = performance.now();
       void this.advance(1)
-        .then(() => { this.#consecutiveTickFailures = 0; if (this.isWriterActive) this.lastError = null; })
+        .then(() => {
+          this.#consecutiveTickFailures = 0; if (this.isWriterActive) this.lastError = null;
+          const seconds = (performance.now() - startedAt) / 1000;
+          this.stats.lastTickSeconds = seconds;
+          this.stats.maxTickSeconds = Math.max(this.stats.maxTickSeconds, seconds);
+        })
         .catch((error: unknown) => {
+          this.stats.tickFailures++;
           this.#consecutiveTickFailures++;
           this.lastError = error instanceof Error ? error.message : String(error);
         })
         .finally(() => { this.#ticking = false; });
-    }, realMsPerWorldHour);
+    };
+    this.#timer = setInterval(tick, realMsPerWorldHour);
+    // A restored world has no recorded hour to play, so without this every wild animal would
+    // stand still until the first interval ends (an hour, in the real-time world).
+    if (this.#encounterFrame === null) { this.#schedule.worldTime += 3600; tick(); }
   }
 
   async stop(): Promise<void> {

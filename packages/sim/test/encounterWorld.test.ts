@@ -21,7 +21,8 @@ describe('encounters in the authoritative world', () => {
       if (!hunt) continue;
       const death = world.log.all().find((e) => e.type === 'died' && e.actors[0] === hunt.actors[1])!;
       const carcass = world.carcasses.find((c) => c.originId === hunt.actors[1])!;
-      expect(hunt.encounter!.samples.at(-1)!.phase).toBe('contact');
+      expect(hunt.encounter!.samples.at(-1)!.phase).toBe('subdue'); // sim_0.36.0: death ends the hold after contact
+      expect(hunt.encounter!.samples.some(s => s.phase === 'contact')).toBe(true);
       expect(death.causalParents).toContain(hunt.id);
       expect(death.worldTime).toBe(hunt.worldTime);
       expect(death.worldTime).toBeLessThanOrEqual(world.now());

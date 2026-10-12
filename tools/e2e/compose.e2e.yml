@@ -1,0 +1,29 @@
+# Local end-to-end stack: the production compose file with loopback-only ports and a
+# fresh, separate world. Run with tools/e2e/stack.sh; never point this at a real domain.
+name: vana-e2e
+
+services:
+  server:
+    environment:
+      VANA_REWARD_MIN_WATCH_SECONDS: ${VANA_REWARD_MIN_WATCH_SECONDS:-8}
+      # Every test agent registers from this machine's one address.
+      VANA_AGENT_REGISTRATIONS_PER_NETWORK: ${VANA_AGENT_REGISTRATIONS_PER_NETWORK:-1000}
+      # The test world was founded on sim_0.31.0 on island_v1; it moves to newer rules on rebuild
+      # and keeps its terrain. An island_v2 test world needs a fresh e2e database volume and
+      # VANA_E2E_TERRAIN_PROFILE=island_v2.
+      VANA_TERRAIN_PROFILE: ${VANA_E2E_TERRAIN_PROFILE:-island_v1}
+      VANA_ALLOW_V31_UPGRADE: "1"
+      VANA_ALLOW_V32_UPGRADE: "1"
+      VANA_ALLOW_V33_UPGRADE: "1"
+      VANA_ALLOW_V34_UPGRADE: "1"
+      VANA_ALLOW_V35_UPGRADE: "1"
+      VANA_ALLOW_V36_UPGRADE: "1"
+      # Load tests (tools/ops/load.ts) run hundreds of agents and viewers from this one address,
+      # and must be able to go past the production caps to find where the server breaks.
+      VANA_AGENT_SLOTS: ${VANA_AGENT_SLOTS:-1000}
+      VANA_PUBLIC_READS_PER_MINUTE: ${VANA_PUBLIC_READS_PER_MINUTE:-60000}
+      VANA_LIVE_MAX_CONNECTIONS: ${VANA_LIVE_MAX_CONNECTIONS:-5000}
+      VANA_LIVE_MAX_CONNECTIONS_PER_NETWORK: ${VANA_LIVE_MAX_CONNECTIONS_PER_NETWORK:-5000}
+  web:
+    ports: !override
+      - "127.0.0.1:${VANA_E2E_PORT:-28080}:80"

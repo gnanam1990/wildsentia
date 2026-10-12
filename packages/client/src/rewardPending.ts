@@ -4,7 +4,7 @@ export interface PendingAllocation {
 
 /** An ID alone is insufficient proof that an uncertain allocation has the intended terms. */
 export function pendingAllocationMatch(pending: PendingAllocation | null,
-  drops: readonly { id: string; actorId: string; amount: string; network: string; revealWhen: string }[],
+  drops: readonly { id: string; actorId: string | null; amount: string; network: string; revealWhen: string }[],
 ): 'absent' | 'exact' | 'conflict' {
   if (!pending) return 'absent';
   const found = drops.find((drop) => drop.id === pending.id);

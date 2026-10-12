@@ -41,6 +41,7 @@
       }
     ],
     "dailyIntakeKg": 8,
+    "gutCapacityBodyFraction": 0.14,
     "waterNeedLPerDay": 10,
     "canScavenge": true,
     "carrionTolerance": 0.6
@@ -57,7 +58,12 @@
     "stalkConcealment": 0.72,
     "commitDistanceM": 25,
     "baseSuccess": 0.53,
-    "staminaCostPerChase": 0.34
+    "staminaCostPerChase": 0.34,
+    "huntFromHunger": 0.35,
+    "subdueSeconds": [[0, 5], [95, 30], [95, 60], [380, 240]],
+    "subdueBreakFree": 0.2,
+    "preyPreference": { "boar": 1.5, "sambar": 1.5 },
+    "preferredPreyKg": [60, 250]
   },
   "social": {
     "structure": "solitary",
@@ -72,6 +78,12 @@
       "floaterMortalityPerDay": 0.004
     }
   },
+  "islandArrival": {
+    "whenLivingAtMost": 1,
+    "dailyProbability": 0.005555555555555556,
+    "minDaysBetween": 180
+  },
+  "activity": { "hourly": [0.7, 0.7, 0.7, 0.7, 0.75, 0.85, 1, 0.8, 0.5, 0.35, 0.25, 0.25, 0.25, 0.25, 0.25, 0.3, 0.4, 0.6, 0.85, 1, 1, 0.85, 0.75, 0.7] },
   "learning": {
     "innate": {
       "stalk_technique": 0.25,

@@ -100,7 +100,7 @@ maybe('private committed-event social outbox', () => {
     const prepared = await post('/admin/social/x-prepare', { draftId: id });
     expect(prepared.statusCode).toBe(200);
     expect(prepared.json()).toMatchObject({ status: 'not_sent', published: false, draftId: id,
-      request: { method: 'POST', url: 'https://api.x.com/2/tweets', body: { text: `${results[0]!.json().body} [VANA record ${id}]` } } });
+      request: { method: 'POST', url: 'https://api.x.com/2/tweets', body: { text: `${results[0]!.json().body} [WILDSENTIA record ${id}]` } } });
     expect((await post('/admin/social/x-prepare', { draftId: id })).json()).toEqual(prepared.json());
     expect(JSON.stringify(prepared.json())).not.toMatch(/Bearer|client_secret|access_token/);
     expect((await post('/admin/social/review', { draftId: id, action: 'approve', note: 'Repeated review' })).statusCode).toBe(409);

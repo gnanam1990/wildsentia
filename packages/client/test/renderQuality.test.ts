@@ -70,3 +70,13 @@ describe('observer rendering budgets', () => {
     }
   });
 });
+
+describe('render pacer ceiling', () => {
+  it('holds 60 Hz by default and allows a higher ceiling only when asked, within 30-240', () => {
+    const count = (pacer: RenderPacer) => { let n = 0; for (let t = 0; t <= 1000; t += 1000 / 480) if (pacer.next(t) !== null) n++; return n; };
+    expect(count(new RenderPacer())).toBeCloseTo(61, -1);
+    expect(count(new RenderPacer(240))).toBeCloseTo(241, -1);
+    expect(count(new RenderPacer(10_000))).toBeCloseTo(241, -1);
+    expect(count(new RenderPacer(Number.NaN))).toBeCloseTo(61, -1);
+  });
+});

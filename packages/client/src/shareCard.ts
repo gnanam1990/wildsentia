@@ -42,7 +42,7 @@ export function buildShareCard(input: ShareCardInput): string {
     : p?.alive === false ? 'No longer active; no death record available'
     : p?.alive === true ? 'Alive at this checkpoint' : 'Live observation; passport unavailable';
   const lines = [
-    `VANA · ${label} (${species})`,
+    `WILDSENTIA · ${label} (${species})`,
     `Animal: ${clean(id, 'unidentified', 128)}`,
     `${status}${p ? ` · ${clean(p.lifeStage, 'life stage unreported', 24)} · age ${Number.isFinite(p.ageDays) && p.ageDays >= 0 ? age(p.ageDays) : 'unreported'}` : ''}`,
   ];

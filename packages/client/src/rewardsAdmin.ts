@@ -46,8 +46,10 @@ async function api(path: string, body?: unknown): Promise<unknown> {
   }
   if (!response.ok) throw Object.assign(new Error(data.error ?? 'Request failed'), { status: response.status }); return data;
 }
-interface Claim { id: string; drop_id: string; wallet: string; status: string; actor_id: string; amount_micro: string; network: string }
-interface Drop { id: string; actorId: string; amount: string; network: string; status: string; revealWhen: string; worldId?: string | null }
+interface Claim { id: string; drop_id: string; wallet: string; status: string; actor_id: string | null; amount_micro: string; network: string;
+  kind?: string; agent_id?: string | null; agent_name?: string | null }
+interface Drop { id: string; actorId: string | null; amount: string; network: string; status: string; revealWhen: string; worldId?: string | null;
+  kind?: string; place?: { x: number; z: number }; expiresAt?: string | null; spottedBy?: string | null }
 interface Audit { action: string; drop_id: string; transaction_ref: string | null; created_at: string; note: string }
 type LedgerKind = 'claims' | 'drops' | 'audit';
 interface Ledger { claims: Claim[]; drops: Drop[]; audit: Audit[]; next: Record<LedgerKind, string | null>; receiptVerificationAvailable: boolean;
@@ -59,7 +61,8 @@ function button(text: string, action: () => void): HTMLButtonElement {
 }
 function claimRow(c: Claim): HTMLElement {
   const row = document.createElement('section'); row.className = 'map-event';
-  row.append(paragraph(`${c.actor_id} · ${usd(c.amount_micro)} USDC · ${c.network} · ${c.status}`), paragraph(c.wallet), paragraph(`Claim ${c.id}`));
+  const what = c.kind === 'place' ? `Place drop won by agent ${c.agent_name ?? c.agent_id ?? 'unknown'} (proven wallet)` : c.actor_id ?? '';
+  row.append(paragraph(`${what} · ${usd(c.amount_micro)} USDC · ${c.network} · ${c.status}`), paragraph(c.wallet), paragraph(`Claim ${c.id}`));
   if (c.status === 'reserved') {
     if (receiptVerificationAvailable) row.append(button('Verify and record existing Base transfer', () => settleVerified(c)));
     row.append(button('Record payment without chain verification', () => review(c.drop_id, c, 'report_paid')),
@@ -70,7 +73,10 @@ function claimRow(c: Claim): HTMLElement {
 function dropRow(d: Drop): HTMLElement {
   const row = document.createElement('section'); row.className = 'map-event';
   const elsewhere = d.worldId && currentWorldId && d.worldId !== currentWorldId;
-  row.append(paragraph(`${d.actorId} · ${d.amount} USDC · ${d.status}${elsewhere ? ' · from an earlier world: not claimable' : ''}`), paragraph(d.id));
+  const what = d.kind === 'place' && d.place
+    ? `Place drop at (${Math.round(d.place.x)}, ${Math.round(d.place.z)})${d.spottedBy ? ` · spotted by ${d.spottedBy}` : ''}${d.expiresAt ? ` · until ${new Date(d.expiresAt).toLocaleString()}` : ''}`
+    : d.actorId ?? '';
+  row.append(paragraph(`${what} · ${d.amount} USDC · ${d.status}${elsewhere ? ' · from an earlier world: not claimable' : ''}`), paragraph(d.id));
   if (d.status === 'open') row.append(button('Cancel allocation', () => review(d.id, null, 'cancel')));
   return row;
 }
@@ -215,6 +221,33 @@ $('#admin-lock').onclick = () => {
   document.querySelectorAll('dialog').forEach((dialog) => { dialog.close(); }); status.textContent = 'Tab locked.';
 };
 addEventListener('pagehide', () => { $('#admin-lock').click(); });
+// A retried batch keeps its id, so an uncertain request can be repeated without doubling it.
+let placeBatchId = crypto.randomUUID();
+$('#place-form').addEventListener('submit', (e) => {
+  e.preventDefault(); const form = e.currentTarget as HTMLFormElement;
+  const submit = form.querySelector('button')!; if (submit.disabled) return;
+  const body = { batchId: placeBatchId, amount: input('#place-amount').value.trim(), count: Number(input('#place-count').value),
+    spacingMinutes: Number(input('#place-spacing').value), lifetimeMinutes: Number(input('#place-lifetime').value) };
+  submit.disabled = true;
+  void api('/admin/rewards/place-drops', body).then((result) => {
+    const created = (result as { created?: number }).created ?? 0;
+    status.textContent = `${created} place drop${created === 1 ? '' : 's'} scheduled.`;
+    placeBatchId = crypto.randomUUID(); form.reset(); return refresh();
+  }).catch((error: Error & { status?: number }) => {
+    if (error.status === 400) placeBatchId = crypto.randomUUID();
+    status.textContent = `${error.message}. ${error.status === 400 ? 'Correct the input and retry.' : 'Retry unchanged to avoid a duplicate batch.'}`;
+  }).finally(() => { submit.disabled = false; });
+});
+$('#mute-form').addEventListener('submit', (e) => {
+  e.preventDefault(); const form = e.currentTarget as HTMLFormElement;
+  const submit = form.querySelector('button')!; if (submit.disabled) return;
+  const muted = (form.querySelector('#mute-state') as HTMLSelectElement).value === 'mute';
+  submit.disabled = true;
+  void api('/admin/rewards/agents/mute', { agent: input('#mute-agent').value.trim(), muted }).then((result) => {
+    const r = result as { agentId: string; muted: boolean };
+    status.textContent = `${r.agentId} ${r.muted ? 'is muted' : 'may speak again'}.`; form.reset();
+  }).catch((error: Error) => { status.textContent = `${error.message}.`; }).finally(() => { submit.disabled = false; });
+});
 $('#drop-form').addEventListener('submit', (e) => {
   e.preventDefault(); const form = e.currentTarget as HTMLFormElement;
   const submit = form.querySelector('button')!; if (submit.disabled) return;

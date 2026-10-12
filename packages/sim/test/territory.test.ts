@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { GRID_SIZE } from '@vana/shared';
 import { buildGrid } from '../src/grid.js';
-import { isFloater, territoryRadiusPatches } from '../src/agents/territory.js';
+import { isFloater, packCapacity, packRangeLandFraction, territoryRadiusPatches } from '../src/agents/territory.js';
+import { landWalkable } from '@vana/shared';
 import { makeAgent, speciesOf } from './helpers.js';
 
 const patches = buildGrid(4);
@@ -92,5 +93,36 @@ describe('isFloater in a pack', () => {
     const all = [...resident, ...newcomer];
     for (const member of resident) expect(isFloater(member, dhole, all, patches)).toBe(false);
     for (const member of newcomer) expect(isFloater(member, dhole, all, patches)).toBe(true);
+  });
+});
+
+describe('a pack range on an island (sim_0.33.0)', () => {
+  const island = buildGrid(1, 'island_v1');
+  const land = island.filter(landWalkable);
+  const centre = land.reduce((best, p) => Math.abs(p.x - 10) + Math.abs(p.y - 10) < Math.abs(best.x - 10) + Math.abs(best.y - 10) ? p : best);
+  const pack = (n: number) => Array.from({ length: n }, (_, i) => makeAgent('dhole', {
+    id: `d${i}`, groupId: 'g1', sex: i % 2 === 0 ? 'female' : 'male', ageDays: 3000 - i * 100, patchId: centre.id }));
+
+  it('counts only land inside the range, and the mainland as a window onto a larger forest', () => {
+    // A 40 km² range is a diamond of 421 cells. From the middle it covers the whole island:
+    // seed 1 has 138 land cells (12.42 km²), so about a third of the range is land.
+    expect(territoryRadiusPatches(dhole.social.territory!.femaleKm2)).toBe(14);
+    expect(land.length).toBe(138);
+    expect(packRangeLandFraction(dhole, centre, island)).toBeCloseTo(138 / 421, 6);
+    expect(packRangeLandFraction(dhole, patches[at(5, 5)]!, patches)).toBe(1);
+    expect(packCapacity(dhole, patches[at(5, 5)]!, patches)).toBe(dhole.social.groupSize[1]);
+    // Nine adults for a full range would be three on this much land; five is the smallest
+    // working pack (sim_0.37.0: Indian packs run 5-12; four before).
+    expect(packCapacity(dhole, centre, island)).toBe(dhole.social.groupSize[0]);
+    expect(dhole.social.groupSize[0]).toBe(5);
+  });
+
+  it('turns the island pack\'s sixth adult into a floater, without any count cap in code', () => {
+    const members = pack(7);
+    expect(members.slice(0, 5).map(m => isFloater(m, dhole, members, island))).toEqual([false, false, false, false, false]);
+    expect(members.slice(5).map(m => isFloater(m, dhole, members, island))).toEqual([true, true]);
+    // The same pack on the mainland is well within its size.
+    const mainland = members.map(m => ({ ...m, patchId: at(5, 5) }));
+    expect(mainland.some(m => isFloater(m, dhole, mainland, patches))).toBe(false);
   });
 });

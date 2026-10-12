@@ -2,7 +2,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { fileURLToPath } from 'node:url';
 import { atWaterAccess, isMovementTrace, waterContactPosition } from '@vana/shared';
 import { LiveEncounterPlayer } from '../../client/src/liveEncounters.js';
-import { displaySecondAt, paceMovement } from '../../client/src/pacing.js';
+import { displaySecondAt, paceMovement } from '@vana/shared';
 import { createPool } from '../src/db/pool.js';
 import { migrate } from '../src/db/migrate.js';
 import { EventStore } from '../src/db/eventStore.js';

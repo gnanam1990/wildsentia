@@ -114,6 +114,25 @@ describe('Pedigree', () => {
     expect(() => p.relatedness('a', 'b')).not.toThrow();
   });
 
+  it('counts a shared ancestor once, not again through each of its own ancestors', () => {
+    // Three known generations: kin through the parents must not be counted again through the
+    // grandparents behind them, or every known lineage looks inbred and breeding stalls.
+    const p = new Pedigree();
+    for (const id of ['gmM', 'gfM', 'gmD', 'gfD', 'gmO', 'gfO', 'gmX', 'gfX', 'gmY', 'gfY']) p.record(id, null, null);
+    p.record('mum', 'gmM', 'gfM'); p.record('dad', 'gmD', 'gfD'); p.record('otherDad', 'gmO', 'gfO');
+    p.record('aunt', 'gmM', 'gfM'); p.record('uncleInLaw', 'gmX', 'gfX');
+    p.record('kidA', 'mum', 'dad'); p.record('kidB', 'mum', 'dad'); p.record('halfKid', 'mum', 'otherDad');
+    p.record('cousin', 'aunt', 'uncleInLaw');
+    expect(p.relatedness('kidA', 'kidB')).toBeCloseTo(0.5, 6);
+    expect(p.relatedness('kidA', 'halfKid')).toBeCloseTo(0.25, 6);
+    expect(p.relatedness('kidA', 'cousin')).toBeCloseTo(0.125, 6);
+    expect(p.relatedness('mum', 'aunt')).toBeCloseTo(0.5, 6);
+    expect(p.relatedness('gmM', 'kidA')).toBeCloseTo(0.25, 6);
+    // Inbreeding is still seen: a full-sib pair's young are related by more than one half.
+    p.record('inbredA', 'kidA', 'kidB'); p.record('inbredB', 'kidA', 'kidB');
+    expect(p.relatedness('inbredA', 'inbredB')).toBeCloseTo(0.75, 6);
+  });
+
   it('round-trips through JSON so a lineage survives a snapshot', () => {
     const original = family();
     const restored = Pedigree.fromJSON(JSON.parse(JSON.stringify(original.toJSON())));

@@ -74,9 +74,9 @@ export class CommunityLayer {
       return 'Saved hourly person movement. Only this person is shown; rig and task pose are illustrative. Building and terrain remain at the newer checkpoint.';
     }
     if (!this.#humans.nearby) return '';
-    return this.#playback.active(now, reducedMotion)
-      ? 'Villagers nearby walk their recorded paths, an hour behind the latest checkpoint; poses are illustrative.'
-      : 'Villagers nearby stand where the last checkpoint saw them.';
+    // Villagers in the played hour need no caption; only history browsing is explained above.
+    void this.#playback.active(now, reducedMotion);
+    return '';
   }
   sync(state: CommunityState | null | undefined, ground: (x: number, z: number) => number): void {
     this.#hasCommunity = !!state; this.root.visible = !!state && !this.#replaying;

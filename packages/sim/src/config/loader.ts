@@ -23,13 +23,15 @@ export const SpeciesConfigSchema = z
     trophicRole: z
       .array(z.enum(['apex_predator', 'mesopredator', 'grazer', 'browser', 'omnivore', 'scavenger']))
       .min(1),
-    body: z.object({ adultMassKg: z.number().positive(), shoulderHeightM: z.number().positive() }),
+    body: z.object({ adultMassKg: z.number().positive(), shoulderHeightM: z.number().positive(),
+      massBySexKg: z.object({ female: z.number().positive().finite(), male: z.number().positive().finite() }).optional() }),
     locomotion: z.object({
       walkMs: z.number().positive(),
       trotMs: z.number().positive(),
       sprintMs: z.number().positive(),
       sprintStaminaS: z.number().positive(),
       terrainCost: habitatCost,
+      climbsTrees: z.boolean().optional(),
     }),
     senses: z.object({
       sightRangeM: z.number().nonnegative(),
@@ -40,15 +42,19 @@ export const SpeciesConfigSchema = z
       detectionDistanceM: z.number().nonnegative(),
       flightInitiationM: z.number().nonnegative(),
       evasiveness: z.number().min(0).max(1),
+      avoids: z.array(z.string().min(1)).optional(),
     }),
     diet: z.object({
       eats: z
         .array(z.object({
-          target: z.enum(['grass', 'browse', 'meat']),
+          target: z.enum(['grass', 'browse', 'meat', 'roots']),
           preference: z.number().min(0).max(1),
+          foodValue: z.number().gt(0).max(1).optional(),
         }))
         .min(1),
       dailyIntakeKg: z.number().positive(),
+      gutCapacityBodyFraction: z.number().gt(0).max(0.3).optional(),
+      maxDailyIntakeKg: z.number().positive().finite().optional(),
       waterNeedLPerDay: z.number().positive(),
       canScavenge: z.boolean(),
       carrionTolerance: z.number().min(0).max(1),
@@ -60,12 +66,26 @@ export const SpeciesConfigSchema = z
         commitDistanceM: z.number().positive(),
         baseSuccess: z.number().min(0).max(1),
         staminaCostPerChase: z.number().min(0).max(1),
+        huntFromHunger: z.number().min(0).max(0.9).optional(),
+        preyPreference: z.record(z.string(), z.number().positive().finite()).optional(),
+        packHuntRadiusM: z.number().positive().finite().optional(),
+        packPreyKg: z.tuple([z.number().min(0).finite(), z.number().positive().finite()])
+          .refine(([lo, hi]) => lo <= hi, 'pack prey range must be ordered').optional(),
+        subdueSeconds: z.array(z.tuple([z.number().min(0).finite(), z.number().positive().max(1800)])).min(1)
+          .refine(t => t.every((p, i) => i === 0 || p[0] >= t[i - 1]![0]), 'subdue table must be ordered by prey mass').optional(),
+        subdueReferenceHunters: z.number().positive().finite().optional(),
+        subdueBreakFree: z.number().min(0).max(1).optional(),
+        maxPreyKg: z.number().positive().finite().optional(),
+        cachesKills: z.boolean().optional(),
+        preferredPreyKg: z.tuple([z.number().min(0).finite(), z.number().positive().finite()])
+          .refine(([lo, hi]) => lo <= hi, 'preferred prey range must be ordered').optional(),
       })
       .optional(),
     social: z.object({
       structure: z.enum(['solitary', 'pair', 'herd', 'troop', 'pack', 'family']),
       groupSize: z.tuple([z.number().int().positive(), z.number().int().positive()]),
       alarmSharing: z.boolean(),
+      heedsAlarmOf: z.array(z.string().min(1)).optional(),
       cooperativeCare: z.object({ donorFromDays: z.number().finite().nonnegative(), recipientFromDays: z.number().finite().nonnegative(),
         capacityBodyFraction: z.number().positive().max(0.2), collectionBodyFractionPerHour: z.number().positive().max(0.2),
         deliveryBodyFractionPerHour: z.number().positive().max(0.2), retentionHours: z.number().positive().max(24),
@@ -76,6 +96,16 @@ export const SpeciesConfigSchema = z
         floaterMortalityPerDay: z.number().min(0).max(1),
       }).optional(),
     }),
+    islandArrival: z.object({
+      whenLivingAtMost: z.number().int().nonnegative(),
+      dailyProbability: z.number().gt(0).max(1),
+      minDaysBetween: z.number().finite().nonnegative(),
+      preferMissingSex: z.boolean().optional(),
+    }).optional(),
+    activity: z.object({
+      hourly: z.array(z.number().min(0).max(1)).length(24)
+        .refine(h => h.some(v => v === 1), 'activity peaks at 1'),
+    }).optional(),
     learning: z.object({
       innate: z.record(
         z.enum(['forage_efficiency', 'water_locations', 'predator_avoidance', 'stalk_technique']),
@@ -102,12 +132,18 @@ export const SpeciesConfigSchema = z
       oestrusCycleDays: z.number().positive(),
       weanDays: z.number().positive(),
       followFromDays: z.number().nonnegative().optional(),
+      gatherFromDays: z.number().finite().nonnegative().optional(),
+      carriedUntilDays: z.number().positive().finite().optional(),
       forageFromDays: z.number().nonnegative().optional(),
       drinkFromDays: z.number().finite().nonnegative().optional(),
       meatFromDays: z.number().finite().nonnegative().optional(),
       nursing: z.object({ startHour: z.number().min(0).lt(24), windowHours: z.number().positive().max(24),
         dailyContactSeconds: z.number().positive().max(3600), locomotionFromDays: z.number().nonnegative() })
         .refine(n => n.startHour + n.windowHours <= 24, 'nursing window must fit inside one world day').optional(),
+      denStayDays: z.number().positive().finite().optional(),
+      condition: z.object({ conditionDays: z.number().positive().finite(), minBreedingCondition: z.number().min(0).max(1),
+        fullBreedingCondition: z.number().min(0).max(1) })
+        .refine(c => c.minBreedingCondition < c.fullBreedingCondition, 'breeding condition range must be ordered').optional(),
       dispersalDays: z.number().positive(),
     }),
   })
@@ -118,11 +154,35 @@ export const SpeciesConfigSchema = z
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['social', 'cooperativeCare'],
         message: 'cooperative food care requires a meat-eating scavenging pack, weaned donors and a pre-weaning recipient age' });
     }
+    if (cfg.lifecycle.condition && (cfg.diet.maxDailyIntakeKg === undefined || !cfg.diet.eats.some(e => e.target === 'roots'))) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['lifecycle', 'condition'],
+        message: 'condition-dependent breeding tracks a roots diet under a daily gut limit' });
+    }
+    if (cfg.lifecycle.denStayDays !== undefined && !cfg.social.cooperativeCare) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['lifecycle', 'denStayDays'],
+        message: 'a mother stays at the den only where the pack feeds her' });
+    }
+    if (cfg.body.massBySexKg && Math.abs((cfg.body.massBySexKg.female + cfg.body.massBySexKg.male) / 2 - cfg.body.adultMassKg)
+      > cfg.body.adultMassKg * 0.05) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['body', 'massBySexKg'],
+        message: 'the mean adult mass must be the mean of the two sexes' });
+    }
+    if (cfg.hunting?.packHuntRadiusM !== undefined && cfg.social.structure !== 'pack') {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['hunting', 'packHuntRadiusM'], message: 'only a pack hunts as a pack' });
+    }
+    for (const prey of Object.keys(cfg.hunting?.preyPreference ?? {})) if (!cfg.hunting!.preferredPrey.includes(prey)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['hunting', 'preyPreference', prey], message: 'a prey preference needs a preferred prey' });
+    }
     if (cfg.lifecycle.forageFromDays !== undefined && (cfg.lifecycle.forageFromDays > cfg.lifecycle.weanDays
       || cfg.lifecycle.forageFromDays < cfg.lifecycle.weanDays
-      && !cfg.diet.eats.some(e => e.target === 'grass' || e.target === 'browse'))) {
+      && !cfg.diet.eats.some(e => e.target === 'grass' || e.target === 'browse' || e.target === 'roots'))) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['lifecycle', 'forageFromDays'],
         message: 'early foraging requires a plant food target and must start by weaning' });
+    }
+    if (cfg.lifecycle.gatherFromDays !== undefined && (cfg.lifecycle.gatherFromDays > cfg.lifecycle.weanDays
+      || cfg.lifecycle.gatherFromDays > (cfg.lifecycle.followFromDays ?? cfg.lifecycle.weanDays))) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['lifecycle', 'gatherFromDays'],
+        message: 'a litter gathers to its parent no later than it follows her or is weaned' });
     }
     if (cfg.lifecycle.drinkFromDays !== undefined && cfg.lifecycle.drinkFromDays > cfg.lifecycle.weanDays) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['lifecycle', 'drinkFromDays'],

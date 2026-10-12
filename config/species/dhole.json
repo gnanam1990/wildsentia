@@ -40,7 +40,8 @@
         "preference": 1.0
       }
     ],
-    "dailyIntakeKg": 2.2,
+    "dailyIntakeKg": 2.0,
+    "gutCapacityBodyFraction": 0.2,
     "waterNeedLPerDay": 2,
     "canScavenge": true,
     "carrionTolerance": 0.55
@@ -58,16 +59,22 @@
     "stalkConcealment": 0.35,
     "commitDistanceM": 90,
     "baseSuccess": 0.34,
-    "staminaCostPerChase": 0.18
+    "staminaCostPerChase": 0.18,
+    "huntFromHunger": 0.25,
+    "subdueSeconds": [[0, 5], [50, 120], [400, 900]],
+        "subdueReferenceHunters": 2.5,
+    "preyPreference": { "sambar": 2.1, "boar": 0.54, "langur": 0.1 },
+    "packHuntRadiusM": 600,
+    "packPreyKg": [30, 235]
   },
   "social": {
     "structure": "pack",
     "groupSize": [
-      4,
+      5,
       9
     ],
     "alarmSharing": true,
-    "cooperativeCare": { "donorFromDays": 330, "recipientFromDays": 21, "capacityBodyFraction": 0.08,
+    "cooperativeCare": { "donorFromDays": 330, "recipientFromDays": 21, "capacityBodyFraction": 0.2,
       "collectionBodyFractionPerHour": 0.05, "deliveryBodyFractionPerHour": 0.05,
       "retentionHours": 6, "moistureLPerKg": 0.65 },
     "territory": {
@@ -76,6 +83,7 @@
       "floaterMortalityPerDay": 0.004
     }
   },
+  "activity": { "hourly": [0.1, 0.1, 0.1, 0.1, 0.15, 0.5, 1, 1, 0.9, 0.6, 0.35, 0.25, 0.2, 0.2, 0.25, 0.4, 0.7, 0.9, 0.8, 0.4, 0.1, 0.1, 0.1, 0.1] },
   "learning": {
     "innate": {
       "stalk_technique": 0.25,
@@ -103,7 +111,7 @@
       },
       {
         "name": "subadult",
-        "startDays": 330,
+        "startDays": 210,
         "sizeFactor": 0.72,
         "dependent": false,
         "mortalityPerDay": 0.00042
@@ -132,6 +140,8 @@
     "interBirthIntervalDays": 365,
     "oestrusCycleDays": 365,
     "weanDays": 70,
+    "gatherFromDays": 21,
+    "denStayDays": 60,
     "dispersalDays": 330
   }
 }

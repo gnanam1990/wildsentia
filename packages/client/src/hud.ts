@@ -1,6 +1,9 @@
 import type { WorldStore } from './protocol.js';
+import { withTimeout } from './abortSignals.js';
 import { modelStatusForAnimal } from './species.js';
 import { validNextCursor } from './historyCursor.js';
+import { friendlyWorldTime } from './worldTime.js';
+export { friendlyWorldTime };
 import { PASSPORT_TABS, PassportTabs, type PassportTab } from './passportTabs.js';
 
 /**
@@ -40,6 +43,10 @@ export interface Passport {
 const escape = (text: string): string =>
   text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
+/** A count from the server, grouped in thousands; anything that is not a number shows as unknown. */
+const count = (value: unknown): string =>
+  typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString('en-US', { maximumFractionDigits: 0 }) : UNKNOWN;
+
 const age = (days: number): string =>
   days >= 365 ? `${(days / 365).toFixed(1)} years` : `${Math.round(days)} days`;
 
@@ -64,17 +71,9 @@ const EVENT_LABEL: Record<string, string> = {
 const FLOWERING_EVENT_TYPES = new Set(['flowering_started', 'flower_visitation_settled',
   'seeds_matured', 'plants_recruited', 'seed_bank_lost']);
 
-/** The world clock as a visitor reads it: "Year 1 · Day 5 · 3 pm". */
-export function friendlyWorldTime(worldTime: number): string {
-  if (!Number.isFinite(worldTime) || worldTime < 0) return '—';
-  const day = Math.floor(worldTime / 86_400), hour = Math.floor(worldTime / 3600) % 24;
-  const clock = hour === 0 ? '12 am' : hour < 12 ? `${hour} am` : hour === 12 ? '12 pm' : `${hour - 12} pm`;
-  return `Year ${Math.floor(day / 360) + 1} · Day ${(day % 360) + 1} · ${clock}`;
-}
-
 const SPECIES_NAME: Record<string, string> = {
   chital: 'chital', sambar: 'sambar', gaur: 'gaur', dhole: 'dhole', jackal: 'jackal', boar: 'wild boar',
-  tiger: 'tiger', elephant: 'elephant', langur: 'langur', squirrel: 'giant squirrel', hare: 'hare', vulture: 'vulture',
+  tiger: 'tiger', leopard: 'leopard', elephant: 'elephant', langur: 'langur', squirrel: 'giant squirrel', hare: 'hare', vulture: 'vulture',
   human: 'villager',
 };
 const speciesOf = (id: string | undefined): string | null => {
@@ -99,12 +98,30 @@ export function feedSentence(event: Record<string, unknown>): string {
       case 'hunt': return second ? (outcome === 'success' ? `${an(first)} caught ${an(second).toLowerCase()}` : `${an(first)}'s hunt for ${an(second).toLowerCase()} failed`) : `${an(first)} hunted`;
       case 'human_hunt': return outcome === 'success' ? 'Villagers brought back a catch' : 'A village hunt came back empty';
       case 'scavenged': return second ? `${an(first)} fed on ${an(second).toLowerCase()} carcass` : `${an(first)} scavenged`;
-      case 'fed': return first === 'tiger' || first === 'dhole' || first === 'jackal' ? `${an(first)} ate` : `${an(first)} grazed`;
+      case 'fed': return ['tiger', 'leopard', 'dhole', 'jackal'].includes(first) ? `${an(first)} ate` : `${an(first)} grazed`;
       case 'drank': return `${an(first)} drank water`;
       case 'rested': return actors.length > 1 && first === second ? `Two ${first === 'wild boar' ? 'wild boars' : `${first}s`} rested together` : `${an(first)} rested`;
-      case 'moved': return failed ? `${an(first)} changed course` : `${an(first)} moved on`;
-      case 'birth': return `${an(first)} was born`;
+      case 'moved': return failed ? `${an(first)} changed course` : `${an(first)} moved to new ground`;
+      case 'birth': case 'born': return `${an(first)} was born`;
+      case 'immigration': return (event.conditions as Record<string, unknown> | undefined)?.route === 'island_crossing'
+        ? `${an(first)} swam ashore onto the island` : `${an(first)} walked into the forest`;
       case 'death': return `${an(first)} died`;
+      case 'died': {
+        const cause = typeof (event.conditions as Record<string, unknown> | undefined)?.cause === 'string'
+          ? (event.conditions as Record<string, string>).cause : '';
+        return cause === 'predation' && second ? `${an(first)} was killed by ${an(second).toLowerCase()}` : `${an(first)} died`;
+      }
+      case 'fled': return `${an(first)} fled`;
+      case 'courtship': return `${an(first)} courted a mate`;
+      case 'wounded': return `${an(first)} was wounded`;
+      case 'wound_healed': return `${an(first)}'s wound healed`;
+      case 'disease_symptomatic': return `${an(first)} fell ill`;
+      case 'disease_recovered': return `${an(first)} recovered from illness`;
+      case 'disease_fatal': case 'wound_infection_fatal': return `${an(first)} did not survive its illness`;
+      case 'life_stage': return `${an(first)} grew into its next life stage`;
+      case 'dispersed': return `${an(first)} left to find a range of its own`;
+      case 'parent_lost': return `A young ${first} lost its mother`;
+      case 'skill_taught': return `${an(first)} taught a skill`;
       case 'tree_climbed': return `${an(first)} climbed a tree`;
       case 'illness_started': return `${an(first)} fell ill`;
       case 'illness_ended': return `${an(first)} recovered`;
@@ -114,6 +131,29 @@ export function feedSentence(event: Record<string, unknown>): string {
     }
   }
   return feedEventSummary(event).title;
+}
+
+/** Everyday events the feed leaves out: every animal moves, rests, eats and drinks all the time. */
+export const ROUTINE_EVENTS = new Set(['moved', 'rested', 'fed', 'drank']);
+
+/** Only what has happened by the played time: the saved hour runs ahead of the screen. */
+export function happenedBy<T extends Record<string, unknown>>(events: readonly T[], time: number | null): T[] {
+  return time === null ? [...events] : events.filter((e) => typeof e.worldTime !== 'number' || e.worldTime <= time);
+}
+
+/**
+ * Neighbouring events that read the same are shown once with a count, so one busy hour of
+ * routine resting does not push every other event out of the feed.
+ */
+export function collapseFeed<T extends Record<string, unknown>>(events: readonly T[], limit: number): Array<{ event: T; sentence: string; count: number }> {
+  const rows: Array<{ event: T; sentence: string; count: number }> = [];
+  for (const event of events) {
+    const sentence = feedSentence(event), last = rows.at(-1);
+    if (last && last.sentence === sentence) { last.count++; continue; }
+    if (rows.length === limit) break;
+    rows.push({ event, sentence, count: 1 });
+  }
+  return rows;
 }
 
 /** Short, factual labels for the live feed. Event IDs remain available on disclosure. */
@@ -181,6 +221,7 @@ export class Hud {
   #recapAbort: AbortController | null = null;
   #recapRequest = 0;
   #passportRequest = 0;
+  #passportHtml: string | undefined;
   #populationHtml = '';
   #feedHtml = '';
   #passportTabs: PassportTabs;
@@ -199,7 +240,7 @@ export class Hud {
       let lines: NonNullable<Hud['recap']>['lines'] = [];
       const seen = new Set<string>();
       do {
-        const response = await fetch(path + query, { signal: AbortSignal.any([this.#recapAbort.signal, AbortSignal.timeout(15000)]) });
+        const response = await fetch(path + query, { signal: withTimeout(this.#recapAbort.signal, 15000) });
         if (!response.ok) throw new Error('History unavailable');
         const body = await response.json();
         if (request !== this.#recapRequest) return false;
@@ -225,8 +266,22 @@ export class Hud {
     }
   }
 
+  /** The clock and activity follow the hour currently played on screen. */
+  clockTime: () => number | null = () => this.store.world?.worldTime ?? null;
+  liveActivity: (id: string) => { state: string; goal: string; agent?: string } | null = () => null;
+  #clockText: string | null = null;
+
   constructor(private readonly elements: HudElements, private readonly store: WorldStore) {
     this.#passportTabs = new PassportTabs(elements.passport);
+  }
+
+  /** Keeps the top-bar clock moving with the played hour; cheap enough for every frame. */
+  tickClock(): void {
+    const time = this.clockTime();
+    const text = time === null ? '' : friendlyWorldTime(time);
+    if (text === this.#clockText) return;
+    this.#clockText = text;
+    this.elements.clock.innerHTML = time === null ? UNKNOWN : escape(text);
   }
 
   async refreshPassport(id: string | null): Promise<void> {
@@ -243,15 +298,17 @@ export class Hud {
 
   render(followedId: string | null): void {
     const world = this.store.world;
-    this.elements.clock.innerHTML = world ? escape(friendlyWorldTime(world.worldTime)) : UNKNOWN;
+    this.tickClock();
     this.elements.clock.title = world?.formatted ?? '';
     this.elements.season.innerHTML = world ? escape(world.season.replace(/^./, (c) => c.toUpperCase())) : UNKNOWN;
     if (world) {
-      const counts = Object.entries(world.population).sort((a, b) => b[1] - a[1]);
+      const counts = Object.entries(world.population as Record<string, unknown>)
+        .filter((entry): entry is [string, number] => typeof entry[1] === 'number' && Number.isFinite(entry[1]))
+        .sort((a, b) => b[1] - a[1]);
       const total = counts.reduce((sum, [, n]) => sum + n, 0);
-      const listHtml = counts.map(([species, n]) => `<span>${escape(SPECIES_NAME[species] ?? species)} <b>${n}</b></span>`).join('');
+      const listHtml = counts.map(([species, n]) => `<span>${escape(SPECIES_NAME[species] ?? species)} <b>${count(n)}</b></span>`).join('');
       // Rebuilding the list would close it under the viewer's pointer; update only on change.
-      const html = `<summary>${total.toLocaleString('en-IN')} animals</summary><div class="pop-list">${listHtml}</div>`;
+      const html = `<summary>${count(total)} animals</summary><div class="pop-list">${listHtml}</div>`;
       if (this.elements.renderPopulation) this.elements.renderPopulation(total, listHtml);
       else if (this.#populationHtml !== html) {
         const open = (this.elements.population.querySelector?.('details') as HTMLDetailsElement | null)?.open ?? false;
@@ -264,7 +321,8 @@ export class Hud {
       else this.elements.population.innerHTML = UNKNOWN;
     }
 
-    this.elements.notice.textContent = this.store.lastError ?? '';
+    const notice = this.store.errorNotice() ?? '';
+    if (this.elements.notice.textContent !== notice) this.elements.notice.textContent = notice;
 
     if (followedId === null) {
       this.#passportTabs.render(null, '<div class="passport-empty"><p>Choose a life to follow</p><span>Tap an animal in the forest, or choose a species above.</span></div>');
@@ -274,12 +332,13 @@ export class Hud {
     const animal = this.store.animals.get(followedId);
     const p = this.passport?.id === followedId ? this.passport : null;
     const viewers = this.store.viewerCounts.get(followedId);
+    const live = this.liveActivity(followedId);
     const identity = p
       ? `${escape(readable(p.sex))} &middot; ${p.death ? `died aged ${age(p.ageDays)}` : `${age(p.ageDays)} &middot; ${escape(readable(p.lifeStage))}`}`
       : [animal?.sex, animal?.lifeStage].filter((value): value is string => typeof value === 'string')
         .map(value => escape(readable(value))).join(' &middot; ') || 'Life details unavailable';
     const name = p?.displayName ?? readable(animal ? SPECIES_NAME[animal.speciesId] ?? animal.speciesId : speciesOf(followedId) ?? 'Animal');
-    const state = animal ? readable(animal.state) : p?.death ? 'Died' : 'Unavailable';
+    const state = animal ? readable(live?.state ?? animal.state) : p?.death ? 'Died' : 'Unavailable';
     const overview = animal
       ? `<div class="vitals" aria-label="Reported drives">
           ${bar('Hunger', animal.drives.hunger, 'var(--clay)')}
@@ -287,16 +346,17 @@ export class Hud {
           ${bar('Fatigue', animal.drives.fatigue, 'var(--ink-3)')}
           ${bar('Fear', animal.drives.fear, 'var(--blood)')}
         </div>
-        <div class="subject-activity"><div><span>Current goal</span><strong>${escape(readable(animal.currentGoal))}</strong></div>
-          <div class="subject-watchers"><span>Watching now</span><strong>${viewers ?? UNKNOWN}</strong></div></div>
+        <div class="subject-activity"><div><span>Current goal</span><strong>${escape(readable(live?.goal || animal.currentGoal))}</strong></div>
+          <div class="subject-watchers"><span>Watching now</span><strong>${count(viewers)}</strong></div></div>
+        ${live?.agent ? `<p class="subject-agent">Steered by ${escape(live.agent)} (AI agent)</p>` : ''}
         ${animal.illnessStatus === 'symptomatic' || animal.woundStatus ? `<div class="subject-health">
           ${animal.illnessStatus === 'symptomatic' ? '<p>Modelled illness symptoms</p>' : ''}
           ${animal.woundStatus ? `<p>Modelled ${animal.woundStatus === 'infected' ? 'wound infection' : 'open wound'}</p>` : ''}</div>` : ''}`
       : `<p class="hint">${p?.death ? 'This life has ended. Its saved family and events remain in Life; death details are in Record.'
         : 'This animal is no longer reported by the live simulation.'}</p>`;
     const record = `<dl class="record-facts"><div><dt>Animal ID</dt><dd><code>${escape(followedId)}</code></dd></div>
-      ${animal ? `<div><dt>Patch</dt><dd>${animal.patchId}</dd></div>` : ''}
-      ${p ? `<div><dt>Generation</dt><dd>${p.generation}</dd></div>` : ''}
+      ${animal ? `<div><dt>Patch</dt><dd>${count(animal.patchId)}</dd></div>` : ''}
+      ${p ? `<div><dt>Generation</dt><dd>${count(p.generation)}</dd></div>` : ''}
       ${p?.asOfWorldTime !== undefined ? `<div><dt>Saved at</dt><dd>${escape(friendlyWorldTime(p.asOfWorldTime))}</dd></div>` : ''}
       ${p?.death ? `<div><dt>Cause of death</dt><dd>${escape(readable(p.death.cause))}</dd></div>
         <div><dt>Died at</dt><dd>${escape(friendlyWorldTime(p.death.worldTime))}</dd></div>
@@ -333,11 +393,9 @@ export class Hud {
   #recapCard(id: string): string {
     if (this.recapStatus?.id === id) return `<p role="status">${escape(this.recapStatus.text)}</p>`;
     const r = this.recap;
-    if (r === null || r.id !== id) return '';
+    if (r === null || r.id !== id || r.lines.length === 0) return '';
     const away = r.days >= 1 ? `${r.days.toFixed(1)} world days` : `${Math.round(r.days * 24)} world hours`;
-    const body = r.lines.length === 0
-      ? '<p class="hint">No narrated significant events in this retained interval.</p>'
-      : r.lines.slice(-12).map((l) => `<div class="event${l.narrated === true ? ' narrated' : ''}"
+    const body = r.lines.slice(-12).map((l) => `<div class="event${l.narrated === true ? ' narrated' : ''}"
           ${l.narrated === true ? 'title="The event fact clause is unchanged; only a neutral prefix is allowed"' : ''}>
           <div class="etype">${escape(l.text)}</div><div class="eid">${escape(l.eventId)}</div></div>`).join('');
     const reworded = r.lines.some((l) => l.narrated === true);
@@ -359,7 +417,7 @@ export class Hud {
     return `<h3>Family</h3>
       <div class="row"><span>Mother</span><b>${kinLink(p.lineage.mother)}</b></div>
       <div class="row"><span>Father</span><b>${kinLink(p.lineage.father)}</b></div>
-      <div class="row"><span>Young</span><b>${p.lineage.offspring.length} (${living} alive)</b></div>`;
+      <div class="row"><span>Young</span><b>${count(p.lineage.offspring.length)} (${count(living)} alive)</b></div>`;
   }
 
   #timeline(p: Passport): string {
@@ -383,16 +441,21 @@ export class Hud {
 
   async refreshFeed(): Promise<void> {
     try {
-      const response = await fetch('/api/events?limit=12');
+      const time = this.clockTime();
+      // News only (hunts, births, deaths, arrivals, illness): thousands of animals moving and resting would bury it.
+      const response = await fetch(`/api/events?limit=40${time === null ? '' : `&until=${Math.floor(time)}&notable=1`}`);
       if (!response.ok) throw new Error('Event feed unavailable');
       const body = (await response.json()) as { events: Array<Record<string, unknown>> };
       if (!Array.isArray(body.events)) throw new Error('Invalid event feed');
-      if (body.events.length === 0) {
-        this.#renderFeed('<p class="hint">No recorded events yet. New activity will appear here.</p>');
+      const news = happenedBy(body.events.filter(event => !ROUTINE_EVENTS.has(String(event.type))), time);
+      if (news.length === 0) {
+        this.#renderFeed(body.events.length === 0
+          ? '<p class="hint">No recorded events yet. New activity will appear here.</p>'
+          : '<p class="hint">Quiet for now. Hunts, births and deaths appear as they happen in the played hour.</p>');
         return;
       }
       // Newest few, in plain words; the factual label and record ID stay one tap away.
-      const html = groupFeedEvents(body.events)
+      const html = groupFeedEvents(news)
         .map((group) => {
           const event = group.events[0]!;
           const key = JSON.stringify(group.events.map(record => typeof record.id === 'string' ? record.id

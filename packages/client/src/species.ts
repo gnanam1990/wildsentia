@@ -19,21 +19,24 @@ export interface SpeciesVisual {
 
 export const SPECIES_VISUALS: Record<string, SpeciesVisual> = {
   // Quaternius Ultimate Animated Animals (CC0).
-  chital:   { heightM: 0.9,  model: { file: '/assets/animals/Deer.glb' }, colour: 0xb7753f },
-  sambar:   { heightM: 1.35, model: { file: '/assets/animals/Stag.glb', tint: 0x8a7a68 }, colour: 0x6b5443 },
-  gaur:     { heightM: 1.7,  model: { file: '/assets/animals/Bull.glb', tint: 0x8a6a55 }, colour: 0x2f2520 },
-  dhole:    { heightM: 0.5,  model: { file: '/assets/animals/ShibaInu.glb', tint: 0xd0703a }, colour: 0xb4552a },
-  jackal:   { heightM: 0.45, model: { file: '/assets/animals/Fox.glb', tint: 0xc9a67a }, colour: 0xa98a5f },
+  chital:   { heightM: 0.9,  model: { file: '/assets/animals/Chital.glb' }, colour: 0xb7753f },
+  sambar:   { heightM: 1.35, model: { file: '/assets/animals/Sambar.glb' }, colour: 0x6b5443 },
+  gaur:     { heightM: 1.7,  model: { file: '/assets/animals/Gaur.glb' }, colour: 0x2f2520 },
+  dhole:    { heightM: 0.5,  model: { file: '/assets/animals/Dhole.glb' }, colour: 0xb4552a },
+  jackal:   { heightM: 0.45, model: { file: '/assets/animals/Jackal.glb' }, colour: 0xa98a5f },
   // Gobkit Free Animal Pack B (CC0).
-  boar:     { heightM: 0.85, model: { file: '/assets/animals/Boar.glb', tint: 0x5f5650 }, colour: 0x4b3f37 },
+  boar:     { heightM: 0.85, model: { file: '/assets/animals/WildBoar.glb' }, colour: 0x4b3f37 },
   // Existing project-owned geometry, rigged locally. Not the blocked Sketchfab download.
   tiger:    { heightM: 1.0,  model: { file: '/assets/animals/TigerRigged.glb' }, colour: 0xd9822b },
+  // Interim: the same big-cat rig and clips with a leopard's rosette coat (tools/assets/leopard_from_tiger.py).
+  leopard:  { heightM: 0.7,  model: { file: '/assets/animals/LeopardRigged.glb' }, colour: 0xc9963e },
   // OpenGameArt CC0 rigs. See credits: generic elephant; rabbit is a hare approximation.
   elephant: { heightM: 2.7,  model: { file: '/assets/animals/ElephantWalking.glb' }, colour: 0x7d7a76 },
-  langur:   { heightM: 0.6,  model: { file: '/assets/animals/Langur.glb', referenceHeightM: 0.77 }, colour: 0xb9b3a8 },
-  squirrel: { heightM: 0.25, model: { file: '/assets/animals/Squirrel.glb', referenceHeightM: 0.42 }, colour: 0x7a4a2a },
-  hare:     { heightM: 0.22, model: { file: '/assets/animals/Rabbit.glb' }, colour: 0x9c8466 },
-  vulture:  { heightM: 0.8,  model: { file: '/assets/animals/Vulture.glb' }, colour: 0x3a3430 },
+  // The arched tail rises above the head; scale by the body (front half) height.
+  langur:   { heightM: 0.6,  model: { file: '/assets/animals/GreyLangur.glb', referenceHeightM: 0.699 }, colour: 0xb9b3a8 },
+  squirrel: { heightM: 0.25, model: { file: '/assets/animals/GiantSquirrel.glb', referenceHeightM: 0.794 }, colour: 0x7a4a2a },
+  hare:     { heightM: 0.22, model: { file: '/assets/animals/Hare.glb' }, colour: 0x9c8466 },
+  vulture:  { heightM: 0.8,  model: { file: '/assets/animals/WhiteRumpedVulture.glb' }, colour: 0x3a3430 },
 };
 
 const UNKNOWN: SpeciesVisual = { heightM: 1, model: null, colour: 0x888888 };
@@ -42,17 +45,32 @@ export function visualFor(speciesId: string): SpeciesVisual {
   return SPECIES_VISUALS[speciesId] ?? UNKNOWN;
 }
 
+/**
+ * The Asian elephant exports face backwards and are also turned on their root bone: the adults'
+ * body axis lies 32.2 degrees, the calf's 30.5, off the file's forward axis (measured from the
+ * skinned mesh's long axis; the root bone carries the same -147.8 degree turn). A half turn alone
+ * left them walking crabwise, a third of a right angle off their path.
+ */
+export const ASIAN_ELEPHANT_YAW = Math.PI - 32.2 * Math.PI / 180;
+export const ASIAN_ELEPHANT_CALF_YAW = Math.PI - 30.5 * Math.PI / 180;
+
 /** Local interim Asian-elephant age/sex variants. Body-mass scale still comes
  * from the saved animal; these only choose its visual geometry. */
-export function visualForAnimal(animal: Pick<AnimalState, 'speciesId' | 'sex' | 'lifeStage'>): SpeciesVisual {
+export function visualForAnimal(animal: Pick<AnimalState, 'speciesId' | 'sex' | 'lifeStage'>, airborne = false): SpeciesVisual {
+  // The realistic vulture is modelled with folded wings, so it cannot open them; in the air the
+  // older rig, built with spreadable wings and Flap/Glide clips, stands in.
+  if (animal.speciesId === 'vulture' && airborne) return { ...SPECIES_VISUALS.vulture!, model: { file: '/assets/animals/Vulture.glb' } };
+  // Chital hinds carry no antlers; the generated stag model stays for males and the young.
+  if (animal.speciesId === 'chital' && animal.sex === 'female' && animal.lifeStage !== 'newborn' && animal.lifeStage !== 'juvenile')
+    return { ...SPECIES_VISUALS.chital!, model: { file: '/assets/animals/ChitalHind.glb' } };
   if (animal.speciesId === 'elephant') {
     if (animal.lifeStage === 'newborn' || animal.lifeStage === 'juvenile')
-      return { ...SPECIES_VISUALS.elephant!, model: { file: '/assets/animals/AsianElephantCalf.glb', yaw: Math.PI } };
+      return { ...SPECIES_VISUALS.elephant!, model: { file: '/assets/animals/AsianElephantCalf.glb', yaw: ASIAN_ELEPHANT_CALF_YAW } };
     if (animal.lifeStage === 'subadult')
-      return { ...SPECIES_VISUALS.elephant!, model: { file: '/assets/animals/AsianElephantAdultFemale.glb', yaw: Math.PI } };
+      return { ...SPECIES_VISUALS.elephant!, model: { file: '/assets/animals/AsianElephantAdultFemale.glb', yaw: ASIAN_ELEPHANT_YAW } };
     if (animal.lifeStage === 'adult' || animal.lifeStage === 'elder') {
-      if (animal.sex === 'male') return { ...SPECIES_VISUALS.elephant!, model: { file: '/assets/animals/AsianElephantAdultMale.glb', yaw: Math.PI } };
-      if (animal.sex === 'female') return { ...SPECIES_VISUALS.elephant!, model: { file: '/assets/animals/AsianElephantAdultFemale.glb', yaw: Math.PI } };
+      if (animal.sex === 'male') return { ...SPECIES_VISUALS.elephant!, model: { file: '/assets/animals/AsianElephantAdultMale.glb', yaw: ASIAN_ELEPHANT_YAW } };
+      if (animal.sex === 'female') return { ...SPECIES_VISUALS.elephant!, model: { file: '/assets/animals/AsianElephantAdultFemale.glb', yaw: ASIAN_ELEPHANT_YAW } };
     }
   }
   return visualFor(animal.speciesId);
@@ -74,6 +92,7 @@ export function modelStatusForAnimal(animal: Pick<AnimalState, 'speciesId' | 'se
 export function modelStatus(speciesId: string): string {
   if (visualFor(speciesId).model === null) return 'Placeholder · species rig pending';
   if (speciesId === 'tiger') return 'Local tiger rig · authored motion; deformation polish pending';
+  if (speciesId === 'leopard') return 'Interim leopard · the big-cat rig with a leopard coat; leopard proportions pending';
   if (speciesId === 'elephant') return 'Generic elephant rig · local walk added; gait polish pending';
   if (speciesId === 'hare') return 'Animated rabbit approximation · exact hare art pending';
   if (speciesId === 'boar') return 'Animated boar · detailed behaviour clips pending';

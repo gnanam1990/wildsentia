@@ -33,9 +33,17 @@ services:
       DATABASE_URL: postgres://vana:${VANA_DB_PASSWORD:?set a random URL-safe database password}@db:5432/vana
       PORT: "8080"
       WORLD_SEED: ${VANA_WORLD_SEED:-1}
-      WORLD_HOURS_PER_REAL_HOUR: "12"
+      # 1 = real time (the live-agents world); 12 = the original watch-only pace.
+      WORLD_HOURS_PER_REAL_HOUR: ${WORLD_HOURS_PER_REAL_HOUR:-12}
       # Caddy is the only way in; trust its X-Forwarded-For so limits are per visitor.
       VANA_TRUSTED_PROXY_HOPS: "1"
+      # General per-visitor limits; empty means the built-in defaults (see env.example).
+      VANA_PUBLIC_READS_PER_MINUTE: ${VANA_PUBLIC_READS_PER_MINUTE:-}
+      VANA_LIVE_MAX_CONNECTIONS: ${VANA_LIVE_MAX_CONNECTIONS:-}
+      VANA_LIVE_MAX_CONNECTIONS_PER_NETWORK: ${VANA_LIVE_MAX_CONNECTIONS_PER_NETWORK:-}
+      # Prometheus metrics on an internal port that is never published or proxied (README).
+      VANA_METRICS_PORT: ${VANA_METRICS_PORT:-}
+      VANA_METRICS_HOST: ${VANA_METRICS_HOST:-}
       # Observer rewards: off unless all three are set in deploy/.env.
       VANA_REWARD_NETWORK: ${VANA_REWARD_NETWORK:-}
       VANA_REWARD_POLICY: ${VANA_REWARD_POLICY:-}
@@ -43,7 +51,19 @@ services:
       VANA_REWARD_MIN_WATCH_SECONDS: ${VANA_REWARD_MIN_WATCH_SECONDS:-}
       VANA_REWARD_WALLET_DAILY_LIMIT: ${VANA_REWARD_WALLET_DAILY_LIMIT:-}
       VANA_REWARD_CLIENT_DAILY_LIMIT: ${VANA_REWARD_CLIENT_DAILY_LIMIT:-}
-      VANA_TERRAIN_PROFILE: island_v1
+      # AI agents steering animals (docs/2026-09-26-live-agents-design.md). Off unless 1.
+      VANA_LIVE_AGENTS: ${VANA_LIVE_AGENTS:-}
+      VANA_AGENT_SLOTS: ${VANA_AGENT_SLOTS:-}
+      VANA_AGENT_REGISTRATIONS_PER_NETWORK: ${VANA_AGENT_REGISTRATIONS_PER_NETWORK:-}
+      VANA_LIVE_SECRET: ${VANA_LIVE_SECRET:-}
+      # Optional observer insights from TypeSafe AI (Jev). Off without a key.
+      TYPESAFE_AI_API_KEY: ${TYPESAFE_AI_API_KEY:-}
+      TYPESAFE_MODEL: ${TYPESAFE_MODEL:-}
+      TYPESAFE_DAILY_CALLS: ${TYPESAFE_DAILY_CALLS:-}
+      # sim_0.37.0: new worlds are founded on island_v2 (about 26 km² of land). A saved world
+      # never changes terrain: a database holding an island_v1 world boots only with
+      # VANA_TERRAIN_PROFILE=island_v1 set in the environment (see deploy/README.md).
+      VANA_TERRAIN_PROFILE: ${VANA_TERRAIN_PROFILE:-island_v2}
       VANA_COMMUNITY_PROFILE: household_v1
     restart: unless-stopped
     stop_grace_period: 2m

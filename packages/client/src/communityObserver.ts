@@ -1,4 +1,5 @@
 import { HOME_STAGES, HOME_SHELTER_THRESHOLD, homeCondition, isCommunityState, type CommunityState, type Person, type WorldPosition } from '@vana/shared';
+import { withTimeout } from './abortSignals.js';
 
 export interface CommunityPage {
   source: 'checkpoint';
@@ -117,7 +118,7 @@ export class CommunityObserver {
     this.close(); const revision = this.#revision; this.#abort = new AbortController();
     this.page = null; this.error = ''; this.loading = true; this.change();
     try {
-      const response = await fetch('/api/community', { signal: AbortSignal.any([this.#abort.signal, AbortSignal.timeout(15000)]) });
+      const response = await fetch('/api/community', { signal: withTimeout(this.#abort.signal, 15000) });
       if (!response.ok) throw new Error('Saved community unavailable. Try refresh after the world reconnects.');
       const page: unknown = await response.json();
       if (revision !== this.#revision) return;
@@ -243,7 +244,7 @@ export function createCommunityDialog(focus: (position: WorldPosition, distance:
     line(about, c.version >= 2 ? `Household rules v${c.version} · raw catch must be delivered and cooked with fuel before eating.`
       : 'Saved household rules v1 · fishing and cooking are not enabled in this older world.');
     line(about, 'The cooperation score measures time worked together, not emotions or kinship. Learning comes from nearby, more-skilled people doing the same work; it does not guarantee a successful task.');
-    line(about, 'Latest 25 recorded household milestones, including family and care events; routine resting is omitted. Older routine tasks may be pruned. Nearby people load CC0 game-style character rigs; distant, loading or failed models remain location markers (reload to retry a failed download). During an active recording, actual travel and task windows play one hour behind this checkpoint. Otherwise positions hold here, with no extrapolation of planned routes. Poses and smaller child rigs are illustrative, not a reconstruction of any real community or a guarantee of task success.');
+    line(about, 'Latest 25 recorded household milestones, including family and care events; routine resting is omitted. Older routine tasks may be pruned. Nearby people load CC0 game-style character rigs; distant, loading or failed models remain location markers (reload to retry a failed download). People walk their actual paths and tasks as each hour plays; between hours they stay where they are, with no guessed routes. Poses and smaller child rigs are illustrative, not a reconstruction of any real community or a guarantee of task success.');
   });
   refresh.onclick = () => { void observer.refresh(); };
   dialog.append(header, status, content); document.body.append(dialog);

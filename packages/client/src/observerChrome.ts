@@ -1,5 +1,5 @@
 /** Viewer-only panels. A narrow screen shows one sheet at a time. */
-export function initObserverChrome(onCenter?: (centerY: number | null) => void): { showAnimal: () => void; setReplaying: (active: boolean) => void } {
+export function initObserverChrome(onCenter?: (centerY: number | null) => void): { showAnimal: () => void; setReplaying: (active: boolean) => void; setCinema: (active: boolean) => void } {
   const compact = matchMedia('(max-width: 860px)');
   const journal = document.querySelector<HTMLElement>('#feed-panel')!;
   const animal = document.querySelector<HTMLElement>('#passport-panel')!;
@@ -12,12 +12,13 @@ export function initObserverChrome(onCenter?: (centerY: number | null) => void):
   let side: 'animal' | 'settings' | null = 'animal';
   let clear = false;
   let replaying = false;
+  let cinema = false;
   let measureFrame = 0;
 
   function measure(): void {
     measureFrame = 0;
     const sheet = [animal, journal, settings].find(panel => !panel.hidden);
-    if (!compact.matches || !sheet) { onCenter?.(null); return; }
+    if (cinema || !compact.matches || !sheet) { onCenter?.(null); return; }
     const top = document.querySelector('.world-glance')!.getBoundingClientRect().bottom + 12;
     const bottom = sheet.getBoundingClientRect().top;
     // Keep the observed subject in the visible forest above a narrow-screen sheet.
@@ -79,5 +80,6 @@ export function initObserverChrome(onCenter?: (centerY: number | null) => void):
   return {
     showAnimal: () => showSide('animal'),
     setReplaying: active => { replaying = active; render(); },
+    setCinema: active => { cinema = active; scheduleMeasure(); },
   };
 }

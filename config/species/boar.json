@@ -37,12 +37,18 @@
   "diet": {
     "eats": [
       {
+        "target": "roots",
+        "preference": 1.0
+      },
+      {
         "target": "grass",
-        "preference": 0.5
+        "preference": 0.03,
+        "foodValue": 0.5
       },
       {
         "target": "browse",
-        "preference": 0.3
+        "preference": 0.05,
+        "foodValue": 0.6
       },
       {
         "target": "meat",
@@ -50,6 +56,7 @@
       }
     ],
     "dailyIntakeKg": 5,
+    "maxDailyIntakeKg": 9,
     "waterNeedLPerDay": 7,
     "canScavenge": true,
     "carrionTolerance": 0.7
@@ -79,14 +86,14 @@
         "startDays": 0,
         "sizeFactor": 0.12,
         "dependent": true,
-        "mortalityPerDay": 0.006
+        "mortalityPerDay": 0.018
       },
       {
         "name": "juvenile",
         "startDays": 45,
         "sizeFactor": 0.35,
         "dependent": true,
-        "mortalityPerDay": 0.003
+        "mortalityPerDay": 0.0012
       },
       {
         "name": "subadult",
@@ -120,8 +127,10 @@
     "oestrusCycleDays": 21,
     "weanDays": 90,
     "followFromDays": 10,
+    "gatherFromDays": 0,
     "forageFromDays": 21,
     "drinkFromDays": 10,
+    "condition": { "conditionDays": 30, "minBreedingCondition": 0.2, "fullBreedingCondition": 0.6 },
     "dispersalDays": 220
   }
 }

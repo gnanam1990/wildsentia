@@ -181,4 +181,17 @@ maybe('SnapshotStore', () => {
     expect(await store.prune(2)).toBe(3);
     expect((await store.loadLatest())!.worldTime).toBe(500);
   });
+
+  it('keeps the newest of several checkpoints at one world time, and counts world times not rows', async () => {
+    const store = new SnapshotStore(pool!);
+    await pool!.query('truncate snapshots');
+    for (const t of [100, 200, 200, 200, 300, 300]) await store.save({ ...baseSnapshot, worldTime: t, rngState: t as never });
+    // An explicit rules upgrade at 300: the snapshot it came from stays beside it.
+    await store.save({ ...baseSnapshot, worldTime: 300, simVersion: 'upgraded-at-300' as never });
+    expect(await store.prune(2)).toBe(4); // 100, two older 200s, the older base-version 300.
+    expect((await store.loadLatest())!.simVersion).toBe('upgraded-at-300');
+    const left = (await pool!.query('select world_time::int as world_time, sim_version from snapshots order by id')).rows;
+    expect(left).toEqual([{ world_time: 200, sim_version: baseSnapshot.simVersion }, { world_time: 300, sim_version: baseSnapshot.simVersion },
+      { world_time: 300, sim_version: 'upgraded-at-300' }]);
+  });
 });

@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { fileURLToPath } from 'node:url';
 import { SIM_VERSION, createWorld } from '../src/world.js';
-import { restoreSnapshot, takeSnapshot, upgradeV5Snapshot, upgradeV7Snapshot, upgradeV8Snapshot, upgradeV16Snapshot, upgradeV17Snapshot, upgradeV18Snapshot, upgradeV19Snapshot, upgradeV20Snapshot, upgradeV21Snapshot, upgradeV22Snapshot, upgradeV23Snapshot, upgradeV24Snapshot, upgradeV25Snapshot, upgradeV26Snapshot, upgradeV27Snapshot, upgradeV28Snapshot, upgradeV29Snapshot, type Snapshot } from '../src/snapshot.js';
+import { restoreSnapshot, takeSnapshot, upgradeV5Snapshot, upgradeV7Snapshot, upgradeV8Snapshot, upgradeV16Snapshot, upgradeV17Snapshot, upgradeV18Snapshot, upgradeV19Snapshot, upgradeV20Snapshot, upgradeV21Snapshot, upgradeV22Snapshot, upgradeV23Snapshot, upgradeV24Snapshot, upgradeV25Snapshot, upgradeV26Snapshot, upgradeV27Snapshot, upgradeV28Snapshot, upgradeV29Snapshot, upgradeV30Snapshot, upgradeV31Snapshot, type Snapshot } from '../src/snapshot.js';
 import { establishFloweringGuild } from '../src/fields/floweringGuild.js';
+import { establishRooting } from '../src/fields/rooting.js';
+import { NUTRIENT_PER_KG_BIOMASS } from '@vana/shared';
 import { asLegacySnapshot } from './legacySnapshot.js';
 import { navigate } from '../src/agents/navigation.js';
 import { conceive } from '../src/agents/reproduction.js';
@@ -21,10 +23,33 @@ function expectFishMigration(upgraded: Snapshot, old: Snapshot): void {
   for (const patch of expected.microEcology?.patches ?? []) patch.lastFishSpawnYear =
     Math.floor(old.worldTime / (360 * 86_400)) + 1;
   establishFloweringGuild(expected.patches, old.worldTime, true);
+  establishRooting(expected.patches);
   expect(upgraded).toEqual(expected);
 }
 
 describe('snapshots', () => {
+  it('opts a real v0.31 world into hydration-emergency care without rewriting its state', () => {
+    const current = takeSnapshot(createWorld({ ...options, initialAgents: { dhole: 3 }, minPopulation: {} }));
+    const old = structuredClone(current); old.simVersion = 'sim_0.31.0';
+    const before = structuredClone(old);
+    expect(() => restoreSnapshot(old, { ...options, initialAgents: { dhole: 3 }, minPopulation: {} })).toThrow(/version/);
+    const upgraded = upgradeV31Snapshot(old);
+    expect(upgraded).toEqual(current);
+    expect(old).toEqual(before);
+    expect(restoreSnapshot(upgraded, { ...options, initialAgents: { dhole: 3 }, minPopulation: {} }).agents)
+      .toEqual(current.agents);
+    expect(() => upgradeV31Snapshot(upgraded)).toThrow(/only sim_0.31.0/);
+  });
+  it('opts a real v0.30 world into the held-kill rule and steerable animals without rewriting its state', () => {
+    const current = takeSnapshot(createWorld({ ...options, initialAgents: { boar: 3 }, minPopulation: {} }));
+    const old = structuredClone(current); old.simVersion = 'sim_0.30.0';
+    const before = structuredClone(old);
+    expect(() => restoreSnapshot(old, { ...options, initialAgents: { boar: 3 }, minPopulation: {} })).toThrow(/version/);
+    const upgraded = upgradeV30Snapshot(old);
+    expect(upgraded).toEqual(current);
+    expect(old).toEqual(before);
+    expect(() => upgradeV30Snapshot(upgraded)).toThrow(/only sim_0.30.0/);
+  });
   it('opts a real v0.29 world into off-centre water access without rewriting its state', () => {
     const current = takeSnapshot(createWorld({ ...options, initialAgents: { chital: 3 }, minPopulation: {} }));
     const old = structuredClone(current); old.simVersion = 'sim_0.29.0';
@@ -218,8 +243,8 @@ describe('snapshots', () => {
     expect(upgraded.simVersion).toBe(SIM_VERSION);
     expect(upgraded.patches.reduce((n, p) => n + p.waterVolume, 0)).toBeCloseTo(beforeWater, 9);
     expect(upgraded.patches.reduce((n, p) => n + p.soilNutrients + p.plant.grass + p.plant.browse
-      + (p.floweringGuild?.vegetativeKg ?? 0), 0))
-      .toBeCloseTo(beforeNutrients, 9);
+      + (p.floweringGuild?.vegetativeKg ?? 0) + (p.rooting?.kg ?? 0) * NUTRIENT_PER_KG_BIOMASS, 0))
+      .toBeCloseTo(beforeNutrients, 6);
     expect(upgraded.waterBudget).toEqual(old.waterBudget);
     for (const id of basinIds) {
       expect(upgraded.patches[id]!.habitat).toBe('water');

@@ -27,7 +27,7 @@ export function atmosphereAt(worldTime: number, season: string) {
  * say it is night. Presentation only; the world's time and light are unchanged.
  */
 export function observerExposure(daylight: number, viewDistance = 0): number {
-  return 1.1 + (1 - Math.min(1, Math.max(0, daylight))) * (0.25 + 0.5 * closeness(viewDistance));
+  return 1.1 + (1 - Math.min(1, Math.max(0, daylight))) * (0.35 + 0.65 * closeness(viewDistance));
 }
 
 /** 1 near the ground, falling to 0 by 2 km up: close up the eye adapts, from above it does not. */

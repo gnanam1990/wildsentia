@@ -1,21 +1,128 @@
 :root {
-  --dialog-surface: #14231b;
-  --panel: rgba(12, 20, 16, .62);
+  /* Dark: the forest at dusk. Every colour the pages use is a token here, with a light twin below. */
+  color-scheme: dark;
+  --bg: #0d1611;
+  --dialog-surface: #15241c;
+  --surface-2: #1b2d23;
+  --field: #102019;
+  --track: #22382c;
+  --panel: rgba(14, 24, 18, .66);
+  --panel-hover: rgba(24, 40, 31, .8);
+  --tint: rgba(255, 255, 255, .06);
+  --tint-strong: rgba(255, 255, 255, .14);
   --line: rgba(160, 200, 170, .18);
-  --ink: #e9f1e9;
-  --ink-2: #aec2b2;
-  --ink-3: #7e9585;
+  --line-strong: rgba(160, 200, 170, .38);
+  --ink: #ecf3ec;
+  --ink-2: #b3c6b7;
+  --ink-3: #82998a;
   --moss: #7fc98a;
+  --moss-strong: #a5e3ad;
+  --on-moss: #07140a;
   --mist: #84c8dc;
   --clay: #e0ad63;
   --blood: #d97c68;
+  --warn: #e0b84e;
+  --gold-ink: #fbe7b0;
+  --gold-line: rgba(242, 193, 78, .4);
+  --prize-bg: rgba(224, 173, 99, .14);
+  --met-bg: #1f4a2c;
+  --failed-bg: #4a2a1f;
+  --void-bg: #2c3440;
+  --warn-bg: #2a2716;
+  --reward-ink: #f5dfb4;
+  --reward-bg: rgba(40, 30, 12, .72);
+  --shadow: rgba(0, 0, 0, .35);
+  --backdrop: rgba(0, 0, 0, .8);
+  --bar-fade: rgba(6, 12, 9, .55);
+  --text-glow: rgba(0, 0, 0, .6);
   --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* Where the top bar's controls end; main.ts measures it as the bar wraps. */
+  --bar-bottom: 64px;
 }
+/* Light: a field guide's paper. Chosen in the theme switch, or the device's own setting. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f3eee2;
+  --dialog-surface: #fffbf2;
+  --surface-2: #ece4cf;
+  --field: #fffdf8;
+  --track: #ddd4bf;
+  --panel: rgba(255, 251, 242, .86);
+  --panel-hover: rgba(255, 251, 242, .97);
+  --tint: rgba(40, 60, 45, .06);
+  --tint-strong: rgba(40, 60, 45, .14);
+  --line: rgba(52, 78, 60, .2);
+  --line-strong: rgba(52, 78, 60, .42);
+  --ink: #1b2820;
+  --ink-2: #44574a;
+  --ink-3: #66796b;
+  --moss: #2f6b45;
+  --moss-strong: #255a39;
+  --on-moss: #fffbf2;
+  --mist: #1d6680;
+  --clay: #9a5b10;
+  --blood: #b0402c;
+  --warn: #8a6400;
+  --gold-ink: #7a4d00;
+  --gold-line: rgba(154, 91, 16, .45);
+  --prize-bg: rgba(154, 91, 16, .1);
+  --met-bg: #dcefdf;
+  --failed-bg: #f6ddd5;
+  --void-bg: #e1e6ee;
+  --warn-bg: #f6edcc;
+  --reward-ink: #6b4208;
+  --reward-bg: rgba(255, 244, 220, .92);
+  --shadow: rgba(60, 50, 30, .18);
+  --backdrop: rgba(30, 30, 20, .45);
+  --bar-fade: rgba(243, 238, 226, .8);
+  --text-glow: rgba(255, 251, 242, .8);
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --bg: #f3eee2;
+    --dialog-surface: #fffbf2;
+    --surface-2: #ece4cf;
+    --field: #fffdf8;
+    --track: #ddd4bf;
+    --panel: rgba(255, 251, 242, .86);
+    --panel-hover: rgba(255, 251, 242, .97);
+    --tint: rgba(40, 60, 45, .06);
+    --tint-strong: rgba(40, 60, 45, .14);
+    --line: rgba(52, 78, 60, .2);
+    --line-strong: rgba(52, 78, 60, .42);
+    --ink: #1b2820;
+    --ink-2: #44574a;
+    --ink-3: #66796b;
+    --moss: #2f6b45;
+    --moss-strong: #255a39;
+    --on-moss: #fffbf2;
+    --mist: #1d6680;
+    --clay: #9a5b10;
+    --blood: #b0402c;
+    --warn: #8a6400;
+    --gold-ink: #7a4d00;
+    --gold-line: rgba(154, 91, 16, .45);
+    --prize-bg: rgba(154, 91, 16, .1);
+    --met-bg: #dcefdf;
+    --failed-bg: #f6ddd5;
+    --void-bg: #e1e6ee;
+    --warn-bg: #f6edcc;
+    --reward-ink: #6b4208;
+    --reward-bg: rgba(255, 244, 220, .92);
+    --shadow: rgba(60, 50, 30, .18);
+    --backdrop: rgba(30, 30, 20, .45);
+    --bar-fade: rgba(243, 238, 226, .8);
+    --text-glow: rgba(255, 251, 242, .8);
+  }
+}
+/* `hidden` must always win: a component's own display rule (grid, flex) would otherwise show it. */
+[hidden] { display: none !important; }
 
 .forest-dialog { background: var(--dialog-surface); color: var(--ink); border: 1px solid var(--line);
   border-radius: 16px; width: min(760px, calc(100vw - 24px)); max-height: calc(100dvh - 32px);
   overflow-y: auto; padding: 24px; font-size: 16px; line-height: 1.5; }
-.forest-dialog::backdrop { background: rgba(0, 0, 0, .8); }
+.forest-dialog::backdrop { background: var(--backdrop); }
 .forest-dialog h2 { margin-top: 0; }
 .forest-dialog label, .reward-admin label { display: block; margin: 16px 0; }
 .forest-dialog input:not([type=checkbox]), .forest-dialog select, .reward-admin input:not([type=checkbox]), .reward-admin select {
@@ -46,8 +153,8 @@
   border: 2px solid var(--clay); color: var(--ink); min-height: 44px; max-width: 230px; }
 #reward-badge[hidden] { display: none; }
 #reward-total { position: fixed; bottom: 14px; right: 16px; z-index: 12; font-size: 12px; padding: 8px 14px;
-  max-width: min(480px, calc(100vw - 32px)); color: #f5dfb4; background: rgba(40, 30, 12, .72);
-  border: 1px solid rgba(224, 173, 99, .55); border-radius: 999px; backdrop-filter: blur(12px); }
+  max-width: min(480px, calc(100vw - 32px)); color: var(--reward-ink); background: var(--reward-bg);
+  border: 1px solid var(--gold-line); border-radius: 999px; backdrop-filter: blur(12px); }
 #reward-mine { position: fixed; bottom: 60px; right: 16px; z-index: 12; min-height: 36px; padding: 6px 12px;
   background: var(--dialog-surface); color: var(--ink); border: 1px solid var(--clay); border-radius: 8px; font: inherit; font-size: 12px; }
 #reward-mine[hidden] { display: none; }
@@ -62,24 +169,23 @@
 @media(max-width: 600px) {
   .forest-dialog { padding: 16px; }
   .forest-map { margin: 16px; }
-  #reward-total { bottom: 4px; right: 8px; font-size: 11px; }
-  #reward-mine { bottom: 52px; right: 8px; font-size: 11px; }
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1410; color: var(--ink);
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--ink);
   font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif; }
 #view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 #view:focus-visible { outline: 3px solid var(--moss); outline-offset: -3px; }
-#render-stats { position: fixed; top: 86px; left: 16px; z-index: 12; padding: 8px 12px;
+#render-stats { position: fixed; top: calc(var(--bar-bottom) + 22px); left: 16px; z-index: 12; padding: 8px 12px;
   background: #101d15e8; color: #e9f1e9; font: 11px var(--mono); border-radius: 8px; pointer-events: none; }
-#observer-ui-status:not(:empty) { position: fixed; top: 72px; right: 16px; z-index: 12;
+#observer-ui-status:not(:empty) { position: fixed; top: calc(var(--bar-bottom) + 8px); right: 16px; z-index: 12;
   max-width: min(360px, calc(100vw - 32px)); margin: 0; padding: 8px 12px;
   background: var(--dialog-surface); border: 1px solid var(--line); border-radius: 8px;
   color: var(--ink); font-size: 12px; }
-#event-visit { position: fixed; z-index: 12; top: 132px; left: 50%; transform: translateX(-50%);
-  width: min(350px, calc(100vw - 32px)); padding: 12px 14px; border-radius: 12px;
+/* Between the feed (left) and the passport (right), never over either. */
+#event-visit { position: fixed; z-index: 12; top: calc(var(--bar-bottom) + 12px); left: 298px; right: 328px;
+  margin-inline: auto; max-width: 350px; padding: 12px 14px; border-radius: 12px;
   color: var(--ink); background: var(--dialog-surface); border: 1px solid var(--clay);
-  box-shadow: 0 12px 32px rgba(0,0,0,.4); }
+  box-shadow: 0 12px 32px var(--shadow); }
 #event-visit[hidden] { display: none; }
 #event-visit h2 { margin: 0 0 4px; font-size: 14px; line-height: 1.35; overflow-wrap: anywhere; }
 #event-visit p { margin: 0 0 8px; color: var(--ink-2); font-size: 12px; line-height: 1.5; }
@@ -87,14 +193,18 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1410; col
 #event-visit button { min-height: 44px; margin: 0; }
 #event-visit :focus-visible { outline: 3px solid var(--moss); outline-offset: 3px; }
 
-.bar { position: fixed; top: 0; left: 0; right: 0; display: flex; gap: 8px; align-items: center;
+.bar { position: fixed; top: 0; left: 0; right: 0; display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center;
   padding: 12px 16px 28px; z-index: 10; pointer-events: none;
-  background: linear-gradient(180deg, rgba(6,12,9,.55), rgba(6,12,9,0)); }
+  background: linear-gradient(180deg, var(--bar-fade), transparent); }
 .bar > * { pointer-events: auto; }
-.brand { font-weight: 700; font-size: 18px; letter-spacing: .01em; margin-right: 6px; text-shadow: 0 1px 8px rgba(0,0,0,.5); }
+.brand { font-weight: 700; font-size: 18px; letter-spacing: .01em; margin-right: 6px; text-shadow: 0 1px 8px var(--text-glow); }
+/* Over the forest the brand sits on a chip like the others, so it reads on any sky. */
+.bar .brand { padding: 4px 12px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); backdrop-filter: blur(14px); text-shadow: none; }
 .brand small { display: block; font-size: 9.5px; font-weight: 500; letter-spacing: .14em;
   text-transform: uppercase; color: var(--ink-3); }
-.spacer { margin-left: auto; }
+/* The picker and buttons stay together at the right, and wrap as one when the bar runs out of room. */
+.bar-actions { display: flex; gap: 8px; align-items: center; margin-left: auto; }
+.bar-actions > * { flex-shrink: 0; }
 .chip { display: inline-flex; align-items: center; gap: 7px; padding: 8px 13px; min-height: 36px;
   border: 1px solid var(--line); border-radius: 999px; background: var(--panel);
   backdrop-filter: blur(14px); font-size: 12.5px; color: var(--ink-2); }
@@ -106,7 +216,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1410; col
 .chip.pop details summary::after { content: ' \25BE'; color: var(--ink-3); font-weight: 400; }
 .chip.pop .pop-list { position: absolute; top: calc(100% + 6px); left: 0; display: grid; grid-template-columns: 1fr 1fr;
   gap: 4px 16px; min-width: 260px; padding: 12px 14px; background: var(--dialog-surface);
-  border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 16px 40px rgba(0,0,0,.45); }
+  border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 16px 40px var(--shadow); }
 .chip.pop .pop-list span { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; margin: 0; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .chip span { margin-right: 8px; font-size: 11.5px; }
@@ -116,7 +226,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1410; col
 button { font: inherit; color: var(--ink-2); background: var(--panel); border: 1px solid var(--line);
   border-radius: 999px; padding: 6px 14px; cursor: pointer; backdrop-filter: blur(12px); font-size: 12.5px;
   display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: color .15s, border-color .15s, background .15s; }
-button:hover { color: var(--ink); border-color: rgba(160, 200, 170, .38); background: rgba(22, 36, 28, .72); }
+button:hover { color: var(--ink); border-color: var(--line-strong); background: var(--panel-hover); }
 button svg { flex: none; }
 button, select { min-height: 44px; }
 button:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid var(--moss); outline-offset: 3px; }
@@ -126,23 +236,24 @@ button:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid
 
 .panel { position: fixed; z-index: 10; width: 300px; padding: 14px 16px;
   background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
-  backdrop-filter: blur(18px) saturate(1.2); box-shadow: 0 16px 44px rgba(0,0,0,.35); }
-#passport-panel { right: 16px; top: 76px; max-height: calc(100dvh - 150px); overflow-y: auto; scrollbar-width: thin; }
-#live-encounter-status { margin: 0 0 10px; padding: 6px 10px; border: 1px solid rgba(132, 200, 220, .35);
-  border-radius: 999px; color: var(--mist); background: rgba(20, 44, 37, .6); font-size: 11.5px; line-height: 1.4; width: fit-content; }
+  backdrop-filter: blur(18px) saturate(1.2); box-shadow: 0 16px 44px var(--shadow); }
+#passport-panel { right: 16px; top: calc(var(--bar-bottom) + 12px); max-height: calc(100dvh - var(--bar-bottom) - 86px); overflow-y: auto; scrollbar-width: thin; }
+#live-encounter-status { margin: 0 0 10px; padding: 6px 10px; border: 1px solid var(--line-strong);
+  border-radius: 999px; color: var(--mist); background: var(--surface-2); font-size: 11.5px; line-height: 1.4; width: fit-content; }
 #scene-status, #community-motion-status { margin: 0 0 10px; color: var(--ink-2); font-size: 11.5px; line-height: 1.45; }
 #passport-panel .observer-options { margin: 14px 0 0; border-top: 1px solid var(--line); border-bottom: 0; padding: 4px 0 0; }
 #passport-panel .live-encounters { margin: 0; }
 .live-encounters { font-size: 12px; line-height: 1.5; margin-bottom: 12px; }
 .live-encounters summary { cursor: pointer; padding: 10px 0; }
-.live-encounters select { display: block; width: 100%; margin-top: 6px; background: #14251b;
+.live-encounters select { display: block; width: 100%; margin-top: 6px; background: var(--field);
   color: var(--ink); border: 1px solid var(--line); border-radius: 8px; }
 .live-encounters select:disabled { opacity: .65; }
 .live-encounters summary:focus-visible { outline: 2px solid var(--moss); }
 .encounter-label { position: fixed; z-index: 5; transform: translate(-50%, -100%); pointer-events: none;
-  padding: 4px 7px; background: #142c25e8; border: 1px solid var(--mist); border-radius: 6px;
-  color: var(--ink); font-size: 12px; max-width: 160px; text-align: center; }
-#feed-panel { left: 16px; top: 76px; width: 270px; max-height: 44vh; overflow: auto; scrollbar-width: thin; }
+  padding: 4px 7px; background: #142c25e8; border: 1px solid #84c8dc; border-radius: 6px;
+  /* Drawn over the forest itself: the same light-on-dark label in either theme. */
+  color: #ecf3ec; font-size: 12px; max-width: 160px; text-align: center; }
+#feed-panel { left: 16px; top: calc(var(--bar-bottom) + 12px); width: 270px; max-height: min(44vh, calc(100dvh - var(--bar-bottom) - 300px)); overflow: auto; scrollbar-width: thin; }
 .panel h2 { margin: 0 0 2px; font-size: 18px; letter-spacing: .01em; }
 .panel h3 { margin: 0 0 10px; font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
   color: var(--ink-2); font-weight: 650; }
@@ -150,7 +261,7 @@ button:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid
 
 .meter { display: grid; grid-template-columns: 58px 1fr 40px; gap: 8px; align-items: center;
   font-size: 11.5px; color: var(--ink-2); margin: 7px 0; }
-.track { display: block; height: 6px; border-radius: 99px; background: rgba(0,0,0,.4);
+.track { display: block; height: 6px; border-radius: 99px; background: var(--track);
   border: 1px solid var(--line); overflow: hidden; }
 .track i { display: block; height: 100%; border-radius: 99px; transition: width .4s; }
 .meter b { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); text-align: right; font-weight: 500; }
@@ -169,7 +280,17 @@ button:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid
 .eid { font-family: var(--mono); font-size: 9.5px; color: var(--ink-3); min-width: 0; overflow-wrap: anywhere; }
 .feed-entry > div { min-width: 0; width: 100%; }
 .feed-entry .etype { font-weight: 500; }
+.feed-count { color: var(--ink-3); font-weight: 400; }
 .feed-meta { margin-top: 2px; color: var(--ink-3); font-size: 11px; overflow-wrap: anywhere; display: flex; flex-wrap: wrap; gap: 0 10px; align-items: baseline; }
+.outlook { margin: 12px 0 0; border-top: 1px solid var(--line); padding-top: 6px; }
+.outlook summary { cursor: pointer; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); font-weight: 650; padding: 4px 0; }
+.outlook .meter { grid-template-columns: 96px 1fr 36px; }
+.outlook .hint { margin: 6px 0 0; font-size: 10.5px; line-height: 1.4; }
+.highlights { margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.highlights h4 { margin: 0 0 2px; font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--clay); font-weight: 650; }
+.highlights .highlight { border-bottom: 0; padding: 5px 0; }
+.highlights .highlight .etype::before { content: '\2605  '; color: var(--clay); }
+.highlights .hint { margin: 2px 0 0; font-size: 10px; }
 .feed-provenance { color: var(--ink-3); font: 10px/1.4 var(--mono); }
 .feed-provenance summary { cursor: pointer; padding: 2px 0; width: fit-content; list-style: none; text-decoration: underline dotted; }
 .feed-provenance summary::-webkit-details-marker { display: none; }
@@ -181,7 +302,7 @@ button:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid
 .observer-options summary { cursor: pointer; padding: 10px 0; font-size: 13px; }
 .observer-options label { display: flex; align-items: center; gap: 8px; min-height: 44px; font-size: 13px; cursor: pointer; }
 .observer-options input { width: 20px; height: 20px; accent-color: var(--moss); }
-.observer-options select { width: 100%; max-width: 100%; color: var(--ink); background: #14251b;
+.observer-options select { width: 100%; max-width: 100%; color: var(--ink); background: var(--field);
   border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
 .observer-options output { display: block; color: var(--ink); font-size: 12px; padding: 6px 0; }
 .observer-options #ambient-toggle { display: block; width: 100%; margin-top: 10px; text-align: left; font-size: 13px; }
@@ -202,21 +323,31 @@ button:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid
 #notice { position: fixed; bottom: 42px; left: 16px; right: 16px; text-align: center;
   color: var(--blood); font-family: var(--mono); font-size: 11px; z-index: 10; }
 .footer { position: fixed; bottom: 18px; left: 0; right: 0; text-align: center; margin: 0;
-  font-size: 12px; color: var(--ink-2); text-shadow: 0 1px 6px rgba(0,0,0,.7); z-index: 10; }
+  font-size: 12px; color: #dfe9e0; text-shadow: 0 1px 6px rgba(0, 0, 0, .8); z-index: 10; }
 
 @media (max-width: 860px) {
-  #event-visit { top: max(150px, calc(env(safe-area-inset-top) + 118px)); }
-  .bar { flex-wrap: wrap; gap: 6px; padding: 10px 12px 20px; }
-  .brand { margin-right: auto; }
-  .spacer { display: none; }
+  /* The feed is hidden and the passport sits at the bottom; keep clear of the camera pad on the right. */
+  #event-visit { top: max(calc(var(--bar-bottom) + 12px), calc(env(safe-area-inset-top) + 12px)); left: 12px; right: 60px; max-width: none; }
+  .bar { gap: 6px; padding: 10px 12px 16px; }
+  .brand { margin-right: auto; font-size: 16px; }
+  .brand small { display: none; }
+  .chip { min-height: 32px; padding: 6px 10px; font-size: 12px; }
   .chip.pop { order: 3; }
-  .species-picker { flex: 1 1 100%; order: 4; }
+  .chip.pop details summary { padding: 6px 10px; }
+  /* One row: the species picker takes the room the icon-only buttons leave. */
+  .bar-actions { flex: 1 1 100%; order: 5; margin-left: 0; gap: 6px; }
+  .species-picker { flex: 1 1 auto; min-width: 0; }
   .species-picker select { max-width: 100%; width: 100%; }
-  .bar > button { order: 5; flex: 1; min-height: 40px; padding: 6px 8px; }
+  .bar-actions > button { flex: none; width: 44px; padding: 0; }
+  .bar-actions > button span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .footer { display: none; }
   .panel { width: calc(100vw - 32px); }
-  #passport-panel { top: auto; bottom: 70px; right: 16px; max-height: 34dvh; }
+  #passport-panel { top: auto; bottom: 64px; right: 16px; max-height: min(34dvh, calc(100dvh - var(--bar-bottom) - 80px)); }
   #feed-panel { display: none; }
+  /* Both reward pills share one row below the passport card instead of sitting on it. */
+  #reward-total { bottom: 8px; right: 8px; font-size: 11px; padding: 6px 12px; max-width: 54vw; }
+  #reward-mine { bottom: 8px; right: auto; left: 8px; min-height: 32px; font-size: 11px; max-width: calc(46vw - 24px);
+    overflow: hidden; white-space: nowrap; text-overflow: ellipsis; display: block; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
@@ -234,7 +365,7 @@ button:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid
   max-width: 260px; padding: 7px 12px; border-radius: 14px;
   background: rgba(250, 247, 238, 0.94); color: #1f2a1c;
   font: 500 13px/1.35 system-ui, sans-serif; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
-  transition: transform 0.12s linear;
+  /* Placed every frame; a transition here made it trail behind the animal as the camera moved. */
 }
 .thought::after {
   content: ''; position: absolute; left: 50%; bottom: -7px; margin-left: -7px;
@@ -246,14 +377,15 @@ button:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid
 #passport a[data-follow] { color: inherit; text-decoration: underline dotted; cursor: pointer; }
 #passport .timeline .event { padding: 3px 0; }
 
-#passport .recap { margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; background: rgba(250, 247, 238, 0.08); border: 1px solid rgba(250, 247, 238, 0.18); }
+#passport .recap { margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; background: var(--tint); border: 1px solid var(--line); }
 #passport .recap h3 { margin-top: 0; }
 #passport .recap button { margin-top: 8px; }
 #passport .recap .event.narrated .etype::before { content: '\270E  '; opacity: 0.6; }
 
 /* Life replay: a recorded life played back, never the live world. The banner says which. */
 .replay {
-  position: fixed; left: 50%; top: 72px; transform: translateX(-50%); z-index: 25;
+  /* At the bottom: the replayed animal is drawn at the centre of the view, where a top panel sat. */
+  position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 25;
   width: min(560px, calc(100vw - 32px)); padding: 10px 16px; border-radius: 12px;
   background: rgba(20, 28, 18, 0.88); color: #f3efe2; font: 13px/1.4 system-ui, sans-serif; text-align: center;
 }
@@ -263,7 +395,7 @@ button:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid
 .replay .progress { height: 3px; background: rgba(243, 239, 226, 0.2); border-radius: 2px; overflow: hidden; }
 .replay .progress i { display: block; height: 100%; width: 0; background: #b9d98a; }
 .replay button { margin-top: 8px; }
-.replay { max-height: calc(100dvh - 100px); overflow: auto; font-size: 14px; background: rgba(20, 28, 18, 0.97); }
+.replay { max-height: 40dvh; overflow: auto; font-size: 14px; background: rgba(20, 28, 18, 0.97); }
 .replay label { display: block; margin: 8px 0; text-align: left; }
 .replay select { max-width: 100%; min-height: 36px; }
 #replay-recording, #replay-seek { display: block; width: 100%; }
@@ -274,7 +406,7 @@ button:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid
 .replay .replay-status { margin: 4px 0; }
 body.is-replaying #passport-panel, body.is-replaying #feed-panel { visibility: hidden; }
 @media (max-width: 600px) {
-  .replay { top: 12px; max-height: calc(100dvh - 24px); }
+  .replay { top: 12px; bottom: auto; max-height: calc(100dvh - 24px); }
   .replay-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
   .replay-controls button { padding: 8px; font-size: 12px; }
   .replay-controls label { margin: 0; text-align: center; }
@@ -282,3 +414,75 @@ body.is-replaying #passport-panel, body.is-replaying #feed-panel { visibility: h
 @media (max-height: 500px) {
   .replay { top: auto; bottom: 12px; max-height: 42dvh; }
 }
+
+/* AI agents steering animals, and the USDC drops they race for (liveAgents.ts). */
+.agents-chip { cursor: pointer; font: inherit; color: var(--ink); font-weight: 600; }
+.agents-chip::after { content: ' \25BE'; color: var(--ink-3); font-weight: 400; }
+/* The list lives outside the bar: a blurred bar would trap a fixed panel inside itself. */
+.agents-list { position: fixed; z-index: 40; width: 280px; max-height: 50vh; overflow-y: auto; padding: 10px 12px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px; backdrop-filter: blur(18px);
+  box-shadow: 0 16px 44px var(--shadow); display: grid; gap: 8px; }
+.agents-list .agent-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12.5px; }
+.agents-list .agent-row small { color: var(--ink-3); display: block; font-size: 11px; }
+.agents-list button { font: inherit; font-size: 11.5px; padding: 4px 11px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--tint); color: var(--ink); cursor: pointer; min-height: 32px; }
+.agents-list .drop-row { color: var(--clay); }
+@media (max-width: 860px) {
+  .agents-list { left: 12px !important; right: 12px; width: auto; max-height: 45dvh; }
+  .bar > button.agents-chip { flex: 0 0 auto; order: 3; white-space: nowrap; min-height: 32px; padding: 6px 10px; font-size: 12px; }
+}
+.agents-chip { white-space: nowrap; }
+.connect-chip { color: var(--gold-ink); border-color: var(--gold-line); font-weight: 600; text-decoration: none; white-space: nowrap; }
+.connect-chip:hover { border-color: var(--clay); }
+.connect-chip[hidden] { display: none; }
+@media (max-width: 860px) { .bar > .connect-chip { flex: 0 0 auto; order: 3; } }
+.agent-tag { position: fixed; z-index: 5; transform: translate(-50%, -100%); pointer-events: none; padding: 2px 7px;
+  background: #1a1408d9; border: 1px solid #f2c14e99; border-radius: 6px; color: #fbe7b0; font-size: 11px; white-space: nowrap; }
+.agent-tag b { font-weight: 600; }
+.agent-tag .said { display: block; max-width: 220px; white-space: normal; color: #ecf3ec; font-size: 11.5px; line-height: 1.35; margin-top: 2px; }
+.agent-tag .said::before { content: '\201C'; } .agent-tag .said::after { content: '\201D'; }
+.row b.agent-name { text-transform: none; color: var(--gold-ink); }
+
+/* On-screen camera controls: turning and tilting without a right mouse button or two fingers. */
+.camera-pad { position: fixed; left: 16px; bottom: 44px; z-index: 20; display: grid;
+  grid-template-columns: repeat(3, 40px); gap: 6px; padding: 8px; border-radius: 14px;
+  background: var(--panel); border: 1px solid var(--line); backdrop-filter: blur(18px); }
+.camera-pad button { width: 40px; height: 40px; display: grid; place-items: center; padding: 0;
+  border-radius: 10px; border: 1px solid var(--line); background: var(--tint); color: var(--ink);
+  cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none; }
+.camera-pad button:hover { background: var(--tint-strong); }
+.camera-pad button:active { background: var(--line-strong); }
+.camera-pad button:focus-visible { outline: 3px solid var(--moss); outline-offset: 2px; }
+.camera-pad .camera-reset { grid-column: 1 / -1; width: auto; height: 32px; font: 600 12px/1 system-ui, sans-serif; }
+@media (max-width: 860px) {
+  /* A slim column on the right edge, between the top bar and the passport sheet: turn and tilt
+     only, since pinching already zooms on a phone. */
+  .camera-pad { left: auto; right: 8px; bottom: auto; top: calc(var(--bar-bottom) + 10px); grid-template-columns: 34px; gap: 4px; padding: 4px; }
+  .camera-pad button { width: 34px; height: 34px; }
+  .camera-pad .camera-reset, .camera-pad [data-camera^="zoom"] { display: none; }
+}
+
+/* The one way back from clean view on a touch screen: a tap shows it for a few seconds. */
+.show-interface { display: none; }
+body.clean-view .show-interface { display: inline-flex; position: fixed; top: max(12px, env(safe-area-inset-top)); right: 12px; z-index: 50;
+  opacity: 0; pointer-events: none; transition: opacity .3s; }
+body.clean-view.interface-poked .show-interface, body.clean-view .show-interface:focus-visible { opacity: 1; pointer-events: auto; }
+/* Clean view (H, or ?cinema=1): only the forest. Dialogs still open over it when asked for. */
+body.clean-view .bar, body.clean-view .panel, body.clean-view .footer, body.clean-view .camera-pad,
+body.clean-view #reward-badge, body.clean-view #reward-total, body.clean-view #reward-mine,
+body.clean-view #thought, body.clean-view .encounter-label, body.clean-view .agent-tag,
+body.clean-view #agents-list, body.clean-view #notice, body.clean-view #event-visit,
+body.clean-view .replay, body.clean-view #render-stats { display: none !important; }
+
+/* Settings: theme, graphics, sound and view, opened from the top bar. */
+.settings-panel { position: fixed; z-index: 40; width: min(340px, calc(100vw - 24px)); max-height: calc(100dvh - var(--bar-bottom) - 24px);
+  overflow-y: auto; padding: 14px 16px; background: var(--dialog-surface); border: 1px solid var(--line); border-radius: 14px;
+  box-shadow: 0 16px 44px var(--shadow); color: var(--ink); }
+.settings-panel h2 { margin: 0 0 4px; font-size: 15px; }
+.settings-panel .observer-options { border: 0; margin: 0; padding: 0; }
+.settings-panel .observer-options > label:not(:has(input)) { display: block; min-height: 0; margin: 12px 0 6px; font-size: 12px;
+  color: var(--ink-2); text-transform: uppercase; letter-spacing: .08em; font-weight: 650; cursor: default; }
+.settings-panel select { width: 100%; min-height: 40px; color: var(--ink); background: var(--field); border: 1px solid var(--line);
+  border-radius: 8px; padding: 8px; font: inherit; font-size: 13px; }
+.settings-panel a { color: var(--mist); }
+body.clean-view .settings-panel { display: none !important; }

@@ -4,6 +4,8 @@ import type { Pool } from './db/pool.js';
 import type { EventBoundary } from './db/eventStore.js';
 import { xPublishPlan } from './xPublishPlan.js';
 import { createXPublisher, type XPublisher } from './xPublisher.js';
+import { WindowRateLimit } from './limits.js';
+import { networkKey } from './network.js';
 
 export interface SocialConfig { adminToken: string; xPublisher?: XPublisher }
 export function socialConfig(env: NodeJS.ProcessEnv): SocialConfig | undefined {
@@ -68,7 +70,7 @@ export function socialDraftText(event: SourceEvent): string | null {
   if (!['success', 'failure', 'abandoned', 'interrupted'].includes(event.outcome)) return null;
   const day = Math.floor(Number(event.world_time) / 86_400) + 1;
   const hour = Math.floor(Number(event.world_time) % 86_400 / 3_600);
-  const clock = `Vana day ${day}, hour ${hour}`;
+  const clock = `Wildsentia day ${day}, hour ${hour}`;
   const rawSpecies = event.conditions.species;
   const species = typeof rawSpecies === 'string' && /^[a-z][a-z0-9_]{0,30}$/.test(rawSpecies)
     ? rawSpecies.replaceAll('_', ' ') : null;
@@ -98,18 +100,14 @@ export function installSocialOutbox(app: FastifyInstance, deps: {
   pool: Pool; config?: SocialConfig | undefined; boundary: () => EventBoundary | null;
 }): void {
   const { pool, config, boundary } = deps;
-  const limits = new Map<string, { count: number; until: number }>();
+  const limits = new WindowRateLimit(120);
   app.addHook('onRequest', async (request, reply) => {
-    if (!/^\/admin\/social(?:[/?]|$)/.test(request.url)) return;
+    // Matched on the dispatched route: the router decodes "/%61dmin/social" to /admin/social.
+    if (!/^\/admin\/social(?:\/|$)/.test(request.routeOptions.url ?? '')) return;
     reply.header('Cache-Control', 'no-store'); reply.header('Referrer-Policy', 'no-referrer');
     if (!config) return reply.code(503).send({ error: 'social_outbox_not_configured' });
     if (request.headers['sec-fetch-site'] === 'cross-site') return reply.code(403).send({ error: 'same_origin_required' });
-    const now = Date.now(), key = request.ip;
-    for (const [ip, window] of limits) if (window.until <= now) limits.delete(ip);
-    const window = limits.get(key) ?? { count: 0, until: now + 60_000 };
-    if ((!limits.has(key) && limits.size >= 5000) || ++window.count > 120)
-      return reply.code(429).send({ error: 'rate_limited' });
-    limits.set(key, window);
+    if (!limits.take(networkKey(request.ip))) return reply.code(429).send({ error: 'rate_limited' });
     // Count rejected admin attempts too; otherwise guesses evade the per-IP cap.
     if (!timingSafeEqual(hash(bearer(request)), hash(config.adminToken)))
       return reply.code(401).send({ error: 'social_admin_auth_required' });

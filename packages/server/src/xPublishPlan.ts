@@ -5,7 +5,7 @@ export function xPublishPlan(input: { draftId: string; sourceFingerprint: string
   // Draft templates can otherwise be identical for multiple events in one world-hour.
   // Put the full immutable draft ID in the public post so an UNKNOWN result can be
   // reconciled to exactly one local attempt, not merely a same-text sibling.
-  const postText = `${input.text} [VANA record ${input.draftId}]`;
+  const postText = `${input.text} [WILDSENTIA record ${input.draftId}]`;
   if (!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(input.draftId)
     || !/^[0-9a-f]{32}$/i.test(input.sourceFingerprint)
     || !input.text || Array.from(postText).length > 280 || /[\r\n]/.test(input.text))

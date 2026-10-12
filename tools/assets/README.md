@@ -129,6 +129,13 @@ blender -b --factory-startup --disable-autoexec --python-exit-code 1 --python to
   Geometry, rigs and motion are locally authored. No downloaded creature is silently renamed.
 - `rig_local_tiger.py`: continuous distance-weight binding fitted to the existing source tiger;
   eight conservative motion clips. It is **not** the requested Sketchfab Running Tiger.
+- `big_cat_gaits.mjs` (Node, no Blender; `npm ci` here first): replaces the tiger's and leopard's
+  Walk, Run (a trot) and Sneak with a cat's four-beat walk, a diagonal trot and a low stalk. Planted
+  paws are held to the ground and flat by solving knee and ankle; swinging paws clear it. Run it on
+  the rigged tiger after `rig_local_tiger.py`, and on `LeopardRigged.glb` after
+  `leopard_from_tiger.py` (which copies the tiger's clips):
+  `node tools/assets/big_cat_gaits.mjs IN.glb OUT.glb`. `packages/client/test/bigCatGait.test.ts`
+  measures the result by forward kinematics.
   Further manual skin-weight, shoulder and paw-contact refinement is required.
 - `extend_elephant.py`: preserves five source clips and adds Walk. Source GLB is not overwritten.
 - Export with `--python-exit-code 1`: Blender otherwise can return zero after a Python failure.

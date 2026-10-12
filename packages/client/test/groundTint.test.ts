@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { GroundTint, patchGroundColours } from '../src/groundTint.js';
+import * as THREE from 'three';
+import { bakeStandTexture, groundLayers, GroundTint, patchGroundColours } from '../src/groundTint.js';
+import { standDensity } from '../src/forestStructure.js';
 import { skyColours } from '../src/sky.js';
 
 const patch = (habitat: string, grass: number, canopyCover?: number) => ({ id: 0, habitat, grass, ...(canopyCover === undefined ? {} : { canopyCover }) });
@@ -33,6 +35,53 @@ describe('ground colour from the checkpoint', () => {
     expect(tint.update(patches, 'dry')).toBe(true);
     const far = tint.far.image.data as Uint8Array;
     expect(far[3 * 4 + 1]).toBeLessThan(far[0 * 4 + 1]!);
+  });
+});
+
+describe('forest floor layers from the checkpoint', () => {
+  const forest = { id: 0, habitat: 'shola', grass: 700, canopyCover: 0.85 };
+  it('lays heavier leaf litter under canopy after the dry-season fall', () => {
+    expect(groundLayers(forest, 'dry').litter).toBeGreaterThan(groundLayers(forest, 'monsoon').litter);
+    expect(groundLayers(forest, 'monsoon').litter).toBeGreaterThan(groundLayers({ ...forest, canopyCover: 0.1 }, 'monsoon').litter);
+    expect(groundLayers(patch('grassland', 6000, 0), 'dry').litter).toBe(0);
+  });
+  it('shows bare soil where grass is grazed or dried off, not under a lush sward', () => {
+    expect(groundLayers(patch('grassland', 300, 0.05), 'dry').bare).toBeGreaterThan(0.6);
+    expect(groundLayers(patch('grassland', 6000, 0.05), 'monsoon').bare).toBe(0);
+    expect(groundLayers(patch('grassland', 300, 0.05), 'dry').bare)
+      .toBeGreaterThan(groundLayers(patch('grassland', 300, 0.05), 'monsoon').bare);
+  });
+  it('turns damp and mossy with water, flow and the wet season', () => {
+    const dryBank = groundLayers({ ...patch('grassland', 4000, 0.1) }, 'monsoon').moss;
+    expect(groundLayers({ ...patch('grassland', 4000, 0.1), water: 60_000 }, 'monsoon').moss).toBeGreaterThan(dryBank + 0.4);
+    expect(groundLayers({ ...patch('grassland', 4000, 0.1), drainage: { outflowL: 3_000 } }, 'monsoon').moss).toBeGreaterThan(dryBank + 0.4);
+    expect(groundLayers(patch('riparian', 4000, 0.5), 'monsoon').moss).toBeGreaterThan(groundLayers(patch('riparian', 4000, 0.5), 'dry').moss);
+    for (const none of [{ ...forest, surface: 'ocean' as const }, patch('water', 0)]) {
+      expect(groundLayers(none, 'monsoon')).toEqual({ litter: 0, bare: 0, moss: 0 });
+    }
+  });
+  it('writes the shares to a per-patch texture and spreads them with the trees\u2019 stand pattern', () => {
+    const tint = new GroundTint(2);
+    tint.update([{ ...forest, id: 1 }], 'dry');
+    const layers = tint.layers.image.data as Uint8Array;
+    expect(layers[4]).toBe(Math.round(groundLayers(forest, 'dry').litter * 255));
+    // A season change alone re-lays the floor.
+    expect(tint.update([{ ...forest, id: 1 }], 'monsoon')).toBe(true);
+    expect(layers[4]).toBe(Math.round(groundLayers(forest, 'monsoon').litter * 255));
+    const stand = bakeStandTexture(64);
+    expect(stand.format).toBe(THREE.RedFormat);
+    const data = stand.image.data as Uint8Array;
+    const span = 6000, at = (col: number, row: number) => standDensity((col + 0.5) / 64 * span - 150, (row + 0.5) / 64 * span - 150);
+    expect(data[10 * 64 + 20]).toBe(Math.round(at(20, 10) * 255));
+    const material = new THREE.MeshStandardMaterial();
+    tint.apply(material);
+    const shader = { uniforms: {} as Record<string, { value: unknown }>, vertexShader: '#include <worldpos_vertex>',
+      fragmentShader: '#include <color_fragment>' };
+    material.onBeforeCompile(shader as never, {} as THREE.WebGLRenderer);
+    expect(shader.uniforms.groundLayers!.value).toBe(tint.layers);
+    expect(shader.uniforms.groundStand!.value).toBe(tint.stand);
+    expect(shader.fragmentShader).toContain('float litter = floorShare.r');
+    stand.dispose(); material.dispose();
   });
 });
 

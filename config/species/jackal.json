@@ -58,6 +58,11 @@
     ],
     "alarmSharing": true
   },
+  "islandArrival": {
+    "whenLivingAtMost": 2,
+    "dailyProbability": 0.008333333333333333,
+    "minDaysBetween": 120
+  },
   "learning": {
     "innate": {
       "forage_efficiency": 0.3,
@@ -115,6 +120,7 @@
     "interBirthIntervalDays": 365,
     "oestrusCycleDays": 365,
     "weanDays": 60,
+    "gatherFromDays": 10,
     "dispersalDays": 300
   }
 }

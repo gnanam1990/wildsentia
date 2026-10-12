@@ -19,6 +19,7 @@ COPY packages/server/tsconfig.json packages/server/tsconfig.json
 COPY packages/sim/tsconfig.json packages/sim/tsconfig.json
 COPY packages/shared/tsconfig.json packages/shared/tsconfig.json
 COPY packages/server/migrations packages/server/migrations
+COPY packages/server/agent-client packages/server/agent-client
 
 ENV NODE_ENV=production
 USER node

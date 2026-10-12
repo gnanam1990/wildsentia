@@ -14,6 +14,7 @@
     "trotMs": 3.5,
     "sprintMs": 8.0,
     "sprintStaminaS": 50,
+    "climbsTrees": true,
     "terrainCost": {
       "shola": 0.7,
       "grassland": 1.4,
@@ -51,7 +52,8 @@
       8,
       30
     ],
-    "alarmSharing": true
+    "alarmSharing": true,
+    "heedsAlarmOf": ["chital"]
   },
   "learning": {
     "innate": {
@@ -110,6 +112,10 @@
     "interBirthIntervalDays": 540,
     "oestrusCycleDays": 24,
     "weanDays": 360,
+    "followFromDays": 0,
+    "gatherFromDays": 0,
+    "carriedUntilDays": 28,
+    "forageFromDays": 42,
     "dispersalDays": 900
   }
 }

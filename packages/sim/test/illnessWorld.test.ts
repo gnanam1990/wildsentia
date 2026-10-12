@@ -24,7 +24,7 @@ function carrionMeal(seconds: number, pathogenLoad = 1) {
   rng.bool = () => true;
   executeGoal({ agent, species: speciesOf('jackal'), patches, view,
     percept: { patch, neighbours: [], bestFood: null, bestWater: null, prey: [],
-      carrion: { carcass, patchId: patch.id }, threat: null, herdSize: 1 },
+      carrion: { carcass, patchId: patch.id }, threat: null, dangerous: new Set(), herdSize: 1 },
     choice: { goal: 'scavenge', score: 1, alternative: null }, hours: seconds / 3600,
     worldTime: 0, log, rng, services: makeServices(carcasses) });
   return { agent, carcass, log, patches };
