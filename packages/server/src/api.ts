@@ -61,7 +61,7 @@ export function buildApi({ host, pool, narrator, rewards, receiptRpc, social, ho
     return view ? { worldTime: view.worldTime, nextSequence: view.nextSequence } : null;
   } });
 
-  const observationRoutes = new Set(['/world', '/animals', '/animals/:id', '/patches', '/hydrology', '/carcasses', '/event-map', '/animals/:id/passport', '/animals/:id/life', '/animals/:id/encounters/:eventId', '/animals/:id/movements/:eventId', '/animals/:id/recap', '/animals/:id/events', '/events']);
+  const observationRoutes = new Set(['/world', '/animals', '/animals/:id', '/patches', '/hydrology', '/micro-ecology', '/carcasses', '/event-map', '/animals/:id/passport', '/animals/:id/life', '/animals/:id/encounters/:eventId', '/animals/:id/movements/:eventId', '/animals/:id/recap', '/animals/:id/events', '/events']);
   const observations = new WeakMap<FastifyRequest, CheckpointObservation>();
   observationRoutes.add('/community');
   observationRoutes.add('/people/:id');

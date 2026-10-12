@@ -1,0 +1,301 @@
+@font-face {
+  font-family: 'Manrope Variable'; font-style: normal; font-display: swap; font-weight: 200 800;
+  src: url('@fontsource-variable/manrope/files/manrope-latin-wght-normal.woff2') format('woff2');
+}
+
+/* Smoked glass over a living scene. Typography, not ornamental status lights, leads. */
+.observer-app {
+  --dialog-surface: #23272a;
+  --panel: rgb(18 24 28 / .24);
+  --glass-edge: rgb(255 255 255 / .34);
+  --glass-reflection: linear-gradient(135deg, rgb(255 255 255 / .1), rgb(255 255 255 / 0) 48%, rgb(255 255 255 / .025));
+  --glass-blur: blur(10px) saturate(.9) brightness(.78);
+  --button-glass: linear-gradient(160deg, rgb(255 255 255 / .2), rgb(255 255 255 / .035) 48%, rgb(255 255 255 / .09));
+  --button-edge: 0 4px 12px rgb(4 12 16 / .12), inset 0 1px 0 rgb(255 255 255 / .3), inset 0 -1px 0 rgb(255 255 255 / .05);
+  --button-primary: linear-gradient(150deg, rgb(255 255 255 / .84), rgb(242 248 248 / .55) 55%, rgb(232 242 245 / .72));
+  --line: rgb(237 239 239 / .15);
+  --ink: #f4f3ef;
+  --ink-2: #dedfdd;
+  --ink-3: #d0d3d3;
+  --moss: #e1e2dc;
+  --mist: #bfcbd0;
+  --clay: #d6c3a6;
+  --blood: #e4aea2;
+  --shadow: 0 14px 36px rgb(5 9 12 / .16), inset 0 1px 0 rgb(255 255 255 / .22), inset 0 -1px 0 rgb(255 255 255 / .04);
+  color-scheme: dark;
+  font: 450 13px/1.5 'Manrope Variable', sans-serif;
+  color: var(--ink);
+}
+.observer-app *, .observer-app *::before, .observer-app *::after { scrollbar-width: thin; scrollbar-color: #bfc4c466 transparent; }
+.observer-app [hidden] { display: none !important; }
+.observer-app ::selection { background: #f4f3ef; color: #23272a; }
+.observer-app :where(button, select, summary, a, input, textarea):focus-visible { outline: 2px solid #f4f3ef; outline-offset: 3px; }
+.observer-app button { min-height: 44px; padding: 10px 14px; border: 1px solid rgb(255 255 255 / .24); border-radius: 12px; background: var(--button-glass); color: var(--ink); font: 550 12px/1.3 'Manrope Variable', sans-serif; box-shadow: var(--button-edge); backdrop-filter: none; transition: background .2s, border-color .2s, color .2s, box-shadow .2s, transform .2s cubic-bezier(.2,.8,.2,1); }
+.observer-app button:not(:disabled):hover { color: #fff; border-color: rgb(255 255 255 / .55); box-shadow: 0 6px 16px rgb(4 12 16 / .2), inset 0 1px 0 rgb(255 255 255 / .55), inset 0 -1px 0 rgb(255 255 255 / .12); }
+@media (hover: hover) and (pointer: fine) {
+  .observer-app button:not(:disabled):not([role=tab]):not(.map-pin):not(.text-button):hover { transform: translateY(-2px); }
+}
+.observer-app button:not(:disabled):not(.map-pin):not([role=tab]):active { transform: translateY(1px) scale(.98); box-shadow: inset 0 2px 5px rgb(4 12 16 / .16); }
+.observer-app button:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+.observer-app select { font: inherit; color: var(--ink); background: #303538; accent-color: var(--moss); }
+.observer-app option { background: #262b2e; color: var(--ink); }
+.observer-app input { accent-color: var(--moss); }
+.observer-app a { color: var(--moss); text-underline-offset: 3px; }
+.observer-app .text-button { flex: none; min-height: 44px; padding: 0 10px; border-color: transparent; border-radius: 8px; font-size: 10px; color: var(--ink-3); background: none; box-shadow: none; }
+.observer-app .text-button:hover { background: rgb(255 255 255 / .08); color: #fff; }
+.observer-app .bar { align-items: center; gap: 12px; padding: 24px 28px 36px; background: linear-gradient(#11182040, #11182000); }
+.observer-app .brand { display: flex; align-items: center; margin-right: 28px; color: #fff; font: 650 32px/.9 'Manrope Variable', sans-serif; letter-spacing: -.04em; text-shadow: 0 2px 12px #10182059; }
+.observer-app .brand small { margin-top: 9px; color: #e4e7e5; font: 500 7px/1 'Manrope Variable', sans-serif; letter-spacing: .16em; }
+.observer-app .world-glance { display: flex; align-items: center; min-height: 44px; background: var(--glass-reflection), var(--panel); border: 1px solid var(--glass-edge); border-radius: 10px; box-shadow: var(--shadow); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); }
+.observer-app .chip { min-height: 42px; padding: 0 13px; border: 0; border-radius: 0; background: none; backdrop-filter: none; color: var(--ink-2); font-size: 11px; }
+.observer-app .chip b { color: var(--ink); font-size: 11px; font-weight: 600; }
+.observer-app .chip span { margin: 0; font-size: inherit; }
+.observer-app .chip.when { gap: 8px; }
+.observer-app .chip.pop { padding: 0; border-left: 1px solid var(--line); }
+.observer-app .chip.pop summary { display: flex; gap: 5px; align-items: center; min-height: 42px; padding: 10px 13px; font-size: 11px; font-weight: 550; white-space: nowrap; }
+.observer-app number-flow { font-variant-numeric: tabular-nums; font-weight: 750; }
+.observer-app .population-unknown { padding: 0 12px; }
+.observer-app .chip.pop .pop-list { top: calc(100% + 10px); padding: 16px; gap: 12px 24px; min-width: 290px; border: 1px solid var(--glass-edge); border-radius: 12px; background: var(--glass-reflection), rgb(18 24 28 / .64); box-shadow: var(--shadow); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); }
+.observer-app .chip.pop .pop-list span { font-size: 12px; }
+.observer-app .species-picker { position: relative; flex: 0 1 auto; order: initial; align-items: center; }
+.observer-app .species-picker select { max-width: 100%; width: 180px; padding: 0 14px; min-height: 44px; color: var(--ink); border: 1px solid var(--glass-edge); border-radius: 10px; background: var(--glass-reflection), var(--panel); font: 550 12px 'Manrope Variable', sans-serif; backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); box-shadow: var(--shadow); }
+.observer-app .bar > .text-button { width: 64px; border: 1px solid var(--glass-edge); border-radius: 12px; background: var(--button-glass), var(--panel); color: var(--ink); box-shadow: var(--button-edge); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); font-size: 11px; }
+.observer-app .bar > .text-button:hover { border-color: #ffffff99; background: var(--button-glass), rgb(255 255 255 / .08); }
+.observer-app .bar > .text-button[aria-pressed=true] { color: #172126; background: var(--button-primary); }
+.observer-app .panel { background: var(--glass-reflection), var(--panel); color: var(--ink); padding: 24px; border: 1px solid var(--glass-edge); border-radius: 18px; box-shadow: var(--shadow); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); text-shadow: 0 1px 3px rgb(5 12 16 / .35); }
+.observer-app .panel h2 { margin: 0; font: 550 20px/1.25 'Manrope Variable', sans-serif; letter-spacing: -.035em; text-wrap: balance; }
+.observer-app .panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.observer-app .panel-heading .text-button { margin: -10px -10px -10px 0; }
+.observer-app .panel-intro { font-size: 11px; line-height: 1.6; color: var(--ink-3); margin: 5px 0 20px; }
+.observer-app #passport-panel { top: 96px; right: 28px; width: 360px; padding: 24px 24px 0; max-height: calc(100dvh - 190px); overflow: auto; }
+.observer-app .panel-close { position: absolute; top: 12px; right: 12px; z-index: 1; }
+.observer-app #scene-status, .observer-app #community-motion-status { color: var(--ink-3); font-size: 11px; margin: 0 28px 12px 0; }
+.observer-app #scene-status:empty { display: none; }
+.observer-app #live-encounter-status { margin: 0 24px 12px 0; padding: 0; border: 0; border-radius: 0; background: none; color: var(--ink-2); font-size: 10px; line-height: 1.55; }
+.observer-app .subject-heading { padding-right: 35px; margin-bottom: 16px; }
+.observer-app #passport h2 { font-size: 24px; letter-spacing: -.04em; }
+.observer-app .subject-title-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.observer-app #passport .subject-meta { margin: 7px 0 0; font: 450 11px/1.5 'Manrope Variable', sans-serif; color: var(--ink-3); }
+.observer-app .subject-state { display: inline; color: var(--ink-2); font-size: inherit; font-weight: 550; }
+.observer-app .passport-tabs { display: flex; gap: 22px; border-bottom: 1px solid var(--line); margin: 0 -24px 18px; padding: 0 24px; }
+.observer-app .passport-tabs [role=tab] { position: relative; min-height: 44px; padding: 0 0 8px; border: 0; border-radius: 0; font-size: 11px; font-weight: 600; color: var(--ink-3); background: none; box-shadow: none; }
+.observer-app .passport-tabs [role=tab]:not(:disabled):hover { color: var(--ink); box-shadow: none; }
+.observer-app .passport-tabs [aria-selected=true] { color: var(--ink); }
+.observer-app .passport-tabs [aria-selected=true]::after { content: ''; position: absolute; height: 1px; background: var(--ink); left: 0; right: 0; bottom: -1px; }
+.observer-app .passport-panel { min-width: 0; }
+.observer-app .vitals { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 15px; padding: 0 0 18px; }
+.observer-app .vitals .meter { display: grid; grid-template-columns: 1fr; gap: 4px; margin: 0; font-size: 10px; color: var(--ink-3); }
+.observer-app .vitals .meter b { grid-row: 2; text-align: left; font: 450 23px/1.25 'Manrope Variable', sans-serif; font-variant-numeric: tabular-nums; letter-spacing: -.025em; color: var(--ink); }
+.observer-app .vitals .track { grid-row: 3; margin-top: 3px; }
+.observer-app .track { height: 2px; border: 0; background: rgb(255 255 255 / .16); }
+.observer-app .track i { border-radius: 0; }
+.observer-app .subject-activity { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; padding: 12px 0; border-top: 1px solid var(--line); font-size: 11px; color: var(--ink-2); }
+.observer-app .subject-activity p { margin: 0; }
+.observer-app .subject-activity > div { display: flex; align-items: center; gap: 7px; }
+.observer-app .subject-watchers { color: var(--ink-3); }
+.observer-app .subject-activity strong { color: var(--ink); font-weight: 650; }
+.observer-app .subject-health { padding: 9px 0; font-size: 11px; color: var(--blood); }
+.observer-app .subject-health p { margin: 4px 0; }
+.observer-app .row { font-size: 11px; padding: 7px 0; gap: 16px; margin: 0; }
+.observer-app .row b { font-size: 11px; font-weight: 600; text-align: right; }
+.observer-app #passport .card-actions { display: grid; grid-template-columns: 1.3fr 1fr .8fr; gap: 8px; position: sticky; bottom: 0; margin: 0 -24px; padding: 14px 24px 18px; border-top: 1px solid var(--line); background: rgb(18 24 28 / .24); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); z-index: 1; }
+.observer-app #passport .card-actions button { min-height: 40px; margin: 0; padding: 8px 9px; border-radius: 12px; font-size: 11px; font-weight: 600; white-space: nowrap; text-shadow: none; }
+.observer-app #passport .card-actions button:first-child { background: var(--button-primary); color: #172126; border-color: rgb(255 255 255 / .62); box-shadow: 0 5px 16px rgb(5 12 16 / .18), inset 0 1px 0 #fff, inset 0 -2px 3px rgb(255 255 255 / .22); }
+.observer-app #passport .card-actions button:first-child:hover { background: linear-gradient(150deg, #fffffff0, #f2f8f8b8 55%, #e8f2f5d9); box-shadow: 0 8px 20px rgb(5 12 16 / .24), inset 0 1px 0 #fff; }
+.observer-app #passport h3 { margin: 17px 0 8px; color: var(--ink-2); font-size: 11px; letter-spacing: 0; text-transform: none; opacity: 1; }
+.observer-app #passport .taught { font-size: 10px; opacity: 1; color: var(--ink-3); }
+.observer-app #passport .passport-panel h3:first-child { margin-top: 0; }
+.observer-app #passport .passport-record, .observer-app #passport .prov { color: var(--ink-3); font: 450 11px/1.7 'Manrope Variable', sans-serif; overflow-wrap: anywhere; }
+.observer-app #passport .prov { border: 0; margin: 10px 0 16px; padding: 0; }
+.observer-app #passport code { font-size: 10px; }
+.observer-app .record-facts { margin: 0; }
+.observer-app .record-facts > div { display: grid; grid-template-columns: 88px minmax(0,1fr); gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.observer-app .record-facts dt { color: var(--ink-3); }
+.observer-app .record-facts dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
+.observer-app #passport .recap { padding: 12px; margin-bottom: 12px; border: 1px solid var(--line); background: rgb(255 255 255 / .04); }
+.observer-app #passport .hint { font-size: 12px; line-height: 1.7; padding: 16px 20px 24px 0; }
+.observer-app #reward-subject:empty { display: none; }
+.observer-app #reward-subject:not(:empty) { padding: 12px 0; }
+.observer-app #feed-panel { top: auto; left: 28px; bottom: 104px; width: 288px; max-height: min(380px, calc(100dvh - 210px)); }
+.observer-app .feed-entry { position: relative; border-bottom: 1px solid var(--line); padding: 14px 0; font-size: 12px; line-height: 1.6; }
+.observer-app .feed-entry:first-child { padding-top: 0; }
+.observer-app .feed-entry:last-child { padding-bottom: 0; }
+.observer-app .feed-entry .etype { font-weight: 600; }
+.observer-app .feed-meta { color: var(--ink-3); font-size: 10px; margin-top: 5px; gap: 4px 8px; }
+.observer-app .feed-count { font-weight: 600; color: var(--moss); }
+.observer-app .feed-provenance { width: 100%; font: 450 10px/1.6 'Manrope Variable', sans-serif; color: var(--ink-3); }
+.observer-app .feed-provenance summary { min-height: 28px; padding: 5px 0; }
+.observer-app .feed-record { padding: 6px 0; }
+.observer-app .feed-record code { font-size: 9px; }
+.observer-app .observer-dock { position: fixed; z-index: 20; display: flex; gap: 3px; align-items: center; bottom: max(24px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); border: 1px solid var(--glass-edge); border-radius: 12px; padding: 4px 10px; background: var(--glass-reflection), var(--panel); box-shadow: var(--shadow); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); }
+.observer-app .observer-dock button { position: relative; min-height: 44px; border: 1px solid transparent; border-radius: 8px; padding: 10px 15px; font-size: 12px; font-weight: 500; color: var(--ink-3); white-space: nowrap; background: none; box-shadow: none; }
+.observer-app .observer-dock button[aria-expanded=true] { color: #fff; border-color: rgb(255 255 255 / .22); background: var(--button-glass); box-shadow: inset 0 1px 0 rgb(255 255 255 / .22), 0 3px 8px rgb(5 12 16 / .1); }
+.observer-app .observer-dock button[aria-expanded=true]::after { content: ''; position: absolute; height: 1px; bottom: 4px; left: 16px; right: 16px; background: #f4f3ef; }
+.observer-app .observer-dock button:hover { color: #fff; background: var(--button-glass); border-color: rgb(255 255 255 / .3); }
+.observer-app .dock-divider { width: 1px; height: 24px; margin: 0 5px; background: var(--line); }
+.observer-app .settings-sheet { right: 28px; top: 96px; width: 360px; max-height: calc(100dvh - 190px); overflow-y: auto; z-index: 13; }
+.observer-app .settings-sheet:not([hidden]) { animation: sheet-entry 220ms cubic-bezier(.16,1,.3,1); }
+@keyframes sheet-entry { from { transform: translateY(7px); opacity: .82; } to { transform: translateY(0); opacity: 1; } }
+.observer-app .observer-options { margin: 0; padding: 0; border: 0; }
+.observer-app .observer-options label { min-height: 38px; font-size: 12px; font-weight: 650; }
+.observer-app .observer-options select, .observer-app .live-encounters select { background: rgb(255 255 255 / .06); border: 1px solid var(--line); border-radius: 8px; color: var(--ink); font: 450 12px 'Manrope Variable', sans-serif; padding: 10px 12px; }
+.observer-app .observer-options p { font-size: 11px; line-height: 1.65; color: var(--ink-3); margin: 7px 0; }
+.observer-app .observer-options output { font-size: 10px; color: var(--ink-2); }
+.observer-app .observer-options #ambient-toggle { min-height: 44px; border-radius: 8px; text-align: left; padding-left: 12px; font-size: 12px; margin-top: 22px; }
+.observer-app .observer-options #ambient-toggle[aria-pressed=true] { background: rgb(255 255 255 / .16); color: var(--ink); border-color: var(--glass-edge); }
+.observer-app .observer-options label:has(#observer-cutaway) { margin-top: 20px; }
+.observer-app .live-encounters { border-top: 1px solid var(--line); margin: 18px 0 0; padding-top: 5px; font-size: 11px; }
+.observer-app .live-encounters summary { min-height: 44px; padding: 12px 0; font-weight: 600; }
+.observer-app .live-encounters label { display: block; }
+.observer-app .live-encounters input { vertical-align: middle; }
+.observer-app .observer-options .settings-note { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 16px; }
+.observer-app .settings-links { display: flex; gap: 18px; }
+.observer-app .settings-links a { display: inline-flex; align-items: center; min-height: 36px; font-size: 11px; }
+.observer-app .observer-options .settings-wallet { font-size: 10px; }
+.observer-app #reward-total { position: static; display: block; margin: 12px 0; max-width: none; padding: 0; background: none; color: var(--ink-3); border: 0; border-radius: 0; font-size: 11px; backdrop-filter: none; }
+.observer-app #reward-mine { position: static; font-size: 11px; }
+.observer-app .footer { bottom: 88px; display: flex; justify-content: center; gap: 14px; color: #fff; font-size: 10px; }
+.observer-app .footer span + span::before { content: '·'; margin-right: 14px; }
+.observer-app #notice { bottom: 88px; pointer-events: none; color: #fff; text-shadow: 0 1px 8px #000; }
+.observer-app #observer-ui-status:not(:empty) { top: 96px; right: 28px; }
+.observer-app #event-visit { top: 96px; border-color: var(--glass-edge); background: var(--glass-reflection), var(--panel); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); }
+.observer-app .thought { z-index: 9; font: 500 11px/1.5 'Manrope Variable', sans-serif; color: var(--ink); background: var(--glass-reflection), var(--panel); border: 1px solid var(--glass-edge); border-radius: 5px; padding: 5px 10px; box-shadow: 0 6px 20px #080f1826; backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); }
+.observer-app .thought::after { content: none; }
+.observer-app .thought.unclear { color: var(--ink-3); }
+.observer-app .encounter-label { color: var(--ink); background: var(--panel); border-color: var(--glass-edge); font: 500 11px 'Manrope Variable', sans-serif; backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); }
+.observer-app.clear-view .footer { display: none; }
+
+/* Every secondary surface shares the same type, surfaces and action hierarchy. */
+.observer-app .forest-dialog { width: min(760px, calc(100vw - 32px)); border: 1px solid var(--glass-edge); border-radius: 18px; background: var(--glass-reflection), rgb(18 24 28 / .46); color: var(--ink); padding: 28px; font: 450 13px/1.7 'Manrope Variable', sans-serif; box-shadow: 0 24px 80px #080f183d, inset 0 1px 0 #ffffff33; backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); }
+.observer-app .forest-dialog::backdrop { background: #0c13182e; }
+.observer-app .forest-dialog h2 { margin: 0 0 14px; font: 550 25px/1.3 'Manrope Variable', sans-serif; letter-spacing: -.04em; overflow-wrap: anywhere; }
+.observer-app .forest-dialog h3 { font-size: 15px; line-height: 1.5; letter-spacing: -.015em; }
+.observer-app .forest-dialog h4 { font-size: 14px; }
+.observer-app .forest-dialog p { color: var(--ink-2); }
+.observer-app .forest-dialog button { font-size: 11px; margin: 4px 6px 4px 0; }
+.observer-app .forest-dialog select, .observer-app .forest-dialog input:not([type=checkbox]), .observer-app .share-dialog textarea { background: rgb(255 255 255 / .06); border: 1px solid var(--line); border-radius: 8px; font-size: 12px; color: var(--ink); }
+.observer-app .forest-dialog .dialog-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+.observer-app .dialog-header h2 { margin: 0; }
+.observer-app .dialog-status { color: var(--ink-3); font-size: 11px; }
+.observer-app .dialog-note { font-size: 11px; line-height: 1.7; color: var(--ink-3); }
+.observer-app .history-controls { gap: 5px; padding: 12px 0; border-top: 1px solid var(--line); }
+.observer-app .dialog-header .history-controls { padding: 0; border: 0; }
+.observer-app .history-events { margin: 0; padding: 0; list-style: none; }
+.observer-app .history-event { margin: 0; padding: 16px 0; border-bottom: 1px solid var(--line); }
+.observer-app .event-title { display: block; font-size: 13px; font-weight: 650; }
+.observer-app .event-meta { display: block; color: var(--ink-3); font-size: 11px; margin: 4px 0; }
+.observer-app .event-reference { display: block; font: 10px/1.6 var(--mono); color: var(--ink-3); overflow-wrap: anywhere; }
+.observer-app .share-dialog .history-controls button:first-child { background: var(--button-primary); color: #172126; border-color: rgb(255 255 255 / .62); }
+.observer-app .share-dialog textarea { padding: 16px; line-height: 1.8; }
+.observer-app .reward-claims li { padding: 18px 0; font-size: 12px; }
+.observer-app .community-stocks, .observer-app .person-needs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
+.observer-app .community-stocks div, .observer-app .person-needs div { min-width: 0; }
+.observer-app .community-stocks dt, .observer-app .person-needs dt { font-size: 11px; color: var(--ink-3); }
+.observer-app .community-stocks dd, .observer-app .person-needs dd { margin: 3px 0 0; font-size: 16px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.observer-app .community-people { list-style: none; padding: 0; }
+.observer-app .community-person { border-top: 1px solid var(--line); padding: 18px 0; margin: 0; }
+.observer-app .community-person h4 { margin: 0; }
+.observer-app .person-header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
+.observer-app .person-age { color: var(--ink-3); font-size: 11px; margin: 0; }
+.observer-app .person-activity { flex-basis: 100%; font-size: 11px; margin: 0 0 12px; }
+.observer-app .community-details { border-top: 1px solid var(--line); margin: 12px 0; font-size: 11px; }
+.observer-app .community-details > summary { cursor: pointer; padding: 12px 0; font-weight: 600; }
+.observer-app .community-section { margin-top: 28px; }
+.observer-app .community-events { padding-left: 18px; font-size: 11px; }
+.observer-app .community-person details, .observer-app .community-dialog > details { margin: 12px 0; font-size: 11px; }
+.observer-app .community-person summary, .observer-app .community-dialog > details > summary { cursor: pointer; padding: 9px 0; color: var(--ink-2); font-weight: 600; }
+.observer-app .person-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+.observer-app .person-actions button:first-child { background: rgb(255 255 255 / .12); border-color: var(--glass-edge); color: var(--ink); }
+.observer-app .event-map-dialog { width: min(1020px, calc(100vw - 40px)); }
+.observer-app .event-map-dialog[open] { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(280px, 1fr); gap: 12px 28px; }
+.observer-app .event-map-dialog > :not(.forest-map):not(.map-events) { grid-column: 1 / -1; margin-block: 0; }
+.observer-app .event-map-dialog .forest-map { grid-column: 1; grid-row: 4; width: min(100%, calc(100dvh - 360px)); margin: 8px 0 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; align-self: start; justify-self: center; }
+.observer-app .event-map-dialog .map-events { grid-column: 2; grid-row: 4; max-height: calc(100dvh - 360px); overflow: auto; padding-right: 8px; }
+.observer-app .event-map-dialog > .dialog-note { grid-row: 5; padding-top: 12px; border-top: 1px solid var(--line); }
+.observer-app .history-subject, .observer-app .history-event-meta, .observer-app .history-event-record, .observer-app .map-event-subject, .observer-app .map-event-record { font-size: 10px; color: var(--ink-3); }
+.observer-app .history-event-meta { display: flex; flex-wrap: wrap; gap: 12px; }
+.observer-app .history-event-record code, .observer-app .map-event-record code { font: 9px/1.7 var(--mono); overflow-wrap: anywhere; }
+.observer-app .history-event h3 { margin: 0 0 5px; font-size: 13px; }
+.observer-app .history-event-summary { font-size: 12px; }
+.observer-app .map-event { padding: 14px 0; }
+.observer-app .map-event:first-child { border-top: 0; padding-top: 6px; }
+.observer-app .map-event h3 { margin: 0; font-size: 13px; }
+.observer-app .map-event p { margin: 5px 0; font-size: 11px; }
+.observer-app .map-event button { padding: 8px 10px; min-height: 38px; }
+.observer-app .forest-map .map-pin { color: #f4f3ef; background: #293238; border-color: #bfc4c4; border-radius: 4px; font-size: 10px; box-shadow: 0 2px 8px #0003; }
+.observer-app .replay { top: 96px; border: 1px solid var(--glass-edge); border-radius: 14px; background: var(--glass-reflection), var(--panel); color: var(--ink); font: 450 12px/1.6 'Manrope Variable', sans-serif; box-shadow: var(--shadow); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); }
+.observer-app .replay .when, .observer-app .replay .precision { color: var(--ink-3); opacity: 1; }
+.observer-app .replay select { border: 1px solid var(--line); border-radius: 7px; padding: 7px; }
+.observer-app .replay button[data-stop-replay] { background: var(--button-primary); color: #172126; border-color: rgb(255 255 255 / .62); }
+.observer-app .replay .progress i { background: var(--ink); }
+
+/* Keep the interface readable when transparency is unavailable or unwanted. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .observer-app { --panel: #252b2e; }
+  .observer-app .forest-dialog, .observer-app .thought, .observer-app .chip.pop .pop-list, .observer-app #passport .card-actions { background: #252b2e; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .observer-app { --panel: #252b2e; --glass-blur: none; }
+  .observer-app .forest-dialog, .observer-app .thought, .observer-app .chip.pop .pop-list, .observer-app #passport .card-actions { background: #252b2e; backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .observer-app button:not(.map-pin) { transform: none !important; }
+}
+
+@media (min-width: 861px) and (max-width: 1080px) {
+  .observer-app .bar { padding: 18px; gap: 8px; }
+  .observer-app .brand { margin-right: 8px; font-size: 26px; }
+  .observer-app .chip { padding-inline: 10px; }
+  .observer-app .species-picker select { width: 170px; }
+}
+@media (max-width: 860px) {
+  .observer-app .bar { display: grid; grid-template-columns: 1fr auto 54px; gap: 13px 8px; padding: max(16px, env(safe-area-inset-top)) 16px 28px; }
+  .observer-app .brand { margin: 0; font-size: 28px; }
+  .observer-app .brand small { font-size: 7px; margin-top: 7px; }
+  .observer-app .spacer { display: none; }
+  .observer-app .species-picker { grid-row: 1; grid-column: 2; }
+  .observer-app .species-picker select { width: 154px; padding-left: 13px; font-size: 11px; }
+  .observer-app .bar > .text-button { width: 54px; grid-row: 1; grid-column: 3; padding: 0; }
+  .observer-app .world-glance { grid-column: 1 / -1; grid-row: 2; width: fit-content; min-height: 36px; border-radius: 9px; }
+  .observer-app .chip { min-height: 34px; padding: 0 10px; }
+  .observer-app .chip b, .observer-app .chip.pop summary { font-size: 10px; }
+  .observer-app .chip.pop summary { padding: 8px 10px; min-height: 34px; }
+  .observer-app .chip.pop .pop-list { left: auto; right: 0; min-width: min(292px, calc(100vw - 38px)); }
+  .observer-app .panel { border-radius: 15px; padding: 18px; }
+  .observer-app #passport-panel, .observer-app #feed-panel, .observer-app .settings-sheet { top: auto; bottom: calc(79px + env(safe-area-inset-bottom)); left: 16px; right: 16px; width: auto; max-height: min(46dvh, calc(100dvh - 225px)); overflow-y: auto; }
+  .observer-app #passport-panel { padding: 18px 18px 0; }
+  .observer-app #feed-panel { display: block; }
+  .observer-app .settings-sheet { max-height: calc(100dvh - 225px); }
+  .observer-app #passport h2 { font-size: 24px; }
+  .observer-app .subject-heading { margin-bottom: 10px; }
+  .observer-app .passport-tabs { margin-inline: -18px; padding-inline: 18px; margin-bottom: 10px; }
+  .observer-app .vitals { gap: 16px; padding-bottom: 10px; }
+  .observer-app .vitals .meter b { font-size: 22px; }
+  .observer-app .subject-activity { padding-block: 8px; }
+  .observer-app #passport .card-actions { margin-inline: -18px; padding: 8px 18px; }
+  .observer-app #passport .card-actions button { min-height: 44px; }
+  .observer-app .observer-dock { bottom: max(14px, env(safe-area-inset-bottom)); padding: 4px 8px; gap: 0; max-width: calc(100vw - 24px); border-radius: 10px; }
+  .observer-app .observer-dock button { padding: 6px 9px; min-width: 44px; min-height: 44px; font-size: 10px; }
+  .observer-app .observer-dock button[aria-expanded=true]::after { left: 9px; right: 9px; }
+  .observer-app .dock-divider { height: 18px; margin: 0 3px; }
+  .observer-app .footer { display: none; }
+  .observer-app #observer-ui-status:not(:empty) { top: 126px; right: 16px; }
+  .observer-app #event-visit { top: 130px; }
+  .observer-app .replay { top: 16px; max-height: calc(100dvh - 104px); }
+  .observer-app .forest-dialog { padding: 20px; }
+  .observer-app .forest-dialog h2 { font-size: 21px; }
+  .observer-app .event-map-dialog[open] { display: block; }
+  .observer-app .event-map-dialog .forest-map { width: 100%; max-width: 380px; margin: 16px auto; }
+  .observer-app .event-map-dialog .map-events { max-height: none; overflow: visible; padding: 0; }
+  .observer-app .community-stocks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 370px) {
+  .observer-app .bar { padding-inline: 12px; gap: 12px 6px; }
+  .observer-app .species-picker select { width: 136px; }
+  .observer-app .observer-dock { padding-inline: 5px; }
+  .observer-app .observer-dock button { min-width: 42px; padding-inline: 6px; }
+  .observer-app .vitals { gap: 10px; }
+}
+@media (max-height: 500px) and (max-width: 860px) {
+  .observer-app #passport-panel, .observer-app #feed-panel, .observer-app .settings-sheet { left: auto; right: 16px; width: 320px; max-height: calc(100dvh - 165px); }
+}

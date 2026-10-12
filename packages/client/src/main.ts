@@ -34,16 +34,19 @@ import { animalFromHash, initialFollowId } from './animalLink.js';
 import { LazyDialog } from './lazyDialog.js';
 import { renderBaseY } from './space.js';
 import { AmbientAudio } from './ambientAudio.js';
+import { initObserverChrome } from './observerChrome.js';
+import { populationCounter } from './populationCounter.js';
 
 
-/** Where the thought floats: just above the marker over this species' head. */
+/** Keep the activity label clear of this species' head. */
 const bubbleHeight = (animal: AnimalState | undefined): number => {
   const height = animal === undefined ? 1 : visualFor(animal.speciesId).heightM;
   return (height + markerSize(height) * 1.6) * characterScale(animal ?? {});
 };
 
 const canvas = document.querySelector<HTMLCanvasElement>('#view')!;
-const { renderer, scene, camera, sun, setQuality, prepareShadows } = createScene(canvas);
+const { renderer, scene, camera, sun, setQuality, prepareShadows, setObserverCenter } = createScene(canvas);
+const observerChrome = initObserverChrome(setObserverCenter);
 const atmosphere = new Atmosphere(scene, sun);
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const ambientAudio = new AmbientAudio();
@@ -97,6 +100,7 @@ const hud = new Hud({
   clock: document.querySelector('#clock')!,
   season: document.querySelector('#season')!,
   population: document.querySelector('#population')!,
+  renderPopulation: populationCounter(document.querySelector('#population')!),
   passport: document.querySelector('#passport')!,
   feed: document.querySelector('#feed')!,
   notice: document.querySelector('#notice')!,
@@ -237,6 +241,7 @@ async function startReplay(id: string, selectedEventId?: string, kind: 'encounte
   replay = null;
   banner.hidden = false;
   document.body.classList.add('is-replaying');
+  observerChrome.setReplaying(true);
   replayStatus.textContent = 'Loading recorded history…';
   replayWhen.textContent = ''; replayMoment.textContent = '';
   banner.querySelector('.precision')!.textContent = '';
@@ -321,6 +326,7 @@ function stopReplay(): void {
   replay = null;
   banner.hidden = true;
   document.body.classList.remove('is-replaying');
+  observerChrome.setReplaying(false);
   follow.distance = liveCameraDistance;
   canvas.focus();
 }
@@ -333,6 +339,7 @@ let recapRetryAt = 0;
 let followRevision = 0;
 
 function watch(id: string | null): void {
+  if (id !== null) observerChrome.showAnimal();
   eventVisit.clear();
   followedPersonId = null;
   historicCameraOwned = false;

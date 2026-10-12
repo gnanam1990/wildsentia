@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { feedEventSummary, feedSentence, friendlyWorldTime, Hud, type HudElements } from '../src/hud.js';
+import { feedEventSummary, feedSentence, friendlyWorldTime, groupFeedEvents, Hud, type HudElements } from '../src/hud.js';
 import { WorldStore } from '../src/protocol.js';
 
 const elements = (): HudElements => ({
@@ -49,6 +49,93 @@ describe('factual live event feed', () => {
     await new Hud(nodes, new WorldStore()).refreshFeed();
     expect(nodes.feed.innerHTML).toContain('event feed unavailable');
   });
+
+  it('shows an explicit empty state before the first recorded event', async () => {
+    const nodes = elements();
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ events: [] }) })));
+    await new Hud(nodes, new WorldStore()).refreshFeed();
+    expect(nodes.feed.innerHTML).toContain('No recorded events yet');
+  });
+
+  it('leaves an unchanged feed DOM intact and preserves expanded records when other content changes', async () => {
+    const nodes = elements();
+    const key = JSON.stringify(['drink_one']);
+    let html = '', writes = 0;
+    let detail = { dataset: { feedGroup: key }, open: false };
+    Object.defineProperty(nodes.feed, 'innerHTML', {
+      get: () => html,
+      set: (value: string) => {
+        html = value; writes++;
+        detail = { dataset: { feedGroup: key }, open: false }; // A DOM replacement makes fresh, closed details.
+      },
+    });
+    nodes.feed.querySelectorAll = ((selector: string) => selector.endsWith('[open]') && !detail.open ? [] : [detail]) as unknown as HTMLElement['querySelectorAll'];
+    let events: Array<Record<string, unknown>> = [{ id: 'drink_one', type: 'drank', actors: ['elephant_1'], worldTime: 4500 }];
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ events }) })));
+    const hud = new Hud(nodes, new WorldStore());
+    await hud.refreshFeed();
+    const originalDetail = detail;
+    detail.open = true;
+    await hud.refreshFeed();
+    expect(writes).toBe(1);
+    expect(detail).toBe(originalDetail);
+    expect(detail.open).toBe(true);
+
+    // A newer, different entry updates the feed but leaves this event's disclosure expanded.
+    events = [{ id: 'rest_one', type: 'rested', actors: ['boar_1'], worldTime: 4600 }, ...events];
+    await hud.refreshFeed();
+    expect(writes).toBe(2);
+    expect(detail).not.toBe(originalDetail);
+    expect(detail.open).toBe(true);
+    expect(html).toContain('data-feed-group="[&#34;drink_one&#34;]"');
+  });
+
+  it('groups matching sentences in the same world hour while preserving newest group order', () => {
+    const events = [
+      { id: 'latest', type: 'drank', actors: ['elephant_1'], worldTime: 7199 },
+      { id: 'between', type: 'rested', actors: ['sambar_1'], worldTime: 7100 },
+      { id: 'earlier', type: 'drank', actors: ['elephant_2'], worldTime: 7000 },
+      { id: 'previous-hour', type: 'drank', actors: ['elephant_1'], worldTime: 3599 },
+    ];
+    expect(groupFeedEvents(events).map(group => ({ sentence: group.sentence, ids: group.events.map(event => event.id) }))).toEqual([
+      { sentence: 'An elephant drank water', ids: ['latest', 'earlier'] },
+      { sentence: 'A sambar rested', ids: ['between'] },
+      { sentence: 'An elephant drank water', ids: ['previous-hour'] },
+    ]);
+  });
+
+  it('never infers a common hour from missing or invalid event times', () => {
+    expect(groupFeedEvents([undefined, Number.NaN, -1, Number.POSITIVE_INFINITY].map((worldTime, index) => ({
+      id: `event_${index}`, type: 'drank', actors: ['elephant_1'], worldTime,
+    }))).map(group => group.events.length)).toEqual([1, 1, 1, 1]);
+  });
+
+  it('keeps the existing six-event window when grouping repetitive records', () => {
+    const events = Array.from({ length: 12 }, (_, index) => ({
+      id: `event_${index}`, type: 'drank', actors: ['elephant_1'], worldTime: 7200 - index,
+    }));
+    const groups = groupFeedEvents(events);
+    expect(groups.flatMap(group => group.events.map(event => event.id))).toEqual(events.slice(0, 6).map(event => event.id));
+    expect(events).toHaveLength(12);
+  });
+
+  it('counts records rather than animals and discloses every grouped original record', async () => {
+    const nodes = elements();
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ events: [
+      { id: 'drink_<first>', type: 'drank', actors: ['elephant_same'], worldTime: 4500, outcome: 'success' },
+      { id: 'drink_<second>', type: 'drank', actors: ['elephant_same'], worldTime: 4000, outcome: 'success' },
+    ] }) })));
+    await new Hud(nodes, new WorldStore()).refreshFeed();
+    expect(nodes.feed.innerHTML.match(/class="event feed-entry"/g)).toHaveLength(1);
+    expect(nodes.feed.innerHTML).toContain('2 recorded events');
+    expect(nodes.feed.innerHTML).not.toContain('2 elephants');
+    expect(nodes.feed.innerHTML).toContain('<summary>Record IDs</summary>');
+    expect(nodes.feed.innerHTML).toContain('drink_&#60;first&#62;');
+    expect(nodes.feed.innerHTML).toContain('drink_&#60;second&#62;');
+    expect(nodes.feed.innerHTML).toContain('day 1, 01:15');
+    expect(nodes.feed.innerHTML).toContain('day 1, 01:06');
+  });
+
   it('tells visitors what happened in plain words', () => {
     expect(feedSentence({ type: 'scavenged', actors: ['vulture_0721', 'sambar_0339'], outcome: 'success' })).toBe('A vulture fed on a sambar carcass');
     expect(feedSentence({ type: 'hunt', actors: ['dhole_01', 'hare_02'], outcome: 'success' })).toBe('A dhole caught a hare');

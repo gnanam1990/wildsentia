@@ -7,7 +7,7 @@ import type { AnimalState } from './protocol.js';
 import { chooseVisible } from './lod.js';
 import { RENDER_BUDGETS, type RenderTier } from './renderQuality.js';
 import { visualFor, visualForAnimal } from './species.js';
-import { characterScale, coatMultiplier, markerSize } from './appearance.js';
+import { characterScale, coatMultiplier } from './appearance.js';
 import { separateBodies, type Body, type Obstacle, type ObstacleField } from './obstacles.js';
 import type { LivePose } from './liveEncounters.js';
 import { AnimalDots } from './animalDots.js';
@@ -39,7 +39,6 @@ interface Rig {
   actions: Map<string, THREE.AnimationAction>;
   clipNames: string[];
   playing: string | null;
-  marker: THREE.Sprite;
   visual: THREE.Object3D;
   footY: number;
   restRotationZ: number;
@@ -50,18 +49,6 @@ interface Rig {
 
 function variantKey(animal: AnimalState): string {
   return `${animal.speciesId}|${visualForAnimal(animal).model?.file ?? 'stand-in'}`;
-}
-
-function markerTexture(): THREE.Texture {
-  const canvas = document.createElement('canvas');
-  canvas.width = 64; canvas.height = 64;
-  const ctx = canvas.getContext('2d')!;
-  ctx.fillStyle = 'rgba(200,235,140,0.95)';
-  ctx.beginPath(); ctx.arc(32, 32, 10, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = 'rgba(20,40,25,0.7)'; ctx.lineWidth = 3; ctx.stroke();
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
 }
 
 /**
@@ -86,7 +73,6 @@ export class AnimalLayer {
   /** Ids whose model is being loaded. Without this, sync() would start a fresh load every frame. */
   readonly #pending = new Set<string>();
   readonly #ready = new Map<string, { animal: AnimalState; template: THREE.Group; variantKey: string }>();
-  readonly #markerTexture: THREE.Texture;
   #wanted = new Set<string>();
   #wantedVariants = new Map<string, string>();
 
@@ -111,8 +97,7 @@ export class AnimalLayer {
     return object === this.#dots;
   }
 
-  constructor(marker: THREE.Texture = markerTexture()) {
-    this.#markerTexture = marker;
+  constructor() {
     this.#dotLayer = new AnimalDots(AnimalLayer.MAX_DOTS); this.#dots = this.#dotLayer.mesh;
     this.root.add(this.#dots);
   }
@@ -243,18 +228,7 @@ export class AnimalLayer {
       for (const clip of clips) actions.set(clip.name, mixer.clipAction(clip));
     }
 
-    const marker = new THREE.Sprite(
-      new THREE.SpriteMaterial({ map: this.#markerTexture, depthTest: false, transparent: true }),
-    );
-    // Sized and placed for the animal: a fixed 3 m marker hid a dhole entirely.
-    const height = visualFor(animal.speciesId).heightM;
-    const size = markerSize(height);
-    marker.scale.set(size, size, 1);
-    marker.position.y = height + size * 0.9;
-    marker.visible = false;
-    group.add(marker);
-
-    const rig: Rig = { variantKey: key, group, mixer, actions, clipNames: clips.map((c) => c.name), playing: null, marker,
+    const rig: Rig = { variantKey: key, group, mixer, actions, clipNames: clips.map((c) => c.name), playing: null,
       visual, footY: visual.position.y, restRotationZ: visual.rotation.z,
       needsCorpseGrounding: false, appearanceKey: '', materials };
     this.#pending.delete(animal.id);
@@ -322,7 +296,6 @@ export class AnimalLayer {
           ? 'resting' : renderStateFor(animal.state, position.moving);
         this.#animate(rig, state, phase, elevated && position.moving && phase === null);
       }
-      rig.marker.visible = id === followedId || id === partner;
     }
 
     // Keep pending actors selectable as dots until their placed model is actually available.
@@ -365,7 +338,6 @@ export class AnimalLayer {
       const state = arboreal(animal.speciesId) && (position.altitudeM ?? 0) > 0
         && !position.moving && animal.state === 'travelling' ? 'resting' : renderStateFor(animal.state, position.moving);
       this.#poseAt(rig, state, seconds, null, unknownClimb);
-      rig.marker.visible = true;
     }
   }
 
@@ -488,7 +460,6 @@ export class AnimalLayer {
     rig.mixer?.stopAllAction();
     rig.mixer?.uncacheRoot(rig.visual);
     for (const { material } of rig.materials) material.dispose();
-    rig.marker.material.dispose();
     rig.visual.traverse((o) => {
       if ((o as THREE.SkinnedMesh).isSkinnedMesh) (o as THREE.SkinnedMesh).skeleton.dispose();
     });

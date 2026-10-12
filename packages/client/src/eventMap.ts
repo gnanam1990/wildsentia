@@ -45,18 +45,20 @@ export class EventMap {
   constructor(private readonly go: (event: MapMarker) => void,
     private readonly watch: (id: string) => void, private readonly replay: (id: string, eventId: string) => void,
     private readonly watchPerson: (id: string) => void, private readonly readPersonHistory: (id: string) => void) {
-    this.#dialog.className = 'forest-dialog'; this.#dialog.setAttribute('aria-labelledby', 'map-title');
+    this.#dialog.className = 'forest-dialog event-map-dialog'; this.#dialog.setAttribute('aria-labelledby', 'map-title');
+    const header = document.createElement('div'); header.className = 'dialog-header';
     const title = document.createElement('h2'); title.id = 'map-title'; title.textContent = 'Forest event map';
-    const close = document.createElement('button'); close.textContent = 'Close map'; close.onclick = () => this.#dialog.close();
-    this.#status.setAttribute('role', 'status');
-    const label = document.createElement('label'); label.textContent = 'Show events ';
+    const close = document.createElement('button'); close.type = 'button'; close.textContent = 'Close map'; close.onclick = () => this.#dialog.close();
+    header.append(title, close);
+    this.#status.className = 'dialog-status'; this.#status.setAttribute('role', 'status');
+    const label = document.createElement('label'); label.className = 'map-filter'; label.textContent = 'Show events ';
     for (const [value, text] of [['all', 'All events'], ['hunt', 'Animal hunts / attacks'], ['human_hunt', 'Human hunts'], ['born', 'Animal births'], ['human_born', 'Human births'], ['died', 'Animal deaths'], ['human_died', 'Human deaths']])
       this.#filter.add(new Option(text, value));
     label.append(this.#filter); this.#filter.onchange = () => this.#render();
     this.#map.className = 'forest-map'; this.#map.setAttribute('aria-label', 'Event locations; equivalent actions in the list below');
     this.#list.className = 'map-events';
-    const note = document.createElement('p'); note.textContent = 'Recent recorded events, not live alerts. Visit location moves your camera and marks where the event was recorded; it is not proof that an animal or remains are still there. Follow animal and Watch person use the current saved subject when available. Human birth/death rows can open that person’s retained history. Rewards are never marked on this map.';
-    this.#dialog.append(title, close, label, this.#status, this.#map, note, this.#list); document.body.append(this.#dialog);
+    const note = document.createElement('p'); note.className = 'dialog-note'; note.textContent = 'Recent recorded events, not live alerts. Visit location moves your camera and marks where the event was recorded; it is not proof that an animal or remains are still there. Follow animal and Watch person use the current saved subject when available. Human birth/death rows can open that person’s retained history. Rewards are never marked on this map.';
+    this.#dialog.append(header, label, this.#status, this.#map, note, this.#list); document.body.append(this.#dialog);
     setInterval(() => { if (this.#dialog.open && !document.hidden) void this.refresh(); }, 10_000);
   }
   setPatches(patches: PatchView[]): void { this.#patches = patches; if (this.#dialog.open) this.#render(); }
@@ -100,10 +102,24 @@ export class EventMap {
       button.onclick = () => { this.#dialog.close(); this.go(m); };
       this.#map.append(button);
       const row = document.createElement('section'); row.className = 'map-event';
-      const heading = document.createElement('h3'); heading.textContent = `${m.label} · ${m.actorId ?? 'unknown'}`;
-      const details = document.createElement('p'); details.textContent = `${Math.max(0, (this.#worldTime - m.worldTime) / 3600).toFixed(1)} world hours ago · ${m.outcome}${m.type === 'human_hunt' ? ` · hunter ${m.actors[0] ?? 'unknown'}` : m.type === 'human_born' ? ` · child ${m.actors[0] ?? 'unknown'} · parents ${m.actors[1] ?? 'unknown'} and ${m.actors[2] ?? 'unknown'}` : ''} · ${m.precision === 'patch' ? 'patch-level location' : 'recorded location'} · ${m.id}`;
-      const visit = document.createElement('button'); visit.textContent = 'Visit event location'; visit.onclick = button.onclick;
-      row.append(heading, details, visit);
+      const heading = document.createElement('h3'); heading.textContent = m.label;
+      const actor = document.createElement('p'); actor.className = 'map-event-subject';
+      const actorLabel = document.createElement('span'); actorLabel.textContent = 'Subject: ';
+      const actorId = document.createElement('code'); actorId.textContent = m.actorId ?? 'unknown'; actor.append(actorLabel, actorId);
+      const details = document.createElement('p'); details.className = 'map-event-meta';
+      details.textContent = `${Math.max(0, (this.#worldTime - m.worldTime) / 3600).toFixed(1)} world hours ago · ${m.outcome.replaceAll('_', ' ')} · ${m.precision === 'patch' ? 'patch-level location' : 'recorded location'}`;
+      const record = document.createElement('p'); record.className = 'map-event-record';
+      const recordLabel = document.createElement('span'); recordLabel.textContent = 'Record: ';
+      const recordId = document.createElement('code'); recordId.textContent = m.id; record.append(recordLabel, recordId);
+      row.append(heading, actor, details);
+      if (m.type === 'human_hunt' || m.type === 'human_born') {
+        const participants = document.createElement('p'); participants.className = 'map-event-participants';
+        participants.textContent = m.type === 'human_hunt' ? `Hunter ${m.actors[0] ?? 'unknown'}`
+          : `Child ${m.actors[0] ?? 'unknown'} · parents ${m.actors[1] ?? 'unknown'} and ${m.actors[2] ?? 'unknown'}`;
+        row.append(participants);
+      }
+      const visit = document.createElement('button'); visit.type = 'button'; visit.textContent = 'Visit event location'; visit.onclick = button.onclick;
+      row.append(record, visit);
       const subject = mapMarkerSubject(m);
       if (subject) {
         const follow = document.createElement('button'); follow.textContent = subject.kind === 'person' ? 'Watch person' : 'Follow animal / remains';

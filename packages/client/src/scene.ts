@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { RENDER_BUDGETS, renderPixelRatio, ShadowCadence, type RenderTier } from './renderQuality.js';
+import { applyObserverFraming } from './sceneFraming.js';
 
 export interface SceneBundle {
   renderer: THREE.WebGLRenderer;
@@ -7,6 +8,8 @@ export interface SceneBundle {
   camera: THREE.PerspectiveCamera;
   sun: THREE.DirectionalLight;
   resize(): void;
+  /** CSS-pixel row for the camera target; null restores the full-screen center. */
+  setObserverCenter(centerY: number | null): void;
   setQuality(tier: RenderTier): void;
   prepareShadows(now: number): void;
 }
@@ -27,6 +30,8 @@ export function createScene(canvas: HTMLCanvasElement): SceneBundle {
   scene.fog = new THREE.Fog(0x9fb8c4, 200, 2600);
 
   const camera = new THREE.PerspectiveCamera(50, 1, 0.3, 12_000);
+  // Preserve proportional framing during resize until the chrome reports its new bounds.
+  let observerCenterRatio: number | null = null;
 
   scene.add(new THREE.HemisphereLight(0xcfe3ef, 0x3f4a33, 1.1));
 
@@ -47,13 +52,20 @@ export function createScene(canvas: HTMLCanvasElement): SceneBundle {
   const resize = (): void => {
     const w = canvas.clientWidth || innerWidth;
     const h = canvas.clientHeight || innerHeight;
-    camera.aspect = w / h;
-    camera.updateProjectionMatrix();
+    applyObserverFraming(camera, w, h, observerCenterRatio === null ? null : observerCenterRatio * h);
     renderer.setPixelRatio(renderPixelRatio(quality, w, h, devicePixelRatio));
     renderer.setSize(w, h, false);
   };
   resize();
   addEventListener('resize', resize);
+
+  const setObserverCenter = (centerY: number | null): void => {
+    const w = canvas.clientWidth || innerWidth;
+    const h = canvas.clientHeight || innerHeight;
+    observerCenterRatio = centerY !== null && Number.isFinite(centerY) && h > 0
+      ? Math.max(0, Math.min(1, centerY / h)) : null;
+    applyObserverFraming(camera, w, h, observerCenterRatio === null ? null : observerCenterRatio * h);
+  };
 
   const setQuality = (tier: RenderTier): void => {
     quality = tier;
@@ -71,5 +83,5 @@ export function createScene(canvas: HTMLCanvasElement): SceneBundle {
       renderer.shadowMap.needsUpdate = true;
     }
   };
-  return { renderer, scene, camera, sun, resize, setQuality, prepareShadows };
+  return { renderer, scene, camera, sun, resize, setObserverCenter, setQuality, prepareShadows };
 }

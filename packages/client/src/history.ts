@@ -83,9 +83,15 @@ export function createHistoryDialog(replay?: (id: string, eventId: string, kind:
 } = {}): (id: string) => void {
   const dialog = document.createElement('dialog'); dialog.className = 'forest-dialog history-dialog';
   dialog.setAttribute('aria-labelledby', options.titleId ?? 'history-title');
+  const header = document.createElement('div'); header.className = 'dialog-header';
   const title = document.createElement('h2'); title.id = options.titleId ?? 'history-title';
-  const status = document.createElement('p'); status.setAttribute('role', 'status'); status.setAttribute('aria-atomic', 'true');
+  header.append(title);
+  const subject = document.createElement('p'); subject.className = 'history-subject';
+  const subjectLabel = document.createElement('span'); subjectLabel.textContent = 'Subject: ';
+  const subjectId = document.createElement('code'); subject.append(subjectLabel, subjectId);
+  const status = document.createElement('p'); status.className = 'dialog-status'; status.setAttribute('role', 'status'); status.setAttribute('aria-atomic', 'true');
   const note = document.createElement('p'), list = document.createElement('ol');
+  note.className = 'dialog-note'; list.className = 'history-events';
   list.setAttribute('aria-label', 'Retained events, newest first');
   const controls = document.createElement('div'); controls.className = 'history-controls';
   const button = (text: string, action: () => void) => {
@@ -93,7 +99,7 @@ export function createHistoryDialog(replay?: (id: string, eventId: string, kind:
   };
   let pageRendered: HistoryPage | null = null;
   const pager = new HistoryPager(() => {
-    title.textContent = `${options.title ?? 'Retained history'} · ${pager.id}`;
+    title.textContent = options.title ?? 'Retained history'; subjectId.textContent = pager.id;
     list.setAttribute('aria-busy', String(pager.loading));
     status.textContent = pager.loading ? `Loading history page…` : pager.error ||
       `Page ${pager.pageNumber} · newest first · saved world second ${pager.page?.asOfWorldTime ?? 0}${pager.page?.nextCursor ? '' : ' · end of retained history'}`;
@@ -105,8 +111,21 @@ export function createHistoryDialog(replay?: (id: string, eventId: string, kind:
       pageRendered = pager.page;
       list.start = Math.max(1, (pager.pageNumber - 1) * 25 + 1);
       list.replaceChildren(...(pager.page?.events ?? []).map(e => {
-        const item = document.createElement('li');
-        item.textContent = options.eventText ? options.eventText(e) : `World second ${e.worldTime} · ${e.type} · ${e.outcome} · ${e.id}`;
+        const item = document.createElement('li'); item.className = 'history-event';
+        const heading = document.createElement('h3'); heading.textContent = e.type.replaceAll('_', ' ').replace(/^./, c => c.toUpperCase());
+        const metadata = document.createElement('p'); metadata.className = 'history-event-meta';
+        const time = document.createElement('span'); time.textContent = `World second ${e.worldTime}`;
+        const outcome = document.createElement('span'); outcome.textContent = ` · ${e.outcome.replaceAll('_', ' ')}`;
+        metadata.append(time, outcome);
+        const record = document.createElement('p'); record.className = 'history-event-record';
+        const recordLabel = document.createElement('span'); recordLabel.textContent = 'Record: ';
+        const recordId = document.createElement('code'); recordId.textContent = e.id; record.append(recordLabel, recordId);
+        item.append(heading, metadata);
+        if (options.eventText) {
+          const description = document.createElement('p'); description.className = 'history-event-summary';
+          description.textContent = options.eventText(e); item.append(description);
+        }
+        item.append(record);
         if ((e.hasEncounter ?? !!e.encounter) && replay) {
           const open = document.createElement('button'); open.type = 'button'; open.textContent = 'Replay this recorded encounter';
           open.onclick = () => { const id = pager.id; dialog.close(); replay(id, e.id, 'encounter'); }; item.append(open);
@@ -130,6 +149,6 @@ export function createHistoryDialog(replay?: (id: string, eventId: string, kind:
     const opener = [...document.querySelectorAll<HTMLButtonElement>('[data-history]')].find(b => b.dataset.history === pager.id);
     (opener ?? document.querySelector<HTMLElement>('#view'))?.focus();
   });
-  dialog.append(title, status, controls, note, list); document.body.append(dialog);
+  dialog.append(header, subject, status, controls, note, list); document.body.append(dialog);
   return id => { if (!dialog.open) dialog.showModal(); close.focus(); void pager.open(id); };
 }

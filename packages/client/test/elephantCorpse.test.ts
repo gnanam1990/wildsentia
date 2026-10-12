@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { Box3, Texture, Vector3 } from 'three';
+import { Box3, Vector3 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { describe, expect, it, vi } from 'vitest';
 import { AnimalLayer } from '../src/animals.js';
@@ -31,7 +31,7 @@ describe('shipped Asian elephant corpse placement', () => {
     });
     try {
       for (const [variant, file] of Object.entries(files)) {
-        const layer = new AnimalLayer(new Texture()); layer.groundHeightAt = () => 6;
+        const layer = new AnimalLayer(); layer.groundHeightAt = () => 6;
         const animal = { id: `elephant-${variant}`, speciesId: 'elephant', patchId: 0,
           sex: variant === 'male' ? 'male' as const : 'female' as const,
           lifeStage: variant === 'calf' ? 'juvenile' as const : 'adult' as const,
