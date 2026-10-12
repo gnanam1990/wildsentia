@@ -372,7 +372,7 @@ export function runSoak({ seed, days, speciesDir, terrainProfile = 'mainland', c
       failures.push(`day ${day}: invalid community state`);
     onProgress?.({ completedDays, requestedDays: days,
       livingAnimals: world.agents.reduce((n, agent) => n + Number(agent.alive), 0), failures: failures.length });
-    if (day % 10 !== 0) continue;
+    if (day % 10 !== 0 && completedDays !== days) continue;
 
     for (const p of world.patches) {
       if (!Number.isFinite(p.waterVolume) || p.waterVolume < 0) failures.push(`day ${day}: patch ${p.id} invalid surface water`);

@@ -42,6 +42,11 @@ export class ChainOps {
     if (this.#busy) return;
     this.#busy = true;
     try {
+      for (const op of await this.store.terminalOpsToReconcile()) {
+        try {
+          if (!await this.#alreadyDone(op) && op.status === 'failed') await this.store.finishOp(op.id, 'failed', op.lastError ?? 'failed');
+        } catch (error) { console.error(`[challenges] reconcile ${op.id} failed`, (error as Error).message); }
+      }
       for (const op of await this.store.activeOps()) {
         try { await this.#step(op); }
         catch (error) { console.error(`[challenges] ${op.kind} ${op.id} step failed`, (error as Error).message); }
@@ -111,14 +116,12 @@ export class ChainOps {
     }
     const onChain = await this.chain.status(op.challengeId!);
     if (onChain.status === 'resolved') {
-      await this.store.setStatus(op.challengeId!, ['open', 'unrecognised', 'unpaid', 'refunding', 'won'], 'paid');
-      await this.store.markOpConfirmed(op.id);
+      await this.store.finishOp(op.id, 'confirmed', undefined, { status: 'paid' });
       return true;
     }
     if (onChain.status === 'refunded') {
-      await this.store.setStatus(op.challengeId!, ['open', 'unrecognised', 'unpaid', 'refunding', 'won'], 'refunded');
-      if (op.kind === 'refund') await this.store.markOpConfirmed(op.id);
-      else await this.store.markOpFailed(op.id, 'already_refunded');
+      await this.store.finishOp(op.id, op.kind === 'refund' ? 'confirmed' : 'failed',
+        op.kind === 'refund' ? undefined : 'already_refunded', { status: 'refunded' });
       return true;
     }
     return false;
@@ -155,9 +158,9 @@ export class ChainOps {
   async #checkSent(op: ChainOp): Promise<void> {
     const outcome = await this.chain.receipt(op.txHash!);
     if (outcome === 'success') {
-      await this.store.markOpConfirmed(op.id);
-      if (op.kind === 'resolve') await this.store.setStatus(op.challengeId!, ['won'], 'paid', op.txHash!);
-      if (op.kind === 'refund') await this.store.setStatus(op.challengeId!, ['open', 'unrecognised', 'unpaid', 'refunding'], 'refunded', op.txHash!);
+      await this.store.finishOp(op.id, 'confirmed', undefined,
+        op.kind === 'resolve' ? { status: 'paid', txHash: op.txHash! }
+          : op.kind === 'refund' ? { status: 'refunded', txHash: op.txHash! } : undefined);
       return;
     }
     if (outcome === 'reverted') {
@@ -184,9 +187,8 @@ export class ChainOps {
   }
 
   async #fail(op: ChainOp, reason: string): Promise<void> {
-    await this.store.markOpFailed(op.id, reason);
-    // A winner who cannot be paid (a blocklisted address, a window that closed): the prize refunds.
-    if (op.kind === 'resolve') await this.store.setStatus(op.challengeId!, ['won'], 'unpaid');
+    // A winner who cannot be paid becomes refundable in the same transaction as the failed op.
+    await this.store.finishOp(op.id, 'failed', reason);
     console.error(`[challenges] ${op.kind} ${op.id} failed: ${reason}`);
   }
 }

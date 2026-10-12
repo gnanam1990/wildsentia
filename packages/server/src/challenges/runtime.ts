@@ -124,6 +124,8 @@ export function challengesRuntime(config: ChallengesConfig,
     }, ms));
   };
   const social = new ChallengeSocialStore(deps.pool, catalog, config.siteUrl ?? null, chain.evaluator);
+  const ticked = deps.live.onTick;
+  const observeGoals = () => { ticked?.(); engine.observeGoals(); };
   let stopped = false;
   const begin = async (): Promise<void> => {
     // Fail closed: the key must be the evaluator the contract appoints, or new prizes could never be paid.
@@ -148,6 +150,7 @@ export function challengesRuntime(config: ChallengesConfig,
     // Hooks join the live runtime's own (the leaderboard keeps its onEnded).
     const ended = deps.live.onEnded;
     deps.live.onEnded = (life) => { ended?.(life); engine.onEnded(life); };
+    deps.live.onTick = observeGoals;
     deps.live.onHunt = (hunt) => engine.onHunt(hunt);
     deps.live.onCommand = (record) => engine.onCommand(record);
     deps.live.holdFreed = (speciesId, since) => engine.holdsFreed(speciesId, since);
@@ -182,6 +185,6 @@ export function challengesRuntime(config: ChallengesConfig,
       }, options.retryMs ?? 30_000);
       timers.push(retry);
     },
-    stop() { stopped = true; for (const t of timers) clearInterval(t); },
+    stop() { stopped = true; for (const t of timers) clearInterval(t); if (deps.live.onTick === observeGoals) deps.live.onTick = ticked; },
   };
 }

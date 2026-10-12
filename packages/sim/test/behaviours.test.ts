@@ -49,6 +49,41 @@ function scenario(
   };
 }
 
+describe('hunting after travel', () => {
+  const approach = (hours = 1) => {
+    const s = scenario('tiger', 'hunt', { drives: { hunger: 0.7, fatigue: 0, thirst: 0.1 }, others: [makeAgent('sambar', { id: 'quarry' })] });
+    for (const p of s.patches) p.habitat = 'grassland';
+    const prey = s.others[0]!;
+    prey.patchId = s.patches[s.agent.patchId]!.neighbours[0]!;
+    prey.position = { ...patchCentre(prey.patchId), heading: 0 };
+    s.ctx.percept = perceive(s.agent, s.ctx.species, s.ctx.view);
+    s.ctx.hours = hours;
+    executeGoal(s.ctx);
+    return s;
+  };
+  it('continues after arriving at neighbouring prey, within the same original hour', () => {
+    const s = approach();
+    const move = s.log.all().find(e => e.movement?.goal === 'hunt')!;
+    expect(move.movement!.completed).toBe(true);
+    const hunt = s.log.all().find(e => e.type === 'hunt')!;
+    expect(hunt).toBeDefined();
+    expect(hunt.causalParents).toContain(move.id);
+    expect(hunt.encounter!.startWorldTime).toBeGreaterThanOrEqual(s.ctx.worldTime + move.effects.durationSeconds! - 1e-6);
+    expect(hunt.encounter!.startWorldTime + hunt.encounter!.samples.at(-1)!.seconds).toBeLessThanOrEqual(s.ctx.worldTime + 3600 + 1e-6);
+    if (hunt.encounter!.samples.some(sample => sample.phase === 'chase' || sample.phase === 'escape'))
+      expect(s.others[0]!.lastEncounterAt).toBe(s.ctx.worldTime);
+  });
+  it('does not get another hour when travel uses the entire available budget', () => {
+    const full = approach();
+    const seconds = full.log.all().find(e => e.movement?.goal === 'hunt')!.effects.durationSeconds!;
+    const exact = approach(seconds / 3600);
+    expect(exact.log.all().some(e => e.type === 'hunt')).toBe(false);
+    const partial = approach(1 / 3600);
+    expect(partial.log.all().some(e => e.type === 'hunt')).toBe(false);
+    expect(partial.log.all().some(e => e.movement?.completed)).toBe(false);
+  });
+});
+
 describe('grazing and drinking', () => {
   it('preserves a partial wander until arrival and abandons it when a higher need wins', () => {
     const s = scenario('sambar', 'wander');
@@ -198,15 +233,21 @@ describe('hunting', () => {
     throw new Error('no successful hunt fixture');
   });
   it('keeps a visible approach target rather than changing prey on every travel tick', () => {
-    const s = scenario('dhole', 'hunt', { others: [makeAgent('chital', { id: 'c1' }), makeAgent('chital', { id: 'c2' })] });
-    const destination = s.percept.patch.neighbours[0]!;
-    s.others[1]!.patchId = destination;
-    s.percept.prey = s.others.map((agent) => ({ agent, patchId: agent.patchId, herdSize: 1 }));
-    s.agent.targetId = 'c2';
-    executeGoal(s.ctx);
-    expect(s.agent.targetId).toBe('c2');
-    expect(s.agent.patchId).toBe(destination);
-    expect(s.log.all().some((e) => e.type === 'hunt')).toBe(false);
+    const run = (hours: number) => {
+      const s = scenario('dhole', 'hunt', { others: [makeAgent('chital', { id: 'c1' }), makeAgent('chital', { id: 'c2' })] });
+      const destination = s.percept.patch.neighbours[0]!;
+      s.others[1]!.patchId = destination;
+      s.others[1]!.position = { ...patchCentre(destination), heading: 0 };
+      s.percept.prey = s.others.map((agent) => ({ agent, patchId: agent.patchId, herdSize: 1 }));
+      s.agent.targetId = 'c2'; s.ctx.hours = hours;
+      executeGoal(s.ctx);
+      return { s, destination };
+    };
+    const partial = run(1 / 3600);
+    expect(partial.s.agent.targetId).toBe('c2');
+    expect(partial.s.log.all().some(e => e.type === 'hunt')).toBe(false);
+    const full = run(1);
+    expect(full.s.log.all().find(e => e.type === 'hunt')!.actors[1]).toBe('c2');
   });
 
   it('leaves to search after an edge escape instead of retrying the same trapped encounter next hour', () => {

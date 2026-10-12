@@ -384,6 +384,18 @@ export class World {
     });
   }
 
+  /** A rendezvous must advertise the same available members that can actually join the hunt. */
+  #packAvailable(mate: Agent | undefined, hunter: Agent, cfg: SpeciesConfig): mate is Agent {
+    if (!mate?.alive || mate.id === hunter.id || mate.speciesId !== hunter.speciesId || mate.controller
+      || this.#packHunted.has(mate.id) || mate.lastEncounterAt === this.#time || (mate.altitudeM ?? 0) > 0
+      || mate.packFood || mate.drives.fear >= 0.5 || mate.drives.thirst >= 0.65 || needsProvisioning(mate, cfg)
+      || this.#keepsDen(mate, cfg) || this.#stepProcessed.has(mate.id) && mate.currentGoal !== 'rest') return false;
+    return !mate.offspringIds.some(childId => {
+      const child = this.#agentsById.get(childId);
+      return child?.alive === true && child.dependentOn === mate.id && !canFollowParent(child, cfg);
+    });
+  }
+
   /** sim_0.37.0: where the nearest packmate that could hunt with this hunter stands (read-only). */
   #packRendezvous(hunter: Agent, cfg: SpeciesConfig): number | null {
     const group = hunter.groupId == null ? undefined : this.#groups.get(hunter.groupId);
@@ -392,8 +404,7 @@ export class World {
     let best: Agent | null = null, bestM = Infinity;
     for (const id of group.memberIds) {
       const mate = this.#agentsById.get(id);
-      if (!mate?.alive || mate.id === hunter.id || mate.speciesId !== hunter.speciesId || mate.controller
-        || !canHuntIndependently(mate, cfg) || this.#keepsDen(mate, cfg)) continue;
+      if (!this.#packAvailable(mate, hunter, cfg) || !canHuntIndependently(mate, cfg)) continue;
       const there = locateAgent(mate), m = Math.hypot(there.x - at.x, there.z - at.z);
       if (m < bestM || m === bestM && best !== null && mate.id < best.id) { best = mate; bestM = m; }
     }
@@ -408,19 +419,10 @@ export class World {
     const at = locateAgent(hunter), found: Array<{ mate: Agent; follower: boolean }> = [];
     for (const id of [...group.memberIds].sort()) {
       const mate = this.#agentsById.get(id);
-      if (!mate?.alive || mate.id === hunter.id || mate.speciesId !== hunter.speciesId || mate.controller
-        || this.#packHunted.has(mate.id) || mate.lastEncounterAt === this.#time || (mate.altitudeM ?? 0) > 0
-        || mate.packFood || mate.drives.fear >= 0.5 || mate.drives.thirst >= 0.65 || needsProvisioning(mate, cfg)
-        // sim_0.38.0: one that already decided this hour joins only if it rested. A wanderer
-        // had walked its hour away, then ran to the kill in the same hour as well.
-        || this.#stepProcessed.has(mate.id) && mate.currentGoal !== 'rest') continue;
+      if (!this.#packAvailable(mate, hunter, cfg)) continue;
       // Weaned young that can keep up follow the hunt and feed at the kill; only adults hunt.
       const follower = !canHuntIndependently(mate, cfg);
       if (follower && !canFollowParent(mate, cfg)) continue;
-      if (mate.offspringIds.some(childId => {
-        const child = this.#agentsById.get(childId);
-        return child?.alive === true && child.dependentOn === mate.id && !canFollowParent(child, cfg);
-      })) continue;
       const there = locateAgent(mate);
       if (Math.hypot(there.x - at.x, there.z - at.z) > radius) continue;
       found.push({ mate, follower });
@@ -1211,8 +1213,35 @@ export class World {
       else list.push(agent);
     }
 
-    let previous: Agent | null = null, logMark = this.log.size();
+    // A pack decides together before its sated members range away. Reorder only slots within
+    // each pack; other species keep their turn. Joiners consume the same #packHunted budget,
+    // so no animal wanders and then takes a second journey to a kill in this hour.
+    const packOrder = new Map<string, Agent[]>();
     for (const agent of this.agents) {
+      const cfg = this.species.get(agent.speciesId)!;
+      if (agent.groupId && cfg.hunting?.packHuntRadiusM !== undefined) {
+        const members = packOrder.get(agent.groupId) ?? [];
+        members.push(agent); packOrder.set(agent.groupId, members);
+      }
+    }
+    const priority = (a: Agent): number => {
+      const cfg = this.species.get(a.speciesId)!;
+      return !a.controller && canHuntIndependently(a, cfg) && !this.#keepsDen(a, cfg)
+        && !a.packFood && a.drives.thirst < 0.65 && a.drives.fear < 0.5 ? a.drives.hunger : -1;
+    };
+    for (const members of packOrder.values()) {
+      const leader = members.findIndex(a => priority(a) >= (this.species.get(a.speciesId)!.hunting!.huntFromHunger ?? 0));
+      if (leader > 0) members.unshift(...members.splice(leader, 1));
+    }
+    const packIndex = new Map<string, number>();
+    let previous: Agent | null = null, logMark = this.log.size();
+    for (let turn = 0; turn < this.agents.length; turn++) {
+      const original = this.agents[turn]!;
+      const members = original.groupId ? packOrder.get(original.groupId) : undefined;
+      const index = packIndex.get(original.groupId ?? '') ?? 0;
+      // Births append to the live array during the step and retain their original same-hour turn.
+      const agent = members?.[index] ?? original;
+      if (members) packIndex.set(original.groupId!, index + 1);
       // The previous animal's turn may have moved it, its prey, its young or its packmates.
       this.#refileTurn(previous, logMark);
       previous = agent; logMark = this.log.size();

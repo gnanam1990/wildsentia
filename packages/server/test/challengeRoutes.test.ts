@@ -257,6 +257,37 @@ maybe('creator drafts', () => {
     expect(relay.json()).toEqual({ error: 'daily_limit' });
   });
 
+  it('reserves only three concurrent signed relays, and frees a failed reservation', async () => {
+    const { draftTypedData, relayDraft } = await import('../src/challenges/drafts.js');
+    const wallet = privateKeyToAccount(generatePrivateKey());
+    who!.wallet = wallet.address;
+    const ids: string[] = [];
+    for (let i = 0; i < 4; i++) ids.push((await draft()).json().draftId);
+    const saved = await Promise.all(ids.map(id => store.draft(id)));
+    const signatures = await Promise.all(saved.map(d => wallet.signTypedData(draftTypedData(drafts, d!))));
+    // All four cheap preflight reads see zero; the transaction must enforce the actual cap.
+    const count = store.sentDraftsToday.bind(store);
+    let arrived = 0;
+    let release!: () => void;
+    const allRead = new Promise<void>(resolve => { release = resolve; });
+    store.sentDraftsToday = async (...args) => {
+      const n = await count(...args);
+      if (++arrived === 4) release();
+      await allRead;
+      return n;
+    };
+    const results = await Promise.all(ids.map((id, i) => relayDraft(store, drafts, id, signatures[i], Date.now(), 3)));
+    store.sentDraftsToday = count;
+    expect(results.filter(result => result.ok)).toHaveLength(3);
+    expect(results.filter(result => !result.ok)).toEqual([{ ok: false, status: 429, error: 'daily_limit' }]);
+    expect(await store.sentDraftsToday(who!.accountId, '00000000-0000-0000-0000-000000000000')).toBe(3);
+    const first = (await store.activeOps())[0]!;
+    await store.finishOp(first.id, 'failed', 'fixture_revert');
+    const refused = results.findIndex(result => !result.ok);
+    expect(await relayDraft(store, drafts, ids[refused]!, signatures[refused], Date.now(), 3)).toEqual({ ok: true });
+    expect(await store.sentDraftsToday(who!.accountId, '00000000-0000-0000-0000-000000000000')).toBe(3);
+  });
+
   it('refuses cross-site drafts, and still lets the operator draft with the token', async () => {
     expect((await draft({ origin: 'https://evil.test' })).statusCode).toBe(403);
     expect((await draft({ 'sec-fetch-site': 'cross-site' })).statusCode).toBe(403);
@@ -366,6 +397,7 @@ maybe('challenges runtime', () => {
       appointedEvaluator: async () => { if (!reachable) throw new Error('fetch failed'); return '0x' + 'e'.repeat(40); },
       prizeLimits: async () => ({ min: 2_000_000n, max: 50_000_000n }) } as unknown as ChallengeChain;
     const live = new LiveLayer(port);
+    const priorTick = vi.fn(); live.onTick = priorTick;
     const runtime = challengesRuntime(config, { pool: pool!, live, world: port, species: () => [...world.species.values()] }, chain, { retryMs: 20 });
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
@@ -375,8 +407,12 @@ maybe('challenges runtime', () => {
       reachable = true;
       await vi.waitFor(() => expect(runtime.routes.drafts.maxPrizeAtomic).toBe(50_000_000n), { timeout: 2000 });
       expect(live.onHunt).not.toBeNull();
+      expect(live.onTick).not.toBe(priorTick);
+      live.tick(0.1);
+      expect(priorTick).toHaveBeenCalledTimes(1);
       expect(errors.mock.calls.join(' ')).toMatch(/could not reach the chain/);
     } finally { runtime.stop(); errors.mockRestore(); }
+    expect(live.onTick).toBe(priorTick);
   });
 
   it("refuses to start when the attempts contract's recorder is not the evaluator key", async () => {

@@ -42,7 +42,11 @@ describe.skipIf(env.VANA_LONG_SOAK !== '1')(`long soak gate (${TERRAIN}, ${DAYS}
   const results: SoakResult[] = [];
   beforeAll(() => {
     for (const seed of SEEDS) {
-      const result = runSoak({ seed, days: DAYS, speciesDir, terrainProfile: TERRAIN, communityProfile: COMMUNITY });
+      const result = runSoak({ seed, days: DAYS, speciesDir, terrainProfile: TERRAIN, communityProfile: COMMUNITY,
+        onProgress: p => {
+          if (p.completedDays === 1 || p.completedDays % 90 === 0 || p.failures > 0 && p.completedDays % 10 === 0)
+            process.stderr.write(`seed ${seed}: ${p.completedDays}/${DAYS} days; ${p.livingAnimals} living; ${p.failures} failures\n`);
+        } });
       results.push(result);
       if (OUTPUT) {
         mkdirSync(OUTPUT, { recursive: true });

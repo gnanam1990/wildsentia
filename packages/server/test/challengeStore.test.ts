@@ -81,14 +81,29 @@ maybe('challenge store', () => {
       startedWorld: 3600, startState: {} })).rejects.toThrow();
     const b = await store.startAttempt({ challengeId: 1, agentId: 'ag_0000000000000002', animalId: 'tiger_3', payoutWallet: WINNER,
       startedWorld: 3600, startState: {} });
-    expect(await store.win({ challengeId: 1, attemptId: a.id, endedWorld: 7200, resultRecord: '{}', resultHash: hex('e'), winner: WINNER })).toBe(true);
-    expect(await store.win({ challengeId: 1, attemptId: b.id, endedWorld: 7300, resultRecord: '{}', resultHash: hex('f'), winner: WINNER })).toBe(false);
+    expect(await store.win({ completedAt: new Date('2026-10-19T00:00:00Z'), challengeId: 1, attemptId: a.id, endedWorld: 7200, resultRecord: '{}', resultHash: hex('e'), winner: WINNER })).toBe(true);
+    expect(await store.win({ completedAt: new Date('2026-10-19T00:00:00Z'), challengeId: 1, attemptId: b.id, endedWorld: 7300, resultRecord: '{}', resultHash: hex('f'), winner: WINNER })).toBe(false);
     expect((await store.challenge(1))).toMatchObject({ status: 'won', winnerAttempt: a.id });
     expect((await store.attempt(a.id))).toMatchObject({ status: 'met', resultHash: hex('e'), endReason: 'goal_met' });
     expect((await store.attempt(b.id))).toMatchObject({ status: 'void', endReason: 'challenge_won' });
     const ops = await store.opsOf({ challengeId: 1 });
     expect(ops).toHaveLength(1);
     expect(ops[0]).toMatchObject({ kind: 'resolve', status: 'pending', payload: { winner: WINNER, resultHash: hex('e'), attemptId: a.id } });
+  });
+
+  it('rejects a late completion at the store boundary without ending the attempt or queuing money', async () => {
+    await draftFor('2'); await store.recordCreated(CONTRACT, created(1, hex('2')), OURS);
+    const a = await store.startAttempt({ challengeId: 1, agentId: 'ag_0000000000000001', animalId: 'tiger_1', payoutWallet: WINNER,
+      startedWorld: 0, startState: {} });
+    const deadline = (await store.challenge(1))!.deadline;
+    const win = { challengeId: 1, attemptId: a.id, endedWorld: 100, resultRecord: '{}', resultHash: hex('e'), winner: WINNER };
+    expect(await store.win({ ...win, completedAt: deadline })).toBe(false);
+    expect(await store.win({ ...win, completedAt: new Date(deadline.getTime() + 500) })).toBe(false);
+    expect((await store.attempt(a.id))!.status).toBe('running');
+    expect((await store.challenge(1))!.status).toBe('open');
+    expect(await store.opsOf({ challengeId: 1 })).toEqual([]);
+    expect(await store.win({ ...win, completedAt: new Date(deadline.getTime() - 1) })).toBe(true);
+    expect((await store.attempt(a.id))!.goalMetAt).toEqual(new Date(deadline.getTime() - 1));
   });
 
   it('keeps an ordered log per attempt', async () => {

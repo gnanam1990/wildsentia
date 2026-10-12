@@ -96,10 +96,12 @@ export function selectGoal(
     // while there is still meat on something already dead nearby. Without this a predator
     // abandoned a carcass it had barely touched and killed again, so the world lost five
     // animals for every one a predator actually ate.
+    // The same fatigue condition used by the hunt contest also limits its utility. Otherwise
+    // an exhausted hungry hunter chooses repeated low-condition hunts and never recovers.
     // A predator with meat still in its stomach is sated and does not start a hunt
     // (sim_0.35.0): its attempt rate follows its intake, not an hourly retry on any hunger.
     hunt: carrionOpportunity > 0.3 || (agent.gutKg ?? 0) > 0 && !forLitter || huntHunger < threshold
-      ? 0 : huntHunger * preyOpportunity * stamina * huntActive,
+      ? 0 : huntHunger * preyOpportunity * stamina * (1 - d.fatigue) * huntActive,
     // Carrion is cheaper than a hunt, so a hungry scavenger prefers it strongly.
     scavenge: d.hunger * carrionOpportunity * 1.35,
     // Fear outranks ordinary needs but not desperate ones, and an exhausted animal cannot

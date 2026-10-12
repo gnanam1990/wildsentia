@@ -10,7 +10,7 @@ import { choosePrey } from './predation.js';
 import { resolveSpatialHunt } from './encounters.js';
 import { canRetryPrey, rememberFailedHunt } from './huntMemory.js';
 import type { GoalChoice } from './goals.js';
-import { HUNGER_DESPERATION, canReachCarcass, heldByPredatorOf, type Percept, type WorldView } from './perception.js';
+import { HUNGER_DESPERATION, perceive, canReachCarcass, heldByPredatorOf, type Percept, type WorldView } from './perception.js';
 import { locateAgent, locateCarcass } from './spatial.js';
 import { approachContact } from './movement.js';
 import { navigate } from './navigation.js';
@@ -57,6 +57,10 @@ export interface BehaviourContext {
   worldTime: WorldTime;
   /** Original decision end, retained when travel leaves time for a resource action. */
   endWorldTime?: WorldTime;
+  /** The shared hourly decision boundary stays fixed while individual travel advances segment time. */
+  decisionWorldTime?: WorldTime;
+  /** The route that brought this hunter to its next approach or commit. */
+  huntApproachParent?: string;
   log: EventLog;
   rng: Rng;
   services: WorldServices;
@@ -122,7 +126,7 @@ function moveTo(ctx: BehaviourContext, patchId: number, fleeing = false, endpoin
       ...(result.unreachable ? { reason: 'unreachable_terrain' } : {}) },
     outcome: result.unreachable ? 'abandoned' : result.trace.completed ? 'success' : 'interrupted',
     effects: { distanceM: result.distanceM, durationSeconds: result.seconds, sprintSeconds: result.sprintSeconds },
-    causalParents: [], confidence: 'authoritative', movement: result.trace,
+    causalParents: ctx.huntApproachParent ? [ctx.huntApproachParent] : [], confidence: 'authoritative', movement: result.trace,
   });
   if (result.distanceM > 0) ctx.services.carryYoung?.(ctx.agent, start, result.trace, event.id);
   return { ...result, eventId: event.id };
@@ -130,7 +134,7 @@ function moveTo(ctx: BehaviourContext, patchId: number, fleeing = false, endpoin
 
 function afterTravel(ctx: BehaviourContext, seconds: number): BehaviourContext {
   return { ...ctx, worldTime: ctx.worldTime + seconds, hours: Math.max(0, ctx.hours - seconds / 3600),
-    endWorldTime: ctx.endWorldTime ?? ctx.worldTime + ctx.hours * 3600 };
+    decisionWorldTime: ctx.decisionWorldTime ?? ctx.worldTime, endWorldTime: ctx.endWorldTime ?? ctx.worldTime + ctx.hours * 3600 };
 }
 
 function feed(ctx: BehaviourContext, mayMove = true): void {
@@ -356,9 +360,20 @@ export function subdueSecondsFor(hunting: NonNullable<SpeciesConfig['hunting']>,
 }
 
 function hunt(ctx: BehaviourContext): void {
+  const decision = ctx.decisionWorldTime ?? ctx.worldTime;
+  const continueAfterApproach = (patchId: number): void => {
+    const travel = moveTo(ctx, patchId);
+    // Walking to visible prey or the pack can take minutes, not the whole hour. Continue
+    // with only the remaining budget so moving prey cannot reset the approach every tick.
+    if (travel.trace.completed && ctx.hours * 3600 - travel.seconds > 1e-6) {
+      const remaining = afterTravel(ctx, travel.seconds);
+      hunt({ ...remaining, huntApproachParent: travel.eventId,
+        percept: perceive(ctx.agent, ctx.species, ctx.view) });
+    }
+  };
   const hunting = ctx.species.hunting;
   const candidates = ctx.percept.prey.filter((p) => p.agent.alive
-    && p.agent.patchId === p.patchId && p.agent.lastEncounterAt !== ctx.worldTime
+    && p.agent.patchId === p.patchId && p.agent.lastEncounterAt !== decision
     && (p.agent.altitudeM ?? 0) === 0
     && canRetryPrey(ctx.agent, p.agent.id, ctx.worldTime));
   if (hunting === undefined || candidates.length === 0) {
@@ -383,7 +398,7 @@ function hunt(ctx: BehaviourContext): void {
   // four pups starved within two days.
   if (range && ctx.agent.drives.hunger < HUNGER_DESPERATION && !ctx.services.packmatesNearby?.(ctx.agent, ctx.species)) {
     const rendezvous = ctx.services.packRendezvous?.(ctx.agent, ctx.species);
-    if (rendezvous != null && rendezvous !== ctx.agent.patchId) { ctx.agent.targetId = null; moveTo(ctx, rendezvous); return; }
+    if (rendezvous != null && rendezvous !== ctx.agent.patchId) { ctx.agent.targetId = null; continueAfterApproach(rendezvous); return; }
   }
   // sim_0.37.0: a hunter with a preferred prey size (leopards: 10-40 kg, Hayward et al. 2006) does
   // not spend its hunts on animals below that size unless it is starving: it moves on to find
@@ -406,7 +421,7 @@ function hunt(ctx: BehaviourContext): void {
     ?? choosePrey(pool, ctx.rng, hunting.preyPreference, hunting.preferredPreyKg);
   ctx.agent.targetId = choice.agent.id;
 
-  if (choice.patchId !== ctx.agent.patchId) { moveTo(ctx, choice.patchId); return; }
+  if (choice.patchId !== ctx.agent.patchId) { continueAfterApproach(choice.patchId); return; }
   delete ctx.agent.journey;
 
   const victim = choice.agent;
@@ -486,7 +501,7 @@ function hunt(ctx: BehaviourContext): void {
     }
     victim.stamina = clamp01((victim.stamina ?? 1)
       - 0.3 * flightDistance / (preySpecies.locomotion.sprintMs * preySpecies.locomotion.sprintStaminaS));
-    victim.lastEncounterAt = ctx.worldTime;
+    victim.lastEncounterAt = decision;
     victim.drives.fear = clamp01(victim.drives.fear + 0.8);
     victim.state = 'fleeing';
     ctx.services.practised(ctx.agent, 'stalk_technique', outcome.killed);
@@ -508,7 +523,7 @@ function hunt(ctx: BehaviourContext): void {
       : outcome.stage === 'approaching' || outcome.stage === 'time_exhausted' ? 'interrupted'
       : outcome.stage === 'chase_abandoned' ? 'abandoned' : 'failure',
     effects: { staminaSpent: outcome.staminaSpent, ...(outcome.killed ? { preyMassKg: victim.massKg } : {}) },
-    causalParents: [], confidence: 'authoritative', encounter: outcome.trace,
+    causalParents: ctx.huntApproachParent ? [ctx.huntApproachParent] : [], confidence: 'authoritative', encounter: outcome.trace,
   });
 
   if (!outcome.killed) {

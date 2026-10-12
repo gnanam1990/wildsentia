@@ -194,6 +194,8 @@ export class LiveLayer {
   onEnded: ((life: EndedLife) => void) | null = null;
   /** Told after every live hunt that reached its prey (challenges count kills and escapes). */
   onHunt: ((hunt: HuntOutcome) => void) | null = null;
+  /** Synchronous observation after live motion, before a slower persistence timer can run. */
+  onTick: (() => void) | null = null;
   /** Told after every accepted agent command (challenges log them). */
   onCommand: ((record: CommandRecord) => void) | null = null;
   /**
@@ -472,6 +474,7 @@ export class LiveLayer {
     if (this.#scanIn <= 0) { this.#scanIn = SCAN_SECONDS; this.#scanForWildHunters(); this.#scanForWildPrey(); this.#herdAlarm(now); }
     this.#spot();
     if (now >= this.#pruneAt) { this.#pruneAt = now + PRUNE_EVERY_MS; this.#prune(now); }
+    this.onTick?.();
   }
 
   /** Forgets what no longer matters, so per-agent state does not grow with every agent ever seen. */
