@@ -71,19 +71,19 @@ describe('site header', () => {
 });
 
 describe('forest settings', () => {
-  it('gathers theme, graphics, sound and view options behind one Settings button in the top bar', () => {
+  it('gathers theme, graphics, sound and view options behind the observer dock Settings button', () => {
     const html = read('index.html');
-    const actions = html.slice(html.indexOf('class="bar-actions"'), html.indexOf('</header>'));
-    expect(actions).toMatch(/<button id="open-settings" type="button" aria-expanded="false" aria-controls="settings-panel"/);
-    const panel = html.slice(html.indexOf('id="settings-panel"'), html.indexOf('</section>', html.indexOf('id="settings-panel"')));
+    const actions = html.slice(html.indexOf('class="observer-dock"'), html.indexOf('</nav>'));
+    expect(actions).toMatch(/<button id="toggle-settings" type="button" aria-controls="view-settings" aria-expanded="false"/);
+    const panel = html.slice(html.indexOf('id="view-settings"'), html.indexOf('</aside>', html.indexOf('id="view-settings"')));
     for (const id of ['theme-choice', 'render-quality', 'ambient-toggle', 'observer-cutaway']) expect(panel, id).toContain(`id="${id}"`);
     const passport = html.slice(html.indexOf('id="passport-panel"'), html.indexOf('</aside>', html.indexOf('id="passport-panel"')));
     expect(passport).not.toContain('render-quality');
-    expect(read('src/main.ts')).toContain("mountSettings(");
-    const settings = read('src/settings.ts');
+    expect(read('src/main.ts')).toContain("themeChoice.addEventListener('change', () => applyTheme(parseChoice(themeChoice.value)))");
+    const settings = read('src/observerChrome.ts');
     expect(settings).toContain("'Escape'");
-    expect(settings).toContain('pointerdown');
-    expect(settings).toContain('applyTheme(');
+    expect(settings).toContain('[data-close-panel]');
+    expect(settings).toContain('settingsButton.addEventListener');
   });
 });
 

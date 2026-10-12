@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { AnimationMixer, Box3, LoopOnce, Texture, Vector3 } from 'three';
+import { AnimationMixer, Box3, LoopOnce, Vector3 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { describe, expect, it, vi } from 'vitest';
 import { AnimalLayer } from '../src/animals.js';
@@ -108,7 +108,7 @@ describe('review-only Asian elephant root normalization', () => {
     const geometry = await loadGeometry(readFileSync(centered));
     const load = vi.spyOn(GLTFLoader.prototype, 'loadAsync').mockResolvedValue(geometry.gltf as never);
     try {
-      const layer = new AnimalLayer(new Texture());
+      const layer = new AnimalLayer();
       const animal = { id: 'elephant-review', speciesId: 'elephant', patchId: 0,
         position: { x: 20, z: 30, heading: 0 }, state: 'resting', currentGoal: 'rest',
         drives: { hunger: 0, thirst: 0, fear: 0, fatigue: 0 } };

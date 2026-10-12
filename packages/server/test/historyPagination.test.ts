@@ -88,7 +88,9 @@ maybe('checkpoint-pinned history pagination', () => {
       vi.stubGlobal('fetch', async (url: string) => {
         const res = await api.inject(url.replace('/api/', '/')); return new Response(res.body, { status: res.statusCode });
       });
-      const hud = new Hud({} as HudElements, new WorldStore());
+      const elements = Object.fromEntries(['clock', 'season', 'population', 'passport', 'feed', 'notice']
+        .map(name => [name, { innerHTML: '', textContent: '' }])) as unknown as HudElements;
+      const hud = new Hud(elements, new WorldStore());
       const completed = await hud.loadRecap(id, 0, 0, before.nextSequence);
       expect(completed).toEqual({ worldTime: 0, nextSequence: host.checkpointEventSequence });
       expect(hud.recap!.totalLines).toBe(2006); expect(hud.recap!.lines).toHaveLength(12);

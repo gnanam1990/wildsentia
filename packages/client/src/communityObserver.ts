@@ -133,17 +133,36 @@ export function createCommunityDialog(focus: (position: WorldPosition, distance:
   watchPerson?: (id: string) => void): () => void {
   const dialog = document.createElement('dialog'); dialog.className = 'forest-dialog community-dialog';
   dialog.setAttribute('aria-labelledby', 'community-title');
+  const header = document.createElement('header'); header.className = 'dialog-header';
   const title = document.createElement('h2'); title.id = 'community-title'; title.textContent = 'Community observer';
-  const status = document.createElement('p'); status.setAttribute('role', 'status'); status.setAttribute('aria-atomic', 'true');
-  const controls = document.createElement('div'); controls.className = 'history-controls';
+  const status = document.createElement('p'); status.className = 'dialog-status'; status.setAttribute('role', 'status'); status.setAttribute('aria-atomic', 'true');
+  const controls = document.createElement('div'); controls.className = 'history-controls dialog-actions';
   const refresh = document.createElement('button'); refresh.type = 'button'; refresh.textContent = 'Refresh checkpoint';
   const close = document.createElement('button'); close.type = 'button'; close.textContent = 'Back to forest'; close.onclick = () => dialog.close();
   controls.append(refresh, close);
-  const content = document.createElement('div');
+  header.append(title, controls);
+  const content = document.createElement('div'); content.className = 'community-content';
   let opener: HTMLElement | null = null;
   let restoreFocus = true;
   const line = (parent: HTMLElement, text: string, tag = 'p'): HTMLElement => {
     const e = document.createElement(tag); e.textContent = text; parent.append(e); return e;
+  };
+  const section = (parent: HTMLElement, className: string, heading?: string): HTMLElement => {
+    const e = document.createElement('section'); e.className = className;
+    if (heading) line(e, heading, 'h3');
+    parent.append(e); return e;
+  };
+  const details = (parent: HTMLElement, label: string): HTMLDetailsElement => {
+    const e = document.createElement('details'); e.className = 'community-details';
+    line(e, label, 'summary'); parent.append(e); return e;
+  };
+  const measurements = (parent: HTMLElement, className: string, values: Array<[string, string]>): void => {
+    const list = document.createElement('dl'); list.className = className;
+    for (const [label, value] of values) {
+      const entry = document.createElement('div');
+      line(entry, label, 'dt'); line(entry, value, 'dd'); list.append(entry);
+    }
+    parent.append(list);
   };
   const locate = (parent: HTMLElement, label: string, position: WorldPosition, distance = 8) => {
     const b = document.createElement('button'); b.type = 'button'; b.textContent = label;
@@ -158,54 +177,77 @@ export function createCommunityDialog(focus: (position: WorldPosition, distance:
     if (!page) return;
     if (!page.community) { line(content, 'This saved world has no human settlement. Observing cannot add one or reset the forest.'); return; }
     const c = page.community, b = c.building, stage = HOME_STAGES.find(s => s.from === b.stage);
-    line(content, page.notice);
-    line(content, `${c.name} · ${c.householdId}`, 'h3');
-    line(content, c.version >= 2 ? `Household rules v${c.version} · raw catch must be delivered and cooked with fuel before eating.`
-      : 'Saved household rules v1 · fishing and cooking are not enabled in this older world.');
-    line(content, `Home: ${b.stage}. Stored food ${c.stores.foodKg.toFixed(1)} kg; water ${c.stores.waterL.toFixed(1)} L; timber ${c.stores.timberKg.toFixed(1)} kg; fibre ${c.stores.fibreKg.toFixed(1)} kg.`);
-    line(content, communityHomeText(c));
-    if (c.version >= 2) line(content, `Stored raw fish: ${c.stores.rawFishKg!.toFixed(3)} kg (not ready to eat).`);
-    if (c.version >= 6) line(content, `Stored raw meat: ${c.stores.rawMeatKg!.toFixed(3)} kg (not ready to eat). Hunting takes meat only after contact and a recorded success; the carcass stays in the forest.`);
-    if (stage) line(content, `Next: ${stage.to}. Requires ${stage.timberKg} kg timber, ${stage.fibreKg} kg fibre and ${stage.labourSeconds / 3600} skill-weighted work hours. Work completed: ${(b.labourSeconds / 3600).toFixed(1)} hours.`);
-    else line(content, `Shelter available for ${b.occupantIds.length} residents. Completed at world second ${Math.floor(b.completedAt!)}; resident IDs are not live indoor positions.`);
-    locate(content, 'View saved home location', b.position, 45);
-    line(content, 'People · saved needs, family and intentions', 'h3');
-    const list = document.createElement('ul'); content.append(list);
+    const home = section(content, 'community-summary', c.name);
+    line(home, `Home: ${b.stage} · ${c.people.filter(p => p.alive).length} living residents`).className = 'community-home-state';
+    measurements(home, 'community-stocks', [
+      ['Stored food', `${c.stores.foodKg.toFixed(1)} kg`], ['Water', `${c.stores.waterL.toFixed(1)} L`],
+      ['Timber', `${c.stores.timberKg.toFixed(1)} kg`], ['Fibre', `${c.stores.fibreKg.toFixed(1)} kg`],
+    ]);
+    const homeActions = document.createElement('div'); homeActions.className = 'dialog-actions'; home.append(homeActions);
+    locate(homeActions, 'View saved home location', b.position, 45);
+    const homeDetails = details(home, 'Home and building records');
+    line(homeDetails, `${c.name} · ${c.householdId}`);
+    line(homeDetails, `Home: ${b.stage}. Stored food ${c.stores.foodKg.toFixed(1)} kg; water ${c.stores.waterL.toFixed(1)} L; timber ${c.stores.timberKg.toFixed(1)} kg; fibre ${c.stores.fibreKg.toFixed(1)} kg.`);
+    line(homeDetails, communityHomeText(c));
+    if (c.version >= 2) line(homeDetails, `Stored raw fish: ${c.stores.rawFishKg!.toFixed(3)} kg (not ready to eat).`);
+    if (c.version >= 6) line(homeDetails, `Stored raw meat: ${c.stores.rawMeatKg!.toFixed(3)} kg (not ready to eat). Hunting takes meat only after contact and a recorded success; the carcass stays in the forest.`);
+    if (stage) line(homeDetails, `Next: ${stage.to}. Requires ${stage.timberKg} kg timber, ${stage.fibreKg} kg fibre and ${stage.labourSeconds / 3600} skill-weighted work hours. Work completed: ${(b.labourSeconds / 3600).toFixed(1)} hours.`);
+    else line(homeDetails, `Shelter available for ${b.occupantIds.length} residents. Completed at world second ${Math.floor(b.completedAt!)}; resident IDs are not live indoor positions.`);
+    const people = section(content, 'community-section', 'People · saved needs, family and intentions');
+    const list = document.createElement('ul'); list.className = 'community-people'; people.append(list);
     for (const p of c.people) {
-      const item = document.createElement('li'); list.append(item);
-      line(item, `${p.name} · ${p.id} · ${(p.ageDays / 360).toFixed(1)} world years`, 'h4');
-      line(item, p.alive ? `Health ${Math.round(p.health * 100)}%. Hunger ${Math.round(p.needs.hunger * 100)}%, thirst ${Math.round(p.needs.thirst * 100)}%, fatigue ${Math.round(p.needs.fatigue * 100)}%.` : `Died at world second ${Math.floor(p.diedAt!)}. History remains.`);
-      if (c.version >= 7) {
-        line(item, communityFamilyText(p, c));
-        if (p.ageDays < 6 * 360) line(item, `Dependent child · ${(p.ageDays / 360).toFixed(1)} world years · saved hunger ${Math.round(p.needs.hunger * 100)}%, thirst ${Math.round(p.needs.thirst * 100)}%. Childcare requires a recorded caregiver, supplies and close contact; it may fail.`);
-        if (p.task?.kind === 'care_child') line(item, `Care intention for ${c.people.find(child => child.id === p.task?.targetPersonId)?.name ?? p.task.targetPersonId ?? 'unknown child'}. The recorded outcome appears in household milestones.`);
-      }
-      line(item, communityJourneyText(p));
-      if (c.version >= 5) line(item, `${p.visitedSites!.length} visited sites remembered. People inspect nearby resources and explore land routes; remembered visits are not live knowledge of distant supplies.`);
-      line(item, `Carrying: ${p.inventory.foodKg.toFixed(1)} kg food, ${p.inventory.waterL.toFixed(1)} L water, ${p.inventory.timberKg.toFixed(1)} kg timber, ${p.inventory.fibreKg.toFixed(1)} kg fibre.`);
-      line(item, `Skills: gathering ${(p.skills.gathering * 100).toFixed(1)}%; building ${(p.skills.building * 100).toFixed(1)}%.`);
-      if (c.version >= 2) line(item, `Raw fish carried: ${p.inventory.rawFishKg!.toFixed(3)} kg. Fishing skill: ${(p.skills.fishing! * 100).toFixed(1)}%.`);
-      if (c.version >= 6) line(item, `Raw meat carried: ${p.inventory.rawMeatKg!.toFixed(3)} kg. Hunting skill: ${(p.skills.hunting! * 100).toFixed(1)}%.`);
+      const item = document.createElement('li'); item.className = 'community-person'; list.append(item);
+      const personHeader = document.createElement('header'); personHeader.className = 'person-header'; item.append(personHeader);
+      line(personHeader, p.name, 'h4');
+      line(personHeader, `${(p.ageDays / 360).toFixed(1)} world years`).className = 'person-age';
+      const activity = !p.alive ? `Died at world second ${Math.floor(p.diedAt!)}. History remains.`
+        : p.task ? `Saved task: ${p.task.kind.replaceAll('_', ' ')} · ${p.task.phase === 'travel' ? 'travelling' : 'at destination'}.`
+        : 'No active task.';
+      line(personHeader, activity).className = 'person-activity';
+      const actions = document.createElement('div'); actions.className = 'person-actions dialog-actions'; item.append(actions);
       if (watchPerson && p.massKg > 0) {
         const watch = document.createElement('button'); watch.type = 'button'; watch.textContent = `Watch ${p.name}`;
-        watch.onclick = () => { restoreFocus = false; dialog.close(); watchPerson(p.id); }; item.append(watch);
-      } else locate(item, `View ${p.name}'s saved location`, p.position);
+        watch.onclick = () => { restoreFocus = false; dialog.close(); watchPerson(p.id); }; actions.append(watch);
+      } else locate(actions, `View ${p.name}'s saved location`, p.position);
       if (history) {
         const open = document.createElement('button'); open.type = 'button'; open.textContent = `Read ${p.name}'s retained history`;
-        open.onclick = () => { restoreFocus = false; dialog.close(); history(p.id); }; item.append(open);
+        open.onclick = () => { restoreFocus = false; dialog.close(); history(p.id); }; actions.append(open);
       }
+      if (p.alive) measurements(item, 'person-needs', [
+        ['Health', `${Math.round(p.health * 100)}%`], ['Hunger', `${Math.round(p.needs.hunger * 100)}%`],
+        ['Thirst', `${Math.round(p.needs.thirst * 100)}%`], ['Fatigue', `${Math.round(p.needs.fatigue * 100)}%`],
+      ]);
+      const record = details(item, 'Life and recorded details');
+      line(record, `${p.name} · ${p.id} · ${(p.ageDays / 360).toFixed(1)} world years`);
+      line(record, p.alive ? `Health ${Math.round(p.health * 100)}%. Hunger ${Math.round(p.needs.hunger * 100)}%, thirst ${Math.round(p.needs.thirst * 100)}%, fatigue ${Math.round(p.needs.fatigue * 100)}%.` : `Died at world second ${Math.floor(p.diedAt!)}. History remains.`);
+      if (c.version >= 7) {
+        line(record, communityFamilyText(p, c));
+        if (p.ageDays < 6 * 360) line(record, `Dependent child · ${(p.ageDays / 360).toFixed(1)} world years · saved hunger ${Math.round(p.needs.hunger * 100)}%, thirst ${Math.round(p.needs.thirst * 100)}%. Childcare requires a recorded caregiver, supplies and close contact; it may fail.`);
+        if (p.task?.kind === 'care_child') line(record, `Care intention for ${c.people.find(child => child.id === p.task?.targetPersonId)?.name ?? p.task.targetPersonId ?? 'unknown child'}. The recorded outcome appears in household milestones.`);
+      }
+      line(record, communityJourneyText(p));
+      if (c.version >= 5) line(record, `${p.visitedSites!.length} visited sites remembered. People inspect nearby resources and explore land routes; remembered visits are not live knowledge of distant supplies.`);
+      line(record, `Carrying: ${p.inventory.foodKg.toFixed(1)} kg food, ${p.inventory.waterL.toFixed(1)} L water, ${p.inventory.timberKg.toFixed(1)} kg timber, ${p.inventory.fibreKg.toFixed(1)} kg fibre.`);
+      line(record, `Skills: gathering ${(p.skills.gathering * 100).toFixed(1)}%; building ${(p.skills.building * 100).toFixed(1)}%.`);
+      if (c.version >= 2) line(record, `Raw fish carried: ${p.inventory.rawFishKg!.toFixed(3)} kg. Fishing skill: ${(p.skills.fishing! * 100).toFixed(1)}%.`);
+      if (c.version >= 6) line(record, `Raw meat carried: ${p.inventory.rawMeatKg!.toFixed(3)} kg. Hunting skill: ${(p.skills.hunting! * 100).toFixed(1)}%.`);
     }
-    line(content, 'Shared work and learning', 'h3');
-    line(content, 'The cooperation score measures time worked together, not emotions or kinship. Learning comes from nearby, more-skilled people doing the same work; it does not guarantee a successful task.');
-    const relationships = document.createElement('ul'); content.append(relationships);
+    const sharedWork = section(content, 'community-section', 'Shared work and learning');
+    const relationships = document.createElement('ul'); relationships.className = 'community-relationships'; sharedWork.append(relationships);
     for (const text of communityRelationshipText(c)) line(relationships, text, 'li');
-    line(content, 'Recent household milestones and food work', 'h3');
-    line(content, 'Latest 25 recorded household milestones, including family and care events; routine resting is omitted. Older routine tasks may be pruned. Nearby people load CC0 game-style character rigs; distant, loading or failed models remain location markers (reload to retry a failed download). People walk their actual paths and tasks as each hour plays; between hours they stay where they are, with no guessed routes. Poses and smaller child rigs are illustrative, not a reconstruction of any real community or a guarantee of task success.');
-    const events = document.createElement('ol'); content.append(events);
+    const milestones = section(content, 'community-section', 'Recent household milestones and food work');
+    const events = document.createElement('ol'); events.className = 'community-events'; milestones.append(events);
     for (const e of page.events) line(events, communityEventText(e), 'li');
+    if (!page.events.length) line(milestones, 'No household milestones recorded at this checkpoint.').className = 'dialog-note';
+    const about = details(content, 'About this simulation');
+    line(about, page.notice);
+    line(about, c.version >= 2 ? `Household rules v${c.version} · raw catch must be delivered and cooked with fuel before eating.`
+      : 'Saved household rules v1 · fishing and cooking are not enabled in this older world.');
+    line(about, 'The cooperation score measures time worked together, not emotions or kinship. Learning comes from nearby, more-skilled people doing the same work; it does not guarantee a successful task.');
+    line(about, 'Latest 25 recorded household milestones, including family and care events; routine resting is omitted. Older routine tasks may be pruned. Nearby people load CC0 game-style character rigs; distant, loading or failed models remain location markers (reload to retry a failed download). People walk their actual paths and tasks as each hour plays; between hours they stay where they are, with no guessed routes. Poses and smaller child rigs are illustrative, not a reconstruction of any real community or a guarantee of task success.');
   });
   refresh.onclick = () => { void observer.refresh(); };
-  dialog.append(title, status, controls, content); document.body.append(dialog);
+  dialog.append(header, status, content); document.body.append(dialog);
   dialog.addEventListener('close', () => { observer.close(); if (restoreFocus) opener?.focus(); });
   return () => { restoreFocus = true; opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (!dialog.open) dialog.showModal(); void observer.refresh(); };

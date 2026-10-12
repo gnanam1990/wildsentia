@@ -203,13 +203,14 @@ export class SimHost {
     const living = this.#checkpointLiving, environment = this.#checkpointEnvironment, summary = this.#checkpointSummary;
     const waterBudget = this.#checkpointWaterBudget;
     const community = this.#checkpointCommunity;
+    const microEcology = this.#checkpointMicroEcology;
     return { id: `${this.#streamId}:${this.#checkpointRevision}`, worldTime: this.#checkpointTime, nextSequence: this.#checkpointEventSequence,
       livingAnimals: () => structuredClone(living),
       patches: () => structuredClone(environment.patches),
       carcasses: () => structuredClone(environment.carcasses),
       waterBudget: () => structuredClone(waterBudget),
       community: () => structuredClone(community),
-      microEcology: () => structuredClone(this.#checkpointMicroEcology),
+      microEcology: () => structuredClone(microEcology),
       summary: () => structuredClone(summary),
       animal(id) { const a = animals.get(id); return a === undefined ? undefined : structuredClone(a); } };
   }

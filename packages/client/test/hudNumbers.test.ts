@@ -31,6 +31,6 @@ describe('numbers in the top bar and card', () => {
       lineage: { mother: null, father: null, offspring: [] }, skills: [], death: null, timeline: [] } satisfies Passport;
     hud.render('chital_01');
     expect(nodes.passport.innerHTML).not.toContain('<svg');
-    expect(nodes.passport.innerHTML).toContain('generation');
+    expect(nodes.passport.innerHTML).toContain('Generation');
   });
 });

@@ -56,7 +56,7 @@ export function outlookHtml(body: OutlookBody | null): string {
       <span class="track"><i style="width:${percent}%;background:var(--mist)"></i></span><b>${percent}%</b></div>`;
   }).join('');
   const sure = body.confidence >= 0.66 ? 'fairly sure' : body.confidence >= 0.33 ? 'unsure' : 'very unsure';
-  return `<details class="outlook" open><summary>What's likely next?</summary>${rows}
+  return `<details class="outlook"><summary>What's likely next?</summary>${rows}
     <p class="hint">Estimate for the next hour (${sure}) · ${escape(body.model)}. ${escape(body.notice)}</p></details>`;
 }
 
@@ -69,7 +69,7 @@ export function highlightsHtml(body: HighlightsBody | null, time: number | null 
   const items = shown.map((h) => {
     const when = finite(h.event.worldTime) ? friendlyWorldTime(h.event.worldTime).replace(/^Year \d+ · /, '') : '';
     return `<div class="event feed-entry highlight"><div><div class="etype">${escape(feedSentence(h.event))}</div>
-      <div class="feed-meta">${escape(when)} · <span title="Remarkableness, 0-4">★ ${h.score.toFixed(1)}</span></div></div></div>`;
+      <div class="feed-meta">${escape(when)} · <span title="Remarkableness, 0-4">Score ${h.score.toFixed(1)}</span></div></div></div>`;
   }).join('');
   return `<div class="highlights"><h4>Highlights</h4>${items}
     <p class="hint">Picked by ${escape(body.model)} from the latest records.</p></div>`;
@@ -78,6 +78,15 @@ export function highlightsHtml(body: HighlightsBody | null, time: number | null 
 export class InsightPanel {
   #outlookFor: string | null = null;
   #outlookRequest = 0;
+  #outlookHtml = '';
+
+  #renderOutlook(html: string): void {
+    if (this.#outlookHtml === html) return;
+    const open = this.outlookEl.querySelector?.('details')?.hasAttribute('open') ?? false;
+    this.outlookEl.innerHTML = html;
+    this.#outlookHtml = html;
+    if (open) this.outlookEl.querySelector?.('details')?.setAttribute('open', '');
+  }
 
   constructor(private readonly outlookEl: HTMLElement, private readonly highlightsEl: HTMLElement,
     private readonly fetchImpl: typeof fetch = (input, init) => fetch(input, init),
@@ -86,7 +95,7 @@ export class InsightPanel {
   /** Shows the followed animal's likely next hour; null clears it. Stale replies are dropped. */
   async outlook(id: string | null): Promise<void> {
     const request = ++this.#outlookRequest;
-    if (id !== this.#outlookFor) { this.#outlookFor = id; this.outlookEl.innerHTML = ''; }
+    if (id !== this.#outlookFor) { this.#outlookFor = id; this.outlookEl.innerHTML = ''; this.#outlookHtml = ''; }
     if (id === null) return;
     let body: OutlookBody | null = null;
     try {
@@ -95,7 +104,7 @@ export class InsightPanel {
       body = validOutlook(json) ? json : null;
     } catch { body = null; }
     if (request !== this.#outlookRequest) return;
-    this.outlookEl.innerHTML = outlookHtml(body);
+    this.#renderOutlook(outlookHtml(body));
   }
 
   async highlights(): Promise<void> {

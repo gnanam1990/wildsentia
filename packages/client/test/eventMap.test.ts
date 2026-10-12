@@ -72,6 +72,10 @@ describe('event map projection', () => {
     const dialog = body.children[0]!, list = dialog.children.find(child => child.className === 'map-events')!;
     expect(list.children).toHaveLength(2);
     for (const [row, id] of [[list.children[0]!, 'person_0005'], [list.children[1]!, 'person_0008']] as const) {
+      expect(row.children[0]!.textContent).toBe(id === 'person_0005' ? 'Human birth' : 'Human death');
+      expect(row.children.find(child => child.className === 'map-event-subject')!.children[1]!.textContent).toBe(id);
+      expect(row.children.find(child => child.className === 'map-event-record')!.children[1]!.textContent)
+        .toBe(id === 'person_0005' ? 'birth_1' : 'death_1');
       const buttons = row.children.filter(child => child.onclick !== null);
       expect(buttons.map(button => button.textContent)).toEqual([
         'Visit event location', 'Watch person', 'Read person’s retained history']);

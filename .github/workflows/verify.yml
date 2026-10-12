@@ -20,7 +20,9 @@ concurrency:
 jobs:
   regression:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The regression gate includes three 90-day island_v2 pack-viability cohorts.
+    # Both PR #28 runs hit the former 20-minute job limit while those tests ran.
+    timeout-minutes: 60
     services:
       postgres:
         image: postgres:17-alpine

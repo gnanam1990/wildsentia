@@ -6,46 +6,30 @@
   <title>Wildsentia — The Living Wild</title>
   <script src="/theme-init.js"></script>
   <link rel="stylesheet" href="/src/style.css" />
+  <link rel="stylesheet" href="/src/observer.css" />
 </head>
-<body>
+<body class="observer-app">
   <canvas id="view" tabindex="0" aria-label="Live forest observer. Drag or W A S D to explore the island, arrow keys or Q and E to rotate, plus and minus to zoom. Tap an animal to track it."></canvas>
 
   <header class="bar">
-    <div class="brand">Wildsentia<small>the living wild</small></div>
-    <span class="chip when"><i class="pulse" aria-hidden="true"></i> <b id="clock">—</b><span class="sep" aria-hidden="true">·</span><b id="season">—</b></span>
+    <div class="brand"><span>Wildsentia<small>the living wild</small></span></div>
+    <div class="world-glance" aria-label="Forest conditions">
+    <span class="chip when"><b id="clock">—</b><span class="sep" aria-hidden="true">·</span><b id="season">—</b></span>
     <span class="chip pop" id="population">—</span>
-    <button type="button" class="chip agents-chip" id="live-agents" aria-expanded="false" aria-controls="agents-list" hidden></button>
-    <a class="chip connect-chip" id="connect-agent" href="/connect.html" hidden>Play as an AI agent</a>
-    <a class="chip connect-chip" id="challenges-link" href="/challenges.html" hidden>Challenges</a>
-    <div class="bar-actions">
+    </div>
+    <span class="spacer"></span>
     <label class="species-picker"><span class="sr-only">Follow a species</span><select id="species-picker"><option value="">Follow a species</option></select></label>
-    <button id="freecam" title="Stop tracking and explore the whole island"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg><span>Explore</span></button>
-    <button id="open-event-map" title="Where hunts, births and deaths happened"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6-5.3-6-11a6 6 0 0 1 12 0c0 5.7-6 11-6 11z"/><circle cx="12" cy="10" r="2.2"/></svg><span>Events</span></button>
-    <button id="open-community" aria-haspopup="dialog" title="The island's village"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-6 8 6v9H4z"/><path d="M10 20v-5h4v5"/></svg><span>Village</span></button>
-    <button id="open-settings" type="button" aria-expanded="false" aria-controls="settings-panel" title="Theme, graphics, sound and view"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span>Settings</span></button>
-    </div>
+    <button id="clear-view" class="text-button" type="button" aria-label="Focus view" aria-pressed="false" title="Hide panels for a clear view">Focus</button>
   </header>
-  <div id="agents-list" class="agents-list" hidden></div>
-  <section id="settings-panel" class="settings-panel" hidden aria-labelledby="settings-title">
-    <h2 id="settings-title">Settings</h2>
-    <div class="observer-options">
-      <label for="theme-choice">Theme</label>
-      <select id="theme-choice"><option value="light">Light</option><option value="dark">Dark</option><option value="auto">Same as device</option></select>
-      <label for="render-quality">Graphics quality</label>
-      <select id="render-quality" aria-describedby="render-quality-help">
-        <option value="auto">Auto (recommended)</option><option value="smooth">Smooth / low power</option>
-        <option value="balanced">Balanced</option><option value="high">High detail</option>
-      </select>
-      <p id="render-quality-help">Auto lowers detail if frame delivery stays slow. Grass, shadows and near-tree detail range change; animal and ecosystem state do not.</p>
-      <output id="render-quality-status" aria-live="polite"></output>
-      <button id="ambient-toggle" type="button" aria-pressed="false" aria-describedby="ambient-help">Ambient audio: off</button>
-      <p id="ambient-help">Off by default, no autoplay. Click to hear quiet, synthetic rain, wind and nearby visible water from the current saved forest, and short synthetic calls only from visible animals the simulation records as fleeing or hunting.</p>
-      <output id="ambient-status" role="status" aria-live="polite"></output>
-      <label><input id="observer-cutaway" type="checkbox" checked aria-describedby="observer-cutaway-help" /> Reveal followed subjects</label>
-      <p id="observer-cutaway-help">Fade decorative plants and rocks directly in front of the followed animal or person. Viewer-only: nature and shadows stay unchanged.</p>
-      <p><a href="/characters.html">Character review</a> the public forest never needs a wallet.</p>
-    </div>
-  </section>
+  <nav class="observer-dock" aria-label="Forest observer controls">
+    <button id="freecam" title="Stop tracking and explore the whole island"><span>Explore</span></button>
+    <button id="open-event-map" title="Where hunts, births and deaths happened"><span>Events</span></button>
+    <button id="open-community" aria-haspopup="dialog" title="The island's village"><span>Village</span></button>
+    <span class="dock-divider" aria-hidden="true"></span>
+    <button id="toggle-journal" type="button" aria-controls="feed-panel" aria-expanded="true" title="Forest journal"><span>Journal</span></button>
+    <button id="toggle-animal" type="button" aria-controls="passport-panel" aria-expanded="true" title="Animal details"><span>Animal</span></button>
+    <button id="toggle-settings" type="button" aria-controls="view-settings" aria-expanded="false" title="View settings"><span>Settings</span></button>
+  </nav>
   <p id="observer-ui-status" role="status" aria-atomic="true"></p>
   <section id="event-visit" aria-labelledby="event-visit-title" hidden>
     <h2 id="event-visit-title"></h2>
@@ -53,30 +37,71 @@
     <div><button id="event-visit-map" type="button">Back to event map</button><button id="event-visit-clear" type="button">Clear marker</button></div>
   </section>
 
-  <aside class="panel" id="passport-panel">
+  <aside class="panel" id="passport-panel" aria-label="Followed animal">
+    <button class="panel-close text-button" type="button" data-close-panel="animal" aria-label="Close animal details" title="Close animal details">Close</button>
     <p id="scene-status" role="status" aria-atomic="true">Connecting to the saved forest scene…</p>
     <p id="live-encounter-status" role="status" aria-atomic="true" hidden></p>
     <p id="community-motion-status" role="status" aria-atomic="true" hidden></p>
     <div id="passport"></div>
     <div id="outlook" aria-live="polite"></div>
     <div id="reward-subject"></div>
-    <details class="live-encounters">
-      <summary>Watch a recorded hunt</summary>
-      <p>Checkpointed hunts play on a shared timeline, behind the current world. Animation is illustrative.</p>
-      <label>Follow an encounter <select id="live-encounter-picker" disabled><option>No current recordings</option></select></label>
-      <label><input id="live-encounter-frame" type="checkbox" /> Frame both animals</label>
-    </details>
   </aside>
 
-  <aside class="panel" id="feed-panel">
-    <h3>Happening now</h3>
+  <aside class="panel settings-sheet" id="view-settings" aria-labelledby="settings-title" hidden>
+    <div class="panel-heading"><h2 id="settings-title">View settings</h2><button class="text-button" type="button" data-close-panel="settings" aria-label="Close settings">Close</button></div>
+    <p class="panel-intro">Adjust detail, sound and visibility.</p>
+    <div class="observer-options">
+      <div class="observer-participation">
+        <a id="connect-agent" href="/connect.html" hidden>Play as an AI agent</a>
+        <a id="challenges-link" href="/challenges.html" hidden>Challenges</a>
+        <button type="button" id="live-agents" aria-expanded="false" aria-controls="agents-list" hidden></button>
+        <div id="agents-list" class="agents-list" hidden></div>
+      </div>
+      <label for="theme-choice">Account and challenge page theme</label>
+      <select id="theme-choice" aria-describedby="theme-help"><option value="light">Light</option><option value="dark">Dark</option><option value="auto">Same as device</option></select>
+      <p id="theme-help">Saved for the other pages. The forest observer keeps its smoked glass.</p>
+      <label for="render-quality">Graphics quality</label>
+      <select id="render-quality" aria-describedby="render-quality-help">
+        <option value="auto">Auto (recommended)</option><option value="smooth">Smooth / low power</option>
+        <option value="balanced">Balanced</option><option value="high">High detail</option>
+      </select>
+      <p id="render-quality-help">Auto balances grass, shadows and tree detail for a smoother view.</p>
+      <output id="render-quality-status" aria-live="polite"></output>
+      <button id="ambient-toggle" type="button" aria-pressed="false" aria-describedby="ambient-help">Ambient audio: off</button>
+      <p id="ambient-help">Off by default, no autoplay. Synthetic rain, wind and nearby visible water, with calls only from visible animals the simulation records as fleeing or hunting.</p>
+      <output id="ambient-status" role="status" aria-live="polite"></output>
+      <label><input id="observer-cutaway" type="checkbox" checked aria-describedby="observer-cutaway-help" /> Reveal followed subjects</label>
+      <p id="observer-cutaway-help">Gently fade plants and rocks that obscure the animal or person you follow.</p>
+      <details class="observer-camera"><summary>Camera controls</summary>
+        <div class="observer-camera-controls" role="group" aria-label="Camera">
+          <button type="button" data-camera="rotate-left">Turn left</button><button type="button" data-camera="rotate-right">Turn right</button>
+          <button type="button" data-camera="tilt-up">Look higher</button><button type="button" data-camera="tilt-down">Look lower</button>
+          <button type="button" data-camera="zoom-in">Zoom in</button><button type="button" data-camera="zoom-out">Zoom out</button>
+          <button type="button" data-camera="reset">Reset view</button>
+        </div>
+      </details>
+      <details class="live-encounters">
+        <summary>Recorded encounters</summary>
+        <p>Checkpointed hunts play on a shared timeline, behind the current world. Animation is illustrative.</p>
+        <label>Follow an encounter <select id="live-encounter-picker" disabled><option>No current recordings</option></select></label>
+        <label><input id="live-encounter-frame" type="checkbox" /> Frame both animals</label>
+      </details>
+      <p class="settings-note">These settings only change your view. The forest follows its own course.</p>
+      <output id="reward-total">Reward totals loading…</output>
+      <p class="settings-links"><a href="/characters.html">Character review</a> </p>
+      <p class="settings-wallet">The public forest is open to everyone. No wallet needed.</p>
+    </div>
+  </aside>
+
+  <aside class="panel" id="feed-panel" aria-labelledby="journal-title">
+    <div class="panel-heading"><h2 id="journal-title">Forest journal</h2><button class="text-button" type="button" data-close-panel="journal" aria-label="Close journal">Close</button></div>
+    <p class="panel-intro">Recent activity in the forest</p>
     <div id="highlights"></div>
     <div id="feed"></div>
   </aside>
 
   <div id="thought" class="thought" hidden></div>
   <button id="reward-badge" hidden aria-haspopup="dialog"></button>
-  <output id="reward-total">Reward totals loading…</output>
   <div id="live-subject-label" class="encounter-label" hidden></div>
   <div id="live-partner-label" class="encounter-label" hidden></div>
   <div id="human-subject-label" class="encounter-label" hidden></div>
@@ -97,17 +122,8 @@
   </section>
   <p id="notice"></p>
   <output id="render-stats" hidden aria-label="Rendering diagnostics" aria-live="off"></output>
-  <div class="camera-pad" role="group" aria-label="Camera">
-    <button type="button" data-camera="rotate-left" aria-label="Turn view left" title="Turn left (Q)"><svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 2.3-5.6"/><path d="M4 4v4h4"/></svg></button>
-    <button type="button" data-camera="tilt-up" aria-label="Look from higher" title="Look from higher (↑)"><svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg></button>
-    <button type="button" data-camera="rotate-right" aria-label="Turn view right" title="Turn right (E)"><svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v4h-4"/></svg></button>
-    <button type="button" data-camera="zoom-in" aria-label="Zoom in" title="Zoom in (+)"><svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 6v12M6 12h12"/></svg></button>
-    <button type="button" data-camera="tilt-down" aria-label="Look from lower" title="Look from lower (↓)"><svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></button>
-    <button type="button" data-camera="zoom-out" aria-label="Zoom out" title="Zoom out (−)"><svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 12h12"/></svg></button>
-    <button type="button" data-camera="reset" class="camera-reset" aria-label="Reset view angle" title="Reset view">Reset view</button>
-  </div>
   <button type="button" id="show-interface" class="show-interface">Show interface</button>
-  <p class="hint footer">Drag to look around · scroll or pinch to zoom · tap an animal to follow it · buttons bottom left turn and tilt the view · H hides the interface</p>
+  <p class="hint footer"><span>Drag to wander</span><span>Scroll to get closer</span><span>Tap a life to follow</span></p>
 
   <script type="module" src="/src/main.ts"></script>
 </body>

@@ -42,28 +42,21 @@ import { LazyDialog } from './lazyDialog.js';
 import { ReturnPath } from './returnPath.js';
 import { renderBaseY } from './space.js';
 import { AmbientAudio, cueFor, type AudioAnimal } from './ambientAudio.js';
-import { mountSettings } from './settings.js';
+import { initObserverChrome } from './observerChrome.js';
+import { populationCounter } from './populationCounter.js';
+import { applyTheme, readTheme } from './theme.js';
+import { parseChoice } from './themeModel.js';
 
 
-/** Where the thought floats: just above the marker over this species' head. */
+/** Keep the activity label clear of this species' head. */
 const bubbleHeight = (animal: AnimalState | undefined): number => {
   const height = animal === undefined ? 1 : visualFor(animal.speciesId).heightM;
   return (height + markerSize(height) * 1.6) * characterScale(animal ?? {});
 };
 
 const canvas = document.querySelector<HTMLCanvasElement>('#view')!;
-// Panels and the camera pad sit just under the top bar, however many rows it wraps to.
-const topBar = document.querySelector<HTMLElement>('.bar')!;
-function placeUnderBar(): void {
-  let bottom = 0;
-  for (const child of topBar.children) {
-    if (!(child as HTMLElement).hidden) bottom = Math.max(bottom, child.getBoundingClientRect().bottom);
-  }
-  if (bottom > 0) document.documentElement.style.setProperty('--bar-bottom', `${Math.ceil(bottom)}px`);
-}
-if (typeof ResizeObserver === 'function') new ResizeObserver(placeUnderBar).observe(topBar);
-placeUnderBar();
-const { renderer, scene, camera, sun, setQuality, prepareShadows } = createScene(canvas);
+const { renderer, scene, camera, sun, setQuality, prepareShadows, setObserverCenter } = createScene(canvas);
+const observerChrome = initObserverChrome(setObserverCenter);
 const atmosphere = new Atmosphere(scene, sun);
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const ambientAudio = new AmbientAudio();
@@ -118,13 +111,15 @@ follow.onExplore = () => {
   if (followedId !== null || followedPersonId !== null) watch(null);
 };
 const observerVisibility = new ObserverVisibility();
-mountSettings(document.querySelector<HTMLButtonElement>('#open-settings')!, document.querySelector<HTMLElement>('#settings-panel')!,
-  document.querySelector<HTMLSelectElement>('#theme-choice')!);
+const themeChoice = document.querySelector<HTMLSelectElement>('#theme-choice')!;
+themeChoice.value = readTheme();
+themeChoice.addEventListener('change', () => applyTheme(parseChoice(themeChoice.value)));
 const revealAnimal = document.querySelector<HTMLInputElement>('#observer-cutaway')!;
 const hud = new Hud({
   clock: document.querySelector('#clock')!,
   season: document.querySelector('#season')!,
   population: document.querySelector('#population')!,
+  renderPopulation: populationCounter(document.querySelector('#population')!),
   passport: document.querySelector('#passport')!,
   feed: document.querySelector('#feed')!,
   notice: document.querySelector('#notice')!,
@@ -307,6 +302,7 @@ async function startReplay(id: string, selectedEventId?: string, kind: 'encounte
   replay = null;
   banner.hidden = false;
   document.body.classList.add('is-replaying');
+  observerChrome.setReplaying(true);
   replayStatus.textContent = 'Loading recorded history…';
   replayWhen.textContent = ''; replayMoment.textContent = '';
   banner.querySelector('.precision')!.textContent = '';
@@ -393,6 +389,7 @@ function stopReplay(): void {
   replay = null;
   banner.hidden = true;
   document.body.classList.remove('is-replaying');
+  observerChrome.setReplaying(false);
   follow.distance = liveCameraDistance;
   canvas.focus();
 }
@@ -405,6 +402,7 @@ let recapRetryAt = 0;
 let followRevision = 0;
 
 function watch(id: string | null): void {
+  if (id !== null) observerChrome.showAnimal();
   eventVisit.clear();
   followedPersonId = null;
   historicCameraOwned = false;
@@ -609,6 +607,7 @@ function pickedAnimal(event: MouseEvent | PointerEvent): string | null {
 const showInterface = document.querySelector<HTMLButtonElement>('#show-interface')!;
 function setCleanView(on: boolean): void {
   document.body.classList.toggle('clean-view', on);
+  observerChrome.setCinema(on);
   document.body.classList.remove('interface-poked');
   animals.markersVisible = !on;
 }
@@ -635,7 +634,7 @@ const cameraActions: Record<string, () => void> = {
   'tilt-up': () => follow.tiltBy(0.035), 'tilt-down': () => follow.tiltBy(-0.035),
   'zoom-in': () => follow.zoomBy(1 / 1.06), 'zoom-out': () => follow.zoomBy(1.06),
 };
-for (const button of document.querySelectorAll<HTMLButtonElement>('.camera-pad [data-camera]')) {
+for (const button of document.querySelectorAll<HTMLButtonElement>('#view-settings [data-camera]')) {
   const action = button.dataset.camera!;
   if (action === 'reset') { button.addEventListener('click', () => follow.resetView()); continue; }
   let timer: number | null = null;

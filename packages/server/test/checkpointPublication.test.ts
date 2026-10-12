@@ -106,16 +106,39 @@ maybe('durable live observer publication', () => {
     } finally { release(); await failure; spy.mockRestore(); await api.close(); }
   });
 
-  it('detaches population, animals, terrain and carcasses without leaking private snapshot internals', async () => {
+  it('publishes micro-ecology only with its saved checkpoint', async () => {
+    const host = new SimHost(options()); await host.boot();
+    const original = structuredClone(host.world.microEcology);
+    const api = buildApi({ host, pool: pool! });
+    try {
+      const response = await api.inject('/micro-ecology');
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(response.json()).toEqual({ worldTime: 0, source: 'checkpoint', ecology: original });
+      await host.advance(1);
+      expect(host.world.microEcology).not.toEqual(original);
+      expect((await api.inject('/micro-ecology')).json()).toEqual(response.json());
+      await host.snapshotNow();
+      const saved = await api.inject('/micro-ecology');
+      expect(saved.statusCode).toBe(200);
+      expect(saved.json()).toEqual({ worldTime: 3600, source: 'checkpoint', ecology: host.world.microEcology });
+    } finally { await api.close(); }
+  });
+
+  it('detaches population, animals, terrain, micro-ecology and carcasses without leaking private snapshot internals', async () => {
     const host = new SimHost(options()); await host.boot();
     const view = host.observation()!, original = view.patches(), population = view.summary().population;
+    const ecology = view.microEcology();
     view.patches()[0]!.soilNutrients = -1; view.summary().population.sambar = 900;
     view.livingAnimals()[0]!.drives.hunger = 99;
+    view.microEcology().patches[0]!.antBiomassKg = -1;
     expect(view.patches()).toEqual(original); expect(view.summary().population).toEqual(population);
     expect(view.livingAnimals()[0]!.drives.hunger).not.toBe(99);
+    expect(view.microEcology()).toEqual(ecology);
     host.world.agents[0]!.drives.hunger = 1;
     await host.advance(1); await host.snapshotNow();
     expect(view.worldTime).toBe(0); expect(view.patches()).toEqual(original);
+    expect(view.microEcology()).toEqual(ecology);
     expect(host.observation()!.worldTime).toBe(3600);
     const corpse = host.observation()!.carcasses()[0]!;
     expect(corpse).toBeDefined(); corpse.biomass.muscle = -99;
@@ -132,7 +155,7 @@ maybe('durable live observer publication', () => {
     const gateway = new Gateway(host), socket = new Socket(); gateway.handle(socket); socket.messages = [];
     host.lastError = 'private diagnostics';
     try {
-      for (const path of ['/world', '/animals', `/animals/${host.world.agents[0]!.id}`, '/patches', '/carcasses']) {
+      for (const path of ['/world', '/animals', `/animals/${host.world.agents[0]!.id}`, '/patches', '/carcasses', '/micro-ecology']) {
         const response = await api.inject(path); expect(response.statusCode).toBe(503);
         expect(response.headers['cache-control']).toBe('no-store'); expect(response.body).not.toContain('private');
       }

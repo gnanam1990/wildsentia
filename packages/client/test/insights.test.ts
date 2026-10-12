@@ -27,7 +27,7 @@ describe('observer insights in the browser', () => {
     const body = { available: true as const, asOfWorldTime: 7200, model: 'jev', notice: 'n',
       highlights: [{ event: { id: 'e1', type: 'hunt', outcome: 'success', actors: ['tiger_0001', 'sambar_0002'], worldTime: 7000 }, score: 3.4, confidence: 0.8 }] };
     const html = highlightsHtml(body);
-    expect(html).toContain('Highlights'); expect(html).toContain('A tiger caught a sambar'); expect(html).toContain('★ 3.4');
+    expect(html).toContain('Highlights'); expect(html).toContain('A tiger caught a sambar'); expect(html).toContain('Score 3.4');
     expect(highlightsHtml({ ...body, highlights: [] })).toBe('');
     // Not before it happens on screen.
     expect(highlightsHtml(body, 6900)).toBe('');

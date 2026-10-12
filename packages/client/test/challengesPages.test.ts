@@ -18,7 +18,7 @@ describe('pages', () => {
   });
 
   it('are reachable from the forest and from the agents page, when the island runs challenges', () => {
-    expect(read('index.html')).toMatch(/<a class="chip [^"]*" id="challenges-link" href="\/challenges.html" hidden>Challenges<\/a>/);
+    expect(read('index.html')).toMatch(/<a id="challenges-link" href="\/challenges.html" hidden>Challenges<\/a>/);
     expect(read('src/main.ts')).toMatch(/fetch\('\/api\/challenges\/info'[\s\S]{0,200}#challenges-link/);
     expect(read('connect.html')).toContain('href="/challenges.html"');
   });

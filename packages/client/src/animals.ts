@@ -8,7 +8,7 @@ import { chooseVisible } from './lod.js';
 import { RENDER_BUDGETS, type RenderTier } from './renderQuality.js';
 import { visualFor, visualForAnimal } from './species.js';
 import { onShore, type Pool } from './pools.js';
-import { characterScale, coatMultiplier, markerSize } from './appearance.js';
+import { characterScale, coatMultiplier } from './appearance.js';
 import { separateBodies, type Body, type Obstacle, type ObstacleField } from './obstacles.js';
 import type { LivePose } from './liveEncounters.js';
 import { AnimalDots } from './animalDots.js';
@@ -42,7 +42,6 @@ interface Rig {
   actions: Map<string, THREE.AnimationAction>;
   clipNames: string[];
   playing: string | null;
-  marker: THREE.Sprite;
   visual: THREE.Object3D;
   footY: number;
   restRotationZ: number;
@@ -85,18 +84,6 @@ function variantKey(animal: AnimalState, airborne = false): string {
   return `${animal.speciesId}|${visualForAnimal(animal, airborne).model?.file ?? 'stand-in'}`;
 }
 
-function markerTexture(): THREE.Texture {
-  const canvas = document.createElement('canvas');
-  canvas.width = 64; canvas.height = 64;
-  const ctx = canvas.getContext('2d')!;
-  ctx.fillStyle = 'rgba(200,235,140,0.95)';
-  ctx.beginPath(); ctx.arc(32, 32, 10, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = 'rgba(20,40,25,0.7)'; ctx.lineWidth = 3; ctx.stroke();
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
-}
-
 /**
  * Renders the animals the server reported. It holds no simulation state: position comes from
  * interpolating between the patches the server named, and the animation clip is chosen from
@@ -121,7 +108,6 @@ export class AnimalLayer {
   /** Ids whose model is being loaded. Without this, sync() would start a fresh load every frame. */
   readonly #pending = new Set<string>();
   readonly #ready = new Map<string, { animal: AnimalState; template: THREE.Group; variantKey: string }>();
-  readonly #markerTexture: THREE.Texture;
   #wanted = new Set<string>();
   #wantedVariants = new Map<string, string>();
   /** The drawn drinking pools; animals recorded at a pool's centre are drawn on its shore. */
@@ -152,8 +138,7 @@ export class AnimalLayer {
     return object === this.#dots;
   }
 
-  constructor(marker: THREE.Texture = markerTexture()) {
-    this.#markerTexture = marker;
+  constructor() {
     this.#dotLayer = new AnimalDots(AnimalLayer.MAX_DOTS); this.#dots = this.#dotLayer.mesh;
     this.root.add(this.#dots);
   }
@@ -289,19 +274,9 @@ export class AnimalLayer {
       for (const clip of clips) actions.set(clip.name, mixer.clipAction(clip));
     }
 
-    const marker = new THREE.Sprite(
-      new THREE.SpriteMaterial({ map: this.#markerTexture, depthTest: false, transparent: true }),
-    );
-    // Sized and placed for the animal: a fixed 3 m marker hid a dhole entirely.
     const height = visualFor(animal.speciesId).heightM;
-    const size = markerSize(height);
-    marker.scale.set(size, size, 1);
-    marker.position.y = height + size * 0.9;
-    marker.visible = false;
-    group.add(marker);
-
     const bodyLengthM = new THREE.Box3().setFromObject(visual).getSize(new THREE.Vector3()).z;
-    const rig: Rig = { variantKey: key, group, mixer, actions, clipNames: clips.map((c) => c.name), playing: null, marker,
+    const rig: Rig = { variantKey: key, group, mixer, actions, clipNames: clips.map((c) => c.name), playing: null,
       visual, footY: visual.position.y, restRotationZ: visual.rotation.z, bodyLengthM, climbRest: null,
       needsCorpseGrounding: false, gait: new GaitClock(), hipM: hipHeightM(height * characterScale(animal)), seed: idSeed(animal.id), looksUp: animal.speciesId !== 'tiger' && animal.speciesId !== 'leopard',
       appearanceKey: '', materials };
@@ -375,7 +350,6 @@ export class AnimalLayer {
         this.#climb(rig, animal.speciesId, phase);
         this.#animate(rig, state, phase, elevated && position.moving && phase === null);
       }
-      rig.marker.visible = this.markersVisible && (id === followedId || id === partner);
     }
 
     // Keep pending actors selectable as dots until their placed model is actually available.
@@ -422,7 +396,6 @@ export class AnimalLayer {
         && !position.moving && animal.state === 'travelling' ? 'resting' : renderStateFor(animal.state, position.moving);
       this.#climb(rig, animal.speciesId, phase);
       this.#poseAt(rig, state, seconds, null, unknownClimb, phase, act, actWeight);
-      rig.marker.visible = this.markersVisible;
     }
   }
 
@@ -617,7 +590,6 @@ export class AnimalLayer {
     rig.mixer?.stopAllAction();
     rig.mixer?.uncacheRoot(rig.visual);
     for (const { material } of rig.materials) material.dispose();
-    rig.marker.material.dispose();
     rig.visual.traverse((o) => {
       if ((o as THREE.SkinnedMesh).isSkinnedMesh) (o as THREE.SkinnedMesh).skeleton.dispose();
     });
