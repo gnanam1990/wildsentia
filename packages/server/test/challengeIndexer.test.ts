@@ -60,6 +60,29 @@ maybe('challenge indexer', () => {
     expect((await store.challenge(1))).not.toBeNull();
   });
 
+  it('backfills an interior missing event across polls and a restart, even with the highest ID present', async () => {
+    chain.created = [event(1, 50), event(2, 51), event(3, 52), event(4, 53), event(5, 54)];
+    const events = chain.events.bind(chain);
+    chain.events = async (from, to) => {
+      const found = await events(from, to);
+      return { ...found, created: found.created.filter(e => e.id !== 2 && e.id !== 4) };
+    };
+    await indexer.pollOnce();
+    expect(await store.maxChallengeId(CONTRACT)).toBe(5);
+    expect(await store.indexedChallengeCount(CONTRACT, 5)).toBe(3);
+    expect(await store.cursor(CONTRACT)).toBe(0);
+    // An omission persisting across a second poll must keep recovery available.
+    await indexer.pollOnce();
+    expect(await store.cursor(CONTRACT)).toBe(0);
+    chain.events = events;
+    const restarted = new ChallengeIndexer(store, chain as unknown as ChallengeChain, 0);
+    await restarted.pollOnce();
+    expect(await store.indexedChallengeCount(CONTRACT, 5)).toBe(5);
+    expect(await store.cursor(CONTRACT)).toBe(98);
+    expect((await store.challenge(2))!.status).toBe('unrecognised');
+    expect((await store.challenge(4))!.status).toBe('unrecognised');
+  });
+
   it('records the transaction that settled each challenge, whoever sent it', async () => {
     chain.created = [event(1, 50), event(2, 51)];
     chain.settled = [{ id: 1, kind: 'resolved', txHash: `0x${'9'.repeat(64)}`, blockNumber: 60 }];

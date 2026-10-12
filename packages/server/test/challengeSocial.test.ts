@@ -71,7 +71,7 @@ maybe('challenge social drafts', () => {
       ['1'.padEnd(43, 'A')]);
     const a = await store.startAttempt({ challengeId: 1, agentId: 'ag_0000000000000001', animalId: 'tiger_1', payoutWallet: '0x' + 'b'.repeat(40),
       startedWorld: 0, startState: {} });
-    await store.win({ challengeId: 1, attemptId: a.id, endedWorld: 1, resultRecord: '{}', resultHash: hex('9'), winner: '0x' + 'b'.repeat(40) });
+    await store.win({ completedAt: new Date('2030-10-11T00:00:00Z'), challengeId: 1, attemptId: a.id, endedWorld: 1, resultRecord: '{}', resultHash: hex('9'), winner: '0x' + 'b'.repeat(40) });
     await social.sweep();
     expect((await social.list()).map((d) => d.kind)).toEqual(['created']); // won, but not paid yet
     await store.setStatus(1, ['won'], 'paid', hex('8'));
@@ -208,7 +208,7 @@ maybe('challenge social drafts', () => {
     it('says a challenge was met but not paid when its winner could not be paid, not that nobody met it', async () => {
       await pool!.query(`insert into live_agents (id, public_key, name, name_key, network_hash) values ('ag_0000000000000001', $1, 'Stripe', 'stripe', 'n')`, ['1'.padEnd(43, 'A')]);
       const a = await store.startAttempt({ challengeId: 1, agentId: 'ag_0000000000000001', animalId: 'tiger_1', payoutWallet: '0x' + 'b'.repeat(40), startedWorld: 0, startState: {} });
-      await store.win({ challengeId: 1, attemptId: a.id, endedWorld: 1, resultRecord: '{}', resultHash: hex('9'), winner: '0x' + 'b'.repeat(40) });
+      await store.win({ completedAt: new Date('2030-10-11T00:00:00Z'), challengeId: 1, attemptId: a.id, endedWorld: 1, resultRecord: '{}', resultHash: hex('9'), winner: '0x' + 'b'.repeat(40) });
       await store.setStatus(1, ['won'], 'unpaid');
       await refund(); await social.sweep();
       expect((await drafts()).find((d) => d.kind === 'refunded')!.body).toBe('Wildsentia challenge 1 was met by Stripe, but the prize could not be paid, '

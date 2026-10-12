@@ -101,6 +101,43 @@ maybe('chain operations', () => {
     return a.id;
   };
 
+  it.each(['resolve', 'refund', 'failed resolve'] as const)('rolls back both terminal writes on a status failure: %s', async (kind) => {
+    if (kind === 'refund') await store.enqueueOp('refund', { challengeId: 1 }, {});
+    else await won();
+    const terminal = kind === 'failed resolve' ? 'unpaid' : kind === 'refund' ? 'refunded' : 'paid';
+    if (kind === 'failed resolve') now = deadline + (GRACE_SECONDS + 1) * 1000;
+    else await ops.processOnce(); // persist and broadcast the signed transaction
+    await pool!.query(`create or replace function test_reject_terminal_status() returns trigger language plpgsql as $$
+      begin if new.status = '${terminal}' then raise exception 'injected terminal write failure'; end if; return new; end $$`);
+    await pool!.query('create trigger test_reject_terminal before update on challenges for each row execute function test_reject_terminal_status()');
+    try {
+      await ops.processOnce();
+      expect((await op()).status).toBe(kind === 'failed resolve' ? 'pending' : 'sent');
+      expect((await store.challenge(1))!.status).toBe(kind === 'refund' ? 'open' : 'won');
+      expect(await store.activeOps()).toHaveLength(1);
+    } finally {
+      await pool!.query('drop trigger test_reject_terminal on challenges');
+      await pool!.query('drop function test_reject_terminal_status()');
+    }
+    // A new worker after the failed transaction recovers using the same persisted op.
+    await new ChainOps(store, chain, () => now).processOnce();
+    expect((await op()).status).toBe(kind === 'failed resolve' ? 'failed' : 'confirmed');
+    expect((await store.challenge(1))!.status).toBe(terminal);
+    if (kind === 'failed resolve') expect((await store.dueRefunds(new Date(now + 600_000), GRACE_SECONDS)).map(c => c.id)).toContain(1);
+    else expect(chain.sent).toHaveLength(1); // no second transfer
+  });
+
+  it.each(['confirmed', 'failed'] as const)('reconciles a legacy %s resolve whose challenge transition was lost', async (status) => {
+    await won();
+    if (status === 'confirmed') { chain.state.set(1, 'resolved'); await store.markOpConfirmed((await op()).id); }
+    else await store.markOpFailed((await op()).id, 'window_closed');
+    expect(await store.activeOps()).toEqual([]);
+    await new ChainOps(store, chain, () => now).processOnce();
+    expect((await store.challenge(1))!.status).toBe(status === 'confirmed' ? 'paid' : 'unpaid');
+    expect(await store.terminalOpsToReconcile()).toEqual([]);
+    expect(chain.sent).toEqual([]);
+  });
+
   it("records an attempt's start and end once, even after a crash", async () => {
     const id = await recorded();
     await ops.processOnce();

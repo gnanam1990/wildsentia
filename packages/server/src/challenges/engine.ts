@@ -42,6 +42,8 @@ interface Running {
   broken?: string;
   /** The goal-met entry is logged once, even if recording the win has to be retried. */
   endLogged?: boolean;
+  /** An authoritative, timely observation is immutable across asynchronous writes and retries. */
+  completed?: { at: number; world: number; kills: number; escapes: number };
 }
 interface Waiter { player: Player; since: number; terms: ChallengeTerms }
 
@@ -80,14 +82,20 @@ export class ChallengeEngine {
     for (const attempt of await this.store.runningAttempts()) {
       const avatar = this.live.avatars.get(attempt.agentId);
       const challenge = await this.store.challenge(attempt.challengeId);
-      if (!avatar || avatar.animalId !== attempt.animalId || !challenge?.terms) {
+      const log = await this.store.log(attempt.id);
+      const completion = log.find(e => e.kind === 'end' && e.data.how === 'goal_met'
+        && typeof e.data.completedAt === 'number' && e.data.completedAt < (challenge?.deadline.getTime() ?? 0)
+        && typeof e.data.worldTime === 'number');
+      if (((!avatar || avatar.animalId !== attempt.animalId) && !completion) || !challenge?.terms) {
         await this.store.endAttempt(attempt.id, 'void', 'lost_in_restart', this.world.now());
         continue;
       }
-      const logged = (await this.store.log(attempt.id)).length;
+      const logged = log.length;
       this.#running.set(attempt.agentId, { attempt, terms: challenge.terms, deadline: challenge.deadline.getTime(),
         kills: attempt.kills, escapes: attempt.escapes, logged, finishing: false, watch: new RuleWatch(challenge.terms.rules),
-        checkedAt: this.clock() });
+        checkedAt: this.clock(), ...(completion ? { endLogged: true,
+          completed: { at: Number(completion.data.completedAt), world: Number(completion.data.worldTime),
+            kills: Number(completion.data.kills ?? attempt.kills), escapes: Number(completion.data.escapes ?? attempt.escapes) } } : {}) });
     }
     this.#ready = true;
   }
@@ -232,7 +240,7 @@ export class ChallengeEngine {
 
   onCommand(record: CommandRecord): void {
     const run = this.#running.get(record.agentId);
-    if (!run) return;
+    if (!run || run.completed) return;
     this.#log(run, 'command', { command: record.command, ...record.args });
     const broken = run.watch.commandBreaks(record.command, record.args);
     if (broken && !run.broken) run.broken = broken;
@@ -241,20 +249,22 @@ export class ChallengeEngine {
   onHunt(hunt: HuntOutcome): void {
     // Only the attempt's own animal counts, whoever steers it now.
     const hunter = hunt.predatorAgentId ? this.#running.get(hunt.predatorAgentId) : undefined;
-    if (hunter && hunter.attempt.animalId === hunt.predatorId) {
+    if (hunter && !hunter.completed && this.clock() < hunter.deadline && hunter.attempt.animalId === hunt.predatorId) {
       if (hunt.killed) hunter.kills++;
       this.#log(hunter, 'hunt', { as: 'predator', predatorId: hunt.predatorId, preyId: hunt.preyId, killed: hunt.killed });
+      this.#observeGoal(hunt.predatorAgentId!, hunter);
     }
     const prey = hunt.preyAgentId ? this.#running.get(hunt.preyAgentId) : undefined;
-    if (prey && prey.attempt.animalId === hunt.preyId) {
+    if (prey && !prey.completed && this.clock() < prey.deadline && prey.attempt.animalId === hunt.preyId) {
       if (!hunt.killed) prey.escapes++;
       this.#log(prey, 'hunt', { as: 'prey', predatorId: hunt.predatorId, preyId: hunt.preyId, killed: hunt.killed });
+      this.#observeGoal(hunt.preyAgentId!, prey);
     }
   }
 
   onEnded(life: EndedLife): void {
     const run = this.#running.get(life.agentId);
-    if (!run || run.finishing || run.attempt.animalId !== life.animalId) return;
+    if (!run || run.finishing || run.completed || run.attempt.animalId !== life.animalId) return;
     run.finishing = true;
     this.#running.delete(life.agentId);
     this.#log(run, 'end', { how: life.how });
@@ -262,18 +272,38 @@ export class ChallengeEngine {
     this.#ending.push(this.#finish(run, life.how === 'birth' ? 'void' : 'failed', life.how));
   }
 
+  /** Sample eligibility synchronously, before any database await can cross the deadline. */
+  #observeGoal(agentId: string, run: Running): void {
+    const at = this.clock();
+    if (run.completed || run.finishing || at >= run.deadline || !this.#holds(agentId, run.attempt.animalId)) return;
+    const avatar = this.live.avatars.get(agentId)!;
+    const world = this.world.now();
+    if (!goalMet(run.terms, { startedWorld: run.attempt.startedWorld, kills: run.kills, escapes: run.escapes,
+      position: { x: avatar.x, z: avatar.z } }, world)) return;
+    const broken = run.broken ?? run.watch.check(this.#view(agentId), at);
+    run.checkedAt = at;
+    if (broken) { run.broken = broken; return; }
+    run.completed = { at, world, kills: run.kills, escapes: run.escapes };
+  }
+
+  /** Called after each live movement tick: observation is independent of the slower DB timer. */
+  observeGoals(): void {
+    for (const [agentId, run] of this.#running) this.#observeGoal(agentId, run);
+  }
+
   // ---- timers -------------------------------------------------------------------------------
 
   /** Once a second: write logs and progress, check goals and deadlines. */
   async tick(): Promise<void> {
+    this.observeGoals();
     const ending = this.#ending;
     this.#ending = [];
     await Promise.all(ending);
     for (const u of this.#unfinished.splice(0)) await this.#finish(u.run, u.status, u.reason, u.endedWorld);
     await this.#flush();
-    const worldNow = this.world.now();
     for (const [agentId, run] of [...this.#running]) {
       if (run.finishing) continue;
+      if (run.completed) { await this.#win(agentId, run, run.completed.world); continue; }
       // Never judge a goal for an animal the player no longer holds, whatever the hooks said.
       if (!this.#holds(agentId, run.attempt.animalId)) {
         run.finishing = true;
@@ -296,11 +326,7 @@ export class ChallengeEngine {
         await this.store.saveProgress(run.attempt.id, run.kills, run.escapes);
         run.attempt = { ...run.attempt, kills: run.kills, escapes: run.escapes };
       }
-      const avatar = this.live.avatars.get(agentId)!;
-      if (goalMet(run.terms, { startedWorld: run.attempt.startedWorld, kills: run.kills, escapes: run.escapes,
-        position: { x: avatar.x, z: avatar.z } }, worldNow)) {
-        await this.#win(agentId, run, worldNow);
-      } else if (this.clock() >= run.deadline) {
+      if (this.clock() >= run.deadline) {
         run.finishing = true;
         this.#running.delete(agentId);
         this.#log(run, 'end', { how: 'deadline' });
@@ -408,15 +434,21 @@ export class ChallengeEngine {
   // ---- internals ----------------------------------------------------------------------------
 
   async #win(agentId: string, run: Running, worldNow: number): Promise<void> {
+    const completed = run.completed!;
+    // Persistence order cannot award a later observed completion ahead of a buffered earlier one.
+    if ([...this.#running.values()].some(other => other !== run && other.attempt.challengeId === run.attempt.challengeId
+      && other.completed && other.completed.at < completed.at)) return;
     run.finishing = true;
-    if (!run.endLogged) { this.#log(run, 'end', { how: 'goal_met', worldTime: worldNow }); run.endLogged = true; }
+    if (!run.endLogged) { this.#log(run, 'end', { how: 'goal_met', worldTime: worldNow, completedAt: completed.at,
+      kills: completed.kills, escapes: completed.escapes }); run.endLogged = true; }
     let challenge: Challenge, won: boolean;
     try {
       await this.#flush();
       challenge = (await this.store.challenge(run.attempt.challengeId))!;
-      const record = resultRecord(challenge, { ...run.attempt, status: 'met', endReason: 'goal_met' }, await this.store.log(run.attempt.id), worldNow);
+      const record = resultRecord(challenge, { ...run.attempt, kills: completed.kills, escapes: completed.escapes, status: 'met', endReason: 'goal_met' }, await this.store.log(run.attempt.id), worldNow);
       won = await this.store.win({ challengeId: challenge.id, attemptId: run.attempt.id, endedWorld: worldNow, resultRecord: record,
-        resultHash: keccak256(toBytes(record)), winner: run.attempt.payoutWallet });
+        resultHash: keccak256(toBytes(record)), winner: run.attempt.payoutWallet, completedAt: new Date(completed.at),
+        kills: completed.kills, escapes: completed.escapes });
     } catch (error) {
       // Keep the win: the next tick tries to record it again.
       run.finishing = false;

@@ -93,7 +93,6 @@ export async function relayDraft(store: ChallengeStore, config: DraftConfig, dra
   const draft = await store.draft(draftId);
   if (!draft) return { ok: false, status: 404, error: 'not_found' };
   if (draft.relayedAt) return { ok: false, status: 409, error: 'already_created' };
-  // A signed-in creator sends at most `sentPerDay` challenges a day, however many drafts they reviewed.
   if (draft.accountId && sentPerDay !== undefined && await store.sentDraftsToday(draft.accountId, draft.id) >= sentPerDay)
     return { ok: false, status: 429, error: 'daily_limit' };
   if (typeof signature !== 'string' || !/^0x[0-9a-fA-F]{130}$/.test(signature)) return { ok: false, status: 400, error: 'bad_signature' };
@@ -103,9 +102,9 @@ export async function relayDraft(store: ChallengeStore, config: DraftConfig, dra
   try { valid = await verifyTypedData({ address: getAddress(draft.creatorWallet), ...typed, signature: signature as Hex }); }
   catch { valid = false; }
   if (!valid) return { ok: false, status: 401, error: 'signature_does_not_match' };
-  const queued = await store.enqueueOp('relay_create', { draftId: draft.id }, {
+  const queued = await store.enqueueRelay(draft.id, {
     creator: getAddress(draft.creatorWallet), rulesHash: draft.rulesHash, prize: draft.prizeAtomic,
     deadline: String(Math.floor(draft.deadline.getTime() / 1000)), salt: draft.salt, validAfter: '0',
-    validBefore: String(typed.message.validBefore), signature });
-  return queued ? { ok: true } : { ok: false, status: 409, error: 'already_queued' };
+    validBefore: String(typed.message.validBefore), signature }, sentPerDay);
+  return queued === 'queued' ? { ok: true } : { ok: false, status: queued === 'daily_limit' ? 429 : queued === 'not_found' ? 404 : 409, error: queued };
 }

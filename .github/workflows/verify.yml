@@ -83,7 +83,7 @@ jobs:
         if: success() || failure()
         env:
           VANA_LONG_SOAK: '1'
-          VANA_LONG_SOAK_TERRAIN: island_v1
+          VANA_LONG_SOAK_TERRAIN: island_v2
           VANA_LONG_SOAK_DAYS: '1080'
           VANA_LONG_SOAK_OUTPUT: .ci-artifacts/multi-year
         run: |

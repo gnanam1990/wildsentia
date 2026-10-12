@@ -71,8 +71,11 @@ export async function mountAccountBox(onChange: (a: AccountView | null) => void,
     finally { link.disabled = false; }
   });
   signout.addEventListener('click', async () => {
-    try { await api('/accounts/logout', { method: 'POST' }); } catch { /* signed out either way */ }
-    render(null);
+    if (signout.disabled) return;
+    signout.disabled = true;
+    try { await api('/accounts/logout', { method: 'POST' }); render(null); }
+    catch { status.textContent = 'Sign out failed. Your session may still be active. Please try again.'; }
+    finally { signout.disabled = false; }
   });
   const loaded = await loadAccountState();
   enabled = loaded.enabled;

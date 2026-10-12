@@ -37,9 +37,12 @@ export class ChallengeIndexer {
         if (to < safeHead) return recorded; // more to read before checking for gaps
       }
       // Caught up: if the contract had more challenges by the safe head than are indexed, a node skipped some.
-      if (safeHead >= 0 && (await this.chain.challengeCount(safeHead)) > (await this.store.maxChallengeId(this.chain.contract))) {
-        console.error('[challenges] indexer found a gap; reading again from the start');
-        await this.store.resetCursor(this.chain.contract, this.fromBlock);
+      if (safeHead >= 0) {
+        const expected = await this.chain.challengeCount(safeHead);
+        if (await this.store.indexedChallengeCount(this.chain.contract, expected) !== expected) {
+          console.error('[challenges] indexer found a gap; reading again from the start');
+          await this.store.resetCursor(this.chain.contract, this.fromBlock);
+        }
       }
       return recorded;
     } finally { this.#busy = false; }

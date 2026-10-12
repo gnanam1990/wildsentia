@@ -11,7 +11,7 @@ import { ChallengeStore } from '../src/challenges/store.js';
 import { ChallengeEngine, GRACE_SECONDS, MAX_ATTEMPTS_PER_CHALLENGE, REFUND_MARGIN_SECONDS, WAIT_MS, type Player } from '../src/challenges/engine.js';
 import { HERD_GRACE_MS } from '../src/challenges/rules.js';
 import { WORLD_DAY_SECONDS } from '../src/challenges/goals.js';
-import { rulesHash, type ChallengeTerms } from '../src/challenges/terms.js';
+import { REACH_WITHIN_M, rulesHash, type ChallengeTerms } from '../src/challenges/terms.js';
 import { testDatabaseUrl } from './testDatabase.js';
 
 const url = testDatabaseUrl();
@@ -48,6 +48,7 @@ maybe('challenge engine', () => {
     live = new LiveLayer(port, null, () => now, () => random);
     store = new ChallengeStore(pool!);
     engine = new ChallengeEngine(store, live, port, () => now, { recordOnChain: true });
+    live.onTick = () => engine.observeGoals();
     live.onHunt = (h) => engine.onHunt(h);
     live.onCommand = (c) => engine.onCommand(c);
     live.onEnded = (l) => engine.onEnded(l);
@@ -284,6 +285,85 @@ maybe('challenge engine', () => {
     engine.onHunt({ predatorId: 'tiger_other', preyId: 'chital_x', predatorAgentId: 'ag_000000000000000a', preyAgentId: null, killed: true, at: now });
     await engine.tick();
     expect((await store.attempt(a.attemptId))!).toMatchObject({ status: 'running', kills: 0 });
+  });
+
+  it.each([0, 500])('refuses a reach goal first observed %i ms after the deadline', async (lateMs) => {
+    const deadline = T0 + 86_400_000;
+    const terms: ChallengeTerms = { template: 'reach', version: 1, speciesId: 'tiger', x: centre.x, z: centre.z, rules: [], briefing: '' };
+    const id = await challenge(terms, deadline);
+    const a = await engine.accept(player('ag_000000000000000a'), id);
+    if (!a.ok || a.queued) throw new Error('not started');
+    now = deadline + lateMs;
+    put(a.animalId, 0);
+    await engine.tick();
+    expect((await store.attempt(a.attemptId))!).toMatchObject({ status: 'failed', endReason: 'deadline', goalMetAt: null });
+    expect((await store.challenge(id))!.status).toBe('open');
+    expect(await store.opsOf({ challengeId: id })).toEqual([]);
+  });
+
+  it('observes a timely physical arrival on the live tick, then persists it after the deadline', async () => {
+    const deadline = T0 + 86_400_000;
+    const id = await challenge({ template: 'reach', version: 1, speciesId: 'tiger', x: centre.x, z: centre.z, rules: [], briefing: '' }, deadline);
+    const a = await engine.accept(player('ag_000000000000000a'), id);
+    if (!a.ok || a.queued) throw new Error('not started');
+    now = deadline - 200;
+    put(a.animalId, -REACH_WITHIN_M - 0.01);
+    expect(live.moveTo('ag_000000000000000a', [{ x: centre.x, z: centre.z }], 'walk')).toBeNull();
+    now = deadline - 100;
+    live.tick(0.1);
+    expect(Math.hypot(avatarOf('ag_000000000000000a').x - centre.x, avatarOf('ag_000000000000000a').z - centre.z)).toBeLessThan(REACH_WITHIN_M);
+    expect((await store.attempt(a.attemptId))!.status).toBe('running');
+    now = deadline + 500;
+    await engine.tick();
+    expect((await store.attempt(a.attemptId))!).toMatchObject({ status: 'met', goalMetAt: new Date(deadline - 100) });
+    expect((await store.opsOf({ challengeId: id })).map(op => op.kind)).toEqual(['resolve']);
+  });
+
+  it('awards the first observed completion even when another player was accepted earlier', async () => {
+    const deadline = T0 + 86_400_000;
+    const id = await challenge({ template: 'reach', version: 1, speciesId: 'chital', x: centre.x, z: centre.z, rules: [], briefing: '' }, deadline);
+    const firstAccepted = await accepted('ag_000000000000000a', id);
+    const firstFinished = await accepted('ag_000000000000000b', id);
+    now = deadline - 500;
+    put(firstFinished.animalId, 0); engine.observeGoals();
+    now += 100;
+    put(firstAccepted.animalId, 0); engine.observeGoals();
+    now = deadline + 500;
+    await engine.tick();
+    expect((await store.challenge(id))!.winnerAttempt).toBe(firstFinished.attemptId);
+    expect((await store.attempt(firstFinished.attemptId))!.status).toBe('met');
+    expect((await store.attempt(firstAccepted.attemptId))!.status).toBe('void');
+    expect((await store.opsOf({ challengeId: id })).map(op => op.kind)).toEqual(['resolve']);
+  });
+
+  it('ignores a hunt that first completes after the deadline', async () => {
+    const deadline = T0 + 86_400_000;
+    const id = await challenge({ template: 'hunt', version: 1, speciesId: 'tiger', count: 1, rules: [], briefing: '' }, deadline);
+    const a = await engine.accept(player('ag_000000000000000a'), id);
+    if (!a.ok || a.queued) throw new Error('not started');
+    now = deadline + 500;
+    engine.onHunt({ predatorAgentId: 'ag_000000000000000a', predatorId: a.animalId, preyAgentId: null, preyId: wildChital().id, killed: true });
+    await engine.tick();
+    expect((await store.attempt(a.attemptId))!).toMatchObject({ status: 'failed', kills: 0 });
+    expect(await store.opsOf({ challengeId: id })).toEqual([]);
+  });
+
+  it.each([false, true])('keeps a timely observed win through delayed DB delivery (restart=%s)', async (restart) => {
+    const deadline = T0 + 86_400_000;
+    const id = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 1, rules: [], briefing: '' }, deadline);
+    const a = await engine.accept(player('ag_000000000000000a'), id);
+    if (!a.ok || a.queued) throw new Error('not started');
+    now = deadline - 500; worldNow += WORLD_DAY_SECONDS;
+    const completedWorld = worldNow;
+    vi.spyOn(store, 'win').mockRejectedValueOnce(new Error('transient DB failure'));
+    await engine.tick();
+    expect((await store.attempt(a.attemptId))!.status).toBe('running');
+    now = deadline + 500; worldNow += WORLD_DAY_SECONDS;
+    if (restart) { engine = new ChallengeEngine(store, live, port, () => now); await engine.restore(); }
+    await engine.tick();
+    expect((await store.attempt(a.attemptId))!).toMatchObject({ status: 'met', endedWorld: completedWorld, goalMetAt: new Date(deadline - 500) });
+    expect((await store.challenge(id))!.status).toBe('won');
+    expect((await store.opsOf({ challengeId: id })).map(op => op.kind)).toEqual(['resolve']);
   });
 
   it('keeps a win it failed to write, and records it on the next tick', async () => {

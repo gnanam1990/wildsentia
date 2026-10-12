@@ -33,6 +33,8 @@ export interface Attempt {
   endedWorld: number | null; endReason: string | null; resultRecord: string | null; resultHash: Hex | null;
   /** The player's name, where the query joined it. */
   agentName?: string;
+  /** When the server observed an eligible completion; delivery may happen later. */
+  goalMetAt?: Date | null;
 }
 export interface LogEntry { at: Date; kind: string; data: Record<string, unknown> }
 export interface ChainOp {
@@ -61,7 +63,7 @@ const challenge = (r: any): Challenge => ({ id: Number(r.id), contract: r.contra
 const attempt = (r: any): Attempt => ({ id: r.id, challengeId: Number(r.challenge_id), agentId: r.agent_id, animalId: r.animal_id,
   payoutWallet: r.payout_wallet, startedAt: r.started_at, startedWorld: Number(r.started_world), startState: r.start_state,
   kills: r.kills, escapes: r.escapes, status: r.status, endedAt: r.ended_at, endedWorld: r.ended_world === null ? null : Number(r.ended_world),
-  endReason: r.end_reason, resultRecord: r.result_record, resultHash: r.result_hash, ...(r.agent_name ? { agentName: r.agent_name } : {}) });
+  goalMetAt: r.goal_met_at ?? null, endReason: r.end_reason, resultRecord: r.result_record, resultHash: r.result_hash, ...(r.agent_name ? { agentName: r.agent_name } : {}) });
 const op = (r: any): ChainOp => ({ id: r.id, kind: r.kind, challengeId: r.challenge_id === null ? null : Number(r.challenge_id),
   draftId: r.draft_id, attemptId: r.attempt_id, payload: r.payload, status: r.status, txHash: r.tx_hash, sentNonce: r.sent_nonce === null ? null : Number(r.sent_nonce),
   sentMaxFee: r.sent_max_fee === null ? null : String(r.sent_max_fee), tries: r.tries, lastError: r.last_error, updatedAt: r.updated_at });
@@ -109,6 +111,36 @@ export class ChallengeStore {
           where o.draft_id = d.id and o.kind = 'relay_create' and o.status <> 'failed'))::int as n from challenge_drafts d
       where d.account_id = $1 and d.id <> $2 and d.created_at > now() - interval '24 hours'`, [accountId, except]);
     return rows[0].n;
+  }
+
+  /** Signature verification happens first; quota reservation and enqueue share the draft-policy account lock. */
+  async enqueueRelay(draftId: string, payload: Record<string, unknown>, sentPerDay?: number):
+    Promise<'queued' | 'daily_limit' | 'already_queued' | 'already_created' | 'not_found'> {
+    const db = await this.pool.connect();
+    try {
+      await db.query('begin');
+      const account = await db.query('select account_id from challenge_drafts where id = $1', [draftId]);
+      if (!account.rows[0]) { await db.query('rollback'); return 'not_found'; }
+      const accountId = account.rows[0].account_id;
+      if (accountId) await db.query('select pg_advisory_xact_lock(hashtext($1))', [`challenge-drafts:${accountId}`]);
+      const { rows: [d] } = await db.query('select * from challenge_drafts where id = $1 for update', [draftId]);
+      if (!d) { await db.query('rollback'); return 'not_found'; }
+      if (d.relayed_at) { await db.query('rollback'); return 'already_created'; }
+      const existing = await db.query("select 1 from challenge_chain_ops where draft_id = $1 and kind = 'relay_create' and status <> 'failed'", [draftId]);
+      if (existing.rowCount) { await db.query('rollback'); return 'already_queued'; }
+      if (accountId && sentPerDay !== undefined) {
+        const { rows: [count] } = await db.query(`select count(*)::int as n from challenge_drafts d
+          where d.account_id = $1 and d.id <> $2 and d.created_at > now() - interval '24 hours'
+          and (d.relayed_at is not null or exists (select 1 from challenge_chain_ops o
+            where o.draft_id = d.id and o.kind = 'relay_create' and o.status <> 'failed'))`, [accountId, draftId]);
+        if (count.n >= sentPerDay) { await db.query('rollback'); return 'daily_limit'; }
+      }
+      const queued = await db.query(`insert into challenge_chain_ops (id, kind, draft_id, payload, status)
+        values ($1, 'relay_create', $2, $3, 'pending') on conflict do nothing`, [randomUUID(), draftId, JSON.stringify(payload)]);
+      await db.query('commit');
+      return queued.rowCount === 1 ? 'queued' : 'already_queued';
+    } catch (error) { await db.query('rollback'); throw error; }
+    finally { db.release(); }
   }
 
   async draft(id: string): Promise<Draft | null> {
@@ -169,6 +201,13 @@ export class ChallengeStore {
   async maxChallengeId(contract: string): Promise<number> {
     const { rows } = await this.pool.query('select coalesce(max(id), 0) as max from challenges where contract = $1', [contract.toLowerCase()]);
     return Number(rows[0].max);
+  }
+
+  /** IDs are positive and unique: count through the chain's safe-head total detects interior omissions too. */
+  async indexedChallengeCount(contract: string, throughId: number): Promise<number> {
+    const { rows } = await this.pool.query('select count(*) as n from challenges where contract = $1 and id between 1 and $2',
+      [contract.toLowerCase(), throughId]);
+    return Number(rows[0].n);
   }
 
   /** Contracts other than this one with challenges or an indexer cursor here: one database serves one contract. */
@@ -310,16 +349,17 @@ export class ChallengeStore {
    * if the challenge was no longer open, in which case nothing changes.
    */
   async win(w: { challengeId: number; attemptId: string; endedWorld: number; resultRecord: string; resultHash: Hex;
-    winner: string }): Promise<boolean> {
+    winner: string; completedAt: Date; kills?: number; escapes?: number }): Promise<boolean> {
     const db = await this.pool.connect();
     try {
       await db.query('begin');
-      const won = await db.query(`update challenges set status = 'won', winner_attempt = $2 where id = $1 and status = 'open'`,
-        [w.challengeId, w.attemptId]);
+      const won = await db.query(`update challenges set status = 'won', winner_attempt = $2 where id = $1 and status = 'open' and $3 < deadline`,
+        [w.challengeId, w.attemptId, w.completedAt]);
       if (won.rowCount !== 1) { await db.query('rollback'); return false; }
       const met = await db.query(`update challenge_attempts set status = 'met', end_reason = 'goal_met', ended_at = now(),
-        ended_world = $2, result_record = $3, result_hash = $4 where id = $1 and status = 'running' and challenge_id = $5`,
-      [w.attemptId, Math.floor(w.endedWorld), w.resultRecord, w.resultHash.toLowerCase(), w.challengeId]);
+        ended_world = $2, result_record = $3, result_hash = $4, goal_met_at = $6,
+        kills = coalesce($7, kills), escapes = coalesce($8, escapes) where id = $1 and status = 'running' and challenge_id = $5`,
+      [w.attemptId, Math.floor(w.endedWorld), w.resultRecord, w.resultHash.toLowerCase(), w.challengeId, w.completedAt, w.kills ?? null, w.escapes ?? null]);
       if (met.rowCount !== 1) { await db.query('rollback'); return false; }
       await db.query(`update challenge_attempts set status = 'void', end_reason = 'challenge_won', ended_at = now(), ended_world = $2
         where challenge_id = $1 and status = 'running'`, [w.challengeId, Math.floor(w.endedWorld)]);
@@ -404,6 +444,35 @@ export class ChallengeStore {
   /** Notes an error without changing the operation's state or its clock. */
   async noteOpError(id: string, error: string): Promise<void> {
     await this.pool.query('update challenge_chain_ops set last_error = $2 where id = $1', [id, error.slice(0, 500)]);
+  }
+
+  /** Terminal money operations and their challenge transition commit together, or both remain retryable. */
+  async finishOp(id: string, status: 'confirmed' | 'failed', error?: string,
+    settlement?: { status: 'paid' | 'refunded'; txHash?: Hex }): Promise<void> {
+    const db = await this.pool.connect();
+    try {
+      await db.query('begin');
+      const { rows: [o] } = await db.query('select * from challenge_chain_ops where id = $1 for update', [id]);
+      if (!o) { await db.query('rollback'); return; }
+      const to = settlement?.status ?? (status === 'failed' && o.kind === 'resolve' ? 'unpaid' : null);
+      if (to) await db.query(`update challenges set status = $2, settled_tx = coalesce($3, settled_tx)
+        where id = $1 and status = any($4)`, [o.challenge_id, to, settlement?.txHash?.toLowerCase() ?? null,
+        to === 'unpaid' ? ['won'] : ['open', 'unrecognised', 'unpaid', 'refunding', 'won']]);
+      await db.query(`update challenge_chain_ops set status = $2, last_error = coalesce($3, last_error), updated_at = now() where id = $1`,
+        [id, status, error?.slice(0, 500) ?? null]);
+      await db.query('commit');
+    } catch (error) { await db.query('rollback'); throw error; }
+    finally { db.release(); }
+  }
+
+  /** Old releases could commit the op before its challenge; reconcile these rows against chain state. */
+  async terminalOpsToReconcile(limit = 100): Promise<ChainOp[]> {
+    const { rows } = await this.pool.query(`select o.* from challenge_chain_ops o join challenges c on c.id = o.challenge_id
+      where o.kind in ('resolve', 'refund') and
+        ((o.status = 'confirmed' and c.status not in ('paid', 'refunded')) or
+         (o.status = 'failed' and o.kind = 'resolve' and c.status = 'won'))
+      order by o.updated_at limit $1`, [limit]);
+    return rows.map(op);
   }
 
   async markOpConfirmed(id: string): Promise<void> {

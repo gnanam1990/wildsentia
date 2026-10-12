@@ -76,6 +76,27 @@ describe('dholes hunt as a pack (sim_0.36.0)', () => {
     expect(joined).toBeGreaterThan(5);
   });
 
+  it('lets a hungry packmate initiate before a sated member spends the shared hour wandering', () => {
+    let joint = 0;
+    for (let seed = 1; seed <= 40; seed++) {
+      const world = packWorld(seed), start = world.now();
+      const first = world.agents.find(a => a.speciesId === 'dhole')!;
+      first.drives.hunger = 0.05;
+      world.step(1);
+      const events = world.log.all().filter(e => e.worldTime >= start);
+      const hunt = events.find(e => e.type === 'hunt' && e.conditions.predatorSpecies === 'dhole');
+      if (!hunt || !String(hunt.conditions.packmateIds).split(',').includes(first.id)) continue;
+      joint++;
+      expect(hunt.actors[0]).not.toBe(first.id);
+      expect(events.filter(e => e.movement?.actorId === first.id && e.goal === 'wander')).toEqual([]);
+      for (const move of events.filter(e => e.movement?.actorId === first.id)) {
+        expect(move.movement!.startWorldTime).toBeGreaterThanOrEqual(start);
+        expect(move.movement!.startWorldTime + (move.movement!.samples.at(-1)?.seconds ?? 0)).toBeLessThanOrEqual(start + 3600);
+      }
+    }
+    expect(joint).toBeGreaterThan(15);
+  });
+
   it('packmates close by join the commit, spend their hour on it and feed together at the kill', () => {
     let seen = false;
     for (let seed = 1; seed <= 40 && !seen; seed++) {
@@ -151,6 +172,31 @@ describe('dholes hunt as a pack (sim_0.36.0)', () => {
     }
     expect(solo).toBe(0);
     expect(moved).toBeGreaterThan(10);
+  });
+
+  it('does not rendezvous with a carrier that cannot join this hour instead of hunting locally', () => {
+    for (let seed = 1; seed <= 10; seed++) {
+      const world = createWorld({ seed, speciesDir: SPECIES_DIR, initialAgents: { dhole: 2, hare: 6 }, minPopulation: {} });
+      world.step(MORNING);
+      const centre = patchCentre(210);
+      const [lead, carrier] = world.agents.filter(a => a.speciesId === 'dhole') as [Agent, Agent];
+      world.carcasses.length = 0;
+      world.agents.forEach((a, i) => {
+        a.patchId = 210; a.position = { x: centre.x + 30 + i * 4, z: centre.z, heading: 0 };
+        a.drives = { hunger: 0.2, thirst: 0.1, fatigue: 0, fear: 0 };
+        delete a.gutKg; delete a.failedHunts;
+      });
+      lead.position = { x: centre.x - 40, z: centre.z, heading: 0 }; lead.drives.hunger = 0.7;
+      carrier.patchId = 250; carrier.position = { ...patchCentre(250), heading: 0 };
+      carrier.packFood = { kg: 1, moistureLPerKg: 0.65, sourceCarcassId: 'reserved', sourceActorId: 'prey',
+        sourceEventId: 'reserved-event', collectedAt: world.now(), expiresAt: world.now() + 6 * 3600,
+        recipientId: 'recipient', packId: carrier.groupId! };
+      world.__reindexForTest();
+      const start = world.now(); world.step(1);
+      const hunts = world.log.all().filter(e => e.worldTime >= start && e.type === 'hunt' && e.actors[0] === lead.id);
+      expect(hunts, `seed ${seed}`).toHaveLength(1);
+      expect(hunts[0]!.conditions.preySpecies).toBe('hare');
+    }
   });
 
   it('the mother of pups too young to follow stays at the den instead of joining', () => {
