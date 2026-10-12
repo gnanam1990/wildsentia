@@ -29,12 +29,13 @@ export function waterRetentionL(patch: Patch): number {
 }
 
 /** Local input/loss step. Overflow is retained until the network can route it, never discarded. */
-export function updateWater(patch: Patch, hours: number, season: Season): { rainfallL: number; groundwaterL: number; evaporatedL: number } {
+export function updateWater(patch: Patch, hours: number, season: Season, rainfallScale = 1): { rainfallL: number; groundwaterL: number; evaporatedL: number } {
   if (!Number.isFinite(hours) || hours <= 0 || !Number.isFinite(patch.waterVolume) || patch.waterVolume < 0)
     throw new Error('invalid water step');
   // The ocean is outside the surface-freshwater reservoir; salt water is never drinkable stock.
   if (patch.surface === 'ocean') return { rainfallL: 0, groundwaterL: 0, evaporatedL: 0 };
-  const rainfallL = RAINFALL_L_PER_HOUR[season] * hours;
+  if (!Number.isFinite(rainfallScale) || rainfallScale < 0 || rainfallScale > 1) throw new Error('invalid experiment rainfall scale');
+  const rainfallL = RAINFALL_L_PER_HOUR[season] * hours * rainfallScale;
   const groundwaterL = (BASEFLOW_L_PER_HOUR[patch.habitat] ?? 0) * hours;
   const rain = rainfallL + groundwaterL;
   const evaporated = Math.min(patch.waterVolume, patch.waterVolume * EVAPORATION_FRACTION_PER_HOUR[season] * hours);

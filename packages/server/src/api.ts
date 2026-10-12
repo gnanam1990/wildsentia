@@ -24,8 +24,11 @@ import type { PlaceDropLedger } from './live/liveStore.js';
 import { GENERAL_LIMIT_DEFAULTS, NetworkRateLimit, type GeneralLimits } from './limits.js';
 import { networkKey } from './network.js';
 import { countResponse, type HttpStats } from './metrics.js';
+import type { ExperienceService } from './experiences/service.js';
+import { installExperiences } from './experiences/routes.js';
 
 export interface ApiDeps {
+  experiences?: ExperienceService;
   host: SimHost;
   pool: Pool;
   /** Rewords recap lines through the grounding check. Without one, recaps are templates. */
@@ -74,7 +77,7 @@ export function trustedProxyHops(env: NodeJS.ProcessEnv): number {
  * World routes are read-only. The optional reward ledger has independent write routes and
  * receives only a read-only subject visibility adapter, never a simulation mutation capability.
  */
-export function buildApi({ host, pool, narrator, insights: insightDeps, live, rewards, receiptRpc, social, holder, holderChain, trustedProxyHops: hops = 0, limits, httpStats, challenges, accounts, challengeSocial }: ApiDeps): FastifyInstance {
+export function buildApi({ host, pool, narrator, insights: insightDeps, live, rewards, receiptRpc, social, holder, holderChain, trustedProxyHops: hops = 0, limits, httpStats, challenges, accounts, challengeSocial, experiences }: ApiDeps): FastifyInstance {
   // Without this, behind Caddy every visitor has the proxy's address and shares one rate limit.
   const app = Fastify({ logger: false, trustProxy: hops > 0 ? (_address: string, hop: number) => hop < hops : false });
   if (httpStats) app.addHook('onResponse', async (_req, reply) => { countResponse(httpStats, reply.statusCode); });
@@ -98,6 +101,7 @@ export function buildApi({ host, pool, narrator, insights: insightDeps, live, re
     return reply.code(500).send({ error: 'internal_error' });
   });
   const events = new EventStore(pool);
+  if (experiences) installExperiences(app, experiences);
   const life = new LifeStore(pool);
   const humanMotion = new HumanMotionStore(pool);
   const historyCursors = new HistoryCursors();

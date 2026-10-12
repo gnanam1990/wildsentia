@@ -11,6 +11,13 @@ and operating it, art and video, and current status.
 
 ## Status
 
+**12 October 2026: [Forest experiences](docs/2026-10-12-forest-experiences.md).**
+Open `/experiences.html` from the forest's View settings for isolated Survival League matches,
+recorded wildlife clips, a Safari guide, saved followed lives and checkpoint-based What-if Lab
+comparisons. Local matches and text features work without provider credentials. OpenRouter
+model players and LiveKit voice are optional; the setup guide documents their configuration,
+limits and verification boundaries.
+
 **26 September 2026: `sim_0.30.0`, observer and rewards journeys working end to end on local
 staging.** The feature-by-feature evidence and what still needs the owner (VPS/domain, funding
 the USDC payout wallet, boar art) is in [`docs/LAUNCH-CHECKLIST.md`](docs/LAUNCH-CHECKLIST.md).

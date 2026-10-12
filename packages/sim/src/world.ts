@@ -1,6 +1,6 @@
 import {
   NUTRIENT_PER_KG_BIOMASS, PATCH_COUNT, WORLD_SECONDS_PER_DAY, WORLD_SECONDS_PER_HOUR,
-  createRng, isIslandProfile, seasonAt, carcassMass, edibleMass, landWalkable, spatialHash, treeAnchorForPatch, patchAtPosition, positionInPatch, type TerrainProfile,
+  createRng, isIslandProfile, seasonAt, carcassMass, edibleMass, landWalkable, spatialHash, treeAnchorForPatch, patchAtPosition, positionInPatch, isWorldPosition, type TerrainProfile,
   type WorldPosition, type MovementTrace,
   type Agent, type Carcass, type DeathCause, type Patch, type Rng, type SkillId,
   type RngState, type SpeciesConfig, type WorldTime, type WaterBudget, type MicroEcologyState, type CommunityState, type CommunityProfile,
@@ -49,6 +49,8 @@ const DEPENDENT_URGENT_THIRST = 0.5;
 const DEPENDENT_URGENT_HUNGER = 0.65;
 
 export interface WorldOptions {
+  /** Isolated experiments only; ordinary worlds keep the exact existing rainfall policy. */
+  rainfallScale?: number;
   communityProfile?: CommunityProfile;
   /** New worlds only. Restored households retain their saved rules version. */
   initialCommunityRulesVersion?: 2 | 3 | 4 | 5 | 6 | 7 | 8;
@@ -111,6 +113,8 @@ export class World {
   readonly #carcassesByPatch = new Map<number, Carcass[]>();
 
   constructor(options: WorldOptions) {
+    if (options.rainfallScale !== undefined && (!Number.isFinite(options.rainfallScale) || options.rainfallScale < 0 || options.rainfallScale > 1))
+      throw new Error('rainfall scale must be between zero and one');
     if (options.communityProfile !== undefined && !['none', 'household_v1'].includes(options.communityProfile))
       throw new Error('unknown community profile');
     if (options.initialCommunityRulesVersion !== undefined && ![2, 3, 4, 5, 6, 7, 8].includes(options.initialCommunityRulesVersion))
@@ -998,7 +1002,7 @@ export class World {
   placeControlled(id: string, position: WorldPosition): boolean {
     const agent = this.#agentsById.get(id);
     if (!agent?.alive || !agent.controller) return false;
-    if (![position.x, position.z, position.heading].every(Number.isFinite)) return false;
+    if (!isWorldPosition(position)) return false;
     const patchId = patchAtPosition(position);
     if (patchId < 0 || !landWalkable(this.patches[patchId]) || !positionInPatch(position, patchId)) return false;
     agent.position = { x: position.x, z: position.z, heading: position.heading };
@@ -1058,7 +1062,7 @@ export class World {
   placeWild(id: string, position: WorldPosition): boolean {
     const agent = this.#agentsById.get(id);
     if (!agent?.alive || agent.controller) return false;
-    if (![position.x, position.z, position.heading].every(Number.isFinite)) return false;
+    if (!isWorldPosition(position)) return false;
     const patchId = patchAtPosition(position);
     if (patchId < 0 || !landWalkable(this.patches[patchId]) || !positionInPatch(position, patchId)) return false;
     agent.position = { x: position.x, z: position.z, heading: position.heading };
@@ -1129,7 +1133,7 @@ export class World {
     for (const agent of this.agents) locateAgent(agent);
     const season = seasonAt(this.#time);
 
-    updateDrainage(this.patches, hours, season, this.waterBudget);
+    updateDrainage(this.patches, hours, season, this.waterBudget, this.#options.rainfallScale ?? 1);
     for (const patch of this.patches) {
       growPlants(patch, hours, season);
       growRooting(patch, hours, season);

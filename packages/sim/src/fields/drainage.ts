@@ -28,11 +28,11 @@ export function drainageGraph(patches: readonly Patch[]): Map<number, number | n
   }));
 }
 
-export function updateDrainage(patches: Patch[], hours: number, season: Season, budget: WaterBudget): void {
+export function updateDrainage(patches: Patch[], hours: number, season: Season, budget: WaterBudget, rainfallScale = 1): void {
   if (!Number.isFinite(hours) || hours <= 0) throw new Error('invalid drainage duration');
   const graph = drainageGraph(patches), byId = new Map(patches.map(p => [p.id, p]));
   for (const p of patches) {
-    const flux = updateWater(p, hours, season);
+    const flux = updateWater(p, hours, season, rainfallScale);
     budget.rainfallL += flux.rainfallL; budget.groundwaterL += flux.groundwaterL; budget.evaporatedL += flux.evaporatedL;
     const x = p.id % GRID_SIZE, y = Math.floor(p.id / GRID_SIZE);
     const downstreamPatchId = graph.get(p.id)!;

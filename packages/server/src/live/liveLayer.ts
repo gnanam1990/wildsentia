@@ -501,7 +501,8 @@ export class LiveLayer {
     if (away) { dx = -dx; dz = -dz; }
     // A fleeing animal that meets water or sea veers to either side before it gives up.
     for (const turn of away ? [0, 0.7, -0.7, 1.4, -1.4] : [0]) {
-      const heading = Math.atan2(dx, dz) + turn, step = away ? metres : Math.min(metres, gap);
+      const angle = Math.atan2(dx, dz) + turn;
+      const heading = Math.atan2(Math.sin(angle), Math.cos(angle)), step = away ? metres : Math.min(metres, gap);
       const next = { x: from.x + Math.sin(heading) * step, z: from.z + Math.cos(heading) * step, heading };
       if (wild ? this.world.placeWild(id, next) : this.world.place(id, next)) return next;
     }

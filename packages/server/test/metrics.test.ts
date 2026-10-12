@@ -153,8 +153,10 @@ describe('where /metrics is served', () => {
 
   it('is refused by Caddy: /api/metrics is answered 404 before the API proxy', () => {
     const caddyfile = readFileSync(fileURLToPath(new URL('../../../deploy/Caddyfile', import.meta.url)), 'utf8');
-    // Caddy sorts handle blocks by path specificity, so this longer path wins over /api/*.
-    expect(caddyfile).toMatch(/\n {2}handle \/api\/metrics\* \{\n {4}respond 404\n {2}\}\n/);
+    // Inside the explicit route, refusal precedes the general API proxy regardless
+    // of indentation or whether Caddy's formatter uses tabs.
+    expect(caddyfile).toMatch(/\bhandle \/api\/metrics\*\s*\{\s*respond 404\s*}/);
+    expect(caddyfile.indexOf('handle /api/metrics')).toBeLessThan(caddyfile.indexOf('handle_path /api/'));
     expect(caddyfile).not.toMatch(/9464/);
   });
 });

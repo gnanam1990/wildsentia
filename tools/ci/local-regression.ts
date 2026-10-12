@@ -38,6 +38,7 @@ try {
   url.pathname = '/vana_regression_test';
   const env: NodeJS.ProcessEnv = { ...process.env, TEST_DATABASE_URL: url.href, VANA_REQUIRE_TEST_DATABASE: '1' };
   delete env.DATABASE_URL; delete env.ANTHROPIC_API_KEY;
+  for (const key of ['OPENROUTER_API_KEY','LIVEKIT_URL','LIVEKIT_API_KEY','LIVEKIT_API_SECRET','VANA_SAFARI_LIVEKIT','VANA_LEAGUE_PUBLIC_MODELS']) delete env[key];
   // Optional file arguments run only the named focused tests against this same
   // isolated database; no argument preserves the full CI gate.
   const files = process.argv.slice(2);

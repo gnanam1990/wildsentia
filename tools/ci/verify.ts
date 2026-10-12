@@ -11,6 +11,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const env: NodeJS.ProcessEnv = { ...process.env, VANA_REQUIRE_TEST_DATABASE: '1' };
 delete env.DATABASE_URL;
 delete env.ANTHROPIC_API_KEY;
+for (const key of ['OPENROUTER_API_KEY','LIVEKIT_URL','LIVEKIT_API_KEY','LIVEKIT_API_SECRET','VANA_SAFARI_LIVEKIT','VANA_LEAGUE_PUBLIC_MODELS']) delete env[key];
 delete env.VANA_LONG_SOAK;
 const run = (args: string[]): void => {
   const result = spawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', args,

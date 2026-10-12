@@ -6,6 +6,8 @@ snapshots/
 soak-output/
 .ci-artifacts/
 .local-preview/
+.voice-venv/
+/tools/voice/__pycache__/
 /tools/assets/sources/humans-*/standard.zip
 /tools/assets/sources/humans-incomplete-v1/
 /tools/assets/sources/humans-review-v*/

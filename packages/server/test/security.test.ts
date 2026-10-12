@@ -92,7 +92,7 @@ describe('error responses', () => {
 
 describe('deploy/Caddyfile', () => {
   const caddyfile = readFileSync(fileURLToPath(new URL('../../../deploy/Caddyfile', import.meta.url)), 'utf8');
-  const start = caddyfile.indexOf('  header {'), headers = caddyfile.slice(start, caddyfile.indexOf('\n  }', start));
+  const headers = caddyfile.match(/\bheader\s*\{([\s\S]*?)\n\s*}/)?.[1] ?? '';
   it('tells browsers to keep to HTTPS and refuse framing, plugins and a foreign base URL', () => {
     expect(headers).toMatch(/Strict-Transport-Security "max-age=\d{8,}"/);
     for (const directive of ["frame-ancestors 'none'", "object-src 'none'", "base-uri 'self'"])
@@ -100,6 +100,20 @@ describe('deploy/Caddyfile', () => {
     expect(headers).toMatch(/Permissions-Policy "[^"]*camera=\(\)/);
     expect(headers).toContain('X-Content-Type-Options nosniff');
     expect(headers).toContain('X-Frame-Options DENY');
-    expect(headers).toMatch(/^\s*-Server$/m);
+    // Server removal is a separate deferred operation: grouping it with the defaults
+    // would overwrite the narrower framing/microphone policy at response time.
+    expect(caddyfile).toMatch(/^\s*header -Server$/m);
+    expect(headers).not.toMatch(/^\s*-Server$/m);
+  });
+  it('permits only the experience observer embed and the guide microphone', () => {
+    for (const name of ['Caddyfile', 'railway/Caddyfile']) {
+      const text = readFileSync(fileURLToPath(new URL(`../../../deploy/${name}`, import.meta.url)), 'utf8');
+      expect(text).toMatch(/@forestExperienceEmbed\s*\{\s*path \/\s*query embed=experiences\s*}/);
+      expect(text).toMatch(/header @forestExperienceEmbed\s*\{\s*X-Frame-Options SAMEORIGIN/);
+      expect(text).toContain("frame-ancestors 'self'");
+      expect(text).toContain('@experiencePage path /experiences.html');
+      expect(text).toContain('header @experiencePage Permissions-Policy "camera=(), microphone=(self)');
+      expect(text.indexOf('header @experiencePage')).toBeLessThan(text.indexOf('handle /api/metrics'));
+    }
   });
 });

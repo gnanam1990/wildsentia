@@ -12,6 +12,7 @@
     "@vana/shared": "*",
     "@vana/sim": "*",
     "fastify": "^5.0.0",
+    "livekit-server-sdk": "^2.19.1",
     "pg": "^8.13.0",
     "viem": "^2.56.9",
     "ws": "^8.18.0"
