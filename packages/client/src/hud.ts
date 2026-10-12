@@ -1,6 +1,7 @@
 import type { WorldStore } from './protocol.js';
 import { modelStatusForAnimal } from './species.js';
 import { validNextCursor } from './historyCursor.js';
+import { PASSPORT_TABS, PassportTabs, type PassportTab } from './passportTabs.js';
 
 /**
  * Every value shown here is read from the store, which holds only what the server said.
@@ -41,6 +42,8 @@ const escape = (text: string): string =>
 
 const age = (days: number): string =>
   days >= 365 ? `${(days / 365).toFixed(1)} years` : `${Math.round(days)} days`;
+
+const readable = (value: string): string => value.replaceAll('_', ' ').replace(/^./, c => c.toUpperCase());
 
 const SKILL_LABEL: Record<string, string> = {
   forage_efficiency: 'Foraging', water_locations: 'Knows the water',
@@ -129,14 +132,41 @@ export function feedEventSummary(event: Record<string, unknown>): { title: strin
   return { title, meta: `${actor} · ${time}${outcome}`, id: typeof event.id === 'string' ? event.id : 'not recorded' };
 }
 
+export interface FeedGroup {
+  sentence: string;
+  events: Array<Record<string, unknown>>;
+}
+
+/** Group the existing six-event window without changing its newest-first order or its facts.
+ * An unknown time cannot establish a shared hour, so those records stay separate. */
+export function groupFeedEvents(events: readonly Record<string, unknown>[]): FeedGroup[] {
+  const groups: FeedGroup[] = [];
+  const byHourAndSentence = new Map<string, FeedGroup>();
+  for (const event of events.slice(0, 6)) {
+    const sentence = feedSentence(event);
+    const hour = typeof event.worldTime === 'number' && Number.isFinite(event.worldTime) && event.worldTime >= 0
+      ? Math.floor(event.worldTime / 3600) : null;
+    const key = hour === null ? null : JSON.stringify([hour, sentence]);
+    const existing = key === null ? undefined : byHourAndSentence.get(key);
+    if (existing) existing.events.push(event);
+    else {
+      const group = { sentence, events: [event] };
+      groups.push(group);
+      if (key !== null) byHourAndSentence.set(key, group);
+    }
+  }
+  return groups;
+}
+
 const kinLink = (kin: { id: string; alive: boolean } | null): string => kin === null
   ? '<span class="unknown" title="a founder or immigrant: no parent in the record">none recorded</span>'
-  : `<a href="#" data-follow="${escape(kin.id)}">${escape(kin.id)}</a>${kin.alive ? '' : ' <i>(dead)</i>'}`;
+  : `<a href="#" data-follow="${escape(kin.id)}" data-passport-focus="${escape(`kin:${kin.id}`)}">${escape(kin.id)}</a>${kin.alive ? '' : ' <i>(dead)</i>'}`;
 
 export interface HudElements {
   clock: HTMLElement;
   season: HTMLElement;
   population: HTMLElement;
+  renderPopulation?: (total: number | null, listHtml: string) => void;
   passport: HTMLElement;
   feed: HTMLElement;
   notice: HTMLElement;
@@ -152,6 +182,8 @@ export class Hud {
   #recapRequest = 0;
   #passportRequest = 0;
   #populationHtml = '';
+  #feedHtml = '';
+  #passportTabs: PassportTabs;
 
   cancelRecap(): void { this.#recapRequest++; this.#recapAbort?.abort(); this.recap = null; this.recapStatus = null; }
 
@@ -193,7 +225,9 @@ export class Hud {
     }
   }
 
-  constructor(private readonly elements: HudElements, private readonly store: WorldStore) {}
+  constructor(private readonly elements: HudElements, private readonly store: WorldStore) {
+    this.#passportTabs = new PassportTabs(elements.passport);
+  }
 
   async refreshPassport(id: string | null): Promise<void> {
     const request = ++this.#passportRequest;
@@ -215,74 +249,85 @@ export class Hud {
     if (world) {
       const counts = Object.entries(world.population).sort((a, b) => b[1] - a[1]);
       const total = counts.reduce((sum, [, n]) => sum + n, 0);
+      const listHtml = counts.map(([species, n]) => `<span>${escape(SPECIES_NAME[species] ?? species)} <b>${n}</b></span>`).join('');
       // Rebuilding the list would close it under the viewer's pointer; update only on change.
-      const html = `<summary>${total.toLocaleString('en-IN')} animals</summary><div class="pop-list">${counts
-        .map(([species, n]) => `<span>${escape(SPECIES_NAME[species] ?? species)} <b>${n}</b></span>`).join('')}</div>`;
-      if (this.#populationHtml !== html) {
+      const html = `<summary>${total.toLocaleString('en-IN')} animals</summary><div class="pop-list">${listHtml}</div>`;
+      if (this.elements.renderPopulation) this.elements.renderPopulation(total, listHtml);
+      else if (this.#populationHtml !== html) {
         const open = (this.elements.population.querySelector?.('details') as HTMLDetailsElement | null)?.open ?? false;
         this.elements.population.innerHTML = `<details${open ? ' open' : ''}>${html}</details>`;
         this.#populationHtml = html;
       }
-    } else this.elements.population.innerHTML = UNKNOWN;
+    } else {
+      this.#populationHtml = '';
+      if (this.elements.renderPopulation) this.elements.renderPopulation(null, '');
+      else this.elements.population.innerHTML = UNKNOWN;
+    }
 
     this.elements.notice.textContent = this.store.lastError ?? '';
 
     if (followedId === null) {
-      this.elements.passport.innerHTML =
-        '<p class="hint">Tap any animal to follow it, or pick a species above.</p>';
+      this.#passportTabs.render(null, '<div class="passport-empty"><p>Choose a life to follow</p><span>Tap an animal in the forest, or choose a species above.</span></div>');
       return;
     }
 
     const animal = this.store.animals.get(followedId);
     const p = this.passport?.id === followedId ? this.passport : null;
-    if (animal === undefined) {
-      this.elements.passport.innerHTML = p?.death
-        ? `<h2>${escape(p.id)}</h2><div class="sub">${escape(p.displayName)} &middot; died aged ${age(p.ageDays)}</div>
-           <div class="row"><span>Cause</span><b>${escape(p.death.cause)}</b></div>
-           <div class="row"><span>Record</span><b class="eid">${escape(p.death.eventId)}</b></div>
-           ${this.#recapCard(followedId)}${this.#lineage(p)}
-           <button data-history="${escape(p.id)}" aria-haspopup="dialog">Browse retained history</button>
-           <button data-replay="${escape(p.id)}">Replay this life</button>
-           ${this.shareButton(p.id)}`
-        : `<p class="hint">${escape(followedId)} is no longer reported by the live simulation.</p>
-           ${p ? `${this.#recapCard(followedId)}<button data-history="${escape(p.id)}" aria-haspopup="dialog">Browse retained history</button>
-           <button data-replay="${escape(p.id)}">Replay this life</button>${this.shareButton(p.id)}` : ''}`;
-      return;
-    }
-
     const viewers = this.store.viewerCounts.get(followedId);
-    const identity = p === null
-      ? `${animal.speciesId} &middot; patch ${animal.patchId}`
-      : `${escape(p.sex)} &middot; ${escape(p.lifeStage)} &middot; ${age(p.ageDays)} &middot; generation ${p.generation}`;
-    const name = p ? p.displayName : (SPECIES_NAME[animal.speciesId] ?? animal.speciesId).replace(/^./, (c) => c.toUpperCase());
-    this.elements.passport.innerHTML = `${this.#recapCard(followedId)}
-      <h2>${escape(name)}</h2>
-      <div class="sub">${identity} &middot; ${escape(animal.id)}</div>
-      ${bar('Hunger', animal.drives.hunger, 'var(--clay)')}
-      ${bar('Thirst', animal.drives.thirst, 'var(--mist)')}
-      ${bar('Fatigue', animal.drives.fatigue, 'var(--ink-3)')}
-      ${bar('Fear', animal.drives.fear, 'var(--blood)')}
-      <div class="row"><span>State</span><b>${escape(animal.state)}</b></div>
-      ${animal.illnessStatus === 'symptomatic'
-        ? '<div class="row"><span>Health</span><b>Modelled illness symptoms</b></div>' : ''}
-      ${animal.woundStatus
-        ? `<div class="row"><span>Injury</span><b>Modelled ${animal.woundStatus === 'infected' ? 'wound infection' : 'open wound'}</b></div>` : ''}
-      <div class="row"><span>Goal</span><b>${escape(animal.currentGoal)}</b></div>
-      <div class="row"><span>Watching now</span><b>${viewers ?? UNKNOWN}</b></div>
-      ${p === null ? '' : `<details class="story"><summary>Life story, family and skills</summary>${this.#skills(p) + this.#lineage(p) + this.#timeline(p)}</details>`}
-      <div class="card-actions">
-        <button data-replay="${escape(animal.id)}">Replay this life</button>
-        <button data-history="${escape(animal.id)}" aria-haspopup="dialog">History</button>
-        ${this.shareButton(animal.id)}
-      </div>
-      <details class="about"><summary>About this view</summary>
-        <p class="prov">Model: ${escape(modelStatusForAnimal(animal))}.
-        ${animal.position ? 'Positions are recorded by the server; paths between updates are interpolated, not collision-aware.' : 'Legacy patch-only data: within-patch placement is approximate.'} Visual coverage is asset metadata. Narration never changes outcomes.</p>
-      </details>`;
+    const identity = p
+      ? `${escape(readable(p.sex))} &middot; ${p.death ? `died aged ${age(p.ageDays)}` : `${age(p.ageDays)} &middot; ${escape(readable(p.lifeStage))}`}`
+      : [animal?.sex, animal?.lifeStage].filter((value): value is string => typeof value === 'string')
+        .map(value => escape(readable(value))).join(' &middot; ') || 'Life details unavailable';
+    const name = p?.displayName ?? readable(animal ? SPECIES_NAME[animal.speciesId] ?? animal.speciesId : speciesOf(followedId) ?? 'Animal');
+    const state = animal ? readable(animal.state) : p?.death ? 'Died' : 'Unavailable';
+    const overview = animal
+      ? `<div class="vitals" aria-label="Reported drives">
+          ${bar('Hunger', animal.drives.hunger, 'var(--clay)')}
+          ${bar('Thirst', animal.drives.thirst, 'var(--mist)')}
+          ${bar('Fatigue', animal.drives.fatigue, 'var(--ink-3)')}
+          ${bar('Fear', animal.drives.fear, 'var(--blood)')}
+        </div>
+        <div class="subject-activity"><div><span>Current goal</span><strong>${escape(readable(animal.currentGoal))}</strong></div>
+          <div class="subject-watchers"><span>Watching now</span><strong>${viewers ?? UNKNOWN}</strong></div></div>
+        ${animal.illnessStatus === 'symptomatic' || animal.woundStatus ? `<div class="subject-health">
+          ${animal.illnessStatus === 'symptomatic' ? '<p>Modelled illness symptoms</p>' : ''}
+          ${animal.woundStatus ? `<p>Modelled ${animal.woundStatus === 'infected' ? 'wound infection' : 'open wound'}</p>` : ''}</div>` : ''}`
+      : `<p class="hint">${p?.death ? 'This life has ended. Its saved family and events remain in Life; death details are in Record.'
+        : 'This animal is no longer reported by the live simulation.'}</p>`;
+    const record = `<dl class="record-facts"><div><dt>Animal ID</dt><dd><code>${escape(followedId)}</code></dd></div>
+      ${animal ? `<div><dt>Patch</dt><dd>${animal.patchId}</dd></div>` : ''}
+      ${p ? `<div><dt>Generation</dt><dd>${p.generation}</dd></div>` : ''}
+      ${p?.asOfWorldTime !== undefined ? `<div><dt>Saved at</dt><dd>${escape(friendlyWorldTime(p.asOfWorldTime))}</dd></div>` : ''}
+      ${p?.death ? `<div><dt>Cause of death</dt><dd>${escape(readable(p.death.cause))}</dd></div>
+        <div><dt>Died at</dt><dd>${escape(friendlyWorldTime(p.death.worldTime))}</dd></div>
+        <div><dt>Death record</dt><dd><code>${escape(p.death.eventId)}</code></dd></div>` : ''}</dl>
+      ${animal || p ? `<p class="prov">Model: ${escape(modelStatusForAnimal(animal ?? p!))}.</p>` : ''}
+      <p class="prov">${animal ? animal.position ? 'Positions are recorded by the server; paths between updates are interpolated, not collision-aware.' : 'Legacy patch-only data: within-patch placement is approximate.'
+        : 'This view uses the saved life record when available.'} Visual coverage is asset metadata. Narration never changes outcomes.</p>`;
+    const panels: Record<PassportTab, string> = {
+      overview: overview + this.#recapCard(followedId),
+      life: p ? this.#skills(p) + this.#lineage(p) + this.#timeline(p)
+        : '<p class="hint">Life history is unavailable right now. The saved record will appear here when it is available.</p>',
+      record,
+    };
+    this.#passportTabs.render(followedId, `<header class="subject-heading"><div class="subject-title-row">
+      <h2>${escape(name)}</h2></div>
+      <div class="subject-meta">${identity} &middot; <span class="subject-state" aria-label="State: ${escape(state)}">${escape(state)}</span></div></header>
+      <div class="passport-tabs" role="tablist" aria-label="Animal information">${PASSPORT_TABS.map(tab => `
+        <button type="button" role="tab" id="passport-tab-${tab}" aria-controls="passport-panel-${tab}"
+          aria-selected="${tab === 'overview'}" tabindex="${tab === 'overview' ? '0' : '-1'}" data-passport-tab="${tab}"
+          data-passport-focus="tab:${tab}">${readable(tab)}</button>`).join('')}</div>
+      <div class="passport-panels">${PASSPORT_TABS.map(tab => `<section class="passport-panel${tab === 'record' ? ' passport-record' : ''}"
+        role="tabpanel" id="passport-panel-${tab}" aria-labelledby="passport-tab-${tab}" tabindex="0" data-passport-panel="${tab}"
+        data-passport-focus="panel:${tab}"${tab === 'overview' ? '' : ' hidden'}>${panels[tab]}</section>`).join('')}</div>
+      ${animal || p ? `<footer class="card-actions">
+        <button type="button" data-replay="${escape(followedId)}" data-passport-focus="replay">Replay life</button>
+        <button type="button" data-history="${escape(followedId)}" data-passport-focus="history" aria-haspopup="dialog">History</button>
+        ${this.shareButton(followedId)}</footer>` : ''}`);
   }
 
   private shareButton(id: string): string {
-    return `<button data-share="${escape(id)}" aria-haspopup="dialog">Share</button>`;
+    return `<button type="button" data-share="${escape(id)}" data-passport-focus="share" aria-haspopup="dialog">Share</button>`;
   }
 
   #recapCard(id: string): string {
@@ -299,7 +344,7 @@ export class Hud {
     return `<section class="recap"><h3>While you were away &middot; ${away}</h3>${body}
       ${r.totalLines > 12 ? `<p class="prov">Latest 12 of ${r.totalLines} summary lines. Use Browse retained history for the event records.</p>` : ''}
       ${reworded ? '<p class="prov">lines marked &#9998; were reworded by a model from the event shown beside them</p>' : ''}
-      <button data-dismiss-recap>Got it</button></section>`;
+      <button data-dismiss-recap data-passport-focus="recap-dismiss">Got it</button></section>`;
   }
 
   #skills(p: Passport): string {
@@ -324,27 +369,51 @@ export class Hud {
       <div class="eid">${escape(e.id)}</div></div>`).join('')}</div>`;
   }
 
+  #renderFeed(html: string): void {
+    // Identical polls should preserve focus, selection, disclosure state and scroll.
+    if (html === this.#feedHtml) return;
+    const opened = new Set(Array.from(this.elements.feed.querySelectorAll?.<HTMLDetailsElement>('details[data-feed-group][open]') ?? [])
+      .map(detail => detail.dataset.feedGroup));
+    this.elements.feed.innerHTML = html;
+    for (const detail of this.elements.feed.querySelectorAll?.<HTMLDetailsElement>('details[data-feed-group]') ?? []) {
+      if (opened.has(detail.dataset.feedGroup)) detail.open = true;
+    }
+    this.#feedHtml = html;
+  }
+
   async refreshFeed(): Promise<void> {
     try {
       const response = await fetch('/api/events?limit=12');
       if (!response.ok) throw new Error('Event feed unavailable');
       const body = (await response.json()) as { events: Array<Record<string, unknown>> };
       if (!Array.isArray(body.events)) throw new Error('Invalid event feed');
+      if (body.events.length === 0) {
+        this.#renderFeed('<p class="hint">No recorded events yet. New activity will appear here.</p>');
+        return;
+      }
       // Newest few, in plain words; the factual label and record ID stay one tap away.
-      this.elements.feed.innerHTML = body.events.slice(0, 6)
-        .map((event) => {
-          const item = feedEventSummary(event);
+      const html = groupFeedEvents(body.events)
+        .map((group) => {
+          const event = group.events[0]!;
+          const key = JSON.stringify(group.events.map(record => typeof record.id === 'string' ? record.id
+            : [group.sentence, record.worldTime ?? null]));
           const when = typeof event.worldTime === 'number' ? friendlyWorldTime(event.worldTime).replace(/^Year \d+ · /, '') : '';
+          const records = group.events.map(record => {
+            const item = feedEventSummary(record);
+            return `<div class="feed-record">${escape(item.title)} · ${escape(item.meta)} · <code>${escape(item.id)}</code></div>`;
+          }).join('');
           return `<div class="event feed-entry"><div>
-            <div class="etype">${escape(feedSentence(event))}</div>
+            <div class="etype">${escape(group.sentence)}</div>
             <div class="feed-meta">${escape(when)}
-              <details class="feed-provenance"><summary>Record ID</summary>${escape(item.title)} · ${escape(item.meta)} · <code>${escape(item.id)}</code></details>
+              ${group.events.length > 1 ? `<span class="feed-count">${group.events.length} recorded events</span>` : ''}
+              <details class="feed-provenance" data-feed-group="${escape(key)}"><summary>${group.events.length > 1 ? 'Record IDs' : 'Record ID'}</summary>${records}</details>
             </div>
           </div></div>`;
         })
         .join('');
+      this.#renderFeed(html);
     } catch {
-      this.elements.feed.innerHTML = '<p class="hint">event feed unavailable</p>';
+      this.#renderFeed('<p class="hint">event feed unavailable</p>');
     }
   }
 }

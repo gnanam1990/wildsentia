@@ -69,10 +69,24 @@ describe('bounded retained-history browser', () => {
     const replay = vi.fn(); createHistoryDialog(replay)('langur_1');
     await vi.waitFor(() => expect(body.children[0]!.children.find(node => node.tag === 'ol')?.children).toHaveLength(1));
     const dialog = body.children[0]!, item = dialog.children.find(node => node.tag === 'ol')!.children[0]!;
-    expect(item.children.map(child => child.textContent)).toEqual(['Replay this recorded tree route']);
-    item.children[0]!.onclick!();
+    expect(item.children.find(child => child.tag === 'h3')!.textContent).toBe('Tree climbed');
+    expect(item.children.find(child => child.className === 'history-event-meta')!.children.map(child => child.textContent))
+      .toEqual(['World second 20', ' · success']);
+    expect(item.children.find(child => child.className === 'history-event-record')!.children[1]!.textContent).toBe('tree_1');
+    const buttons = item.children.filter(child => child.tag === 'button');
+    expect(buttons.map(child => child.textContent)).toEqual(['Replay this recorded tree route']);
+    buttons[0]!.onclick!();
     expect(replay).toHaveBeenCalledWith('langur_1', 'tree_1', 'climb');
     expect(dialog.open).toBe(false);
     expect(isHistoryPage({ ...saved, events: [{ ...saved.events[0], type: 'moved' }] })).toBe(false);
+
+    const customText = 'Person <0001> completed a recorded route with another villager.';
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(saved)));
+    createHistoryDialog(undefined, { title: 'Person retained history', eventText: () => customText })('person_0001');
+    const personDialog = body.children[1]!;
+    await vi.waitFor(() => expect(personDialog.children.find(node => node.tag === 'ol')?.children).toHaveLength(1));
+    const personItem = personDialog.children.find(node => node.tag === 'ol')!.children[0]!;
+    expect(personItem.children.find(child => child.className === 'history-event-summary')!.textContent).toBe(customText);
+    expect(personDialog.children.find(child => child.className === 'history-subject')!.children[1]!.textContent).toBe('person_0001');
   });
 });

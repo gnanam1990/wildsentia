@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Hud, type HudElements, type Passport } from '../src/hud.js';
 import { WorldStore } from '../src/protocol.js';
-const hud = () => new Hud({} as HudElements, new WorldStore());
+const elements = (): HudElements => Object.fromEntries(['clock', 'season', 'population', 'passport', 'feed', 'notice']
+  .map(name => [name, { innerHTML: '', textContent: '' }])) as unknown as HudElements;
+const hud = () => new Hud(elements(), new WorldStore());
 const deferred = () => {
   let resolve!: (value: Response) => void;
   const promise = new Promise<Response>((r) => { resolve = r; });
@@ -52,8 +54,7 @@ describe('observer history request ordering', () => {
     await view.refreshPassport(null); expect(view.passport).toBeNull();
   });
   it('exposes retained history and replay for living, dead and emigrated passports without injecting IDs', () => {
-    const fields = Object.fromEntries(['clock', 'season', 'population', 'passport', 'feed', 'notice']
-      .map(name => [name, { innerHTML: '', textContent: '' }])) as unknown as HudElements;
+    const fields = elements();
     const store = new WorldStore(), view = new Hud(fields, store), id = 'animal<unsafe>';
     const p: Passport = { id, speciesId: 'sambar', displayName: 'Sambar', sex: 'male', ageDays: 1000, lifeStage: 'adult',
       generation: 0, alive: true, massKg: 200, thought: null, lineage: { mother: null, father: null, offspring: [] },

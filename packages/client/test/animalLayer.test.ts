@@ -21,7 +21,7 @@ afterEach(() => vi.restoreAllMocks());
 describe('animal layer render lifecycle', () => {
   it('grounds a corpse without a death clip and restores the standing pose in replay', async () => {
     vi.spyOn(GLTFLoader.prototype, 'loadAsync').mockResolvedValue(model() as never);
-    const layer = new AnimalLayer(new THREE.Texture()); layer.groundHeightAt = () => 10;
+    const layer = new AnimalLayer(); layer.groundHeightAt = () => 10;
     const living = { ...animal('corpse'), speciesId: 'elephant', sex: 'male' as const,
       lifeStage: 'adult' as const, state: 'dead', sizeRatio: 0.7 };
     layer.sync(new Map([['corpse', living]]), 0, 'corpse', { x: 0, z: 0 });
@@ -42,7 +42,7 @@ describe('animal layer render lifecycle', () => {
     const walk = new THREE.AnimationClip('Walk', 1,
       [new THREE.NumberKeyframeTrack('body.position[y]', [0, 1], [0, 0.5])]);
     vi.spyOn(GLTFLoader.prototype, 'loadAsync').mockResolvedValue({ scene, animations: [walk] } as never);
-    const layer = new AnimalLayer(new THREE.Texture()); layer.groundHeightAt = () => 4;
+    const layer = new AnimalLayer(); layer.groundHeightAt = () => 4;
     const walking = { ...animal('elephant'), speciesId: 'elephant', sex: 'female' as const,
       lifeStage: 'adult' as const, state: 'travelling' };
     layer.sync(new Map([['elephant', walking]]), 0, 'elephant', { x: 0, z: 0 });
@@ -56,7 +56,7 @@ describe('animal layer render lifecycle', () => {
   });
   it('replaces the cached elephant rig when the displayed variant changes', async () => {
     const load = vi.spyOn(GLTFLoader.prototype, 'loadAsync').mockResolvedValue(model() as never);
-    const layer = new AnimalLayer(new THREE.Texture());
+    const layer = new AnimalLayer();
     const male = { ...animal('e'), speciesId: 'elephant', sex: 'male' as const, lifeStage: 'adult' as const };
     layer.sync(new Map([['e', male]]), 0, 'e', { x: 0, z: 0 });
     await vi.waitFor(() => expect(load).toHaveBeenCalledWith('/assets/animals/AsianElephantAdultMale.glb'));
@@ -81,7 +81,7 @@ describe('animal layer render lifecycle', () => {
     const scene = new THREE.Group();
     scene.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), source));
     vi.spyOn(GLTFLoader.prototype, 'loadAsync').mockResolvedValue({ scene, animations: [] } as never);
-    const layer = new AnimalLayer(new THREE.Texture());
+    const layer = new AnimalLayer();
     const elephant = { ...animal('graded'), speciesId: 'elephant', sex: 'female' as const,
       lifeStage: 'adult' as const };
     const animals = new Map([['graded', elephant]]);
@@ -101,7 +101,7 @@ describe('animal layer render lifecycle', () => {
       [new THREE.NumberKeyframeTrack('paw.position[x]', [0, 1, 2], [value, value, value])]);
     const load = vi.spyOn(GLTFLoader.prototype, 'loadAsync').mockResolvedValue({ scene,
       animations: [clip('Idle', 1), clip('Walk', 5)] } as never);
-    const layer = new AnimalLayer(new THREE.Texture()); layer.groundHeightAt = () => 10;
+    const layer = new AnimalLayer(); layer.groundHeightAt = () => 10;
     const current = { ...animal('l'), speciesId: 'langur', locomotionMode: 'climb' as const,
       altitudeM: 6, state: 'travelling' };
     const living = new Map([['l', current]]);
@@ -128,7 +128,7 @@ describe('animal layer render lifecycle', () => {
       [new THREE.NumberKeyframeTrack('wing.position[x]', [0, 1, 2], values)]);
     const load = vi.spyOn(GLTFLoader.prototype, 'loadAsync').mockResolvedValue({ scene,
       animations: [clip('Flap', [0, 1, 0]), clip('Glide', [2, 2, 2]), clip('Walk', [3, 3, 3]), clip('Death', [4, 4, 4])] } as never);
-    const layer = new AnimalLayer(new THREE.Texture());
+    const layer = new AnimalLayer();
     const current = { ...animal('v'), speciesId: 'vulture', state: 'dead' };
     const living = new Map([['v', current]]);
     const recorded = { ...current, state: 'travelling' };
@@ -155,7 +155,7 @@ describe('animal layer render lifecycle', () => {
   });
   it('places elevated recorded rigs at the same height as the camera and distant representation', async () => {
     const load = vi.spyOn(GLTFLoader.prototype, 'loadAsync').mockResolvedValue(model() as never);
-    const layer = new AnimalLayer(new THREE.Texture()); layer.groundHeightAt = () => 12;
+    const layer = new AnimalLayer(); layer.groundHeightAt = () => 12;
     const subject = animal('bird');
     const position = { x: 0, z: 0, heading: 1, moving: true, altitudeM: 35 };
     layer.syncReplay(subject, position, 0);
@@ -168,7 +168,7 @@ describe('animal layer render lifecycle', () => {
   });
   it('keeps a recorded partner beyond the low-tier radius and applies both poses every sync', async () => {
     const load = vi.spyOn(GLTFLoader.prototype, 'loadAsync').mockResolvedValue(model() as never);
-    const layer = new AnimalLayer(new THREE.Texture()); layer.quality = 'smooth';
+    const layer = new AnimalLayer(); layer.quality = 'smooth';
     const living = new Map([['a', animal('a')], ['b', animal('b')]]);
     const poses = new Map<string, LivePose>([
       ['a', { animal: animal('a'), position: { x: 600, z: 0, heading: 1, moving: true }, seconds: 3, partnerId: 'b', eventId: 'recorded', phase: 'chase' }],
@@ -190,7 +190,7 @@ describe('animal layer render lifecycle', () => {
   it('does not allocate obsolete loaded rigs or publish an unplaced model at the world origin', async () => {
     let resolve!: (value: ReturnType<typeof model>) => void;
     const load = vi.spyOn(GLTFLoader.prototype, 'loadAsync').mockReturnValue(new Promise((yes) => { resolve = yes; }) as never);
-    const layer = new AnimalLayer(new THREE.Texture());
+    const layer = new AnimalLayer();
     layer.sync(new Map([['old', animal('old')]]), 0, 'old', { x: 0, z: 0 });
     layer.sync(new Map([['new', animal('new', 100)]]), 1, 'new', { x: 100, z: 0 });
     await vi.waitFor(() => expect(load).toHaveBeenCalled(), { timeout: 1000, interval: 2 });
@@ -207,7 +207,7 @@ describe('animal layer render lifecycle', () => {
   it('cancels stale live loads on replay entry and resumes live dots at their current interpolated positions', async () => {
     let resolve!: (value: ReturnType<typeof model>) => void;
     const load = vi.spyOn(GLTFLoader.prototype, 'loadAsync').mockReturnValue(new Promise((yes) => { resolve = yes; }) as never);
-    const layer = new AnimalLayer(new THREE.Texture());
+    const layer = new AnimalLayer();
     const living = new Map([['a', animal('a')]]);
     layer.sync(living, 0, 'a', { x: 0, z: 0 });
     const pose = { x: 20, z: 5, heading: 1, moving: false };
@@ -230,7 +230,7 @@ describe('animal layer render lifecycle', () => {
   it('applies a reduced quality budget even when a larger group of pending loads completes', async () => {
     let resolve!: (value: ReturnType<typeof model>) => void;
     const load = vi.spyOn(GLTFLoader.prototype, 'loadAsync').mockReturnValue(new Promise((yes) => { resolve = yes; }) as never);
-    const layer = new AnimalLayer(new THREE.Texture());
+    const layer = new AnimalLayer();
     const living = new Map(Array.from({ length: 100 }, (_, i) => [`a${i}`, animal(`a${i}`, i)]));
     layer.quality = 'high'; layer.sync(living, 0, 'a99', { x: 0, z: 0 });
     layer.quality = 'smooth'; layer.sync(living, 1, 'a99', { x: 0, z: 0 });
@@ -249,7 +249,7 @@ describe('animal layer render lifecycle', () => {
   });
   it('discards queued clones after switching into replay and does not hide actors waiting for a rig', async () => {
     const load = vi.spyOn(GLTFLoader.prototype, 'loadAsync').mockResolvedValue(model() as never);
-    const layer = new AnimalLayer(new THREE.Texture());
+    const layer = new AnimalLayer();
     const living = new Map(Array.from({ length: 40 }, (_, i) => [`a${i}`, animal(`a${i}`, i)]));
     layer.sync(living, 0, 'a39', { x: 0, z: 0 });
     expect((layer.root.getObjectByName('animal-dots') as THREE.Points).geometry.drawRange.count).toBe(40);
