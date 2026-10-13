@@ -437,15 +437,16 @@ export function buildTerrain(patches: readonly PatchView[], layers?: ReadonlySet
   // surface-freshwater stock. Keep that point visibly wet even below the old 20 kL
   // large-pool threshold; a 2 m disc covers the 1.5 m actor-specific approach slots.
   // Mainland's legacy full-patch water planes retain their stricter threshold.
+  // Congo 1A.5: its rivers, plants and rocks are drawn by the Congo forest layer (congoForest.ts);
+  // this layer draws only its ground.
   const congo = patches[0]?.congoSeed !== undefined;
-  const waterPatches = patches.filter((p) => land(p) && (island
+  const waterPatches = congo ? [] : patches.filter((p) => land(p) && (island
     ? Number.isFinite(p.water) && p.water > 0
-    : congo ? p.habitat === 'water' || p.flooded === true
     : p.habitat === 'water' || p.water > 20_000));
   const shores = waterGround(patches);
-  const rockPatches = patches.filter((p) => land(p) && p.habitat === 'rock');
+  const rockPatches = congo ? [] : patches.filter((p) => land(p) && p.habitat === 'rock');
   const tuftsPerPatch = TUFTS_PER_PATCH;
-  const grassPatches = patches.filter((p) => land(p) && p.grass > 100 && p.habitat !== 'water' && p.water <= 20_000);
+  const grassPatches = congo ? [] : patches.filter((p) => land(p) && p.grass > 100 && p.habitat !== 'water' && p.water <= 20_000);
 
   // One continuous heightmap rather than 400 separate tiles. Tiles at differing elevations
   // leave visible gaps along every shared edge; a single displaced mesh has no seams and costs
@@ -474,7 +475,7 @@ export function buildTerrain(patches: readonly PatchView[], layers?: ReadonlySet
   ) : null;
 
   // Trees go where the simulation reports canopy, not where they would look nice.
-  const woodedPatches = patches.filter((p) => land(p) && ((p.canopyCover ?? 0) >= 0.3
+  const woodedPatches = congo ? [] : patches.filter((p) => land(p) && ((p.canopyCover ?? 0) >= 0.3
     || treeAnchorRemnantForPatch(worldGrid(), p) !== null));
   // Congo 1A.4: several loaded regions share the budget, each patch drawing fewer trees.
   const livePatches = woodedPatches.filter((patch) => !treeAnchorRemnantForPatch(worldGrid(), patch)).length;

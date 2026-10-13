@@ -1,4 +1,4 @@
-import { habitatAnalogue } from '@vana/shared';
+import { HABITAT_ANALOGUE, habitatAnalogue } from '@vana/shared';
 import { worldGrid } from './worldGrid.js';
 import * as THREE from 'three';
 
@@ -47,9 +47,28 @@ const NEAR = {
 /** Grass fraction of a full sward, 0-1. */
 const grassFraction = (patch: GroundPatch): number => Math.max(0, Math.min(1, patch.grass / 6000));
 
+/**
+ * Congo 1A.5: a rainforest floor is leaf litter over red-brown laterite, darker mud where it
+ * floods or stays wet, and sedge and mud in a bai, never the island's grassland greens.
+ */
+const CONGO_FLOOR: Record<string, { near: THREE.Color; far: THREE.Color }> = {
+  terra_firme: { near: hex(0xb08a62), far: hex(0x4a3a28) },
+  flooded_forest: { near: hex(0x9a7e5c), far: hex(0x3d3424) },
+  swamp_forest: { near: hex(0x948660), far: hex(0x3e3a26) },
+};
+const CONGO_BAI = { lush: { near: hex(0xc6d08a), far: hex(0x6f8a3e) }, mud: { near: hex(0xb49a74), far: hex(0x6a5a3c) } };
+const isCongoHabitat = (habitat: string): boolean => habitat in HABITAT_ANALOGUE;
+
 /** The two colours for one patch, in linear RGB. */
 export function patchGroundColours(patch: GroundPatch, season: string): { near: THREE.Color; far: THREE.Color } {
   if (patch.surface === 'ocean') return { near: NEAR.sea.clone(), far: FAR.sea.clone() };
+  if (patch.habitat === 'bai') {
+    // Sedge as green as its grass and the season allow, else trampled mud.
+    const green = grassFraction(patch) * (SEASON_GREEN[season] ?? 0.7);
+    return { near: CONGO_BAI.mud.near.clone().lerp(CONGO_BAI.lush.near, green), far: CONGO_BAI.mud.far.clone().lerp(CONGO_BAI.lush.far, green) };
+  }
+  const floor = CONGO_FLOOR[patch.habitat];
+  if (floor) return { near: floor.near.clone(), far: floor.far.clone() };
   const pick = (palette: typeof FAR): THREE.Color => {
     const greenness = grassFraction(patch) * (SEASON_GREEN[season] ?? 0.7);
     // Grass decides the open ground: thick and seasonal green, thin and grazed, or dry gold.
@@ -96,6 +115,15 @@ export function groundLayers(patch: GroundPatch, season: string): GroundLayers {
   const damp = Math.max(HABITAT_DAMP[habitatAnalogue(patch.habitat)] ?? 0, clamp01((patch.water ?? 0) / 60_000),
     clamp01((patch.drainage?.outflowL ?? 0) / 3_000));
   if (patch.habitat === 'rock') return { litter: 0, bare: round(0.35 * (1 - grass)), moss: round(0.3 * damp * wet) };
+  if (isCongoHabitat(patch.habitat)) {
+    // Litter carpets a closed forest year round; laterite shows through in places; wet ground mosses.
+    const forest = patch.habitat === 'terra_firme', wetForest = patch.habitat !== 'bai' && !forest;
+    return {
+      litter: round(patch.habitat === 'bai' ? 0 : forest ? 0.85 + 0.1 * leafFall : 0.5),
+      bare: round(patch.habitat === 'bai' ? 0.3 : forest ? 0.2 : 0.1),
+      moss: round(wetForest ? 0.5 + 0.3 * wet : 0.15 + 0.15 * wet),
+    };
+  }
   return {
     litter: round(clamp01(canopy * (0.6 + 0.4 * leafFall))),
     bare: round(clamp01((1 - grass) * (1 - 0.6 * canopy) * (0.6 + 0.4 * (1 - wet)))),

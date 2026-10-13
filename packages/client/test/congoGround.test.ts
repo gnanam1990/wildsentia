@@ -57,12 +57,11 @@ describe('the Congo ground in the browser (1A.4)', () => {
 });
 
 describe('Congo trees (1A.4)', () => {
-  it('keep four loaded regions within the island tree budget', () => {
+  it('leave the island fallback trees out: the Congo forest layer draws its own (1A.5)', () => {
     setWorldGrid(CONGO_GRID);
     const patches = [...region(4, 4), ...region(5, 4), ...region(4, 5), ...region(5, 5)];
     const trunks = buildTerrain(patches, new Set(['trunk'])).getObjectByName('trunk') as THREE.InstancedMesh;
-    expect(trunks.count).toBeLessThanOrEqual(120_000);
-    expect(trunks.count).toBeGreaterThan(30_000);
+    expect(trunks.count).toBe(0);
   });
   it('stands flood water over the low part of a sloping patch, and a river 3.6 m over its lowest bed', () => {
     setWorldGrid(CONGO_GRID);
