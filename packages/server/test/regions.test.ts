@@ -135,4 +135,17 @@ maybe('a world served by region', () => {
       gateway.disconnect(socket);
     } finally { clock.mockRestore(); }
   });
+
+  it('sends a regional viewer only the movements in its regions (1A.4)', () => {
+    const gateway = new Gateway(host), socket = new FakeSocket();
+    gateway.handle(socket);
+    const scene = socket.scenes()[0]!, regions = new Set(scene.regions as string[]);
+    const frame = scene.frame as { movements: Array<{ trace: { destinationPatchId: number } }>; encounters: unknown[] } | null;
+    const whole = host.liveEncounterFrame();
+    expect(whole?.movements.length ?? 0).toBeGreaterThan(0);
+    expect(frame).not.toBeNull();
+    expect(frame!.movements.every((m) => regions.has(regionOfPatch(CONGO_GRID, m.trace.destinationPatchId)))).toBe(true);
+    expect(frame!.movements.length).toBeLessThan(whole!.movements.length);
+    gateway.disconnect(socket);
+  });
 });

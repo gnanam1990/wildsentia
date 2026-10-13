@@ -416,11 +416,22 @@ export class SimHost {
     return agent?.alive && agent.position ? { ...agent.position } : null;
   }
 
-  liveEncounterFrame(priorityActorId: string | null = null): LiveEncounterFrame | null {
+  /**
+   * Congo 1A.4: given `regions`, the frame holds only the encounters and movements that end in
+   * those regions, chosen under the same caps from every movement of the hour, so a viewer of one
+   * corner of the forest is not sent (or starved by) the rest of it.
+   */
+  liveEncounterFrame(priorityActorId: string | null = null, regions?: ReadonlySet<string>): LiveEncounterFrame | null {
     const frame = this.#encounterFrame;
     if (!this.isWriterActive || this.lastError || !frame) return null;
     const elapsedWorldSeconds = (performance.now() - this.#encounterPublishedAt) * frame.rate / 1000;
     if (elapsedWorldSeconds >= frame.endWorldTime - frame.startWorldTime) return null;
+    if (regions) {
+      const grid = this.world.grid, inView = (patchId: number) => regions.has(regionOfPatch(grid, patchId));
+      return { ...frame, elapsedWorldSeconds,
+        encounters: frame.encounters.filter((e) => inView(e.trace.patchId)),
+        movements: selectLiveMovements(this.#movementIndex, priorityActorId, (m) => inView(m.trace.destinationPatchId)) };
+    }
     const prioritize = priorityActorId !== null && this.#movementIndex.has(priorityActorId)
       && !frame.movements?.some((m) => m.actor.id === priorityActorId);
     return { ...frame, elapsedWorldSeconds,

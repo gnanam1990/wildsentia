@@ -113,8 +113,8 @@ export class Gateway {
   handle(socket: GatewaySocket): void {
     const view = this.host.observation();
     if (!view) { this.stats.refused.world_unavailable++; socket.close(LIVE_BUSY_CLOSE_CODE, 'world_unavailable'); return; }
-    const frame = this.host.liveEncounterFrame();
     const regions = this.#regional ? this.#regionsFor(null) : null;
+    const frame = this.host.liveEncounterFrame(null, regions ? new Set(regions) : undefined);
     this.#sessions.set(socket, { socket, watching: null, recordedFrameId: frame?.id ?? null,
       recordingDirty: false, checkpointId: view.id, lastHeartbeatAt: Date.now(), view: null, liveEmpty: true,
       regions, wantedRegions: regions, regionsDirty: false, lastRegionSceneAt: 0 });
@@ -251,6 +251,22 @@ export class Gateway {
         }
         continue;
       }
+      // A regional viewer (Congo 1A.4) is sent only what ends in its regions: one recording per
+      // region set, shared by every viewer of it who follows no one outside it.
+      const regionKey = session.regions?.join(',') ?? null;
+      if (regionKey !== null) {
+        const key = `${session.watching ?? ''}|${regionKey}`;
+        let recording = recordings.get(key);
+        if (!recording) {
+          const selected = this.host.liveEncounterFrame(session.watching, new Set(session.regions!));
+          const timed = selected && frame && selected.id === frame.id
+            ? { ...selected, elapsedWorldSeconds: frame.elapsedWorldSeconds } : selected;
+          recording = { payload: JSON.stringify(timed), id: timed?.id ?? null, encoded: new Map() };
+          if (session.watching === null || custom++ < 8) recordings.set(key, recording);
+        }
+        this.#sendRecording(session, recording, view, freshCheckpoint, moved, scene);
+        continue;
+      }
       let recording = recordings.get(session.watching);
       if (!recording) {
         const selected = session.watching === null ? frame : this.host.liveEncounterFrame(session.watching);
@@ -267,26 +283,32 @@ export class Gateway {
         }
         if (shared) recordings.set(session.watching, recording);
       }
-      // Immutable checkpoint geometry can exceed 1 MB: only a viewer new to this checkpoint gets it.
-      const encodedKey = `${session.regions?.join(',') ?? ''}|${freshCheckpoint}`;
-      let message = recording.encoded.get(encodedKey);
-      if (!message) {
-        const part = session.regions ? this.#regionScene(view, session.regions) : scene();
-        message = Buffer.from(`${part.base}${freshCheckpoint ? `,"environment":${part.environment}` : ''},"frame":${recording.payload}}`);
-        recording.encoded.set(encodedKey, message);
-      }
-      this.#send(socket, message);
-      session.recordedFrameId = recording.id;
-      session.recordingDirty = false;
-      if (session.regions) {
-        if (moved) session.lastRegionSceneAt = Date.now();
-        // Still dirty if the view wants other regions than those just sent (a checkpoint's scene, not a move).
-        session.regionsDirty = (session.wantedRegions ?? session.regions).join(',') !== session.regions.join(',');
-      }
-      session.checkpointId = view.id;
-      session.lastHeartbeatAt = Date.now();
+      this.#sendRecording(session, recording, view, freshCheckpoint, moved, scene);
     }
     for (const actorId of this.#watchers.keys()) this.#publishViewerCount(actorId);
+  }
+
+  #sendRecording(session: Session, recording: { payload: string; id: string | null; encoded: Map<string, Buffer> },
+    view: CheckpointObservation, freshCheckpoint: boolean, moved: boolean,
+    scene: () => { id: string; base: string; environment: string }): void {
+    // Immutable checkpoint geometry can exceed 1 MB: only a viewer new to this checkpoint gets it.
+    const encodedKey = `${session.regions?.join(',') ?? ''}|${freshCheckpoint}`;
+    let message = recording.encoded.get(encodedKey);
+    if (!message) {
+      const part = session.regions ? this.#regionScene(view, session.regions) : scene();
+      message = Buffer.from(`${part.base}${freshCheckpoint ? `,"environment":${part.environment}` : ''},"frame":${recording.payload}}`);
+      recording.encoded.set(encodedKey, message);
+    }
+    this.#send(session.socket, message);
+    session.recordedFrameId = recording.id;
+    session.recordingDirty = false;
+    if (session.regions) {
+      if (moved) session.lastRegionSceneAt = Date.now();
+      // Still dirty if the view wants other regions than those just sent (a checkpoint's scene, not a move).
+      session.regionsDirty = (session.wantedRegions ?? session.regions).join(',') !== session.regions.join(',');
+    }
+    session.checkpointId = view.id;
+    session.lastHeartbeatAt = Date.now();
   }
 
   attach(server: Server): void {

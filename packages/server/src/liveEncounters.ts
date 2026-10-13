@@ -108,6 +108,7 @@ export function indexLiveMovements(
 /** A watcher affects delivery order only. Coordinates, timestamps and outcomes never change. */
 export function selectLiveMovements(
   index: ReadonlyMap<string, LiveMovement>, priorityActorId: string | null = null,
+  include: (movement: LiveMovement) => boolean = () => true,
 ): LiveMovement[] {
   const result: LiveMovement[] = [];
   let samples = 0;
@@ -116,9 +117,9 @@ export function selectLiveMovements(
     result.push(movement); samples += movement.trace.samples.length;
   };
   const priority = priorityActorId === null ? undefined : index.get(priorityActorId);
-  if (priority) add(priority);
+  if (priority && include(priority)) add(priority);
   for (const movement of index.values()) {
-    if (movement !== priority) add(movement);
+    if (movement !== priority && include(movement)) add(movement);
     if (result.length >= MAX_LIVE_MOVEMENTS || samples >= MAX_LIVE_MOVEMENT_SAMPLES) break;
   }
   return result;
