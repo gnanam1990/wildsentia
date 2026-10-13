@@ -15,6 +15,11 @@ import { SimulatedPurchaseAdapter, loadOwnershipConfig } from '../ownership/purc
 import { LifeService } from '../ownership/lives.js';
 import { ControlService } from '../ownership/control.js';
 import type { OwnedDeps } from '../ownership/routes.js';
+import { BountyStore } from '../bounties/store.js';
+import { BountyEngine, DevSettlementAdapter } from '../bounties/engine.js';
+import { BountyDiscovery } from '../bounties/discovery.js';
+import type { BountyDeps } from '../bounties/routes.js';
+import { EventStore } from '../db/eventStore.js';
 
 /**
  * Starts and stops the live layer beside the SimHost (docs/2026-09-26-live-agents-design.md).
@@ -80,6 +85,23 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
       control: new ControlService(ownership, live, { assetOf: (id) => host.world.animal(id)?.assetId,
         block: (id) => host.world.possessionBlock(id, { owner: true, ignoreController: true }), exclusive: (work) => host.exclusive(work) }) };
   })() : null;
+  // Congo 1D: bounties on owned animals, found by perception, settled in the SIMULATED ledger.
+  const bounties: BountyDeps | null = owned ? (() => {
+    const store = new BountyStore(pool, host.worldId ?? 'unknown'), events = new EventStore(pool, host.world.grid);
+    const eventsOf = async (ids: string[], from: number, to: number) => {
+      const seen = new Map<string, { id: string; worldTime: number }>();
+      for (const id of ids) for (const e of await events.byActorSince(id, from - 1, 500)) if (e.worldTime <= to) seen.set(e.id, e);
+      for (const e of host.world.log.all()) if (e.worldTime >= from && e.worldTime <= to && e.actors.some((a) => ids.includes(a))) seen.set(e.id, e);
+      return [...seen.values()].sort((a, b) => a.worldTime - b.worldTime || a.id.localeCompare(b.id));
+    };
+    const engine = new BountyEngine(store, owned.store, host, new DevSettlementAdapter(store), () => host.worldHoursPerRealHour, eventsOf);
+    owned.bountyActive = async (lifeId) => (await store.activeOnLife(lifeId)) !== null;
+    return { store, engine, discovery: new BountyDiscovery(store, () => host.worldId ?? 'unknown'), adminToken: env.VANA_BOUNTY_ADMIN_TOKEN?.trim() || null,
+      now: () => host.world.now() };
+  })() : null;
+  live.onHunt = (hunt) => {
+    if (bounties && hunt.killed) void bounties.engine.adjudicate().catch((e) => console.error('[bounty] adjudicate failed', e));
+  };
   live.onEnded = (life) => {
     void store.recordLife(life).catch((e) => console.error('[live] life record failed', e));
     if (owned) {
@@ -92,7 +114,7 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
   const save = async () => { const id = host.worldId; if (id) await store.savePossessions(id, live.avatars.values()); };
   const holding = holdingGate(env);
   const routes: LiveRouteDeps = {
-    live, world: port, store, ledger, ...(holding ? { holding } : {}), ...(owned ? { owned } : {}),
+    live, world: port, store, ledger, ...(holding ? { holding } : {}), ...(owned ? { owned } : {}), ...(bounties ? { bounties } : {}),
     limits: { slots: positiveSetting(env, 'VANA_AGENT_SLOTS', 500), perNetworkPerDay: positiveSetting(env, 'VANA_AGENT_REGISTRATIONS_PER_NETWORK', 5) },
     networkSecret: env.VANA_LIVE_SECRET?.trim() || rewards?.adminToken || randomBytes(32).toString('hex'),
     clientScriptPath: fileURLToPath(new URL('../../agent-client/client.mjs', import.meta.url)),
@@ -144,6 +166,13 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
       timers.push(setInterval(() => { void store.reapInactive().catch(() => undefined); }, 6 * 3_600_000));
       // Owned lives follow their animals: deaths in the hourly step end their lives within seconds.
       if (owned) timers.push(setInterval(() => { void owned.lives.reconcile().catch((e) => console.error('[owned] reconcile failed', e)); }, 10_000));
+      if (bounties) {
+        // A payout decided before a stop is recorded now; then deaths and deadlines are checked every 10 s.
+        await bounties.engine.settlePending().catch((e) => console.error('[bounty] settle failed', e));
+        await bounties.discovery.refresh().catch(() => undefined);
+        timers.push(setInterval(() => { void bounties.engine.adjudicate().catch((e) => console.error('[bounty] adjudicate failed', e)); }, 10_000));
+        timers.push(setInterval(() => { void bounties.discovery.refresh().catch(() => undefined); }, 2000));
+      }
       // Four times a second, filtered per viewer by the gateway; the roster every two seconds.
       timers.push(setInterval(() => broadcast.live(live.publicState(), Date.now()), 250));
       let wasEmpty = true;

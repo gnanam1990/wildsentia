@@ -32,7 +32,7 @@ export interface SpeciesMotion {
   alarmSharing: boolean; packHunter: boolean; climbs: boolean; flies: boolean;
   sightRangeM: number; detectionM: number; flightInitiationM: number; evasiveness: number; shoulderHeightM: number;
 }
-export interface PatchView { id: number; habitat: string; grassKg: number; waterL: number; land: boolean }
+export interface PatchView { id: number; habitat: string; grassKg: number; waterL: number; land: boolean; canopyCover: number }
 
 /** Everything the live layer may ask of, or do to, the world. */
 /** The world is stepping (in slices): it may not be changed until the step ends. */

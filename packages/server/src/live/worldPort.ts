@@ -92,7 +92,7 @@ export function worldPort(world: () => World, worldId: () => string | null, play
     },
     patchAt: (x, z): PatchView | null => {
       const p = patchAt(x, z);
-      return p ? { id: p.id, habitat: p.habitat, grassKg: p.plant.grass + p.plant.browse, waterL: p.waterVolume, land: landWalkable(p) } : null;
+      return p ? { id: p.id, habitat: p.habitat, grassKg: p.plant.grass + p.plant.browse, waterL: p.waterVolume, land: landWalkable(p), canopyCover: p.canopyCover } : null;
     },
     nearby: (x, z, radius, limit) => {
       // Only the patches the circle touches, from an index rebuilt at most twice a second.

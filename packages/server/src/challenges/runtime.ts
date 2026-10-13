@@ -151,7 +151,8 @@ export function challengesRuntime(config: ChallengesConfig,
     const ended = deps.live.onEnded;
     deps.live.onEnded = (life) => { ended?.(life); engine.onEnded(life); };
     deps.live.onTick = observeGoals;
-    deps.live.onHunt = (hunt) => engine.onHunt(hunt);
+    const hunted = deps.live.onHunt;
+    deps.live.onHunt = (hunt) => { hunted?.(hunt); engine.onHunt(hunt); };
     deps.live.onCommand = (record) => engine.onCommand(record);
     deps.live.holdFreed = (speciesId, since) => engine.holdsFreed(speciesId, since);
     every(1000, 'tick', () => engine.tick());

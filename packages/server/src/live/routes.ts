@@ -15,6 +15,7 @@ import type { AcceptResult, ChallengeEngine, Player } from '../challenges/engine
 import { sameOriginJson } from '../accounts/cookies.js';
 import { MIN_X_ACCOUNT_DAYS } from '../accounts/store.js';
 import { installOwnershipRoutes, type OwnedDeps } from '../ownership/routes.js';
+import { installBountyRoutes, type BountyDeps } from '../bounties/routes.js';
 
 /**
  * The agent API (docs/2026-09-26-live-agents-design.md). Everything under /agents/me is
@@ -41,6 +42,8 @@ export interface LiveRouteDeps {
   humans?: HumanSessions | undefined;
   /** Congo 1C: owned animals only; who owns and steers them. */
   owned?: OwnedDeps | undefined;
+  /** Congo 1D: bounties, discovered only by perception. */
+  bounties?: BountyDeps | undefined;
   /** ERC-8004 identities, when configured: who owns one (spec §13, plan 4b). */
   identity?: { owner(agentId: bigint): Promise<`0x${string}` | null> } | undefined;
   /** The species configs the simulation runs on, for the field guide. */
@@ -387,6 +390,7 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
     };
     commandRoutes('/agents/me', me);
     if (deps.humans) commandRoutes('/play', person(deps.humans));
+    if (deps.bounties) installBountyRoutes(scope, deps.bounties);
     if (deps.humans && deps.owned) {
       const asPerson = person(deps.humans);
       installOwnershipRoutes(scope, deps.owned, (req, reply) => asPerson(req, reply, commands));
@@ -408,8 +412,20 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
     });
   });
 
+  /** Congo 1D: what this animal senses (sight, smell, hearing), each bounty target it senses flagged. */
+  function sensed(agentId: string, avatar: { animalId: string; speciesId: string; x: number; z: number }) {
+    const near = world.nearby(avatar.x, avatar.z, 900, 120).filter((a) => a.id !== avatar.animalId).map((a) => {
+      const p = live.positionOf(a.id) ?? a.position, runner = live.wild.get(a.id);
+      const moving = !!runner && runner.mode !== 'idle' || a.state === 'travelling' || a.state === 'fleeing' || a.state === 'chasing' || a.state === 'stalking';
+      return { id: a.id, x: p.x, z: p.z, moving, running: !!runner && runner.mode !== 'idle' || a.state === 'fleeing' || a.state === 'chasing' };
+    }).filter((a) => Math.hypot(a.x - avatar.x, a.z - avatar.z) <= 400);
+    return deps.bounties!.discovery.view(agentId, avatar, near, { canopyAt: (x, z) => world.patchAt(x, z)?.canopyCover ?? 0, worldTime: world.now() });
+  }
+
   function observation(agent: AgentRecord) {
     const avatar = live.avatars.get(agent.id);
+    const senses = avatar && deps.bounties ? sensed(agent.id, avatar) : null;
+    const sensedBy = senses ? new Map(senses.nearby.map((a) => [a.id, a])) : null;
     const animal = avatar ? world.animal(avatar.animalId) : null;
     const now = world.now();
     const at = avatar ?? null;
@@ -437,16 +453,21 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
       // Where each animal is right now (its route as played, or its live chase), not the saved hour's end.
       nearby: at ? world.nearby(at.x, at.z, 900, 120).filter((a) => a.id !== avatar!.animalId)
         .map((a) => ({ a, p: live.positionOf(a.id) ?? a.position }))
-        .map(({ a, p }) => ({ a, p, d: dist(p.x, p.z)! })).filter(({ d }) => d <= 200).sort((x, y) => x.d - y.d).slice(0, 30)
+        .map(({ a, p }) => ({ a, p, d: dist(p.x, p.z)! }))
+        // Congo 1D: only what the animal senses, however near; elsewhere everything within 200 m.
+        .filter(({ a, d }) => sensedBy ? sensedBy.has(a.id) : d <= 200).sort((x, y) => x.d - y.d).slice(0, 30)
         .map(({ a, p, d }) => {
-          const runner = live.wild.get(a.id);
+          const runner = live.wild.get(a.id), s = sensedBy?.get(a.id);
           return { id: a.id, speciesId: a.speciesId, x: Math.round(p.x * 10) / 10, z: Math.round(p.z * 10) / 10, distance: d,
+            ...(s ? { sense: s.sense, ...(s.bounty ? { bounty: s.bounty } : {}) } : {}),
             state: runner ? (runner.mode === 'idle' ? 'resting' : runner.mode === 'flee' ? 'fleeing' : 'chasing') : a.state,
             predator: world.species(a.speciesId)?.predator ?? false,
             huntsYou: avatar ? (world.species(a.speciesId)?.preferredPrey.includes(avatar.speciesId) ?? false) : false,
             chasingYou: !!runner && runner.mode === 'chase' && runner.committed === true && runner.otherId === avatar!.animalId,
             steeredByAgent: a.controller ? (live.avatars.get(a.controller)?.agentName ?? 'an agent') : null };
         }) : [],
+      /** Congo 1D: bounty targets this animal sensed before and no longer does: where and when last. */
+      ...(senses ? { lastSeen: senses.lastSeen } : {}),
       carcass: at ? world.carcassNear(at.x, at.z, 60) : null,
       water: at ? world.waterPoints(at.x, at.z, 900).map((w) => ({ x: Math.round(w.x * 10) / 10, z: Math.round(w.z * 10) / 10,
         litres: Math.round(w.litres), distance: dist(w.x, w.z) })).sort((a, b) => a.distance! - b.distance!).slice(0, 5) : [],

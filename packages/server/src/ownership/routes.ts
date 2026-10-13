@@ -8,6 +8,8 @@ import type { ControlService } from './control.js';
 /** Congo 1C: everything that owns, spawns and hands over animals. */
 export interface OwnedDeps {
   store: OwnershipStore; shop: PurchaseAdapter; lives: LifeService; control: ControlService; config: OwnershipConfig;
+  /** Congo 1D: whether a bounty is active on a life (shown only to its owner). */
+  bountyActive?: (lifeId: string) => Promise<boolean>;
 }
 type Person = (req: FastifyRequest, reply: FastifyReply) => Promise<{ agent: AgentRecord; json: Record<string, unknown> } | null>;
 
@@ -57,7 +59,8 @@ export function installOwnershipRoutes(scope: FastifyInstance, owned: OwnedDeps,
         agents: await store.grantsOf(a.assetId),
         life: life ? { lifeId: life.lifeId, animalId: life.animalId, status: life.status, spawnedAt: life.spawnedAt, diedAt: life.diedAt,
           deathCause: life.deathCause, killerAnimalId: life.killerAnimalId, cooldownUntil: life.cooldownUntil,
-          controller: lease ? { kind: lease.holderKind, id: lease.holderId } : null } : null };
+          controller: lease ? { kind: lease.holderKind, id: lease.holderId } : null,
+          bountyActive: life.status === 'alive' && owned.bountyActive ? await owned.bountyActive(life.lifeId) : false } : null };
     })) };
   });
 
