@@ -1,0 +1,12 @@
+{
+  "note": "Congo 1C defaults (spec §3-§4). Every amount is SIMULATED: integer units of a simulated token, never real money.",
+  "maxAlivePerOwner": 2,
+  "cooldownMs": { "default": 7200000 },
+  "spawnPredatorDistanceM": 300,
+  "token": "SIM-USDC",
+  "decimals": 6,
+  "pricingVersion": "sim-2026-10-13",
+  "prices": { "african_leopard": "50000000", "blue_duiker": "5000000", "water_chevrotain": "8000000" },
+  "buyFeeBps": 500,
+  "sellFeeBps": 500
+}
