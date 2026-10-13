@@ -8,6 +8,7 @@ import { migrate } from '../src/db/migrate.js';
 import { EventStore } from '../src/db/eventStore.js';
 import { SimHost } from './trackedHost.js';
 import { testDatabaseUrl } from './testDatabase.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const url = testDatabaseUrl(), pool = url ? createPool(url) : null, maybe = url ? describe : describe.skip;
 const options = () => ({ pool: pool!, seed: 44, speciesDir: fileURLToPath(new URL('../../../config/species', import.meta.url)),
@@ -32,11 +33,11 @@ maybe('durable water contact evidence', () => {
     const events = new EventStore(pool!), history = await events.recent(1000), drinks = history.filter((e) => e.type === 'drank');
     expect(drinks.length).toBeGreaterThan(0);
     for (const drink of drinks) {
-      expect(atWaterAccess(drink.position!, drink.patchId)).toBe(true);
+      expect(atWaterAccess(ISLAND_GRID, drink.position!, drink.patchId)).toBe(true);
       expect(drink.effects.litres).toBeGreaterThan(0); expect(drink.worldTime).toBe(3600);
       expect(drink.causalParents).toHaveLength(1);
       const approach = history.find((e) => e.id === drink.causalParents[0])!;
-      expect(isMovementTrace(approach.movement)).toBe(true);
+      expect(isMovementTrace(ISLAND_GRID, approach.movement)).toBe(true);
       expect(approach.movement!.completed).toBe(true);
       expect(approach.movement!.samples.at(-1)!.position.x).toBeCloseTo(drink.position!.x);
       expect(approach.effects.durationSeconds! + Number(drink.conditions.drinkingSeconds)).toBeCloseTo(3600);
@@ -63,7 +64,7 @@ maybe('durable water contact evidence', () => {
     const makeThirsty = () => {
       for (const agent of host.world.agents) {
         agent.sex = 'male'; agent.drives = { hunger: 0, thirst: 0.85, fear: 0, fatigue: 0 };
-        agent.position = waterContactPosition(agent.id, agent.patchId);
+        agent.position = waterContactPosition(ISLAND_GRID, agent.id, agent.patchId);
         host.world.patches[agent.patchId]!.waterVolume = 1000;
       }
     };

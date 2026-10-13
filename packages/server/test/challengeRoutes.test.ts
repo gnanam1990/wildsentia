@@ -24,6 +24,7 @@ import { signingString } from '../src/live/signing.js';
 // @ts-expect-error the agent client is plain JavaScript
 import { walletMessage } from '../agent-client/client.mjs';
 import { testDatabaseUrl } from './testDatabase.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 describe('challenges configuration', () => {
   const full = { VANA_CHALLENGES: '1', VANA_LIVE_AGENTS: '1', VANA_CHALLENGES_RPC_URL: 'https://rpc.testnet.arc.io',
@@ -436,7 +437,7 @@ maybe('challenges runtime', () => {
     expect(ok.routes.catalog.social('chital')).toBe(true);
     expect(ok.routes.catalog.social('tiger')).toBe(false);
     const land = world.patches.find((p) => p.habitat === 'grassland')!;
-    const c = patchCentre(land.id);
+    const c = patchCentre(ISLAND_GRID, land.id);
     expect(ok.routes.catalog.onLand(c.x, c.z)).toBe(true);
     expect(ok.routes.catalog.onLand(-1e5, -1e5)).toBe(false);
   });

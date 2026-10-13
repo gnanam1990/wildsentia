@@ -100,9 +100,9 @@ export function buildApi({ host, pool, narrator, insights: insightDeps, live, re
     console.error('[api] request failed', error);
     return reply.code(500).send({ error: 'internal_error' });
   });
-  const events = new EventStore(pool);
+  const events = new EventStore(pool, host.grid);
   if (experiences) installExperiences(app, experiences);
-  const life = new LifeStore(pool);
+  const life = new LifeStore(pool, host.grid);
   const humanMotion = new HumanMotionStore(pool);
   const historyCursors = new HistoryCursors();
   installRewards(app, { pool, config: rewards, ...(receiptRpc ? { receiptRpc } : {}), subject: (id) => host.rewardSubject(id), world: () => host.worldId,
@@ -168,7 +168,7 @@ export function buildApi({ host, pool, narrator, insights: insightDeps, live, re
   app.get('/event-map', async (request) => {
     const view = observed(request);
     return { worldTime: view.worldTime, markers: (await events.mapEvents(view.worldTime, view.nextSequence))
-      .map(eventMarker).filter((marker) => marker !== null),
+      .map((event) => eventMarker(host.grid, event)).filter((marker) => marker !== null),
     notice: 'Recent recorded events, not live alerts. Events without valid recorded positions use approximate patch centres.' };
   });
 

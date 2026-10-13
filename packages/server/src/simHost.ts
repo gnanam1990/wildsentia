@@ -8,7 +8,7 @@ import {
   createWorld, restoreSnapshot, takeSnapshot, totalNutrients, upgradeV5Snapshot, upgradeV6Snapshot, upgradeV7Snapshot, upgradeV8Snapshot, upgradeV9Snapshot, upgradeV10Snapshot, upgradeV11Snapshot, upgradeV12Snapshot, upgradeV13Snapshot, upgradeV14Snapshot, upgradeV15Snapshot, type Snapshot, type World, type WorldOptions,
 } from '@vana/sim';
 import type { Pool } from './db/pool.js';
-import { isIslandProfile } from '@vana/shared';
+import { gridForProfile, isIslandProfile, type WorldGrid } from '@vana/shared';
 import { EventStore } from './db/eventStore.js';
 import { SnapshotStore } from './db/snapshotStore.js';
 import { LifeStore } from './db/lifeStore.js';
@@ -134,6 +134,8 @@ export interface CheckpointObservation {
 
 export class SimHost {
   world!: World;
+  /** The world's patch lattice, fixed by its terrain profile; known before the world starts. */
+  readonly grid: WorldGrid;
 
   readonly #events: EventStore;
   readonly #snapshots: SnapshotStore;
@@ -325,9 +327,10 @@ export class SimHost {
       if (this.#timer !== null) clearInterval(this.#timer);
       this.#timer = null;
     });
-    this.#events = new EventStore(this.#writer);
+    this.grid = gridForProfile(options.terrainProfile ?? 'mainland');
+    this.#events = new EventStore(this.#writer, this.grid);
     this.#snapshots = new SnapshotStore(this.#writer);
-    this.#life = new LifeStore(this.#writer);
+    this.#life = new LifeStore(this.#writer, this.grid);
     this.#humanMotion = new HumanMotionStore(this.#writer);
   }
 
@@ -631,11 +634,11 @@ export class SimHost {
       this.world.step(1);
       const community = this.world.community;
       if (community?.motion) this.#pendingHumanMotion.push({ community: structuredClone(community), motion: structuredClone(community.motion) });
-      this.#pendingMovementIndex = indexLiveMovements(this.world.log.all(), appearances, start, this.world.agents, startPositions);
+      this.#pendingMovementIndex = indexLiveMovements(this.world.grid, this.world.log.all(), appearances, start, this.world.agents, startPositions);
       this.#pendingEncounterFrame = {
         id: `${this.#streamId}:${this.world.now()}`, startWorldTime: start, endWorldTime: this.world.now(),
         rate: this.worldHoursPerRealHour, elapsedWorldSeconds: 0,
-        encounters: collectLiveEncounters(this.world.log.all(), appearances, start),
+        encounters: collectLiveEncounters(this.world.grid, this.world.log.all(), appearances, start),
         movements: selectLiveMovements(this.#pendingMovementIndex),
       };
       this.#worldHoursSinceSnapshot++;

@@ -5,6 +5,7 @@ import { createWorld, type World } from '@vana/sim';
 import { LiveLayer } from '../src/live/liveLayer.js';
 import { worldPort } from '../src/live/worldPort.js';
 import { clearOverLand, landRoute } from '../src/live/route.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const speciesDir = fileURLToPath(new URL('../../../config/species', import.meta.url));
 
@@ -13,7 +14,7 @@ function setup(initialAgents: Record<string, number>, random: () => number = () 
   let now = 5_000_000;
   const live = new LiveLayer(worldPort(() => world, () => 'w'), null, () => now, random);
   const open = world.patches.find((p) => landWalkable(p) && p.neighbours.every((n) => landWalkable(world.patches[n])))!;
-  const centre = patchCentre(open.id);
+  const centre = patchCentre(ISLAND_GRID, open.id);
   const put = (id: string, dx: number, dz = 0, patch = open.id, from = centre) => {
     const a = world.animal(id)!; a.patchId = patch; a.position = { x: from.x + dx, z: from.z + dz, heading: 0 };
   };
@@ -37,8 +38,8 @@ describe('species abilities and fair turns', () => {
 
   it('lets a langur climb its patch tree, where no ground hunter can follow', () => {
     const { world, live, put, run, adults } = setup({ langur: 10, tiger: 2 });
-    const treePatch = world.patches.find((p) => landWalkable(p) && treeAnchorForPatch(p))!;
-    const tree = treeAnchorForPatch(treePatch)!;
+    const treePatch = world.patches.find((p) => landWalkable(p) && treeAnchorForPatch(ISLAND_GRID, p))!;
+    const tree = treeAnchorForPatch(ISLAND_GRID, treePatch)!;
     const langur = adults('langur')[0]!, tiger = adults('tiger')[0]!;
     put(langur.id, 2, 0, treePatch.id, tree); put(tiger.id, 20, 0, treePatch.id, tree);
     world.animal(tiger.id)!.drives.hunger = 0.9;
@@ -59,8 +60,8 @@ describe('species abilities and fair turns', () => {
 
   it('leaves no tree, chase or open behind when the next action starts', () => {
     const { world, put, adults } = setup({ leopard: 4, chital: 6 });
-    const treePatch = world.patches.find((p) => landWalkable(p) && treeAnchorForPatch(p))!;
-    const tree = treeAnchorForPatch(treePatch)!;
+    const treePatch = world.patches.find((p) => landWalkable(p) && treeAnchorForPatch(ISLAND_GRID, p))!;
+    const tree = treeAnchorForPatch(ISLAND_GRID, treePatch)!;
     const leopard = adults('leopard')[0]!, chital = adults('chital')[0]!;
     put(leopard.id, 1, 0, treePatch.id, tree); put(chital.id, 30, 0, treePatch.id, tree);
     const now = 9_000_000;
@@ -120,8 +121,8 @@ describe('species abilities and fair turns', () => {
     const land = world.patches.filter((p) => landWalkable(p));
     let pair: { from: { x: number; z: number }; to: { x: number; z: number } } | null = null;
     for (const p of land) { for (const q of land) {
-      const from = patchCentre(p.id), to = patchCentre(q.id);
-      if (p.id < q.id && !clearOverLand(world.patches, from, to) && landRoute(world.patches, from, to, () => 1)) { pair = { from, to }; break; }
+      const from = patchCentre(ISLAND_GRID, p.id), to = patchCentre(ISLAND_GRID, q.id);
+      if (p.id < q.id && !clearOverLand(ISLAND_GRID, world.patches, from, to) && landRoute(ISLAND_GRID, world.patches, from, to, () => 1)) { pair = { from, to }; break; }
     } if (pair) break; }
     expect(pair).not.toBeNull();
     const vulture = world.agents.find((x) => x.speciesId === 'vulture' && world.possessionBlock(x.id) === null)!;
@@ -138,7 +139,7 @@ describe('species abilities and fair turns', () => {
     expect(Math.hypot(v.x - pair!.to.x, v.z - pair!.to.z)).toBeLessThan(1);
     expect(live.notices('ag_v').some((n) => n.text.startsWith('Blocked'))).toBe(false);
     const sea = world.patches.find((p) => !landWalkable(p))!;
-    expect(live.moveTo('ag_v', [patchCentre(sea.id)], 'run')).toBe('not_on_land'); // Cannot land on the sea.
+    expect(live.moveTo('ag_v', [patchCentre(ISLAND_GRID, sea.id)], 'run')).toBe('not_on_land'); // Cannot land on the sea.
   });
 
   it('lands a vulture that is told to stop over land, and refuses to set it down on water', () => {
@@ -146,15 +147,15 @@ describe('species abilities and fair turns', () => {
     const land = world.patches.filter((p) => landWalkable(p));
     let pair: { from: { x: number; z: number }; to: { x: number; z: number } } | null = null;
     for (const p of land) { for (const q of land) {
-      const from = patchCentre(p.id), to = patchCentre(q.id);
-      if (p.id < q.id && !clearOverLand(world.patches, from, to) && landRoute(world.patches, from, to, () => 1)) { pair = { from, to }; break; }
+      const from = patchCentre(ISLAND_GRID, p.id), to = patchCentre(ISLAND_GRID, q.id);
+      if (p.id < q.id && !clearOverLand(ISLAND_GRID, world.patches, from, to) && landRoute(ISLAND_GRID, world.patches, from, to, () => 1)) { pair = { from, to }; break; }
     } if (pair) break; }
     const vulture = world.agents.find((x) => x.speciesId === 'vulture' && world.possessionBlock(x.id) === null)!;
-    vulture.patchId = patchAtPosition({ ...pair!.from, heading: 0 });
+    vulture.patchId = patchAtPosition(ISLAND_GRID, { ...pair!.from, heading: 0 });
     vulture.position = { ...pair!.from, heading: 0 };
     live.possess('ag_v', 'Giddh', { animalId: vulture.id });
     const v = live.avatars.get('ag_v')!;
-    const overLand = () => landWalkable(world.patches[patchAtPosition({ x: v.x, z: v.z, heading: 0 })]);
+    const overLand = () => landWalkable(world.patches[patchAtPosition(ISLAND_GRID, { x: v.x, z: v.z, heading: 0 })]);
     expect(live.moveTo('ag_v', [pair!.to], 'run')).toBeNull();
     live.tick(0.1);
     expect(v.flying).toBe(true);

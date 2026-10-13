@@ -339,6 +339,7 @@ export class Gateway {
       season: seasonAt(now), population: view.summary().population,
       source: 'checkpoint', nextEventSequence: view.nextSequence,
       worldHoursPerRealHour: this.host.worldHoursPerRealHour,
+      grid: this.host.grid,
     };
   }
 

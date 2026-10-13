@@ -10,6 +10,7 @@ import { SnapshotStore } from '../src/db/snapshotStore.js';
 import { SimHost } from './trackedHost.js';
 import { buildApi } from '../src/api.js';
 import { testDatabaseUrl } from './testDatabase.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const url = testDatabaseUrl(), pool = url ? createPool(url) : null, maybe = url ? describe : describe.skip;
 const options = () => ({ pool: pool!, seed: 5, speciesDir: fileURLToPath(new URL('../../../config/species', import.meta.url)),
@@ -59,7 +60,7 @@ maybe('durable pack food delivery', () => {
         expect(deliveries).toEqual([unsaved]);
         expect(resumed.world.totalNutrients()).toBeCloseTo(baseline, 7);
         const all = await new EventStore(pool!).recent(1000), route = all.find(e => e.id === unsaved.causalParents[1])!;
-        expect(isMovementTrace(route.movement)).toBe(true);
+        expect(isMovementTrace(ISLAND_GRID, route.movement)).toBe(true);
         expect(route.movement!.goal).toBe('deliver_pack_food');
         expect(unsaved.causalParents[0]).toBe(saved.packFood!.sourceEventId);
         const frame = JSON.parse(JSON.stringify(resumed.liveEncounterFrame()!)), player = new LiveEncounterPlayer();

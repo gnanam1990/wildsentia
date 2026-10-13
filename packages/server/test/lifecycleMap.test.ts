@@ -7,6 +7,7 @@ import { EventStore } from '../src/db/eventStore.js';
 import { buildApi } from '../src/api.js';
 import { SimHost } from './trackedHost.js';
 import { testDatabaseUrl } from './testDatabase.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const url = testDatabaseUrl(), pool = url ? createPool(url) : null;
 const maybe = url ? describe : describe.skip;
@@ -56,7 +57,7 @@ maybe('durable lifecycle map locations', () => {
       expect(marks).toContainEqual(expect.objectContaining({ id: death.id, precision: 'recorded',
         position: { x: deathPosition.x, z: deathPosition.z } }));
       const newborn = first.world.agents.find((a) => a.id === birth.actors[0])!;
-      newborn.patchId = 20; newborn.position = initialPosition(newborn.id, 20);
+      newborn.patchId = 20; newborn.position = initialPosition(ISLAND_GRID, newborn.id, 20);
       // Simulate a later removal solely in this disposable test world; no historical backfill.
       first.world.carcasses.splice(0);
       await first.stop();

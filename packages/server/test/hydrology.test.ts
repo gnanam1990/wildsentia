@@ -20,7 +20,7 @@ maybe('durable surface hydrology', () => {
   });
   it('publishes budget and drainage together only at a checkpoint, and abort/replay does not duplicate inflow', async () => {
     const host = new SimHost(options()); await host.boot();
-    const graph = drainageGraph(host.world.patches), source = host.world.patches.find(p => graph.get(p.id) !== null)!;
+    const graph = drainageGraph(host.world.grid, host.world.patches), source = host.world.patches.find(p => graph.get(p.id) !== null)!;
     source.waterVolume = 100_000; host.world.waterBudget = newWaterBudget(host.world.patches, 0);
     await host.snapshotNow();
     const api = buildApi({ host, pool: pool! }); await api.ready();

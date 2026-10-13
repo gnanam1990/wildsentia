@@ -11,6 +11,7 @@ import { SimHost } from './trackedHost.js';
 import { buildApi } from '../src/api.js';
 import { testDatabaseUrl } from './testDatabase.js';
 import { stripFloweringGuild } from '../../sim/test/legacySnapshot.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const url = testDatabaseUrl(), pool = url ? createPool(url) : null, maybe = url ? describe : describe.skip;
 const options = () => ({ pool: pool!, seed: 5, speciesDir: fileURLToPath(new URL('../../../config/species', import.meta.url)),
@@ -89,7 +90,7 @@ maybe('durable parental contact', () => {
       const history = await new EventStore(pool!).recent(1000), visit = history.find(e => e.type === 'provisioned')!;
       expect(visit).toBeDefined(); expect(visit.position).toEqual(waiting);
       const move = history.find(e => e.id === visit.causalParents[0])!;
-      expect(isMovementTrace(move.movement)).toBe(true);
+      expect(isMovementTrace(ISLAND_GRID, move.movement)).toBe(true);
       expect(move.movement!.goal).toBe('care_for_young');
       expect(Number(visit.conditions.arrivalWorldTime) + Number(visit.conditions.provisioningSeconds)).toBeCloseTo(3600);
       expect((await api.inject(`/animals/${child!.id}/events`)).json().events).toContainEqual(visit);

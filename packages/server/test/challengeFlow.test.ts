@@ -17,6 +17,7 @@ import { ChallengeStore } from '../src/challenges/store.js';
 import type { SpeciesCatalog } from '../src/challenges/terms.js';
 import { ANVIL_KEYS, CHAIN_ID, anvilAvailable, startLocalChain, usdcBalance, type LocalChain } from './anvil.js';
 import { testDatabaseUrl } from './testDatabase.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const url = testDatabaseUrl();
 const maybe = url && anvilAvailable() ? describe : describe.skip;
@@ -85,7 +86,7 @@ maybe('a challenge from draft to paid winner (local anvil, LOCAL TEST STAND-IN U
       walletProven: true }, 1);
     if (!accepted.ok) throw new Error(accepted.error);
     const open = world.patches.find((p) => landWalkable(p) && p.neighbours.every((n) => landWalkable(world.patches[n])))!;
-    const c = patchCentre(open.id);
+    const c = patchCentre(ISLAND_GRID, open.id);
     const tiger = world.animal(accepted.animalId)!, prey = world.agents.find((a) => a.alive && a.speciesId === 'chital' && a.lifeStage === 'adult')!;
     tiger.patchId = open.id; tiger.position = { x: c.x, z: c.z, heading: 0 };
     const avatar = live.avatars.get('ag_00000000000000f1')!; avatar.x = c.x; avatar.z = c.z;

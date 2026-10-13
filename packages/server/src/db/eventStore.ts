@@ -1,4 +1,4 @@
-import { positionInPatch, type WorldEvent } from '@vana/shared';
+import { ISLAND_GRID, positionInPatch, type WorldEvent, type WorldGrid } from '@vana/shared';
 import { isRecordedTreeClimb } from '../liveEncounters.js';
 import type { Database } from './pool.js';
 
@@ -18,7 +18,7 @@ interface Row {
   has_climb?: boolean;
 }
 
-const toEvent = (r: Row): WorldEvent => ({
+const toEvent = (grid: WorldGrid, r: Row): WorldEvent => ({
   id: r.id,
   type: r.type as WorldEvent['type'],
   worldTime: Number(r.world_time),
@@ -33,7 +33,7 @@ const toEvent = (r: Row): WorldEvent => ({
   confidence: r.confidence as WorldEvent['confidence'],
   ...(r.encounter == null ? {} : { encounter: r.encounter }),
   ...(r.movement == null ? {} : { movement: r.movement }),
-  ...(positionInPatch(r.position, r.patch_id) ? { position: { ...r.position } } : {}),
+  ...(positionInPatch(grid, r.position, r.patch_id) ? { position: { ...r.position } } : {}),
   ...(r.has_encounter === undefined ? {} : { hasEncounter: r.has_encounter }),
   ...(r.has_climb === undefined ? {} : { hasClimb: r.has_climb }),
 });
@@ -46,7 +46,8 @@ export function eventSequence(id: string): number | null {
 }
 
 export class EventStore {
-  constructor(private readonly pool: Database) {}
+  /** `grid`: the lattice of the world these events belong to (the island unless told otherwise). */
+  constructor(private readonly pool: Database, private readonly grid: WorldGrid = ISLAND_GRID) {}
 
   /** Primary-key lookup remains actor scoped and checkpoint bounded; guessing an ID cannot
    * expose a volatile event or another animal's encounter. */
@@ -56,7 +57,7 @@ export class EventStore {
        and encounter is not null and ${beforeCheckpoint(3, 4)}`,
       [eventId, actorId, boundary.worldTime, boundary.nextSequence],
     );
-    const event = rows[0] ? toEvent(rows[0]) : null;
+    const event = rows[0] ? toEvent(this.grid, rows[0]) : null;
     return event?.encounter && [event.encounter.predatorId, event.encounter.preyId].includes(actorId) ? event : null;
   }
 
@@ -67,8 +68,8 @@ export class EventStore {
        and movement is not null and ${beforeCheckpoint(3, 4)}`,
       [eventId, actorId, boundary.worldTime, boundary.nextSequence],
     );
-    const event = rows[0] ? toEvent(rows[0]) : null;
-    return event && isRecordedTreeClimb(event) && event.movement?.actorId === actorId ? event : null;
+    const event = rows[0] ? toEvent(this.grid, rows[0]) : null;
+    return event && isRecordedTreeClimb(this.grid, event) && event.movement?.actorId === actorId ? event : null;
   }
 
   /** Keyset pagination has a total order even for simultaneous events and legacy null sequences.
@@ -100,14 +101,14 @@ export class EventStore {
         options.sinceSequence ?? null, options.types ?? null, options.after?.worldTime ?? null,
         options.after?.id ?? null, options.limit + 1],
     );
-    const events = rows.slice(0, options.limit).map(toEvent), last = events.at(-1);
+    const events = rows.slice(0, options.limit).map((r) => toEvent(this.grid, r)), last = events.at(-1);
     return { events, after: rows.length > options.limit && last ? { worldTime: last.worldTime, id: last.id } : null };
   }
 
   async appendBatch(events: readonly WorldEvent[]): Promise<void> {
     if (events.length === 0) return;
     for (const event of events) {
-      if (event.position !== undefined && !positionInPatch(event.position, event.patchId)) {
+      if (event.position !== undefined && !positionInPatch(this.grid, event.position, event.patchId)) {
         throw new Error('event position must be finite and inside its recorded patch');
       }
     }
@@ -145,7 +146,7 @@ export class EventStore {
       `select * from events where ${beforeCheckpoint(2, 3)} order by world_time desc, recorded_at desc limit $1`,
       [limit, boundary?.worldTime ?? null, boundary?.nextSequence ?? null],
     );
-    return rows.map(toEvent);
+    return rows.map((r) => toEvent(this.grid, r));
   }
 
   async mapEvents(until: number, nextSequence?: number): Promise<WorldEvent[]> {
@@ -154,7 +155,7 @@ export class EventStore {
        and world_time <= $1 and ($2::bigint is null or world_time < $1 or event_sequence < $2)
        order by world_time desc, id desc limit 100`, [until, nextSequence ?? null],
     );
-    return rows.map(toEvent);
+    return rows.map((r) => toEvent(this.grid, r));
   }
 
   async byActor(actorId: string, limit: number, boundary?: EventBoundary): Promise<WorldEvent[]> {
@@ -162,7 +163,7 @@ export class EventStore {
       `select * from events where $1 = any(actors) and ${beforeCheckpoint(3, 4)} order by world_time desc limit $2`,
       [actorId, limit, boundary?.worldTime ?? null, boundary?.nextSequence ?? null],
     );
-    return rows.map(toEvent);
+    return rows.map((r) => toEvent(this.grid, r));
   }
 
   /** A bounded village activity view: routine resting must not hide a catch or cooking result. */
@@ -177,7 +178,7 @@ export class EventStore {
       ) order by world_time desc, event_sequence desc nulls last, id desc limit 25`,
       [actorId, boundary.worldTime, boundary.nextSequence],
     );
-    return rows.map(toEvent);
+    return rows.map((r) => toEvent(this.grid, r));
   }
 
   /**
@@ -202,7 +203,7 @@ export class EventStore {
       [actorId, since, limit, types ?? null, boundary?.worldTime ?? null, boundary?.nextSequence ?? null,
         sinceSequence !== undefined, sinceSequence ?? null],
     );
-    return rows.map(toEvent);
+    return rows.map((r) => toEvent(this.grid, r));
   }
 
   /**
@@ -214,7 +215,7 @@ export class EventStore {
       `select * from events where type = 'died' and actors[1] = $1 and ${beforeCheckpoint(2, 3)} limit 1`,
       [actorId, boundary?.worldTime ?? null, boundary?.nextSequence ?? null],
     );
-    return rows.length === 0 ? null : toEvent(rows[0]!);
+    return rows.length === 0 ? null : toEvent(this.grid, rows[0]!);
   }
 
   async countAfter(worldTime: number, nextSequence?: number): Promise<number> {

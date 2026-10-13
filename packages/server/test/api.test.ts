@@ -8,6 +8,7 @@ import { buildApi } from '../src/api.js';
 import { testDatabaseUrl } from './testDatabase.js';
 import { makeCarcass } from '@vana/sim';
 import { positionInPatch, type EncounterTrace } from '@vana/shared';
+import { ISLAND_GRID } from '@vana/shared';
 
 const url = testDatabaseUrl();
 const maybe = url ? describe : describe.skip;
@@ -125,7 +126,7 @@ maybe('read API', () => {
     expect(body.animals[0]).toHaveProperty('currentGoal');
     expect(body.animals[0]).toHaveProperty('drives');
     for (const animal of body.animals) {
-      expect(positionInPatch(animal.position, animal.patchId)).toBe(true);
+      expect(positionInPatch(ISLAND_GRID, animal.position, animal.patchId)).toBe(true);
       expect(animal.position).toEqual(host.world.agents.find((a) => a.id === animal.id)!.position);
     }
   });
@@ -200,7 +201,7 @@ maybe('read API', () => {
       expect(life.track[i].worldTime).toBeGreaterThan(life.track[i - 1].worldTime);
     }
     expect(life.track[0]).toHaveProperty('patchId');
-    for (const point of life.track) expect(positionInPatch(point.position, point.patchId)).toBe(true);
+    for (const point of life.track) expect(positionInPatch(ISLAND_GRID, point.position, point.patchId)).toBe(true);
     expect(life.track.at(-1).position).toEqual(host.world.agents.find((a) => a.id === id)!.position);
     expect(Array.isArray(life.moments)).toBe(true);
   });

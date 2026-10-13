@@ -1,4 +1,4 @@
-import { positionInPatch, type Agent, type Drives, type WorldPosition } from '@vana/shared';
+import { ISLAND_GRID, positionInPatch, type Agent, type Drives, type WorldGrid, type WorldPosition } from '@vana/shared';
 import type { Database } from './pool.js';
 
 /**
@@ -30,12 +30,12 @@ interface TrackRow {
 
 /** Where animals were, and the records of those long gone. */
 export class LifeStore {
-  constructor(private readonly pool: Database) {}
+  constructor(private readonly pool: Database, private readonly grid: WorldGrid = ISLAND_GRID) {}
 
   async appendTracks(points: readonly TrackPoint[]): Promise<void> {
     if (points.length === 0) return;
     for (const point of points) {
-      if (point.position !== undefined && !positionInPatch(point.position, point.patchId)) throw new Error('invalid track position');
+      if (point.position !== undefined && !positionInPatch(this.grid, point.position, point.patchId)) throw new Error('invalid track position');
     }
     await this.pool.query(
       `insert into tracks (actor_id, world_time, patch_id, state, goal, hunger, thirst, fatigue, fear, position_x, position_z, heading)

@@ -4,6 +4,7 @@ import { landWalkable, patchCentre } from '@vana/shared';
 import { createWorld, type World } from '@vana/sim';
 import { DEATH_COOLDOWN_MS, LiveLayer } from '../src/live/liveLayer.js';
 import { worldPort } from '../src/live/worldPort.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const speciesDir = fileURLToPath(new URL('../../../config/species', import.meta.url));
 
@@ -13,7 +14,7 @@ function setup(random: () => number) {
     initialAgents: { tiger: 2, chital: 12, boar: 6 }, minPopulation: {} });
   // A land patch whose neighbours are land too, so nothing is blocked by the coast.
   const open = world.patches.find((p) => landWalkable(p) && p.neighbours.every((n) => landWalkable(world.patches[n])))!;
-  const centre = patchCentre(open.id);
+  const centre = patchCentre(ISLAND_GRID, open.id);
   let now = 5_000_000;
   const live = new LiveLayer(worldPort(() => world, () => 'w'), null, () => now, random);
   const put = (id: string, dx: number) => {

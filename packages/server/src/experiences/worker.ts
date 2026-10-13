@@ -205,7 +205,7 @@ async function league(input: LeagueWorkerInput) {
     .filter((p) => landWalkable(p) && p.waterVolume > 20)
     .sort((a, b) => a.id - b.id)[0];
   if (!home) throw new Error("arena_water_unavailable");
-  const at = patchCentre(home.id);
+  const at = patchCentre(w.grid, home.id);
   for (const a of w.agents) {
     const x = at.x + rng.range(-90, 90),
       z = at.z + rng.range(-90, 90);

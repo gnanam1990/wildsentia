@@ -1,16 +1,13 @@
-import { landWalkable, patchAtPosition, patchCentre, treeAnchorForPatch, waterAccessPosition, GRID_SIZE, PATCH_METRES, type Agent } from '@vana/shared';
+import { isWorldPosition, landWalkable, patchAtPosition, patchCentre, patchIdAt, treeAnchorForPatch, waterAccessPosition, type Agent, type WorldGrid } from '@vana/shared';
 import { locomotionFactor, type World } from '@vana/sim';
 import type { AnimalView, PatchView, SpeciesMotion, WorldPort } from './liveLayer.js';
 import { landRoute } from './route.js';
 
-const view = (a: Agent): AnimalView => ({ id: a.id, speciesId: a.speciesId, alive: a.alive, controller: a.controller,
-  position: { ...(a.position ?? { ...patchCentre(a.patchId), heading: 0 }) }, patchId: a.patchId, state: a.state,
+const view = (grid: WorldGrid, a: Agent): AnimalView => ({ id: a.id, speciesId: a.speciesId, alive: a.alive, controller: a.controller,
+  position: { ...(a.position ?? { ...patchCentre(grid, a.patchId), heading: 0 }) }, patchId: a.patchId, state: a.state,
   lifeStage: a.lifeStage, drives: { ...a.drives } });
 
-const inWorld = (x: number, z: number) => {
-  const edge = GRID_SIZE * PATCH_METRES - PATCH_METRES / 2;
-  return Number.isFinite(x) && Number.isFinite(z) && x >= -PATCH_METRES / 2 && z >= -PATCH_METRES / 2 && x < edge && z < edge;
-};
+const inWorld = (grid: WorldGrid, x: number, z: number) => isWorldPosition(grid, { x, z, heading: 0 });
 
 let indexed: { world: World; at: number; byPatch: Map<number, Agent[]> } | null = null;
 /** Drops the cached index: for tests that move animals by hand between two calls. */
@@ -41,20 +38,21 @@ export interface PlayedClock {
 
 export function worldPort(world: () => World, worldId: () => string | null, played?: PlayedClock): WorldPort {
   const patchAt = (x: number, z: number) => {
-    if (!inWorld(x, z)) return null;
-    const id = patchAtPosition({ x, z, heading: 0 });
+    const grid = world().grid;
+    if (!inWorld(grid, x, z)) return null;
+    const id = patchAtPosition(grid, { x, z, heading: 0 });
     return world().patches[id] ?? null;
   };
   return {
     worldId,
     treeAt: (x, z) => {
       const p = patchAt(x, z);
-      const anchor = p ? treeAnchorForPatch(p) : null;
+      const anchor = p ? treeAnchorForPatch(world().grid, p) : null;
       return anchor ? { x: anchor.x, z: anchor.z } : null;
     },
     now: () => world().now(),
     worldRate: () => played?.rate?.() ?? 1,
-    animal: (id) => { const a = world().animal(id); return a ? view(a) : null; },
+    animal: (id) => { const a = world().animal(id); return a ? view(world().grid, a) : null; },
     species: (id): SpeciesMotion | null => {
       const cfg = world().species.get(id);
       if (!cfg) return null;
@@ -93,31 +91,32 @@ export function worldPort(world: () => World, worldId: () => string | null, play
       // while sorting took half the server's time at 500 agents (load test, 5 October 2026):
       // the live layer asks this for every agent every second, and every observe asks again.
       const found: Array<{ d: number; a: Agent }> = [], r2 = radius * radius;
-      const span = Math.ceil(radius / PATCH_METRES) + 1, centre = inWorld(x, z) ? patchAtPosition({ x, z, heading: 0 }) : -1;
+      const grid = world().grid;
+      const span = Math.ceil(radius / grid.patchM) + 1, centre = inWorld(grid, x, z) ? patchAtPosition(grid, { x, z, heading: 0 }) : -1;
       if (centre < 0) return [];
-      const cx = centre % GRID_SIZE, cy = Math.floor(centre / GRID_SIZE);
+      const cx = centre % grid.cols, cy = Math.floor(centre / grid.cols);
       for (let dy = -span; dy <= span; dy++) for (let dx = -span; dx <= span; dx++) {
-        const px = cx + dx, py = cy + dy;
-        if (px < 0 || py < 0 || px >= GRID_SIZE || py >= GRID_SIZE) continue;
-        for (const a of byPatch.get(py * GRID_SIZE + px) ?? []) {
+        const id = patchIdAt(grid, cx + dx, cy + dy);
+        if (id === null) continue;
+        for (const a of byPatch.get(id) ?? []) {
           if (!a.alive || !a.position) continue;
           const ox = a.position.x - x, oz = a.position.z - z, d = ox * ox + oz * oz;
           if (d <= r2) found.push({ d, a });
         }
       }
-      return found.sort((p, q) => p.d - q.d).slice(0, limit).map((p) => view(p.a));
+      return found.sort((p, q) => p.d - q.d).slice(0, limit).map((p) => view(grid, p.a));
     },
     waterPoints: (x, z, radius) => world().patches
       .filter((p) => landWalkable(p) && p.waterVolume > 0)
-      .map((p) => ({ patchId: p.id, ...waterAccessPosition(p.id, world().patches), litres: p.waterVolume }))
+      .map((p) => ({ patchId: p.id, ...waterAccessPosition(world().grid, p.id, world().patches), litres: p.waterVolume }))
       .filter((w) => Math.hypot(w.x - x, w.z - z) <= radius)
       .map(({ patchId, x: wx, z: wz, litres }) => ({ patchId, x: wx, z: wz, litres })),
     route: (speciesId, from, to) => {
       const cfg = world().species.get(speciesId);
       const costs = cfg?.locomotion.terrainCost as Record<string, number> | undefined;
-      return landRoute(world().patches, from, to, (habitat) => costs?.[habitat] ?? 1);
+      return landRoute(world().grid, world().patches, from, to, (habitat) => costs?.[habitat] ?? 1);
     },
-    candidates: (speciesId, limit) => world().possessionCandidates(speciesId, limit).map(view),
+    candidates: (speciesId, limit) => world().possessionCandidates(speciesId, limit).map((a) => view(world().grid, a)),
     playedPosition: (id) => {
       const shown = played?.position(id);
       if (shown) return shown;
@@ -144,11 +143,11 @@ export function worldPort(world: () => World, worldId: () => string | null, play
 export function randomLandSpot(world: World, random: () => number = Math.random): { x: number; z: number } | null {
   const land = world.patches.filter((p) => landWalkable(p));
   for (let attempt = 0; attempt < 200 && land.length; attempt++) {
-    const patch = land[Math.floor(random() * land.length)]!, centre = patchCentre(patch.id);
-    const x = centre.x + (random() - 0.5) * (PATCH_METRES - 10), z = centre.z + (random() - 0.5) * (PATCH_METRES - 10);
-    const at = patchAtPosition({ x, z, heading: 0 });
+    const patch = land[Math.floor(random() * land.length)]!, centre = patchCentre(world.grid, patch.id);
+    const x = centre.x + (random() - 0.5) * (world.grid.patchM - 10), z = centre.z + (random() - 0.5) * (world.grid.patchM - 10);
+    const at = patchAtPosition(world.grid, { x, z, heading: 0 });
     if (at !== patch.id) continue;
-    const access = waterAccessPosition(patch.id, world.patches);
+    const access = waterAccessPosition(world.grid, patch.id, world.patches);
     if (patch.waterVolume > 0 && Math.hypot(access.x - x, access.z - z) < 45) continue;
     return { x, z };
   }
