@@ -521,7 +521,7 @@ export function buildApi({ host, pool, narrator, insights: insightDeps, live, re
   }));
   app.get<{ Params: { id: string } }>('/regions/:id', async (request, reply) => {
     const { id } = request.params;
-    if (!/^r\d{1,4}_\d{1,4}$/.test(id)) return reply.code(400).send({ error: 'bad_region_id' });
+    if (!/^r(0|[1-9]\d{0,3})_(0|[1-9]\d{0,3})$/.test(id)) return reply.code(400).send({ error: 'bad_region_id' });
     const view = observed(request);
     if (!view.regionIds().includes(id)) return reply.code(404).send({ error: 'region_outside_world' });
     return { worldTime: view.worldTime, source: 'checkpoint', id,

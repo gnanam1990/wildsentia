@@ -72,6 +72,8 @@ interface Session {
   liveEmpty: boolean;
   /** Congo 1A.3: on a world of many regions, those this viewer was last sent, and whether its view has moved off them. */
   regions: string[] | null;
+  /** The regions its view now reaches; they become `regions` when they are next sent. */
+  wantedRegions: string[] | null;
   regionsDirty: boolean;
   lastRegionSceneAt: number;
 }
@@ -115,7 +117,7 @@ export class Gateway {
     const regions = this.#regional ? this.#regionsFor(null) : null;
     this.#sessions.set(socket, { socket, watching: null, recordedFrameId: frame?.id ?? null,
       recordingDirty: false, checkpointId: view.id, lastHeartbeatAt: Date.now(), view: null, liveEmpty: true,
-      regions, regionsDirty: false, lastRegionSceneAt: 0 });
+      regions, wantedRegions: regions, regionsDirty: false, lastRegionSceneAt: 0 });
     const scene = regions ? this.#regionScene(view, regions) : this.#scene(view);
     this.#send(socket, `${scene.base},"environment":${scene.environment},"frame":${JSON.stringify(frame)}}`);
   }
@@ -146,7 +148,8 @@ export class Gateway {
       session.view = { x, z, radius: Math.min(radius, MAX_VIEW_RADIUS_M) };
       if (session.regions) {
         const next = this.#regionsFor(session.view);
-        if (next.join(',') !== session.regions.join(',')) { session.regions = next; session.regionsDirty = true; }
+        session.wantedRegions = next;
+        session.regionsDirty = next.join(',') !== session.regions.join(',');
       }
       return;
     }
@@ -220,7 +223,9 @@ export class Gateway {
       this.#sessions.clear(); this.#watchers.clear();
       return;
     }
-    const scene = this.#scene(view);
+    // The whole-world scene is built only if a one-region (island) viewer needs it.
+    let wholeScene: { id: string; base: string; environment: string } | null = null;
+    const scene = (): { id: string; base: string; environment: string } => wholeScene ??= this.#scene(view);
     const frame = this.host.liveEncounterFrame();
     const frameId = frame?.id ?? null;
     // One serialization per distinct recording, and one encoded copy per distinct message: every
@@ -236,6 +241,7 @@ export class Gateway {
       // per REGION_SWITCH_MIN_MS: a view flipping back and forth cannot make a 2 MB scene a second.
       const moved = session.regionsDirty && Date.now() - session.lastRegionSceneAt >= REGION_SWITCH_MIN_MS;
       const freshCheckpoint = session.checkpointId !== view.id || moved;
+      if (moved && session.wantedRegions) session.regions = session.wantedRegions;
       if (!freshCheckpoint && !session.recordingDirty && session.recordedFrameId === frameId) {
         // A world hour takes five real minutes. Repeating the unchanged ~1 MB scene every
         // second wastes tens of GB per viewer/day without advancing the client playhead.
@@ -265,14 +271,18 @@ export class Gateway {
       const encodedKey = `${session.regions?.join(',') ?? ''}|${freshCheckpoint}`;
       let message = recording.encoded.get(encodedKey);
       if (!message) {
-        const part = session.regions ? this.#regionScene(view, session.regions) : scene;
+        const part = session.regions ? this.#regionScene(view, session.regions) : scene();
         message = Buffer.from(`${part.base}${freshCheckpoint ? `,"environment":${part.environment}` : ''},"frame":${recording.payload}}`);
         recording.encoded.set(encodedKey, message);
       }
       this.#send(socket, message);
       session.recordedFrameId = recording.id;
       session.recordingDirty = false;
-      if (session.regions && freshCheckpoint) { session.regionsDirty = false; session.lastRegionSceneAt = Date.now(); }
+      if (session.regions) {
+        if (moved) session.lastRegionSceneAt = Date.now();
+        // Still dirty if the view wants other regions than those just sent (a checkpoint's scene, not a move).
+        session.regionsDirty = (session.wantedRegions ?? session.regions).join(',') !== session.regions.join(',');
+      }
       session.checkpointId = view.id;
       session.lastHeartbeatAt = Date.now();
     }

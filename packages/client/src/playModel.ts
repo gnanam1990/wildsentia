@@ -147,3 +147,14 @@ export function keyCommand(o: PlayObservation, key: string, mods: { repeat?: boo
   if (key === 'Escape') return { kind: 'stop' };
   return null;
 }
+
+/**
+ * Sends a command again while the world is stepping (the server refuses it with world_busy for
+ * about a second every few minutes), up to `tries` times in all. Any other error is final.
+ */
+export async function retryWhenBusy<T>(send: () => Promise<T>, wait: (ms: number) => Promise<void>, tries = 3): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try { return await send(); }
+    catch (e) { if ((e as Error).message !== 'world_busy' || attempt >= tries) throw e; await wait(300); }
+  }
+}

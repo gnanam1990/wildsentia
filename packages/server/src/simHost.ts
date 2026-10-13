@@ -655,6 +655,14 @@ export class SimHost {
     return this.#serial(() => this.#advance(worldHours));
   }
 
+  /**
+   * Runs work that changes the world outside a step (restoring possessions at start-up), in turn
+   * with steps and checkpoints: never between the slices of one.
+   */
+  exclusive<T>(work: () => Promise<T>): Promise<T> {
+    return this.#serial(work);
+  }
+
   async #advance(worldHours: number): Promise<void> {
     this.#writer.assertActive();
     if (!Number.isSafeInteger(worldHours) || worldHours < 0) throw new Error('invalid world hours');

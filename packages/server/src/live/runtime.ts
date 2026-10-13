@@ -71,7 +71,7 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
   const save = async () => { const id = host.worldId; if (id) await store.savePossessions(id, live.avatars.values()); };
   const holding = holdingGate(env);
   const routes: LiveRouteDeps = {
-    live, world: port, store, ledger, ...(holding ? { holding } : {}), busy: () => host.busy,
+    live, world: port, store, ledger, ...(holding ? { holding } : {}),
     limits: { slots: positiveSetting(env, 'VANA_AGENT_SLOTS', 500), perNetworkPerDay: positiveSetting(env, 'VANA_AGENT_REGISTRATIONS_PER_NETWORK', 5) },
     networkSecret: env.VANA_LIVE_SECRET?.trim() || rewards?.adminToken || randomBytes(32).toString('hex'),
     clientScriptPath: fileURLToPath(new URL('../../agent-client/client.mjs', import.meta.url)),
@@ -82,16 +82,21 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
     async start(broadcast) {
       const id = host.worldId;
       const restored = new Set<string>();
-      if (id) for (const saved of await store.loadPossessions(id)) if (live.restore(saved)) restored.add(saved.animalId);
-      // An animal still marked as steered, with no saved possession, goes back to the wild.
-      for (const animal of host.world.agents) if (animal.controller && !restored.has(animal.id)) host.world.release(animal.id);
+      // Between steps, never inside one: the host may already be stepping when the live layer starts.
+      await host.exclusive(async () => {
+        if (id) for (const saved of await store.loadPossessions(id)) if (live.restore(saved)) restored.add(saved.animalId);
+        // An animal still marked as steered, with no saved possession, goes back to the wild.
+        for (const animal of host.world.agents) if (animal.controller && !restored.has(animal.id)) host.world.release(animal.id);
+      });
       await ledger?.refresh().catch((e) => console.error('[live] drop refresh failed', e));
-      let last = performance.now();
+      let last = performance.now(), held = false;
       timers.push(setInterval(() => {
         const now = performance.now();
-        tickLag.record(Math.max(0, (now - last) / 1000 - 1 / TICK_HZ));
         // While the world steps nothing may move it: the tick holds, and the next one catches up.
-        if (host.busy) return;
+        // The held time is the step's, not event-loop lag, so it is not recorded as lag.
+        if (host.busy) { held = true; return; }
+        if (!held) tickLag.record(Math.max(0, (now - last) / 1000 - 1 / TICK_HZ));
+        held = false;
         try { live.tick((now - last) / 1000); } catch (e) { console.error('[live] tick failed', e); }
         last = now;
       }, 1000 / TICK_HZ));

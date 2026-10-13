@@ -34,6 +34,31 @@ describe('a world held while it steps', () => {
   });
 });
 
+describe('the live layer while the world steps (1A.3 review)', () => {
+  it('refuses a command before it touches anything: no logged command, no lost grazing time', () => {
+    const world = island(); let busy = false;
+    const port = worldPort(() => world, () => 'w1', undefined, () => busy);
+    const live = new LiveLayer(port, null);
+    const commands: string[] = [];
+    live.onCommand = (record) => { commands.push(record.command); };
+    const chital = world.agents.find((a) => a.speciesId === 'chital')!;
+    expect(live.possess('a1', 'Ana', { animalId: chital.id }).ok).toBe(true);
+    expect(live.act('a1', 'graze')).toBeNull();
+    live.tick(0.5);
+    const avatar = live.avatars.get('a1')!, pending = avatar.pendingSeconds;
+    expect(pending).toBeGreaterThan(0);
+    commands.length = 0; busy = true;
+    for (const command of [() => live.release('a1'), () => live.act('a1', 'rest'), () => live.stop('a1'),
+      () => live.goTo('a1', { x: 0, z: 0 }, 'walk'), () => live.hunt('a1', 'x'), () => live.climb('a1'),
+      () => live.possess('a2', 'Bo', { speciesId: 'chital' })]) expect(command).toThrow(WorldBusyError);
+    expect(commands).toEqual([]);
+    expect(avatar.pendingSeconds).toBe(pending);
+    expect(live.avatars.has('a1')).toBe(true);
+    busy = false;
+    expect(live.release('a1')).toBe(true);
+  });
+});
+
 const url = testDatabaseUrl();
 const maybe = url ? describe : describe.skip;
 const pool = url ? createPool(url) : null;
@@ -51,7 +76,7 @@ maybe('commands while the world steps', () => {
     human = await agents.ensureHuman({ xUserId: '556', handle: 'ravi', networkHash: 'n' });
     app = Fastify();
     installLiveAgents(app, { live: new LiveLayer(port, null), world: port, store: agents, ledger: null, limits: { slots: 5, perNetworkPerDay: 5 },
-      networkSecret: 's', clientScriptPath: fileURLToPath(new URL('../agent-client/client.mjs', import.meta.url)), busy: () => busy,
+      networkSecret: 's', clientScriptPath: fileURLToPath(new URL('../agent-client/client.mjs', import.meta.url)),
       humans: { origin: ORIGIN, account: async () => ({ agentId: human.id, xAccountDays: 400 }) } });
     await app.ready();
   });

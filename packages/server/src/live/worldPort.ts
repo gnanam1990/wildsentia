@@ -1,6 +1,6 @@
 import { terrainCostFor, isWorldPosition, landWalkable, patchAtPosition, patchCentre, patchIdAt, treeAnchorForPatch, waterAccessPosition, type Agent, type HabitatType, type WorldGrid } from '@vana/shared';
 import { locomotionFactor, type World } from '@vana/sim';
-import type { AnimalView, PatchView, SpeciesMotion, WorldPort } from './liveLayer.js';
+import { WorldBusyError, type AnimalView, type PatchView, type SpeciesMotion, type WorldPort } from './liveLayer.js';
 import { landRoute } from './route.js';
 
 const view = (grid: WorldGrid, a: Agent): AnimalView => ({ id: a.id, speciesId: a.speciesId, alive: a.alive, controller: a.controller,
@@ -36,10 +36,7 @@ export interface PlayedClock {
   rate?(): number;
 }
 
-/** The world is stepping (in slices): it may not be changed until the step ends. */
-export class WorldBusyError extends Error {
-  constructor() { super('world_busy'); this.name = 'WorldBusyError'; }
-}
+export { WorldBusyError } from './liveLayer.js';
 
 export function worldPort(world: () => World, worldId: () => string | null, played?: PlayedClock, busy: () => boolean = () => false): WorldPort {
   const held = (): void => { if (busy()) throw new WorldBusyError(); };
@@ -50,6 +47,7 @@ export function worldPort(world: () => World, worldId: () => string | null, play
     return world().patches[id] ?? null;
   };
   return {
+    busy,
     worldId,
     treeAt: (x, z) => {
       const p = patchAt(x, z);

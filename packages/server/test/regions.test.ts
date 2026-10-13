@@ -57,6 +57,7 @@ maybe('a world served by region', () => {
     expect(one.statusCode).toBe(200);
     expect(one.json().patches).toHaveLength(400);
     expect((await app.inject({ url: '/regions/north' })).statusCode).toBe(400);
+    expect((await app.inject({ url: '/regions/r01_2' })).statusCode).toBe(400);
     expect((await app.inject({ url: '/regions/r9_9' })).statusCode).toBe(404);
     await app.close();
   });
@@ -96,6 +97,42 @@ maybe('a world served by region', () => {
       now += 10_000; gateway.broadcast();
       expect(a.scenes().at(-1)!.regions).toEqual(expect.arrayContaining(['r5_3'])); // the view it settled on arrives
       gateway.disconnect(a); gateway.disconnect(b);
+    } finally { clock.mockRestore(); }
+  });
+
+  it('never serializes the whole world for a regional broadcast (1A.3 review)', () => {
+    const real = host.observation.bind(host);
+    const spy = vi.spyOn(host, 'observation').mockImplementation(() => {
+      const view = real()!;
+      return { ...view, patches: () => { throw new Error('whole-world patches read'); }, livingAnimals: () => { throw new Error('whole-world animals read'); } };
+    });
+    try {
+      const gateway = new Gateway(host), socket = new FakeSocket();
+      gateway.handle(socket);
+      gateway.receive(socket, { type: 'view', x: 35_850, z: 23_850, radius: 1_000 });
+      expect(() => gateway.broadcast()).not.toThrow();
+      gateway.disconnect(socket);
+    } finally { spy.mockRestore(); }
+  });
+
+  it('never tells a viewer about regions it was not sent (1A.3 review)', () => {
+    let now = 5_000_000;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      const gateway = new Gateway(host), socket = new FakeSocket();
+      gateway.handle(socket);
+      gateway.receive(socket, { type: 'view', x: 35_850, z: 23_850, radius: 1_000 });
+      gateway.broadcast(); // the first move is immediate
+      const sent = socket.scenes().at(-1)!.regions as string[];
+      now += 1_000;
+      gateway.receive(socket, { type: 'view', x: 9_000, z: 23_850, radius: 1_000 }); // too soon to switch again
+      gateway.receive(socket, { type: 'watch', actorId: 'nobody' }); // forces a send of the recording
+      gateway.broadcast();
+      for (const scene of socket.scenes().slice(-1)) {
+        expect(scene.regions).toEqual(sent);
+        expect(scene.environment).toBeUndefined();
+      }
+      gateway.disconnect(socket);
     } finally { clock.mockRestore(); }
   });
 });

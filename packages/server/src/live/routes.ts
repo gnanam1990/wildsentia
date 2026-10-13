@@ -27,8 +27,6 @@ import { MIN_X_ACCOUNT_DAYS } from '../accounts/store.js';
 export interface HoldingGate { minAtomic: bigint; tokenAddress: string; chainId: number; balance(wallet: `0x${string}`): Promise<bigint> }
 
 export interface LiveRouteDeps {
-  /** True while the world steps (in slices): commands are refused with world_busy until it ends. */
-  busy?: (() => boolean) | undefined;
   live: LiveLayer;
   world: WorldPort;
   store: AgentStore;
@@ -118,7 +116,7 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
   const networkHash = (req: FastifyRequest) => createHash('sha256').update(`live-network:${deps.networkSecret}:${networkKey(req.ip)}`).digest('hex');
 
   app.register(async (scope) => {
-    // A command that got past the check and then reached the world after a step began.
+    // The live layer refuses a world-changing command while the world steps (Congo 1A.3).
     scope.setErrorHandler((error, _req, reply) => {
       if (error instanceof WorldBusyError) return reply.code(503).header('Retry-After', '1').send({ error: 'world_busy', retryAfterMs: 250 });
       throw error;
@@ -236,15 +234,9 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
      * The commands an animal is steered with. Agents send them signed to /agents/me/*; people send
      * them from the play page to /play/*, with their session cookie.
      */
-    const commandRoutes = (prefix: string, resolveAny: Resolve) => {
-      // A command (not an observation) waits while the world steps: the agent retries shortly.
-      const resolve: Resolve = async (req, reply, bucket) => {
-        if (bucket === commands && deps.busy?.()) {
-          reply.code(503).header('Retry-After', '1').send({ error: 'world_busy', retryAfterMs: 250 });
-          return null;
-        }
-        return resolveAny(req, reply, bucket);
-      };
+    // A command that would change the world while it steps is refused whole by the live layer
+    // (WorldBusyError), and answered 503 world_busy by the handler above; the client retries.
+    const commandRoutes = (prefix: string, resolve: Resolve) => {
       scope.get(`${prefix}/observe`, async (req, reply) => {
         const ctx = await resolve(req, reply, observes); if (!ctx) return reply;
         return observation(ctx.agent);
@@ -482,6 +474,8 @@ Rules
   uses breath (stamina) and you slow to a trot when it runs out.
 - Graze where there is grass, drink only at a water point, rest to recover.
 - If your animal dies, or gives birth (she returns to the wild to raise her young), take another.
+- Every few minutes the world steps forward, for about a second. A command sent then is refused
+  with 503 world_busy (retryAfterMs); send it again after that wait (client.mjs does this for you).
 - USDC drops appear at random places. You see a hint circle; within 10 m you spot the exact spot.
   Stand within 2 m and open it for 5 seconds without moving. The first to finish wins.
   To win you need a proven payout wallet, 5 minutes with your animal, and no win in the last

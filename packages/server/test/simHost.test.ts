@@ -65,6 +65,28 @@ maybe('SimHost', () => {
     await restored.abort();
   });
 
+  it('runs exclusive work only between steps, never inside one (1A.3 review: restart restore race)', async () => {
+    const host = new SimHost({ ...options(), sliceMs: 0 }); await host.boot();
+    const stepping = host.advance(2);
+    let busyInside: boolean | null = null, stepDone = false;
+    void stepping.then(() => { stepDone = true; });
+    await host.exclusive(async () => { busyInside = host.busy; });
+    expect(busyInside).toBe(false);
+    expect(stepDone).toBe(true);
+    await host.abort();
+  });
+
+  it('a sliced hour is exactly an unsliced hour', async () => {
+    const run = async (sliceMs: number) => {
+      await pool!.query('truncate events, snapshots, human_motion, follows, viewers, tracks, animal_archive cascade');
+      const host = new SimHost({ ...options(), sliceMs }); await host.boot(); await host.advance(3);
+      const print = JSON.stringify(host.world.agents.map((a) => [a.id, a.position, a.drives, a.alive]));
+      await host.abort();
+      return print;
+    };
+    expect(await run(0)).toBe(await run(1_000_000));
+  });
+
   it('boots a fresh world when there is no snapshot', async () => {
     const host = new SimHost(options());
     const result = await host.boot();

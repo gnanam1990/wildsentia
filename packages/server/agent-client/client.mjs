@@ -37,7 +37,18 @@ async function info() {
   return res.json();
 }
 
-async function call(method, path, body) {
+/** While the world steps (every few minutes, for about a second) commands are refused with
+ * world_busy; a command is sent again, freshly signed, up to three times in all. */
+async function call(method, path, body, tries = 3) {
+  try { return await send(method, path, body); }
+  catch (e) {
+    if (e.body?.error !== 'world_busy' || tries <= 1) throw e;
+    await new Promise((resolve) => setTimeout(resolve, Math.min(2000, Number(e.body.retryAfterMs) || 250)));
+    return call(method, path, body, tries - 1);
+  }
+}
+
+async function send(method, path, body) {
   if (!audience) audience = (await info()).audience;
   const id = identity();
   const raw = body === undefined ? '' : JSON.stringify(body);

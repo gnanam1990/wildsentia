@@ -33,7 +33,14 @@ export interface SpeciesMotion {
 export interface PatchView { id: number; habitat: string; grassKg: number; waterL: number; land: boolean }
 
 /** Everything the live layer may ask of, or do to, the world. */
+/** The world is stepping (in slices): it may not be changed until the step ends. */
+export class WorldBusyError extends Error {
+  constructor() { super('world_busy'); this.name = 'WorldBusyError'; }
+}
+
 export interface WorldPort {
+  /** True while the world steps: nothing may change it (Congo 1A.3). */
+  busy?(): boolean;
   worldId(): string | null;
   /** The tree this patch's climbers use, if it has one. */
   treeAt(x: number, z: number): { x: number; z: number } | null;
@@ -230,6 +237,7 @@ export class LiveLayer {
 
   /** Takes over an animal: a named one, or any free one of a species. */
   possess(agentId: string, agentName: string, choice: { animalId?: string; speciesId?: string }, queueIfNone = true): { ok: true; avatar: Avatar } | { ok: false; reason: string } {
+    this.#held();
     if (this.avatars.has(agentId)) return { ok: false, reason: 'already_possessing' };
     // After an animal dies, a short wait before the next: death has to cost something.
     if ((this.#cooldowns.get(agentId) ?? 0) > this.clock()) return { ok: false, reason: 'cooldown' };
@@ -286,6 +294,7 @@ export class LiveLayer {
   }
 
   release(agentId: string, why = 'You let your animal go back to the wild.', how: LifeEnd = 'released'): boolean {
+    this.#held();
     const avatar = this.avatars.get(agentId);
     if (!avatar) return false;
     if (how === 'released') this.#command(agentId, 'release', {});
@@ -317,6 +326,7 @@ export class LiveLayer {
 
   /** Walk, trot or run through up to twenty points, in order. */
   moveTo(agentId: string, points: Array<{ x: number; z: number }>, gait: Gait): string | null {
+    this.#held();
     const avatar = this.avatars.get(agentId);
     if (!avatar) return 'not_possessing';
     if (points.length === 0 || points.length > MAX_WAYPOINTS) return 'bad_path';
@@ -338,6 +348,7 @@ export class LiveLayer {
 
   /** Goes to a point by the cheapest land route, round water and sea. */
   goTo(agentId: string, to: { x: number; z: number }, gait: Gait): string | null {
+    this.#held();
     const avatar = this.avatars.get(agentId);
     if (!avatar) return 'not_possessing';
     if (!Number.isFinite(to.x) || !Number.isFinite(to.z)) return 'not_on_land';
@@ -366,6 +377,7 @@ export class LiveLayer {
   }
 
   stop(agentId: string): string | null {
+    this.#held();
     const avatar = this.avatars.get(agentId);
     if (!avatar) return 'not_possessing';
     const landing = this.#land(avatar);
@@ -378,6 +390,7 @@ export class LiveLayer {
 
   /** Graze, drink, rest, or (a meat-eater at a carcass) feed where the animal stands; moving again ends it. */
   act(agentId: string, action: 'graze' | 'drink' | 'rest' | 'feed'): string | null {
+    this.#held();
     const avatar = this.avatars.get(agentId);
     if (!avatar) return 'not_possessing';
     if (action === 'drink' && !this.world.waterPoints(avatar.x, avatar.z, 3).length) return 'not_at_water';
@@ -403,6 +416,7 @@ export class LiveLayer {
    * reaching it, the species' own hunt odds decide. Only a species' natural prey can be hunted.
    */
   hunt(agentId: string, targetId: string): string | null {
+    this.#held();
     const avatar = this.avatars.get(agentId);
     if (!avatar) return 'not_possessing';
     const me = this.world.species(avatar.speciesId);
@@ -422,6 +436,7 @@ export class LiveLayer {
 
   /** Starts the timed open of a drop within reach. Eligibility is checked by the caller first. */
   openDrop(agentId: string, dropId: string): string | null {
+    this.#held();
     const avatar = this.avatars.get(agentId);
     if (!avatar) return 'not_possessing';
     const drop = this.drops?.active().find((d) => d.id === dropId);
@@ -436,7 +451,7 @@ export class LiveLayer {
   }
 
   tick(dt: number): void {
-    if (!(dt > 0)) return;
+    if (!(dt > 0) || this.world.busy?.()) return;
     dt = Math.min(dt, 1);
     const now = this.clock();
     // A new hour's recording starts from where each finished chase left its animal.
@@ -741,6 +756,9 @@ export class LiveLayer {
    * and tires at the world's pace, so real seconds count as world seconds at the world's speed,
    * an hour at most per call.
    */
+  /** A command is refused whole, before it changes anything, while the world steps. */
+  #held(): void { if (this.world.busy?.()) throw new WorldBusyError(); }
+
   #flushAction(avatar: Avatar): void {
     const action = avatar.action;
     const rate = this.world.worldRate?.() ?? 1;
@@ -836,6 +854,7 @@ export class LiveLayer {
 
   /** Up the tree beside it (langur, squirrel, leopard): no ground hunter can reach it there. */
   climb(agentId: string): string | null {
+    this.#held();
     const avatar = this.avatars.get(agentId);
     if (!avatar) return 'not_possessing';
     if (!this.world.species(avatar.speciesId)?.climbs) return 'cannot_climb';
