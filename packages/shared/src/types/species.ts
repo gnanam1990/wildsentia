@@ -254,8 +254,13 @@ export interface SpeciesConfig {
   };
 }
 
-/** What crossing a habitat costs this species: its own figure, or its analogue's for a Congo habitat it does not name. */
-export function terrainCostFor(cfg: Pick<SpeciesConfig, 'locomotion'>, habitat: HabitatType): number {
+/**
+ * What crossing a habitat costs this species: its own figure, or its analogue's for a Congo
+ * habitat it does not name. Flooded ground (Congo 1B) costs its `floodedTerrainCost` where it has one.
+ */
+export function terrainCostFor(cfg: Pick<SpeciesConfig, 'locomotion'>, habitat: HabitatType, flooded = false): number {
+  const wet = flooded ? (cfg.locomotion.floodedTerrainCost as Partial<Record<HabitatType, number>> | undefined)?.[habitat] : undefined;
+  if (wet !== undefined) return wet;
   const own = (cfg.locomotion.terrainCost as Partial<Record<HabitatType, number>>)[habitat];
   return own ?? cfg.locomotion.terrainCost[HABITAT_ANALOGUE[habitat as CongoHabitat] ?? (habitat as IslandHabitat)];
 }

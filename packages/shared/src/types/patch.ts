@@ -51,6 +51,8 @@ export interface Patch {
   islandSeed?: number;
   /** Congo worlds only: the seed of their congo_terrain_v1 geometry. */
   congoSeed?: number;
+  /** Congo 1B: flooded forest under the season's flood (set each hour by the world); absent elsewhere. */
+  flooded?: boolean;
   surface?: 'land' | 'coast' | 'ocean';
   habitat: HabitatType;
   canopyCover: number;

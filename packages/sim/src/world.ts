@@ -1,6 +1,6 @@
 import {
   NUTRIENT_PER_KG_BIOMASS, gridForProfile, patchCount, type WorldGrid, WORLD_SECONDS_PER_DAY, WORLD_SECONDS_PER_HOUR,
-  createRng, isClosedProfile, isCongoProfile, isIslandProfile, seasonAt, carcassMass, edibleMass, landWalkable, spatialHash, treeAnchorForPatch, patchAtPosition, positionInPatch, isWorldPosition, type TerrainProfile,
+  createRng, isClosedProfile, isCongoProfile, isFlooded, isIslandProfile, seasonAt, carcassMass, edibleMass, landWalkable, spatialHash, treeAnchorForPatch, patchAtPosition, positionInPatch, isWorldPosition, type TerrainProfile,
   type WorldPosition, type MovementTrace,
   type Agent, type Carcass, type DeathCause, type Patch, type Rng, type SkillId,
   type RngState, type SpeciesConfig, type WorldTime, type WaterBudget, type MicroEcologyState, type CommunityState, type CommunityProfile,
@@ -1161,6 +1161,9 @@ export class World {
     }
     for (const agent of this.agents) locateAgent(this.grid, agent);
     const season = seasonAt(this.#time, this.terrainProfile);
+    // Congo 1B: the flooded forest floods in the rains and drains in the drier spells.
+    if (isCongoProfile(this.terrainProfile)) for (const patch of this.patches)
+      if (patch.habitat === 'flooded_forest') patch.flooded = isFlooded(patch, season);
     yield;
 
     updateDrainage(this.grid, this.patches, hours, season, this.waterBudget, this.#options.rainfallScale ?? 1);

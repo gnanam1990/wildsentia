@@ -87,7 +87,7 @@ export function worldPort(world: () => World, worldId: () => string | null, play
       const w = world(), agent = w.animal(id), patch = patchAt(x, z);
       const cfg = agent && w.species.get(agent.speciesId);
       if (!agent || !cfg || !patch) return 1;
-      const cost = terrainCostFor(cfg, patch.habitat);
+      const cost = terrainCostFor(cfg, patch.habitat, patch.flooded === true);
       return locomotionFactor(agent, cfg) / Math.max(1, cost);
     },
     patchAt: (x, z): PatchView | null => {

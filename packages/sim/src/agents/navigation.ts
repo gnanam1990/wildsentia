@@ -8,7 +8,7 @@ type Piece = { target: WorldPosition; cost: number };
 const distance = (a: WorldPosition, b: WorldPosition): number => Math.hypot(a.x - b.x, a.z - b.z);
 const costOf = (p: Patch, cfg: SpeciesConfig): number => {
   if (!landWalkable(p)) return Infinity;
-  const value = terrainCostFor(cfg, p.habitat);
+  const value = terrainCostFor(cfg, p.habitat, p.flooded === true);
   return Number.isFinite(value) && value > 0 ? value : Infinity;
 };
 

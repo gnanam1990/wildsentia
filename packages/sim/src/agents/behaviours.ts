@@ -431,8 +431,8 @@ function hunt(ctx: BehaviourContext): void {
 
   const preySpecies = ctx.view.speciesOf(victim.speciesId);
   const terrain = ctx.percept.patch.habitat;
-  const predatorTerrainCost = terrainCostFor(ctx.species, terrain);
-  const preyTerrainCost = terrainCostFor(preySpecies, terrain);
+  const predatorTerrainCost = terrainCostFor(ctx.species, terrain, ctx.percept.patch.flooded === true);
+  const preyTerrainCost = terrainCostFor(preySpecies, terrain, ctx.percept.patch.flooded === true);
   const predatorScale = locomotionFactor(ctx.agent, ctx.species);
   // A denned young that cannot yet walk does not run (sim_0.36.0); 1% keeps the solver's speeds positive.
   const preyScale = locomotionFactor(victim, preySpecies) * (cannotYetWalk(victim, preySpecies) ? 0.01 : 1);
@@ -585,7 +585,7 @@ function consume(ctx: BehaviourContext, carcass: Carcass, elapsedSeconds = 0, ca
   const radius = Math.max(0.35, ctx.species.body.shoulderHeightM * 0.65);
   const habitat = ctx.patches[ctx.agent.patchId]!.habitat;
   const speed = ctx.species.locomotion.walkMs * locomotionFactor(ctx.agent, ctx.species)
-    * Math.max(0.15, 1 - ctx.agent.drives.fatigue * 0.5) / terrainCostFor(ctx.species, habitat);
+    * Math.max(0.15, 1 - ctx.agent.drives.fatigue * 0.5) / terrainCostFor(ctx.species, habitat, ctx.patches[ctx.agent.patchId]!.flooded === true);
   const movement = approachContact(ctx.view.grid, from, target, speed, secondsAvailable, radius);
   ctx.agent.position = movement.position;
   const nextPatch = patchAtPosition(ctx.view.grid, movement.position);

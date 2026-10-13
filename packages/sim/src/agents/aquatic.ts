@@ -12,7 +12,7 @@ const REFUGE_REACH_M = 320;
 export function waterRefuge(grid: WorldGrid, agent: Agent, patches: readonly Patch[], season: Season | undefined,
   at: WorldPosition): { patchId: number; position: WorldPosition } | null {
   const here = patches[agent.patchId];
-  if (here && season && isFlooded(here, season) && here.habitat !== 'water') return { patchId: here.id, position: { ...at } };
+  if (here && (here.flooded === true || (season !== undefined && here.habitat === 'flooded_forest' && isFlooded(here, season)))) return { patchId: here.id, position: { ...at } };
   let best: { patchId: number; position: WorldPosition; d: number } | null = null;
   for (const id of [agent.patchId, ...cardinalNeighbours(grid, agent.patchId)]) {
     const p = patches[id];
