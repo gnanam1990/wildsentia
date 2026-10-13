@@ -89,6 +89,17 @@ Before this, the step held the server for about 850 ms and the checkpoint for ab
 - **Balance is not yet shown.** Predation against births can only be judged over a year or more, and the leopards are also breeding. The one-year soak is the next measurement.
 - **The budget holds.** Every hour stayed under 2 s.
 
+**One year (360 days, leopards at 2/100 km², 2.5 kg/day).**
+- **Alive at the end:** 17,384 blue duikers (−37%), 1,528 water chevrotains (−17%) and 33 leopards.
+- **Leopards rose, then fell.** They bred from 46 to about 76 by day 120, then fell to 33.
+- **Kills:** 12,427 duikers and 568 chevrotains.
+- **Dives:** 591.
+- **Stranded in mid-river:** none.
+- **Condition:** duikers 0.93, chevrotains 0.93.
+- **One world hour:** p95 822 ms, max 1,502 ms. The run overlapped a test-suite run for its last half hour.
+
+So the forest neither collapses nor holds steady in its first year. Prey and predators decline together, which suggests the leopards are food-limited. Duiker births arrive only after day 207. Whether the populations settle in the second year is not yet measured. Tuning them is a Phase 2 question, with the missing prey (red duikers and red river hogs) added.
+
 ## The Congo forest in the browser (plan 1A.4, 13 October)
 
 **Setup:** a local Congo server (`VANA_TERRAIN_PROFILE=congo_v1`, seed 7, its own local database) and the Vite client, in the desktop app's browser pane: 1138 × 994 px, device pixel ratio 1, graphics on Auto (it chose *balanced*). World time Day 2, 10–11 am, monsoon.
