@@ -34,12 +34,16 @@ export function congoHeightFn(seed: number, grid: WorldGrid): (x: number, z: num
   return congoRelief(seed, grid).heightAt;
 }
 
+/** A river channel's half-width: at least one patch wide on the lattice, so a 150 m tributary still joins up. */
+export function congoChannelHalfM(river: RiverPath, grid: WorldGrid): number {
+  return Math.max(river.widthM / 2, grid.patchM * 0.75);
+}
+
 function congoRelief(seed: number, grid: WorldGrid) {
   const rivers = congoRivers(seed, grid), nearestRiver = riverIndex(rivers);
   const base = (x: number, z: number): number => CONGO_MIN_HEIGHT_M + 450 * (0.6 * valueNoise(seed, x, z, 12_000, 1)
     + 0.3 * valueNoise(seed, x, z, 4_000, 2) + 0.1 * valueNoise(seed, x, z, 1_200, 3));
-  // A channel is at least one patch wide on the lattice, so a 150 m tributary still joins up.
-  const channelHalf = (r: RiverPath): number => Math.max(r.widthM / 2, grid.patchM * 0.75);
+  const channelHalf = (r: RiverPath): number => congoChannelHalfM(r, grid);
   const heightAt = (x: number, z: number): number => {
     const near = nearestRiver(x, z), half = channelHalf(near.river);
     if (near.distanceM <= half) return near.levelM - 4;
