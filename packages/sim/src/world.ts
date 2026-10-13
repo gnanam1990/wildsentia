@@ -1,6 +1,6 @@
 import {
   NUTRIENT_PER_KG_BIOMASS, gridForProfile, patchCount, type WorldGrid, WORLD_SECONDS_PER_DAY, WORLD_SECONDS_PER_HOUR,
-  createRng, isIslandProfile, seasonAt, carcassMass, edibleMass, landWalkable, spatialHash, treeAnchorForPatch, patchAtPosition, positionInPatch, isWorldPosition, type TerrainProfile,
+  createRng, isClosedProfile, isCongoProfile, isIslandProfile, seasonAt, carcassMass, edibleMass, landWalkable, spatialHash, treeAnchorForPatch, patchAtPosition, positionInPatch, isWorldPosition, type TerrainProfile,
   type WorldPosition, type MovementTrace,
   type Agent, type Carcass, type DeathCause, type Patch, type Rng, type SkillId,
   type RngState, type SpeciesConfig, type WorldTime, type WaterBudget, type MicroEcologyState, type CommunityState, type CommunityProfile,
@@ -76,6 +76,8 @@ export class World {
   readonly patches: Patch[];
   readonly #edgeIds: readonly number[];
   readonly #edges: ReadonlySet<number>;
+  #landCache: Patch[] | null = null;
+  #dryLandCache: Patch[] | null = null;
   /** Living animals only. The dead move to `deceased` so they leave every per-tick loop. */
   readonly agents: Agent[] = [];
   /** Permanent record. A death removes an animal from the world, never from its history. */
@@ -124,10 +126,10 @@ export class World {
     if (options.initialCommunityRulesVersion !== undefined && ![2, 3, 4, 5, 6, 7, 8].includes(options.initialCommunityRulesVersion))
       throw new Error('unsupported initial community rules');
     this.terrainProfile = options.terrainProfile ?? 'mainland';
-    if (this.terrainProfile !== 'mainland' && !isIslandProfile(this.terrainProfile)) throw new Error('unknown terrain profile');
-    if (isIslandProfile(this.terrainProfile) && !Number.isSafeInteger(options.seed)) throw new Error('island seed must be a safe integer');
-    if (isIslandProfile(this.terrainProfile) && (options.landscape || Object.values(options.minPopulation).some(n => n !== 0)))
-      throw new Error('island worlds require closed population policy: no floors or mainland exchange');
+    if (this.terrainProfile !== 'mainland' && !isClosedProfile(this.terrainProfile)) throw new Error('unknown terrain profile');
+    if (isClosedProfile(this.terrainProfile) && !Number.isSafeInteger(options.seed)) throw new Error('closed world seed must be a safe integer');
+    if (isClosedProfile(this.terrainProfile) && (options.landscape || Object.values(options.minPopulation).some(n => n !== 0)))
+      throw new Error('closed worlds require closed population policy: no floors or mainland exchange');
     this.#options = options;
     this.#rng = createRng(options.seed, 'world');
     this.grid = gridForProfile(this.terrainProfile);
@@ -544,12 +546,17 @@ export class World {
     }
   }
 
+  get #landPatches(): Patch[] { return this.#landCache ??= this.patches.filter(landWalkable); }
+  get #dryLandPatches(): Patch[] { return this.#dryLandCache ??= this.patches.filter((p) => landWalkable(p) && p.habitat !== 'water'); }
+
   #spawn(speciesId: string, immigrant: boolean, atEdge = false,
     arrival?: { patchId: number; at: WorldTime; conditions: Record<string, string | number> }, sexOverride?: 'female' | 'male'): Agent {
     const cfg = this.species.get(speciesId);
     if (!cfg) throw new Error(`unknown species: ${speciesId}`);
 
-    const eligibleLand = isIslandProfile(this.terrainProfile) && !arrival ? this.patches.filter(landWalkable) : null;
+    // Island founders keep their recorded draw over all walkable patches; Congo founders stand on dry ground.
+    const eligibleLand = arrival ? null : isIslandProfile(this.terrainProfile) ? this.#landPatches
+      : isCongoProfile(this.terrainProfile) ? this.#dryLandPatches : null;
     if (eligibleLand && !eligibleLand.length) throw new Error('island has no founding habitat');
     const patchId = arrival ? arrival.patchId : eligibleLand ? eligibleLand[this.#rng.int(eligibleLand.length)]!.id : atEdge
       ? this.#edgeIds[this.#rng.int(this.#edgeIds.length)]!

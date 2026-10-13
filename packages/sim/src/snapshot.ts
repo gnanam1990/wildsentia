@@ -1,5 +1,5 @@
 import type { Agent, Carcass, Patch, RngState, WorldTime, WaterBudget, TerrainProfile, MicroEcologyState } from '@vana/shared';
-import { ISLAND_GRID, gridForProfile, isIslandProfile, islandGeometrySeed, yearOf } from '@vana/shared';
+import { ISLAND_GRID, gridForProfile, isCongoProfile, isIslandProfile, islandGeometrySeed, yearOf } from '@vana/shared';
 import { positionInPatch, patchAtPosition, isCommunityState, type CommunityState } from '@vana/shared';
 import { humanWalkable } from './communityNavigation.js';
 import { validateIllness } from './agents/illness.js';
@@ -131,6 +131,12 @@ export function restoreSnapshot(snapshot: Snapshot, options: WorldOptions): Worl
     throw new Error('island checkpoint geometry does not match its versioned seed');
   if (world.terrainProfile === 'mainland' && snapshot.patches.some(p => p.islandSeed !== undefined || p.surface !== undefined))
     throw new Error('mainland checkpoint contains island geometry');
+  if (isCongoProfile(world.terrainProfile) && (snapshot.patches.length !== world.patches.length
+    || snapshot.patches.some((p, i) => p.id !== i || p.congoSeed !== snapshot.seed || p.islandSeed !== undefined
+      || p.elevation !== world.patches[i]!.elevation || p.habitat !== world.patches[i]!.habitat)))
+    throw new Error('congo checkpoint geometry does not match its versioned seed');
+  if (!isCongoProfile(world.terrainProfile) && snapshot.patches.some(p => p.congoSeed !== undefined))
+    throw new Error('checkpoint contains Congo geometry for another profile');
   world.log.restoreSequence(snapshot.eventSequence ?? 0);
   world.community = snapshot.community ? structuredClone(snapshot.community) : null;
 
