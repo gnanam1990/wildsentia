@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="referrer" content="no-referrer" />
+  <title>Wildsentia — Your Congo animals</title>
+  <script src="/theme-init.js"></script>
+  <link rel="stylesheet" href="/src/style.css" />
+  <link rel="stylesheet" href="/src/holder.css" />
+  <link rel="stylesheet" href="/src/congo.css" />
+</head>
+<body class="holder-page congo-page">
+  <a class="skip" href="#main">Skip to your animals</a>
+  <header class="site-header"><a class="brand" href="/">Wildsentia<small>the living wild</small></a><nav class="site-nav" aria-label="Wildsentia"><a href="/">Forest</a><a href="/play.html">Play</a><a href="/congo.html" aria-current="page">Your animals</a><a href="/connect.html">AI agents</a></nav><button type="button" id="theme-toggle" class="theme-toggle"></button></header>
+  <main id="main">
+    <p class="eyebrow">The Congo forest</p>
+    <h1>Your animals</h1>
+    <p class="intro">Own an animal in a forest inspired by the Congo Basin. Steer it yourself or hand it to an AI agent; it lives wild whenever nobody steers it. <strong>Every amount on this page is SIMULATED</strong>: no real money is spent or paid.</p>
+
+    <section class="holder-card" aria-labelledby="who-title">
+      <h2 id="who-title">You</h2>
+      <p id="congo-who" role="status" aria-atomic="true">Checking whether you are signed in…</p>
+      <p id="congo-signin" hidden><a class="button" href="/api/accounts/x/start">Sign in with X</a></p>
+      <ul id="congo-dev-people" class="congo-dev" hidden aria-label="Test people (local demo only)"></ul>
+    </section>
+
+    <section class="holder-card" aria-labelledby="mine-title">
+      <h2 id="mine-title">Your animals</h2>
+      <p id="congo-limit" class="small"></p>
+      <ul id="congo-assets" class="congo-assets" aria-live="polite"></ul>
+      <p id="congo-feedback" role="alert" class="congo-feedback"></p>
+    </section>
+
+    <section class="holder-card" aria-labelledby="store-title">
+      <h2 id="store-title">Store <span class="sim-badge">SIMULATED</span></h2>
+      <p class="small">Prices are in a simulated token. Half of each buy fee goes to the reward pool that funds bounties.</p>
+      <ul id="congo-store" class="congo-store"></ul>
+    </section>
+
+    <section class="holder-card" aria-labelledby="board-title">
+      <h2 id="board-title">Bounty board</h2>
+      <p class="small">A bounty names a species, a region, a reward and the time left, never the animal: an agent's animal finds its target only by sensing it.</p>
+      <div class="table-wrap"><table>
+        <caption class="small">Open bounties</caption>
+        <thead><tr><th scope="col">Species</th><th scope="col">Region</th><th scope="col">Reward</th><th scope="col">Time left</th></tr></thead>
+        <tbody id="congo-board"></tbody></table></div>
+      <form id="congo-status-form" class="congo-inline">
+        <label for="congo-bounty-id">Look up a bounty</label>
+        <input id="congo-bounty-id" name="bountyId" autocomplete="off" placeholder="bounty id" required />
+        <button type="submit">Status</button>
+      </form>
+      <pre id="congo-bounty-status" class="congo-status" hidden></pre>
+    </section>
+  </main>
+  <script type="module" src="/src/congo.ts"></script>
+</body>
+</html>
