@@ -7,6 +7,8 @@ import type { PatchView } from './terrain.js';
 export interface SceneEnvironment { patches: PatchView[]; carcasses: AnimalState[]; microEcology?: MicroEcologyState; community?: CommunityState | null }
 export interface SceneUpdate {
   checkpointId: string;
+  /** Congo 1A.4: the regions this scene covers, on a world of many; absent on the island. */
+  regions?: string[];
   world: WorldState;
   animals: AnimalState[];
   environment: SceneEnvironment;
@@ -34,6 +36,8 @@ function environment(value: unknown): SceneEnvironment | null {
   if (!record(value) || !Array.isArray(value.patches) || value.patches.length === 0 || value.patches.length > 10_000) return null;
   const ids = new Set<number>();
   const islandSeed = record(value.patches[0]) ? value.patches[0].islandSeed : undefined;
+  const congoSeed = record(value.patches[0]) ? value.patches[0].congoSeed : undefined;
+  if (congoSeed !== undefined && !Number.isSafeInteger(congoSeed)) return null;
   if (islandSeed !== undefined && (!Number.isSafeInteger(islandSeed) || value.patches.length !== 400)) return null;
   for (const p of value.patches) {
     if (!record(p) || !integer(p.id) || ids.has(p.id) || !integer(p.x) || !integer(p.y)
@@ -41,7 +45,10 @@ function environment(value: unknown): SceneEnvironment | null {
       || !nonnegative(p.elevation) || p.elevation > 1 || !nonnegative(p.canopyCover) || p.canopyCover > 1) return null;
     ids.add(p.id);
     if (p.islandSeed !== islandSeed || (islandSeed !== undefined && (!['land', 'coast', 'ocean'].includes(String(p.surface)) || p.id >= 400))
-      || (islandSeed === undefined && p.surface !== undefined)) return null;
+      || (islandSeed === undefined && congoSeed === undefined && p.surface !== undefined)) return null;
+    // Congo 1A.4: every patch of a Congo scene is land of the same seed; flood and deep river are flags.
+    if (p.congoSeed !== congoSeed || (congoSeed !== undefined && (p.surface !== 'land' || islandSeed !== undefined
+      || (p.flooded !== undefined && typeof p.flooded !== 'boolean') || (p.deepWater !== undefined && typeof p.deepWater !== 'boolean')))) return null;
     if (p.floweringGuild !== undefined && p.floweringGuild !== null) {
       const guild = p.floweringGuild;
       if (!record(guild) || !['shola', 'riparian'].includes(p.habitat as string)
@@ -116,7 +123,9 @@ export class SceneUpdates<Prepared> {
       frame = message.frame as LiveEncounterFrame | null;
     }
     const parsed = new WorldStore(); parsed.apply({ ...message.world, type: 'world' });
-    this.#pending = this.#received = { checkpointId: message.checkpointId, world: parsed.world!, animals: living,
+    const regions = Array.isArray(message.regions) && message.regions.length <= 64
+      && message.regions.every((r) => typeof r === 'string' && /^r\d{1,4}_\d{1,4}$/.test(r)) ? message.regions as string[] : undefined;
+    this.#pending = this.#received = { checkpointId: message.checkpointId, ...(regions ? { regions } : {}), world: parsed.world!, animals: living,
       environment: env, frame, frameReceivedAt: message.frame === undefined ? previous!.frameReceivedAt : receivedAt };
     void this.#drain();
     return true;

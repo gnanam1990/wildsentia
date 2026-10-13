@@ -1,5 +1,6 @@
 import { ISLAND_GRID } from '@vana/shared';
 import { worldGrid } from './worldGrid.js';
+import { congoHeightFn } from '@vana/shared';
 import * as THREE from 'three';
 import { ISLAND_SEGMENTS, treeAnchorForPatch, treeAnchorRemnantForPatch } from '@vana/shared';
 import { islandHeightField } from './islandHeightField.js';
@@ -28,6 +29,10 @@ export interface PatchView {
   canopyCover?: number;
   islandSeed?: number;
   surface?: 'land' | 'coast' | 'ocean';
+  /** Congo 1A.4: the Congo forest's terrain seed, its flood and its deep river. */
+  congoSeed?: number;
+  flooded?: boolean;
+  deepWater?: boolean;
   /** Last authoritative hydrology step. The renderer never invents flow when absent. */
   drainage?: {
     downstreamPatchId: number | null;
@@ -94,6 +99,8 @@ function cornerHeights(patches: readonly PatchView[]): { heights: Float64Array; 
 export function makeHeightSampler(patches: readonly PatchView[]): HeightSampler {
   const islandSeed = patches[0]?.islandSeed;
   if (islandSeed !== undefined) return islandHeightField(islandSeed).sample;
+  const congoSeed = patches[0]?.congoSeed;
+  if (congoSeed !== undefined) return congoLattice(congoSeed).sample;
   const { heights } = cornerHeights(patches);
   const { cols, rows, patchM } = worldGrid();
   const at = (col: number, row: number): number => heights[row * (cols + 1) + col]!;
@@ -265,7 +272,66 @@ export function scannedGroundMaps(): Pick<THREE.MeshStandardMaterialParameters, 
   return { map: load('diff', true), normalMap: load('nor_gl', false), roughnessMap: load('rough', false), normalScale: new THREE.Vector2(0.55, 0.55) };
 }
 
+
+/** Congo 1A.4: heights are drawn relative to the forest's lowest ground (250 m above sea). */
+export const CONGO_BASE_M = 250;
+/** Congo ground mesh step, metres: one vertex every 50 m (a 6 km region is 120 cells a side). */
+export const CONGO_STEP_M = 50;
+
+/**
+ * The Congo forest's relief on a 50 m lattice, cached by seed: vertex heights, and a sampler over
+ * the same two triangles per cell that the drawn mesh uses, so an animal stands on the ground drawn.
+ */
+let congoCache: { seed: number; vertex: (col: number, row: number) => number; sample: HeightSampler } | null = null;
+export function congoLattice(seed: number): { vertex: (col: number, row: number) => number; sample: HeightSampler } {
+  if (congoCache?.seed === seed) return congoCache;
+  const grid = worldGrid(), height = congoHeightFn(seed, grid), memo = new Map<number, number>();
+  const origin = -grid.patchM / 2, width = Math.round(grid.cols * grid.patchM / CONGO_STEP_M) + 1;
+  const vertex = (col: number, row: number): number => {
+    const key = row * width + col;
+    let h = memo.get(key);
+    if (h === undefined) { h = height(origin + col * CONGO_STEP_M, origin + row * CONGO_STEP_M) - CONGO_BASE_M; memo.set(key, h); }
+    return h;
+  };
+  const sample: HeightSampler = (x, z) => {
+    const gx = Math.max(0, (x - origin) / CONGO_STEP_M), gz = Math.max(0, (z - origin) / CONGO_STEP_M);
+    const col = Math.floor(gx), row = Math.floor(gz), fx = gx - col, fz = gz - row;
+    const a = vertex(col, row), b = vertex(col, row + 1), c = vertex(col + 1, row + 1), d = vertex(col + 1, row);
+    return fx + fz <= 1 ? a + (d - a) * fx + (b - a) * fz : c + (b - c) * (1 - fx) + (d - c) * (1 - fz);
+  };
+  congoCache = { seed, vertex, sample };
+  return congoCache;
+}
+
+/** Congo 1A.4: one ground mesh over the loaded regions' bounding box, on the 50 m lattice. */
+function buildCongoGround(patches: readonly PatchView[], seed: number): THREE.Mesh {
+  const grid = worldGrid(), side = grid.regionPatches;
+  let c0 = Infinity, c1 = -Infinity, r0 = Infinity, r1 = -Infinity;
+  for (const p of patches) {
+    c0 = Math.min(c0, Math.floor(p.x / side)); c1 = Math.max(c1, Math.floor(p.x / side));
+    r0 = Math.min(r0, Math.floor(p.y / side)); r1 = Math.max(r1, Math.floor(p.y / side));
+  }
+  const per = Math.round(side * grid.patchM / CONGO_STEP_M);
+  const cols = (c1 - c0 + 1) * per, rows = (r1 - r0 + 1) * per, lattice = congoLattice(seed);
+  const spanX = cols * CONGO_STEP_M, spanZ = rows * CONGO_STEP_M, x0 = -grid.patchM / 2 + c0 * per * CONGO_STEP_M, z0 = -grid.patchM / 2 + r0 * per * CONGO_STEP_M;
+  const geometry = new THREE.PlaneGeometry(spanX, spanZ, cols, rows).rotateX(-Math.PI / 2);
+  geometry.translate(x0 + spanX / 2, 0, z0 + spanZ / 2);
+  const position = geometry.attributes.position!;
+  for (let i = 0; i < position.count; i++) {
+    const col = i % (cols + 1), row = Math.floor(i / (cols + 1));
+    position.setY(i, lattice.vertex(c0 * per + col, r0 * per + row));
+  }
+  geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(position.count * 3).fill(1), 3));
+  geometry.computeVertexNormals();
+  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, ...scannedGroundMaps() });
+  groundTint.apply(material);
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = 'ground'; mesh.receiveShadow = true;
+  return mesh;
+}
+
 function buildGroundMesh(patches: readonly PatchView[]): THREE.Mesh {
+  if (patches[0]?.congoSeed !== undefined) return buildCongoGround(patches, patches[0].congoSeed);
   if (patches[0]?.islandSeed !== undefined) return buildIslandGround(patches, patches[0].islandSeed);
   const { cols, rows, patchM } = worldGrid(), spanX = cols * patchM, spanZ = rows * patchM;
   const geometry = new THREE.PlaneGeometry(spanX, spanZ, cols, rows).rotateX(-Math.PI / 2);
@@ -334,8 +400,10 @@ export function buildTerrain(patches: readonly PatchView[], layers?: ReadonlySet
   // surface-freshwater stock. Keep that point visibly wet even below the old 20 kL
   // large-pool threshold; a 2 m disc covers the 1.5 m actor-specific approach slots.
   // Mainland's legacy full-patch water planes retain their stricter threshold.
+  const congo = patches[0]?.congoSeed !== undefined;
   const waterPatches = patches.filter((p) => land(p) && (island
     ? Number.isFinite(p.water) && p.water > 0
+    : congo ? p.habitat === 'water' || p.flooded === true
     : p.habitat === 'water' || p.water > 20_000));
   const shores = waterGround(patches);
   const rockPatches = patches.filter((p) => land(p) && p.habitat === 'rock');
@@ -419,7 +487,10 @@ export function buildTerrain(patches: readonly PatchView[], layers?: ReadonlySet
   (water ? waterPatches : []).forEach((patch, index) => {
     // The mainland's legacy full-patch water; island pools are drawn by buildPools.
     const centre = patchCentre(worldGrid(), patch.id);
-    matrix.makeTranslation(centre.x, patchHeight(patch) + 0.4, centre.z);
+    // Congo: the river's surface stands 4 m above its bed (congo_terrain_v1); flooded forest 0.5 m above ground.
+    const y = patch.congoSeed !== undefined ? groundAt(centre.x, centre.z) + (patch.habitat === 'water' ? 3.6 : 0.5)
+      : patchHeight(patch) + 0.4;
+    matrix.makeTranslation(centre.x, y, centre.z);
     water!.setMatrixAt(index, matrix);
   });
 
