@@ -72,4 +72,14 @@ maybe('the simulated store (Congo 1C)', () => {
     expect(burn).toEqual([{ a: '250000' }]);
     expect(await shop.sell(o, bought.asset.assetId, randomUUID())).toEqual({ ok: false, reason: 'not_active' });
   });
+  it('never leaves a sold asset alive when a sale and a spawn race', async () => {
+    const owner = await person(pool!, 1), o = { accountId: owner.accountId, wallet: owner.wallet };
+    for (let round = 0; round < 8; round++) {
+      const bought = await shop.buy(o, 'blue_duiker', randomUUID());
+      if (!bought.ok) throw new Error('buy failed');
+      const [sold, life] = await Promise.all([shop.sell(o, bought.asset.assetId, randomUUID()),
+        store.openLife({ assetId: bought.asset.assetId, ownerAccountId: owner.accountId, maxAlive: 99, now: new Date() })]);
+      expect(sold.ok && life.ok).toBe(false);
+    }
+  });
 });

@@ -138,7 +138,8 @@ export class OwnershipStore {
     Promise<{ ok: true; lifeId: string } | { ok: false; reason: 'not_owner' | 'not_active' | 'already_alive' | 'cooldown' | 'alive_limit' }> {
     return this.tx(async (db) => {
       await db.query('select pg_advisory_xact_lock($1::bigint)', [ownerLock(p.ownerAccountId)]);
-      const a = (await db.query('select * from animal_assets where asset_id=$1', [p.assetId])).rows[0];
+      // The asset's row is locked, so a sale and a spawn of it run one after the other.
+      const a = (await db.query('select * from animal_assets where asset_id=$1 for update', [p.assetId])).rows[0];
       if (!a || a.owner_account_id !== p.ownerAccountId) return { ok: false, reason: 'not_owner' } as const;
       if (a.status !== 'active') return { ok: false, reason: 'not_active' } as const;
       const lives = (await db.query('select status, cooldown_until from animal_lives where asset_id=$1', [p.assetId])).rows;
