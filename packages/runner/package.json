@@ -3,6 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/soak.ts" },
-  "dependencies": { "@vana/shared": "*", "@vana/sim": "*" }
+  "exports": {
+    ".": "./src/soak.ts"
+  },
+  "dependencies": {
+    "@vana/shared": "*",
+    "@vana/sim": "*"
+  },
+  "scripts": {
+    "bench:congo": "tsx src/congoBench.ts"
+  }
 }
