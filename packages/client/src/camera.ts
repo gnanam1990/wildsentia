@@ -28,6 +28,17 @@ export function clampToIsland(target: THREE.Vector3, margin = worldGrid().patchM
 }
 
 /**
+ * Where the viewer looks, for the server's region and agent streaming: the followed animal when
+ * there is one (Congo 1A.4: the camera may still be gliding toward it from far away), else the
+ * camera's ground point. The radius grows with zoom, from 300 m to 1.5 km.
+ */
+export function viewMessage(target: { x: number; z: number }, distance: number, followed: { x: number; z: number } | null):
+  { x: number; z: number; radius: number } {
+  const at = followed ?? target;
+  return { x: Math.round(at.x), z: Math.round(at.z), radius: Math.round(Math.min(1500, Math.max(300, distance * 2.5 + 200))) };
+}
+
+/**
  * Ground metres moved by a screen drag, so the point under the cursor stays under it.
  * `theta` is the orbit angle: the camera sits at +(sin θ, cos θ) from the target and looks back.
  */

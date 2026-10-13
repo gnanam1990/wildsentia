@@ -9,7 +9,7 @@ import { InsightPanel } from './insights.js';
 import { LiveAgents, activityOf, isLiveMessage, isRosterMessage, rosterActivity, usdc } from './liveAgents.js';
 import { COVER_RADIUS_M, GroundCover } from './groundCover.js';
 import { AnimalLayer } from './animals.js';
-import { FollowCamera, followDistanceFor } from './camera.js';
+import { FollowCamera, followDistanceFor, viewMessage } from './camera.js';
 import { nearestOnScreen } from './picking.js';
 import { Hud } from './hud.js';
 import { ThoughtBubble } from './bubble.js';
@@ -944,9 +944,11 @@ function frame(): void {
   animals.sync(visibleAnimals, now, followedId, { x: follow.target.x, z: follow.target.z }, poses);
   animals.update(dt);
 
+  viewFocus = null;
   if (followedId !== null) {
     const position = animals.positionOf(followedId, now);
     if (position !== null) {
+      viewFocus = { x: position.x, z: position.z };
       const speciesId = store.animals.get(followedId)?.speciesId ?? carcasses.get(followedId)?.speciesId ?? '';
       observerSubjects = [observerSubject(speciesId, position, characterScale(visibleAnimals.get(followedId) ?? {}))];
       const partner = followedEncounter && livePairFrame.checked ? poses.get(followedEncounter.partnerId)?.position : undefined;
@@ -1028,16 +1030,18 @@ function frame(): void {
 
 /** Tells the server where the camera looks, so it sends the agents there; at most once a second. */
 let viewSentAt = 0, viewSent: { x: number; z: number; radius: number } | null = null;
+/** The followed animal's drawn position this frame, if any: the view is centred on it. */
+let viewFocus: { x: number; z: number } | null = null;
 function sendView(force = false): void {
   // Before a scene is drawn the camera is at its default spot, not where the viewer looks; on a
   // regional world that would load (and then, ten seconds later, unload) a far corner (Congo 1A.4).
   if (socket?.readyState !== WebSocket.OPEN || terrainRoot === null) return;
   const now = performance.now();
-  const view = { x: follow.target.x, z: follow.target.z, radius: Math.min(1500, Math.max(300, follow.distance * 2.5 + 200)) };
+  const view = viewMessage(follow.target, follow.distance, viewFocus);
   const moved = !viewSent || Math.hypot(view.x - viewSent.x, view.z - viewSent.z) > 25 || Math.abs(view.radius - viewSent.radius) > viewSent.radius * 0.2;
   if (!force && (!moved || now - viewSentAt < 1000)) return;
   viewSentAt = now; viewSent = view;
-  socket.send(JSON.stringify({ type: 'view', x: Math.round(view.x), z: Math.round(view.z), radius: Math.round(view.radius) }));
+  socket.send(JSON.stringify({ type: 'view', ...view }));
 }
 
 const agentTags: HTMLElement[] = [];
