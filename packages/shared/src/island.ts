@@ -3,7 +3,7 @@ import { spatialHash } from './spatial.js';
 import { ISLAND_GRID, patchCentre, isWorldPosition, type WorldPosition } from './grid.js';
 
 // Island geometry is defined on the 20 × 20 island lattice.
-const GRID_SIZE = ISLAND_GRID.cols, PATCH_METRES = ISLAND_GRID.patchM;
+const ISLAND_COLS = ISLAND_GRID.cols, ISLAND_PATCH_M = ISLAND_GRID.patchM;
 
 export type TerrainProfile = 'mainland' | 'island_v1' | 'island_v2';
 
@@ -25,15 +25,15 @@ export function islandGeometrySeed(seed: number, profile: TerrainProfile): numbe
     throw new Error('island seed out of range');
   return profile === 'island_v2' ? ISLAND_V2_GEOMETRY_OFFSET + seed : seed;
 }
-export const ISLAND_SEGMENTS = GRID_SIZE * 12;
-export const ISLAND_STEP_M = PATCH_METRES / 12;
+export const ISLAND_SEGMENTS = ISLAND_COLS * 12;
+export const ISLAND_STEP_M = ISLAND_PATCH_M / 12;
 export const ISLAND_SEA_LEVEL_M = 0;
-const centre = (GRID_SIZE - 1) * PATCH_METRES / 2;
+const centre = (ISLAND_COLS - 1) * ISLAND_PATCH_M / 2;
 
 /** Fictional procedural geology, not reconstructed real-world geography. */
 export function islandVertexHeight(seed: number, col: number, row: number): number {
-  const x = col * ISLAND_STEP_M - PATCH_METRES / 2 - centre;
-  const z = row * ISLAND_STEP_M - PATCH_METRES / 2 - centre;
+  const x = col * ISLAND_STEP_M - ISLAND_PATCH_M / 2 - centre;
+  const z = row * ISLAND_STEP_M - ISLAND_PATCH_M / 2 - centre;
   if (seed >= ISLAND_V2_GEOMETRY_OFFSET) return islandV2VertexHeight(seed - ISLAND_V2_GEOMETRY_OFFSET, x, z);
   const phase = spatialHash(`island-v1:${seed}`) / 0xffffffff * Math.PI * 2;
   const angle = Math.atan2(z / 0.88, x), radius = Math.hypot(x, z / 0.88);
@@ -64,8 +64,8 @@ function islandV2VertexHeight(seed: number, x: number, z: number): number {
 
 /** Exact triangle interpolation of the 25 m mesh, shared with the renderer. */
 export function islandHeightAt(seed: number, x: number, z: number): number {
-  const gx = Math.max(0, Math.min(ISLAND_SEGMENTS - 1e-9, (x + PATCH_METRES / 2) / ISLAND_STEP_M));
-  const gz = Math.max(0, Math.min(ISLAND_SEGMENTS - 1e-9, (z + PATCH_METRES / 2) / ISLAND_STEP_M));
+  const gx = Math.max(0, Math.min(ISLAND_SEGMENTS - 1e-9, (x + ISLAND_PATCH_M / 2) / ISLAND_STEP_M));
+  const gz = Math.max(0, Math.min(ISLAND_SEGMENTS - 1e-9, (z + ISLAND_PATCH_M / 2) / ISLAND_STEP_M));
   const col = Math.floor(gx), row = Math.floor(gz), fx = gx - col, fz = gz - row;
   const a = islandVertexHeight(seed, col, row), b = islandVertexHeight(seed, col, row + 1);
   const c = islandVertexHeight(seed, col + 1, row + 1), d = islandVertexHeight(seed, col + 1, row);
@@ -76,7 +76,7 @@ export function islandHeightAt(seed: number, x: number, z: number): number {
 /** All triangles in a core land cell are >=2 m above sea. Partial coast is not yet navigable. */
 export function islandPatchSurface(seed: number, id: number): 'land' | 'coast' | 'ocean' {
   let min = Infinity, max = -Infinity;
-  const x = id % GRID_SIZE * 12, z = Math.floor(id / GRID_SIZE) * 12;
+  const x = id % ISLAND_COLS * 12, z = Math.floor(id / ISLAND_COLS) * 12;
   for (let r = 0; r <= 12; r++) for (let c = 0; c <= 12; c++) {
     const y = islandVertexHeight(seed, x + c, z + r); min = Math.min(min, y); max = Math.max(max, y);
   }
@@ -90,17 +90,17 @@ export const landWalkable = (patch: Pick<Patch, 'surface'> | undefined): boolean
 export function landRayDistance(patches: readonly Patch[], origin: WorldPosition, heading: number): number {
   if (!isWorldPosition(ISLAND_GRID, origin) || !Number.isFinite(heading)) throw new Error('invalid land ray');
   const vx = Math.sin(heading), vz = Math.cos(heading);
-  let col = Math.floor((origin.x + PATCH_METRES / 2) / PATCH_METRES);
-  let row = Math.floor((origin.z + PATCH_METRES / 2) / PATCH_METRES);
-  if (!landWalkable(patches[row * GRID_SIZE + col])) return 0;
-  for (let n = 0; n <= GRID_SIZE * 2; n++) {
-    const c = patchCentre(ISLAND_GRID, row * GRID_SIZE + col);
-    const tx = Math.abs(vx) < 1e-12 ? Infinity : (c.x + Math.sign(vx) * PATCH_METRES / 2 - origin.x) / vx;
-    const tz = Math.abs(vz) < 1e-12 ? Infinity : (c.z + Math.sign(vz) * PATCH_METRES / 2 - origin.z) / vz;
+  let col = Math.floor((origin.x + ISLAND_PATCH_M / 2) / ISLAND_PATCH_M);
+  let row = Math.floor((origin.z + ISLAND_PATCH_M / 2) / ISLAND_PATCH_M);
+  if (!landWalkable(patches[row * ISLAND_COLS + col])) return 0;
+  for (let n = 0; n <= ISLAND_COLS * 2; n++) {
+    const c = patchCentre(ISLAND_GRID, row * ISLAND_COLS + col);
+    const tx = Math.abs(vx) < 1e-12 ? Infinity : (c.x + Math.sign(vx) * ISLAND_PATCH_M / 2 - origin.x) / vx;
+    const tz = Math.abs(vz) < 1e-12 ? Infinity : (c.z + Math.sign(vz) * ISLAND_PATCH_M / 2 - origin.z) / vz;
     const next = Math.min(tx, tz);
     if (tx <= next + 1e-8) col += Math.sign(vx);
     if (tz <= next + 1e-8) row += Math.sign(vz);
-    if (col < 0 || row < 0 || col >= GRID_SIZE || row >= GRID_SIZE || !landWalkable(patches[row * GRID_SIZE + col]))
+    if (col < 0 || row < 0 || col >= ISLAND_COLS || row >= ISLAND_COLS || !landWalkable(patches[row * ISLAND_COLS + col]))
       return Math.max(0, next - 0.01);
   }
   throw new Error('land ray failed to leave bounded grid');

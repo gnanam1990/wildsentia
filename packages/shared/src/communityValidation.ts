@@ -6,7 +6,7 @@ const positionInPatch = (value: unknown, patchId: number): value is WorldPositio
 const isWorldPosition = (value: unknown): value is WorldPosition => isGridPosition(ISLAND_GRID, value);
 const patchAtPosition = (value: Parameters<typeof gridPatchAt>[1]): number => gridPatchAt(ISLAND_GRID, value);
 const patchCentre = (id: number): { x: number; z: number } => gridCentre(ISLAND_GRID, id);
-const PATCH_METRES = ISLAND_GRID.patchM;
+const ISLAND_PATCH_M = ISLAND_GRID.patchM;
 import { HOME_STAGES, HOME_SHELTER_THRESHOLD, type CommunityState } from './types/community.js';
 import { isCommunityMotion } from './communityMotion.js';
 
@@ -120,7 +120,7 @@ export function isCommunityState(value: unknown): value is CommunityState {
         for (const point of j.waypoints) {
           if (!isWorldPosition(point)) return false;
           const next = patchAtPosition(point), a = patchCentre(previous), b = patchCentre(next);
-          if (previous !== next && Math.abs(a.x - b.x) + Math.abs(a.z - b.z) !== PATCH_METRES) return false;
+          if (previous !== next && Math.abs(a.x - b.x) + Math.abs(a.z - b.z) !== ISLAND_PATCH_M) return false;
           previous = next;
         }
         const last = j.waypoints.at(-1);

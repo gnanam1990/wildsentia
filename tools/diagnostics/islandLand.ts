@@ -3,12 +3,12 @@
  *
  *   npx tsx tools/diagnostics/islandLand.ts [--seeds 1,2,3]
  */
-import { PATCH_METRES, landWalkable } from '@vana/shared';
+import { ISLAND_GRID, landWalkable } from '@vana/shared';
 import { buildGrid } from '@vana/sim';
 
 const i = process.argv.indexOf('--seeds');
 const seeds = (i >= 0 ? process.argv[i + 1]! : '1,2,3').split(',').map(Number);
-const km2 = (PATCH_METRES / 1000) ** 2;
+const km2 = (ISLAND_GRID.patchM / 1000) ** 2;
 for (const seed of seeds) for (const profile of ['island_v1', 'island_v2'] as const) {
   const patches = buildGrid(seed, profile), land = patches.filter(landWalkable);
   const habitats: Record<string, number> = {};
