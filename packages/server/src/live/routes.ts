@@ -15,7 +15,7 @@ import type { AcceptResult, ChallengeEngine, Player } from '../challenges/engine
 import { sameOriginJson } from '../accounts/cookies.js';
 import { MIN_X_ACCOUNT_DAYS } from '../accounts/store.js';
 import { installOwnershipRoutes, type OwnedDeps } from '../ownership/routes.js';
-import { installBountyRoutes, type BountyDeps } from '../bounties/routes.js';
+import { installBountyRoutes, publicBounty, type BountyDeps } from '../bounties/routes.js';
 import { motionOf } from '../bounties/discovery.js';
 
 /**
@@ -389,7 +389,49 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
         return live.presence(ctx.agent.id) ? { ok: true } : reply.code(409).send({ error: 'not_possessing' });
       });
     };
+    /**
+     * Congo 1E (spec §7): an agent's own tools beyond the commands: the animals its owners
+     * authorised, their life histories, a change of pace, and the bounties it knows of.
+     */
+    function ownedAgentRoutes(owned: OwnedDeps) {
+      const lifeView = (l: Awaited<ReturnType<OwnedDeps['store']['livesOf']>>[number]) => ({ lifeId: l.lifeId, animalId: l.animalId, status: l.status,
+        spawnedAt: l.spawnedAt, diedAt: l.diedAt, deathCause: l.deathCause, killerAnimalId: l.killerAnimalId, cooldownUntil: l.cooldownUntil });
+      scope.get('/agents/me/animals', async (req, reply) => {
+        const ctx = await me(req, reply, observes); if (!ctx) return reply;
+        const assets = await owned.store.assetsGrantedTo(ctx.agent.id);
+        return { animals: await Promise.all(assets.map(async (a) => {
+          const life = (await owned.store.livesOf(a.assetId)).at(-1) ?? null, lease = life ? await owned.store.openLeaseOf(life.lifeId) : null;
+          const animal = life?.status === 'alive' && life.animalId ? world.animal(life.animalId) : null;
+          return { assetId: a.assetId, speciesId: a.speciesId, status: a.status,
+            life: life ? { ...lifeView(life), controller: lease ? { kind: lease.holderKind, id: lease.holderId } : null } : null,
+            animal: animal ? { state: animal.state, position: live.positionOf(animal.id) ?? animal.position, steeredByYou: live.avatars.get(ctx.agent.id)?.animalId === animal.id } : null,
+            bountyActive: life?.status === 'alive' && owned.bountyActive ? await owned.bountyActive(life.lifeId) : false };
+        })) };
+      });
+      scope.get<{ Params: { assetId: string } }>('/agents/me/animals/:assetId/lives', async (req, reply) => {
+        const ctx = await me(req, reply, observes); if (!ctx) return reply;
+        if (!/^[0-9a-f-]{36}$/.test(req.params.assetId) || !(await owned.store.granted(req.params.assetId, ctx.agent.id))) return reply.code(404).send({ error: 'not_authorised' });
+        return { assetId: req.params.assetId, lives: (await owned.store.livesOf(req.params.assetId)).map(lifeView) };
+      });
+      scope.post('/agents/me/gait', async (req, reply) => {
+        const ctx = await me(req, reply, commands); if (!ctx) return reply;
+        const gait = ctx.json.gait as Gait;
+        if (!GAITS.has(gait)) return reply.code(400).send({ error: 'bad_gait' });
+        const error = live.setGait(ctx.agent.id, gait);
+        return error ? reply.code(409).send({ error }) : { ok: true, gait };
+      });
+      scope.get('/agents/me/bounties', async (req, reply) => {
+        const ctx = await me(req, reply, observes); if (!ctx) return reply;
+        if (!deps.bounties) return { simulated: true, bounties: [], sensed: [], lastSeen: [] };
+        const avatar = live.avatars.get(ctx.agent.id), senses = avatar ? sensed(ctx.agent.id, avatar) : null;
+        const board = (await deps.bounties.store.active()).filter((b) => b.status === 'active').map((b) => publicBounty(b, deps.bounties!.now()));
+        return { simulated: true, bounties: board,
+          sensed: (senses?.nearby ?? []).filter((a) => a.bounty).map((a) => ({ ...a.bounty!, animalId: a.id, x: Math.round(a.x * 10) / 10, z: Math.round(a.z * 10) / 10, sense: a.sense })),
+          lastSeen: senses?.lastSeen ?? [] };
+      });
+    }
     commandRoutes('/agents/me', me);
+    if (deps.owned) ownedAgentRoutes(deps.owned);
     if (deps.humans) commandRoutes('/play', person(deps.humans));
     if (deps.bounties) installBountyRoutes(scope, deps.bounties);
     if (deps.humans && deps.owned) {

@@ -38,12 +38,14 @@ async function info() {
 }
 
 /** While the world steps (every few minutes, for about a second) commands are refused with
- * world_busy; a command is sent again, freshly signed, up to three times in all. */
+ * world_busy, and a burst past the rate limit with rate_limited; a command is sent again,
+ * freshly signed, up to three times in all. */
 async function call(method, path, body, tries = 3) {
   try { return await send(method, path, body); }
   catch (e) {
-    if (e.body?.error !== 'world_busy' || tries <= 1) throw e;
-    await new Promise((resolve) => setTimeout(resolve, Math.min(2000, Number(e.body.retryAfterMs) || 250)));
+    const busy = e.body?.error === 'world_busy', limited = e.body?.error === 'rate_limited';
+    if (!(busy || limited) || tries <= 1) throw e;
+    await new Promise((resolve) => setTimeout(resolve, busy ? Math.min(2000, Number(e.body.retryAfterMs) || 250) : 600));
     return call(method, path, body, tries - 1);
   }
 }
@@ -92,6 +94,14 @@ export const api = {
   identity: (id) => call('POST', '/agents/me/identity', { erc8004AgentId: id === 'none' ? null : id }),
   /** Leaves a challenge's waiting list. */
   leave: () => call('POST', '/agents/me/challenges/leave'),
+  /** Congo: the owned animals your owners authorised you to steer, and one's life history. */
+  myAnimals: () => call('GET', '/agents/me/animals'),
+  lives: (assetId) => call('GET', `/agents/me/animals/${encodeURIComponent(assetId)}/lives`),
+  /** Congo: change the pace of your current route. */
+  gait: (gait) => call('POST', '/agents/me/gait', { gait }),
+  /** Congo: open bounties, and the targets your animal senses or last saw (SIMULATED rewards). */
+  bounties: () => call('GET', '/agents/me/bounties'),
+  bounty: async (id) => (await fetch(`${BASE}/congo/bounties/${encodeURIComponent(id)}`)).json(),
   /** The island's species, or one species' field guide (public, unsigned). */
   species: async (id) => (await fetch(`${BASE}/agents/species${id ? `/${encodeURIComponent(id)}` : ''}`)).json(),
 };

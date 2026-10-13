@@ -241,6 +241,15 @@ export class LiveLayer {
     this.#notices.set(agentId, list);
   }
 
+  /** Changes the pace of the agent's current and next moves. */
+  setGait(agentId: string, gait: Gait): string | null {
+    this.#held();
+    const avatar = this.avatars.get(agentId);
+    if (!avatar) return 'not_possessing';
+    avatar.gait = gait;
+    return null;
+  }
+
   /** Why this agent could not take any animal now (it holds one, or its last one died moments ago), or null. */
   possessBlock(agentId: string): string | null {
     if (this.avatars.has(agentId)) return 'already_possessing';

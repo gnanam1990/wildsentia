@@ -38,6 +38,13 @@ export function installBountyRoutes(scope: FastifyInstance, deps: BountyDeps): v
   scope.get('/congo/bounties', async () => ({ simulated: true,
     bounties: (await store.active()).filter((b) => b.status === 'active').map((b) => publicBounty(b, deps.now())) }));
 
+  /** A published bounty's public status (and its outcome once decided); never the animal while it lasts. */
+  scope.get<{ Params: { id: string } }>('/congo/bounties/:id', async (req, reply) => {
+    const b = UUID.test(req.params.id) ? await store.get(req.params.id) : null;
+    if (!b || b.status === 'draft' || b.status === 'validated') return reply.code(404).send({ error: 'not_found' });
+    return { ...publicBounty(b, deps.now()), ...(b.outcome ? { outcome: b.outcome } : {}), ...(b.status === 'settled' ? { record: `/congo/bounties/${b.bountyId}/record` } : {}) };
+  });
+
   scope.get<{ Params: { id: string } }>('/congo/bounties/:id/record', async (req, reply) => {
     if (!UUID.test(req.params.id)) return reply.code(404).send({ error: 'not_found' });
     const b = await store.get(req.params.id);

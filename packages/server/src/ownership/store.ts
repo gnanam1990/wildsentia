@@ -284,6 +284,12 @@ export class OwnershipStore {
     return (await this.pool.query('select 1 from asset_agent_grants where asset_id=$1 and agent_id=$2 and revoked_at is null', [assetId, agentId])).rows.length > 0;
   }
 
+  /** The assets an agent is authorised to steer (not retired). */
+  async assetsGrantedTo(agentId: string): Promise<Asset[]> {
+    return (await this.pool.query(`select a.* from animal_assets a join asset_agent_grants g using (asset_id)
+      where g.agent_id=$1 and g.revoked_at is null and a.status <> 'retired' order by g.granted_at`, [agentId])).rows.map(asset);
+  }
+
   async grantsOf(assetId: string): Promise<string[]> {
     return (await this.pool.query('select agent_id from asset_agent_grants where asset_id=$1 and revoked_at is null order by granted_at', [assetId])).rows.map((r) => r.agent_id as string);
   }
