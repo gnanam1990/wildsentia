@@ -13,3 +13,20 @@ export function worldSettings(env: Record<string, string | undefined>): { seed: 
     throw new Error('WORLD_HOURS_PER_REAL_HOUR must be a number above 0 and at most 3600');
   return { seed, worldHoursPerRealHour };
 }
+
+const PROFILES = ['mainland', 'island_v1', 'island_v2', 'congo_v1'] as const;
+export type ServedProfile = (typeof PROFILES)[number];
+
+/**
+ * Congo 1B: which world this server hosts, and the species it runs on. The Congo forest has its
+ * own roster (config/species-congo, or SPECIES_DIR_CONGO); every other world the island's
+ * (config/species, or SPECIES_DIR). `configDir` is the repository's config directory.
+ */
+export function worldProfile(env: Record<string, string | undefined>, configDir: string): { terrainProfile: ServedProfile; speciesDir: string } {
+  const terrainProfile = (env.VANA_TERRAIN_PROFILE ?? 'mainland') as ServedProfile;
+  if (!PROFILES.includes(terrainProfile)) throw new Error('invalid VANA_TERRAIN_PROFILE');
+  const speciesDir = terrainProfile === 'congo_v1'
+    ? env.SPECIES_DIR_CONGO ?? `${configDir}/species-congo`
+    : env.SPECIES_DIR ?? `${configDir}/species`;
+  return { terrainProfile, speciesDir };
+}

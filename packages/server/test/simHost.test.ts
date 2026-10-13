@@ -5,6 +5,7 @@ import { migrate } from '../src/db/migrate.js';
 import { EventStore } from '../src/db/eventStore.js';
 import { LifeStore } from '../src/db/lifeStore.js';
 import { SimHost } from './trackedHost.js';
+import { CONGO_POPULATION } from '@vana/sim';
 import { FOREST_LANDSCAPE, FOREST_POPULATION, ISLAND_V2_POPULATION, SIM_VERSION, takeSnapshot, restoreSnapshot } from '@vana/sim';
 import { SnapshotStore } from '../src/db/snapshotStore.js';
 import { testDatabaseUrl } from './testDatabase.js';
@@ -85,6 +86,13 @@ maybe('SimHost', () => {
       return print;
     };
     expect(await run(0)).toBe(await run(1_000_000));
+  });
+
+  it('founds a Congo world with the Congo population and a closed policy (1B)', () => {
+    const host = new SimHost({ pool: pool!, seed: 7, speciesDir, terrainProfile: 'congo_v1' });
+    expect(host.worldOptions.initialAgents).toEqual(CONGO_POPULATION);
+    expect(host.worldOptions.minPopulation).toEqual({});
+    expect(host.worldOptions.landscape ?? null).toBeNull();
   });
 
   it('boots a fresh world when there is no snapshot', async () => {

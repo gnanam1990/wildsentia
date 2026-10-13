@@ -1,21 +1,20 @@
 import { fileURLToPath } from 'node:url';
-import { createWorld, takeSnapshot } from '@vana/sim';
+import { CONGO_POPULATION, createWorld, takeSnapshot } from '@vana/sim';
 
 /**
  * The Congo forest's speed budget (spec §1): one world hour of the founding population in ≤ 2 s.
- * The Congo species do not exist yet (sub-project 1B), so the benchmark founds stand-ins of the
- * same number from the island's roster. Stand-ins appear only here, never in a served world.
+ * Since 1B it founds the real Congo species at their field densities (CONGO_POPULATION).
  */
 export interface CongoBenchResult {
   animals: number; foundingMs: number; hourMs: { median: number; p95: number; max: number };
   heapMb: number; snapshotMb: number; snapshotMs: number;
 }
 
-/** The spec's sizing: ~45k small forest prey, ~3k larger prey along water, ~150 leopards. */
-export const CONGO_STAND_IN = { hare: 45_000, chital: 3_000, leopard: 150 } as const;
+/** The Congo founding population (blue duiker, water chevrotain, African leopard). */
+export const CONGO_BENCH_POPULATION = CONGO_POPULATION;
 export const CONGO_HOUR_BUDGET_MS = 2_000;
 
-const SPECIES_DIR = fileURLToPath(new URL('../../../config/species', import.meta.url));
+const SPECIES_DIR = fileURLToPath(new URL('../../../config/species-congo', import.meta.url));
 
 export function runCongoBench(o: { seed: number; warmHours: number; measureHours: number; population: Record<string, number> }): CongoBenchResult {
   let t = performance.now();
@@ -37,7 +36,7 @@ export function runCongoBench(o: { seed: number; warmHours: number; measureHours
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const r = runCongoBench({ seed: Number(process.env.SEED ?? 7), warmHours: Number(process.env.WARM_HOURS ?? 24),
-    measureHours: Number(process.env.MEASURE_HOURS ?? 24), population: { ...CONGO_STAND_IN } });
+    measureHours: Number(process.env.MEASURE_HOURS ?? 24), population: { ...CONGO_BENCH_POPULATION } });
   console.log(JSON.stringify(r, null, 2));
   process.exitCode = r.hourMs.p95 <= CONGO_HOUR_BUDGET_MS ? 0 : 1;
 }

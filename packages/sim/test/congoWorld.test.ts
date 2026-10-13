@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { createWorld } from '../src/world.js';
 import { restoreSnapshot, takeSnapshot } from '../src/snapshot.js';
@@ -34,5 +35,16 @@ describe('congo_v1 world', () => {
     const island = createWorld({ seed: 3, speciesDir: SPECIES_DIR, terrainProfile: 'island_v2', initialAgents: islandPopulation('island_v2'), minPopulation: {} });
     const saved = { ...takeSnapshot(island), terrainProfile: 'congo_v1' as const };
     expect(() => restoreSnapshot(saved, { seed: 3, speciesDir: SPECIES_DIR, terrainProfile: 'congo_v1', initialAgents: {}, minPopulation: {} })).toThrow();
+  }, 120_000);
+
+  it('founds chevrotains by water and leopards one male to two females (1B)', () => {
+    const dir = fileURLToPath(new URL('../../../config/species-congo', import.meta.url));
+    const world = createWorld({ seed: 7, speciesDir: dir, terrainProfile: 'congo_v1',
+      initialAgents: { water_chevrotain: 60, african_leopard: 9 }, minPopulation: {} });
+    const byWater = (patchId: number) => world.patches[patchId]!.habitat === 'flooded_forest'
+      || world.patches[patchId]!.neighbours.some((n) => world.patches[n]!.habitat === 'water');
+    expect(world.agents.filter((a) => a.speciesId === 'water_chevrotain').every((a) => byWater(a.patchId))).toBe(true);
+    const leopards = world.agents.filter((a) => a.speciesId === 'african_leopard');
+    expect(leopards.filter((a) => a.sex === 'male')).toHaveLength(3);
   }, 120_000);
 });

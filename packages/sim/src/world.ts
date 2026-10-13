@@ -79,6 +79,9 @@ export class World {
   readonly #edges: ReadonlySet<number>;
   #landCache: Patch[] | null = null;
   #dryLandCache: Patch[] | null = null;
+  #waterMarginCache: Patch[] | null = null;
+  /** Congo 1B: single-member pair groups waiting for a mate, by `species:sex`, oldest first. */
+  readonly #openPairs = new Map<string, string[]>();
   /** Living animals only. The dead move to `deceased` so they leave every per-tick loop. */
   readonly agents: Agent[] = [];
   /** Permanent record. A death removes an animal from the world, never from its history. */
@@ -154,7 +157,10 @@ export class World {
       // male, whose range spans several females' (tiger 60 against 20 km², leopard 48 against
       // 11 km²), and the rest females.
       const cfg = this.species.get(speciesId);
-      if (this.terrainProfile === 'island_v2' && cfg?.social.structure === 'solitary' && cfg.hunting !== undefined) {
+      // Congo 1B: solitary hunters are founded as their ranges hold them, one male to two females.
+      if (isCongoProfile(this.terrainProfile) && cfg?.social.structure === 'solitary' && cfg.hunting !== undefined) {
+        founders.forEach((agent, i) => { agent.sex = i % 3 === 0 ? 'male' : 'female'; agent.massKg = adultMassFor(agent, cfg); });
+      } else if (this.terrainProfile === 'island_v2' && cfg?.social.structure === 'solitary' && cfg.hunting !== undefined) {
         founders.forEach((agent, i) => { agent.sex = i === 0 ? 'male' : 'female'; agent.massKg = adultMassFor(agent, cfg); });
       } else if (isIslandProfile(this.terrainProfile) && this.species.get(speciesId)?.social.structure === 'solitary'
         && this.species.get(speciesId)?.hunting !== undefined
@@ -510,17 +516,14 @@ export class World {
   #assignGroup(agent: Agent, cfg: SpeciesConfig): void {
     const structure = cfg.social.structure;
     if (structure === 'solitary') return;
+    if (cfg.social.pairBond) { this.#assignPair(agent); return; }
 
     const [, max] = cfg.social.groupSize;
     for (const [groupId, group] of this.#groups) {
       if (group.speciesId !== agent.speciesId) continue;
       const living = group.memberIds.filter((id) => this.#agentsById.get(id)?.alive === true).length;
       if (living >= max) continue;
-      // Congo 1B: a pair species pairs a male and a female who are not kin.
-      if (cfg.social.pairBond && group.memberIds.some((id) => {
-        const member = this.#agentsById.get(id);
-        return !member?.alive || member.sex === agent.sex || assessMate(agent, member, this.pedigree) === null;
-      })) continue;
+
       group.memberIds.push(agent.id);
       agent.groupId = groupId;
       // Join the group where it stands, rather than appearing somewhere it is not.
@@ -532,6 +535,31 @@ export class World {
     const groupId = `${agent.speciesId}_grp_${(this.#groupSeq++).toString(16)}`;
     this.#groups.set(groupId, { speciesId: agent.speciesId, memberIds: [agent.id] });
     agent.groupId = groupId;
+  }
+
+  /**
+   * Congo 1B: a bonded pair species pairs each newcomer with the longest-waiting unpaired animal
+   * of the other sex that is not its kin (an index of open pairs, so founding stays linear).
+   */
+  #assignPair(agent: Agent): void {
+    const other = agent.sex === 'female' ? 'male' : 'female';
+    const waiting = this.#openPairs.get(`${agent.speciesId}:${other}`) ?? [];
+    for (let i = 0; i < waiting.length; i++) {
+      const groupId = waiting[i]!, group = this.#groups.get(groupId);
+      const member = group?.memberIds.length === 1 ? this.#agentsById.get(group.memberIds[0]!) : undefined;
+      if (!member?.alive) { waiting.splice(i--, 1); continue; }
+      if (assessMate(agent, member, this.pedigree) === null) continue;
+      waiting.splice(i, 1);
+      group!.memberIds.push(agent.id);
+      agent.groupId = groupId;
+      agent.patchId = member.patchId;
+      return;
+    }
+    const groupId = `${agent.speciesId}_grp_${(this.#groupSeq++).toString(16)}`;
+    this.#groups.set(groupId, { speciesId: agent.speciesId, memberIds: [agent.id] });
+    agent.groupId = groupId;
+    const key = `${agent.speciesId}:${agent.sex}`, open = this.#openPairs.get(key);
+    if (open) open.push(groupId); else this.#openPairs.set(key, [groupId]);
   }
 
   #reindex(): void {
@@ -555,6 +583,11 @@ export class World {
 
   get #landPatches(): Patch[] { return this.#landCache ??= this.patches.filter(landWalkable); }
   get #dryLandPatches(): Patch[] { return this.#dryLandCache ??= this.patches.filter((p) => landWalkable(p) && p.habitat !== 'water'); }
+  /** Congo 1B: where a swimmer lives, rarely 250 m from water: flooded forest, and dry ground beside a river. */
+  get #waterMarginPatches(): Patch[] {
+    return this.#waterMarginCache ??= this.#dryLandPatches.filter((p) => p.habitat === 'flooded_forest'
+      || p.neighbours.some((n) => this.patches[n]!.habitat === 'water'));
+  }
 
   #spawn(speciesId: string, immigrant: boolean, atEdge = false,
     arrival?: { patchId: number; at: WorldTime; conditions: Record<string, string | number> }, sexOverride?: 'female' | 'male'): Agent {
@@ -563,7 +596,7 @@ export class World {
 
     // Island founders keep their recorded draw over all walkable patches; Congo founders stand on dry ground.
     const eligibleLand = arrival ? null : isIslandProfile(this.terrainProfile) ? this.#landPatches
-      : isCongoProfile(this.terrainProfile) ? this.#dryLandPatches : null;
+      : isCongoProfile(this.terrainProfile) ? (cfg.locomotion.swims ? this.#waterMarginPatches : this.#dryLandPatches) : null;
     if (eligibleLand && !eligibleLand.length) throw new Error('island has no founding habitat');
     const patchId = arrival ? arrival.patchId : eligibleLand ? eligibleLand[this.#rng.int(eligibleLand.length)]!.id : atEdge
       ? this.#edgeIds[this.#rng.int(this.#edgeIds.length)]!
@@ -765,7 +798,8 @@ export class World {
     // Coarse perception policy: same/adjacent patches AND within a configured sensory range.
     // Use the recorded start location, never a mate's future end-of-decision position.
     let best: ReturnType<typeof assessMate> = null;
-    const pairMate = pairMateFor(agent, cfg, this.agents);
+    const pairMate = pairMateFor(agent, cfg, (agent.groupId == null ? [] : this.#groups.get(agent.groupId)?.memberIds ?? [])
+      .map((id) => this.#agentsById.get(id)).filter((a): a is Agent => a !== undefined));
     const here = locateAgent(this.grid, agent), senseRange = Math.max(cfg.senses.sightRangeM, cfg.senses.hearingRangeM, cfg.senses.smellRangeM);
     for (const patchId of [agent.patchId, ...this.patches[agent.patchId]!.neighbours]) {
       for (const other of view.agentsInPatch(patchId)) {
@@ -1720,9 +1754,9 @@ export class World {
  * Congo 1B: a pair species' living, grown pair-mate (the other sex in its group), or null: a
  * paired animal courts only it; a widow, or one never paired, may court any.
  */
-export function pairMateFor(agent: Agent, cfg: SpeciesConfig, agents: readonly Agent[]): Agent | null {
+export function pairMateFor(agent: Agent, cfg: SpeciesConfig, members: readonly Agent[]): Agent | null {
   if (!cfg.social.pairBond || agent.groupId == null) return null;
-  return agents.find((a) => a.alive && a.groupId === agent.groupId && a.id !== agent.id && a.sex !== agent.sex
+  return members.find((a) => a.alive && a.groupId === agent.groupId && a.id !== agent.id && a.sex !== agent.sex
     && a.lifeStage !== 'newborn' && a.lifeStage !== 'juvenile') ?? null;
 }
 

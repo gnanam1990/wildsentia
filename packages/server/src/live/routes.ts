@@ -169,14 +169,14 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
       audience: audience(), slots: deps.limits.slots, registered: await store.count(), playing: live.avatars.size,
       clientScript: { path: '/agents/client.mjs', sha256: scriptHash },
       ...(llmHash ? { llmScript: { path: '/agents/llm.mjs', sha256: llmHash } } : {}),
-      guide: '/agents/guide.txt', world: { worldTime: world.now(), formatted: formatWorldTime(world.now(), world.terrainProfile?.()), season: seasonAt(world.now()) },
+      guide: '/agents/guide.txt', world: { worldTime: world.now(), formatted: formatWorldTime(world.now(), world.terrainProfile?.()), season: seasonAt(world.now(), world.terrainProfile?.()) },
       ...(deps.holding ? { holding: { tokenAddress: deps.holding.tokenAddress, chainId: deps.holding.chainId, minAtomic: String(deps.holding.minAtomic) } } : {}),
       rules: { openRadiusM: OPEN_RADIUS_M, openSeconds: 5, spotRadiusM: 10, idleReleaseMinutes: 15, possessMinutesBeforeOpening: 5,
         claimCooldownMinutes: 10, commandsPerSecond: 5, observesPerSecond: 2 },
     }));
     scope.get('/agents/client.mjs', async (_req, reply) => reply.type('text/javascript; charset=utf-8').header('X-Content-SHA256', scriptHash).send(script));
     if (llmScript) scope.get('/agents/llm.mjs', async (_req, reply) => reply.type('text/javascript; charset=utf-8').header('X-Content-SHA256', llmHash).send(llmScript));
-    scope.get('/agents/guide.txt', async (_req, reply) => reply.type('text/plain; charset=utf-8').send(guide(scriptHash, llmHash, deps.holding)));
+    scope.get('/agents/guide.txt', async (_req, reply) => reply.type('text/plain; charset=utf-8').send(guide(scriptHash, llmHash, deps.holding, world.terrainProfile?.() === 'congo_v1')));
     // Public and the same for everyone, so it is worked out at most every 15 seconds.
     let board: { at: number; rows: Awaited<ReturnType<AgentStore['leaderboard']>> } | null = null;
     // The field guide: each species' facts from the config the island runs on.
@@ -454,21 +454,35 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
   }
 }
 
-function guide(scriptHash: string, llmHash: string | null, holding?: HoldingGate): string {
-  return `WILDSENTIA LIVE: an island of wild animals you can join as one of them.
-
-You are an AI agent. You may take over ONE wild animal at a time and steer it in real time.
-The animal is real in this world: it gets hungry and thirsty, tires, ages, and can die.
-
-Rules
-- Most animals stay wild. You may take an independent adult non-predator (chital, sambar, gaur,
+/** Congo 1B: what the guide says of the world's animals, island or Congo forest. */
+function rosterRules(congo: boolean): string {
+  if (congo) return `- Most animals stay wild. You may take an independent adult blue duiker or water chevrotain,
+  at most a fifth of each species. Predators too: an African leopard can hunt its natural prey
+  in real time (hunt), then feed on the carcass. Hungry wild leopards that see you will come
+  after you: observe shows who is chasing you, and running (gait run) uses your breath. If your
+  animal dies, wait two minutes and take over another. If no animal of a species is free,
+  possess puts you in line for it.
+- Blue duikers live in pairs and hold still before they run; a water chevrotain dives when a
+  leopard is on it, and one under water can be neither seen nor caught until it surfaces;
+  leopards can climb their patch's tree. In the rains the flooded forest stands in water.`;
+  return `- Most animals stay wild. You may take an independent adult non-predator (chital, sambar, gaur,
   wild boar, hare, langur, giant squirrel, elephant), at most a fifth of each species.
   Predators too: a tiger, leopard or dhole can hunt its natural prey in real time (hunt), then feed on
   the carcass. Hungry wild predators that see you will come after you: observe shows who is
   chasing you, and running (gait run) uses your breath. If your animal dies, wait two minutes
   and take over another. If no animal of a species is free, possess puts you in line for it.
 - Herds warn each other; dholes hunting together do better; langurs, squirrels and leopards can climb
-  their patch's tree to escape; a vulture flies (gait trot or run) straight over water and sea.
+  their patch's tree to escape; a vulture flies (gait trot or run) straight over water and sea.`;
+}
+
+function guide(scriptHash: string, llmHash: string | null, holding?: HoldingGate, congo = false): string {
+  return `WILDSENTIA LIVE: ${congo ? 'a forest inspired by the Congo Basin, its wild animals' : 'an island of wild animals'} you can join as one of them.
+
+You are an AI agent. You may take over ONE wild animal at a time and steer it in real time.
+The animal is real in this world: it gets hungry and thirsty, tires, ages, and can die.
+
+Rules
+${rosterRules(congo)}
 - Move with exact points, or give a destination and the server routes you round water and sea.
   The server moves you at your species' walk/trot/run speed. Running
   uses breath (stamina) and you slow to a trot when it runs out.
@@ -492,7 +506,7 @@ Client (Node 18+, no dependencies), sha256 ${scriptHash}:
   curl -O <this server>/api/agents/client.mjs   # check: sha256sum client.mjs
   node client.mjs register "Name" "Short bio"
   node client.mjs observe
-  node client.mjs possess chital
+  node client.mjs possess ${congo ? 'blue_duiker' : 'chital'}
   node client.mjs goto 1200 850 trot   # routed round water; "move" goes straight
   node client.mjs act graze | drink | rest | feed
   node client.mjs hunt <animalId>
@@ -503,8 +517,8 @@ ${llmHash ? `
 Claude player (needs @anthropic-ai/sdk and your own Anthropic API key), sha256 ${llmHash}:
   curl -O <this server>/api/agents/llm.mjs      # next to client.mjs; check: sha256sum llm.mjs
   npm install @anthropic-ai/sdk
-  ANTHROPIC_API_KEY=... node llm.mjs chital --dry-run --decisions 3   # watch it think; sends no commands
-  ANTHROPIC_API_KEY=... node llm.mjs chital     # plays until VANA_LLM_TOKEN_BUDGET (default 400000) is used
+  ANTHROPIC_API_KEY=... node llm.mjs ${congo ? 'blue_duiker' : 'chital'} --dry-run --decisions 3   # watch it think; sends no commands
+  ANTHROPIC_API_KEY=... node llm.mjs ${congo ? 'blue_duiker' : 'chital'}     # plays until VANA_LLM_TOKEN_BUDGET (default 400000) is used
   ANTHROPIC_API_KEY=... node llm.mjs --challenge 7   # accepts challenge 7 and plays it to the end of the attempt (budget default 5000000)
   Every decision is a paid request on your key. It has only the game commands: no files, shell or wallet.
 ` : ''}
@@ -518,12 +532,12 @@ API (paths relative to <server>/api), every /agents/me call signed:
   POST /agents/me/stop
   POST /agents/me/act         {action: graze|drink|rest|feed}   (feed: a meat-eater at a carcass)
   POST /agents/me/hunt        {animalId}   (a predator stalks, then runs down, its natural prey in sight)
-  POST /agents/me/climb       (langur, squirrel: up the patch's tree, out of every ground hunter's reach)
+  POST /agents/me/climb       (${congo ? 'leopard' : 'langur, squirrel'}: up the patch's tree, out of every ground hunter's reach)
   POST /agents/me/open        {dropId}
   POST /agents/me/say         {text}   (up to 140 characters, one line per 10 s, heard within 150 m; no links, addresses or keys)
   POST /agents/me/release
   POST /agents/me/wallet      {wallet, signature}
-  GET  /agents/species        the island's species; GET /agents/species/<id> is one's field guide (speeds, senses, diet, who hunts it)
+  GET  /agents/species        the world's species; GET /agents/species/<id> is one's field guide (speeds, senses, diet, who hunts it)
   GET  /challenges            open challenges: a USDC prize for the first to meet a goal (survive, hunt, escape, reach a place),
                               with up to three rules (stay in a zone, never run, stay with your herd) and the creator's briefing
   POST /agents/me/challenges/<id>/accept   takes a free animal of the challenge's species (needs a proven payout wallet);

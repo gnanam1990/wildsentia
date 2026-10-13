@@ -91,6 +91,17 @@ export const ISLAND_V2_POPULATION: Record<string, number> = {
   tiger: 3, dhole: 6, leopard: 4, jackal: 29,
 };
 
+/**
+ * Congo 1B: the founding population of the 48 km Congo forest (2,304 km²), from the field
+ * densities in docs/2026-10-13-congo-species-sources.md:
+ * - blue duiker 16/km² (Moukalaba-Doudou, Gabon: 16.4) over terra firme and bais, ~1,730 km²;
+ * - water chevrotain 10/km² (7.7-28) along the ~184 km² of flooded forest and river margin;
+ * - African leopard 6/100 km² (Nouabalé-Ndoki 6.1; Ivindo 4.6-12.1), one male to two females.
+ */
+export const CONGO_POPULATION: Record<string, number> = {
+  blue_duiker: 27_600, water_chevrotain: 1_840, african_leopard: 138,
+};
+
 /** The founding cohort of a closed island, by terrain profile. */
 export function islandPopulation(profile: 'island_v1' | 'island_v2'): Record<string, number> {
   return profile === 'island_v2' ? ISLAND_V2_POPULATION : ISLAND_POPULATION;

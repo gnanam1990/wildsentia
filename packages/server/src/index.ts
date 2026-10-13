@@ -16,7 +16,7 @@ import { rewardConfig } from './rewards.js';
 import { socialConfig } from './socialOutbox.js';
 import { holderConfig } from './holder.js';
 import { generalLimits } from './limits.js';
-import { worldSettings } from './worldSettings.js';
+import { worldProfile, worldSettings } from './worldSettings.js';
 import { newHttpStats, renderMetrics, serveMetrics } from './metrics.js';
 import { ExperienceStore } from './experiences/store.js';
 import { ExperienceService } from './experiences/service.js';
@@ -35,10 +35,7 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
 
   const port = Number(process.env.PORT ?? 8080);
   const { seed, worldHoursPerRealHour } = worldSettings(process.env);
-  const speciesDir =
-    process.env.SPECIES_DIR ?? fileURLToPath(new URL('../../../config/species', import.meta.url));
-  const terrainProfile = process.env.VANA_TERRAIN_PROFILE ?? 'mainland';
-  if (terrainProfile !== 'mainland' && terrainProfile !== 'island_v1' && terrainProfile !== 'island_v2') throw new Error('invalid VANA_TERRAIN_PROFILE');
+  const { terrainProfile, speciesDir } = worldProfile(process.env, fileURLToPath(new URL('../../../config', import.meta.url)));
   const communityProfile = process.env.VANA_COMMUNITY_PROFILE ?? 'none';
   if (communityProfile !== 'none' && communityProfile !== 'household_v1') throw new Error('invalid VANA_COMMUNITY_PROFILE');
 
