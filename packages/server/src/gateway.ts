@@ -425,6 +425,7 @@ export class Gateway {
       ...(a.illness?.phase === 'active' ? { illnessStatus: 'symptomatic' } : {}),
       ...(a.wound ? { woundStatus: a.wound.phase } : {}),
       ...(a.altitudeM === undefined ? {} : { altitudeM: a.altitudeM, locomotionMode: a.locomotionMode ?? 'flight' }),
+      ...(a.locomotionMode === 'submerged' ? { locomotionMode: 'submerged' } : {}),
       lifeStage: a.lifeStage, sex: a.sex, coatVariant: a.traits.coatVariant,
       sizeRatio: a.massKg / (this.host.world.species.get(a.speciesId)?.body.adultMassKg ?? a.massKg),
       dependentOn: a.dependentOn, groupId: a.groupId ?? null,

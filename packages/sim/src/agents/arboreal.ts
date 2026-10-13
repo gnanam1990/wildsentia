@@ -1,3 +1,4 @@
+import { validSubmerged } from './aquatic.js';
 import { type WorldGrid, isMovementTrace, positionInPatch, treeAnchorForPatch, treeAnchorGeometry, treeAnchorRemnantForPatch,
   type Agent, type GoalId, type MovementTrace, type TreeAnchorPatch } from '@vana/shared';
 
@@ -15,6 +16,9 @@ const HEIGHT_EPSILON_M = 1e-9;
 export function validateVerticalCheckpoint(grid: WorldGrid, agent: Agent, patch: TreeAnchorPatch | undefined,
   climbs = legacyClimber(agent.speciesId)): void {
   const altitude = agent.altitudeM, mode = agent.locomotionMode, anchorId = agent.treeAnchorId;
+  // Congo 1B: a diver saved under water: a finite surfacing time, no height, no tree.
+  if (mode === 'submerged') { if (!validSubmerged(agent)) throw new Error('invalid vertical checkpoint'); return; }
+  if (agent.submergedUntil !== undefined) throw new Error('invalid vertical checkpoint');
   if (altitude === undefined && mode === undefined && anchorId === undefined) return;
   if (altitude !== undefined && (!Number.isFinite(altitude) || altitude < 0 || altitude > 2_000))
     throw new Error('invalid vertical checkpoint');

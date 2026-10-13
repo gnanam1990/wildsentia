@@ -16,7 +16,7 @@ export const COMMAND_ERRORS: Record<string, string> = {
   no_free_animal: 'No animal of that species is free.', already_controlled: 'Someone else is steering that animal.',
   species_cap: 'Enough of that species are being steered already; most stay wild.', not_adult: 'Only adults can be taken.',
   dependent: 'That animal is still a dependent youngster.', raising_young: 'That animal is raising young.',
-  off_the_ground: 'That animal is up off the ground.', not_alive: 'That animal is no longer alive.',
+  off_the_ground: 'That animal is up off the ground.', not_alive: 'That animal is no longer alive.', under_water: 'That animal is under water right now; try again in a few minutes.',
 };
 
 export interface NearbyAnimal { id: string; speciesId: string; x: number; z: number; distance: number; predator: boolean; huntsYou: boolean; chasingYou: boolean }

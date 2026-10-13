@@ -34,6 +34,7 @@ import { canHuntIndependently } from './agents/needs.js';
 import { advanceIllness } from './agents/illness.js';
 import { advanceWound } from './agents/wound.js';
 import { edgePatchIds, expectedExchange } from './landscape.js';
+import { surface } from './agents/aquatic.js';
 import { locateAgent, locateCarcass, placeBeside } from './agents/spatial.js';
 import { approachMate, finishCourtship, type CourtshipVisit } from './agents/courtship.js';
 import {
@@ -270,6 +271,7 @@ export class World {
     this.#indexStale = true;
     return {
       grid: this.grid,
+      season: seasonAt(this.#time, this.terrainProfile),
       patches: this.patches,
       agentsInPatch: (patchId) => {
         if (this.#indexStale) { this.#indexStale = false; for (const agent of this.agents) this.#refileOne(agent); }
@@ -698,6 +700,7 @@ export class World {
     }
     // sim_0.38.0: likewise a bird that dies on the wing; its carcass is on the ground.
     if (agent.locomotionMode === 'flight') { delete agent.altitudeM; delete agent.locomotionMode; delete agent.journey; }
+    if (agent.locomotionMode === 'submerged') surface(agent);
     agent.alive = false;
     agent.state = 'dead';
     agent.departedAt = at;
@@ -983,6 +986,7 @@ export class World {
     if (agent.dependentOn !== null) return 'dependent';
     if (facts.parents.has(agent.id)) return 'raising_young';
     if ((agent.altitudeM ?? 0) > 0) return 'off_the_ground';
+    if (agent.locomotionMode === 'submerged') return 'under_water';
     // Most of every species stays wild: a fifth at most, and one once there are two (so of
     // the island's two tigers one may be steered and one always stays wild).
     const living = this.livingCount(agent.speciesId);
@@ -1364,6 +1368,12 @@ export class World {
       if (floater && this.#rng.bool(territory.floaterMortalityPerDay * (hours / 24))) {
         this.#kill(agent, 'territorial', null);
         continue;
+      }
+
+      // Congo 1B: a diver stays under until its dive ends, then surfaces and decides as usual.
+      if (agent.locomotionMode === 'submerged') {
+        if ((agent.submergedUntil ?? 0) > this.#time) { agent.state = 'resting'; continue; }
+        surface(agent);
       }
 
       // A perched animal cannot take a ground-only action. Stay at the fixed trunk while

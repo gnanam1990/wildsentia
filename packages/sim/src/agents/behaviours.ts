@@ -18,6 +18,7 @@ import { allowsDependentGoal, cannotYetWalk, canEatMaternalCarcass, canHuntIndep
   mealRoom, needsOf, needsProvisioning } from './needs.js';
 import { exposeToCarrion } from './illness.js';
 import { exposeToContactWound } from './wound.js';
+import { waterRefuge } from './aquatic.js';
 import { advanceTreeVertical } from './arboreal.js';
 
 /** The only writes a behaviour may make outside its own agent and patch. */
@@ -682,6 +683,11 @@ function flee(ctx: BehaviourContext): void {
     climbToEscape(ctx, anchor);
     return;
   }
+  // Congo 1B: a swimmer (the water chevrotain) runs for water and dives, out of sight and reach.
+  if (threat && ctx.species.locomotion.swims && !needsProvisioning(ctx.agent, ctx.species)) {
+    const refuge = waterRefuge(ctx.view.grid, ctx.agent, ctx.patches, ctx.view.season, locateAgent(ctx.view.grid, ctx.agent));
+    if (refuge) { diveToEscape(ctx, refuge, ctx.species.locomotion.swims.diveSeconds); return; }
+  }
 
   ctx.agent.state = 'fleeing';
   if (options.length === 0) return;
@@ -709,6 +715,28 @@ function flee(ctx: BehaviourContext): void {
   // small arbitrary fraction here would grant a fresh sprint after every partial decision.
   ctx.agent.stamina = clamp01((ctx.agent.stamina ?? 1) - travel.sprintSeconds / ctx.species.locomotion.sprintStaminaS);
   ctx.agent.drives.fatigue = clamp01(ctx.agent.drives.fatigue + 0.12 * travel.seconds / 3600);
+}
+
+/** Congo 1B: to the water's edge (or nowhere, standing in flood), then under, for the dive's length. */
+function diveToEscape(ctx: BehaviourContext, refuge: { patchId: number; position: WorldPosition }, diveSeconds: number): void {
+  const agent = ctx.agent, startPatchId = agent.patchId, budget = ctx.hours * 3600;
+  const travel = navigate(ctx.view.grid, agent, ctx.species, ctx.patches, refuge.patchId, 'flee', ctx.worldTime, budget, true, refuge.position);
+  agent.currentGoal = 'flee'; agent.alternativeGoal = ctx.choice.alternative; agent.goalScore = ctx.choice.score;
+  agent.stamina = clamp01((agent.stamina ?? 1) - travel.sprintSeconds / ctx.species.locomotion.sprintStaminaS);
+  agent.drives.fatigue = clamp01(agent.drives.fatigue + 0.12 * travel.seconds / 3600);
+  const reached = travel.trace.completed && !travel.unreachable && travel.seconds < budget;
+  if (reached) {
+    agent.locomotionMode = 'submerged';
+    agent.submergedUntil = Math.floor(ctx.worldTime + travel.seconds + diveSeconds);
+    agent.state = 'resting';
+  } else agent.state = 'fleeing';
+  ctx.log.append({ type: 'fled', worldTime: Math.floor(ctx.worldTime + travel.seconds), simVersion: '',
+    patchId: agent.patchId, position: { ...locateAgent(ctx.view.grid, agent) }, actors: [agent.id], goal: 'flee',
+    conditions: { escape: 'dive', from: startPatchId, destination: refuge.patchId,
+      ...(reached ? { submergedUntil: agent.submergedUntil! } : {}) },
+    outcome: reached ? 'success' : 'interrupted',
+    effects: { distanceM: travel.distanceM, durationSeconds: travel.seconds, sprintSeconds: travel.sprintSeconds },
+    causalParents: [], confidence: 'authoritative', movement: travel.trace });
 }
 
 /** One event for the actual ground approach and vertical segment. Two events in a single

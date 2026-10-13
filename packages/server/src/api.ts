@@ -503,6 +503,7 @@ export function buildApi({ host, pool, narrator, insights: insightDeps, live, re
     id: a.id, speciesId: a.speciesId, patchId: a.patchId, state: a.state,
     position: a.position,
     ...(a.altitudeM === undefined ? {} : { altitudeM: a.altitudeM, locomotionMode: a.locomotionMode ?? 'flight' }),
+    ...(a.locomotionMode === 'submerged' ? { locomotionMode: 'submerged' } : {}),
     currentGoal: a.currentGoal, alternativeGoal: a.alternativeGoal, goalScore: a.goalScore,
     ...(a.illness?.phase === 'active' ? { illnessStatus: 'symptomatic' } : {}),
     ...(a.wound ? { woundStatus: a.wound.phase } : {}),

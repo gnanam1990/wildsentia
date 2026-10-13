@@ -1,4 +1,4 @@
-import { edibleMass, landWalkable, patchCentre, patchIdAt, positionInPatch, type WorldGrid, type Agent, type Carcass, type Patch, type SpeciesConfig } from '@vana/shared';
+import { edibleMass, landWalkable, patchCentre, patchIdAt, positionInPatch, type WorldGrid, type Agent, type Carcass, type Patch, type SpeciesConfig, type Season } from '@vana/shared';
 import { confidenceOf } from './learning.js';
 import { canEatMaternalCarcass, canFollowParent, needsOf, needsProvisioning } from './needs.js';
 
@@ -14,6 +14,8 @@ export interface WorldView {
   agentById?(id: string): Agent | undefined;
   /** The decision's world time, where the rule needs it (the held-kill check). */
   worldTime?: number;
+  /** Congo 1B: the season, for flooding; absent in array-backed test views. */
+  season?: Season;
   /** Where a group currently is, so a separated member can rejoin it. Null if the group is gone. */
   groupPatch(groupId: string): number | null;
 }
