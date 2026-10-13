@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { CONGO_GRID, ISLAND_GRID, congoHeightFn } from '@vana/shared';
 import { setWorldGrid } from '../src/worldGrid.js';
-import { buildTerrain, makeHeightSampler, CONGO_BASE_M, type PatchView } from '../src/terrain.js';
+import { terrainKeys } from '../src/terrainCheckpoints.js';
+import { buildTerrain, congoWaterLevel, makeHeightSampler, CONGO_BASE_M, type PatchView } from '../src/terrain.js';
 
 afterEach(() => setWorldGrid(ISLAND_GRID));
 const region = (rc: number, rr: number): PatchView[] => {
@@ -40,5 +41,26 @@ describe('Congo trees (1A.4)', () => {
     const trunks = buildTerrain(patches, new Set(['trunk'])).getObjectByName('trunk') as THREE.InstancedMesh;
     expect(trunks.count).toBeLessThanOrEqual(120_000);
     expect(trunks.count).toBeGreaterThan(30_000);
+  });
+  it('stands flood water over the low part of a sloping patch, and a river 3.6 m over its lowest bed', () => {
+    setWorldGrid(CONGO_GRID);
+    const patch = { id: 94 * 160 + 96, x: 96, y: 94, habitat: 'flooded_forest', flooded: true } as PatchView;
+    const cx = 96 * 300, cz = 94 * 300, samples: Array<[number, number]> = [];
+    for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) samples.push([cx + i * 70, cz + j * 70]);
+    // Ground rising 20 m across the patch, its centre on the rise's middle but its low edge 10 m down.
+    const slope = (x: number) => 80 + (x - cx) / 300 * 20;
+    const flood = congoWaterLevel(patch, slope);
+    const covered = samples.filter(([x]) => slope(x) < flood).length / samples.length;
+    expect(covered).toBeGreaterThanOrEqual(0.4);
+    expect(covered).toBeLessThan(1);
+    // A channel 60 m wide at 70 m, banks at 80 m: the water stands 3.6 m over the bed, not over a bank.
+    const channel = (x: number) => Math.abs(x - (cx + 100)) < 30 ? 70 : 80;
+    expect(congoWaterLevel({ ...patch, habitat: 'water' }, channel)).toBeCloseTo(73.6, 5);
+  });
+  it('redraws the water when the flooded forest floods or drains', () => {
+    setWorldGrid(CONGO_GRID);
+    const patches = region(4, 4).map((p, i) => i === 5 ? { ...p, habitat: 'flooded_forest' } : p);
+    const wet = patches.map((p, i) => i === 5 ? { ...p, flooded: true } : p);
+    expect(terrainKeys(wet).water).not.toBe(terrainKeys(patches).water);
   });
 });

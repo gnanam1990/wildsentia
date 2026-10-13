@@ -305,6 +305,19 @@ export function congoLattice(seed: number): { vertex: (col: number, row: number)
   return congoCache;
 }
 
+/**
+ * Congo 1A.4: the height of a water patch's surface, from its ground sampled every 25 m. A river
+ * stands 3.6 m over its lowest bed (congo_terrain_v1 cuts the channel 4 m); flood water 0.5 m over
+ * the patch's median ground, so it fills the low half of a sloping patch, not only its centre.
+ */
+export function congoWaterLevel(patch: Pick<PatchView, 'id' | 'habitat'>, groundAt: HeightSampler): number {
+  const centre = patchCentre(worldGrid(), patch.id), half = worldGrid().patchM / 2, heights: number[] = [];
+  for (let dz = -half + 12.5; dz < half; dz += 25) for (let dx = -half + 12.5; dx < half; dx += 25)
+    heights.push(groundAt(centre.x + dx, centre.z + dz));
+  heights.sort((a, b) => a - b);
+  return patch.habitat === 'water' ? heights[0]! + 3.6 : heights[heights.length >> 1]! + 0.5;
+}
+
 /** Congo 1A.4: one ground mesh over the loaded regions' bounding box, on the 50 m lattice. */
 function buildCongoGround(patches: readonly PatchView[], seed: number): THREE.Mesh {
   const grid = worldGrid(), side = grid.regionPatches;
@@ -492,9 +505,7 @@ export function buildTerrain(patches: readonly PatchView[], layers?: ReadonlySet
   (water ? waterPatches : []).forEach((patch, index) => {
     // The mainland's legacy full-patch water; island pools are drawn by buildPools.
     const centre = patchCentre(worldGrid(), patch.id);
-    // Congo: the river's surface stands 4 m above its bed (congo_terrain_v1); flooded forest 0.5 m above ground.
-    const y = patch.congoSeed !== undefined ? groundAt(centre.x, centre.z) + (patch.habitat === 'water' ? 3.6 : 0.5)
-      : patchHeight(patch) + 0.4;
+    const y = patch.congoSeed !== undefined ? congoWaterLevel(patch, groundAt) : patchHeight(patch) + 0.4;
     matrix.makeTranslation(centre.x, y, centre.z);
     water!.setMatrixAt(index, matrix);
   });
