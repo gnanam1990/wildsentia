@@ -14,3 +14,6 @@ soak-output/
 /contracts/out/
 /contracts/cache/
 /contracts/broadcast/
+
+# Python bytecode
+__pycache__/
