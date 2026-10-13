@@ -15,7 +15,7 @@ export const FLOOD_DEPTH_M = 0.6;
 /** River courses past the loaded ground's edge are drawn this far, so a river never ends at a seam. */
 const MARGIN_M = 1500;
 
-const COLOURS = { main: 0x7d6444, tributary: 0x4a3a26, flood: 0x6b5a3e } as const;
+const COLOURS = { main: 0x7d6444, tributary: 0x4a3a26, flood: 0x3a3020 } as const;
 
 let riverCache: { seed: number; rivers: RiverPath[]; near: ReturnType<typeof riverIndex> } | null = null;
 function riversOf(seed: number): NonNullable<typeof riverCache> {
@@ -23,8 +23,39 @@ function riversOf(seed: number): NonNullable<typeof riverCache> {
   return riverCache;
 }
 
+let ripples: THREE.Texture | null | undefined;
+/** Small wind ripples as a normal map, drawn once on a canvas (none outside a browser). */
+function rippleNormals(): THREE.Texture | null {
+  if (ripples !== undefined) return ripples;
+  if (typeof document === 'undefined') return ripples = null;
+  const size = 128, canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return ripples = null;
+  const h = (x: number, y: number) => Math.sin(x * 0.29 + Math.sin(y * 0.11) * 2) * 0.5 + Math.sin(y * 0.37 + x * 0.07) * 0.35
+    + Math.sin((x + y) * 0.53) * 0.15;
+  const image = ctx.createImageData(size, size);
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const dx = h(x + 1, y) - h(x - 1, y), dy = h(x, y + 1) - h(x, y - 1), o = (y * size + x) * 4;
+    image.data[o] = 128 + dx * 90; image.data[o + 1] = 128 + dy * 90; image.data[o + 2] = 255; image.data[o + 3] = 255;
+  }
+  ctx.putImageData(image, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  return ripples = texture;
+}
+
 function waterMaterial(colour: number, opacity: number): THREE.MeshStandardMaterial {
-  return new THREE.MeshStandardMaterial({ color: colour, roughness: 0.06, metalness: 0.25, transparent: opacity < 1, opacity, depthWrite: opacity >= 1 });
+  const normalMap = rippleNormals();
+  return new THREE.MeshStandardMaterial({ color: colour, roughness: 0.06, metalness: 0.25, transparent: opacity < 1, opacity, depthWrite: opacity >= 1,
+    ...(normalMap ? { normalMap, normalScale: new THREE.Vector2(0.35, 0.35) } : {}) });
+}
+
+/** Texture coordinates from world position: one ripple tile every 24 m wherever the water is. */
+function worldUv(geometry: THREE.BufferGeometry): void {
+  const p = geometry.getAttribute('position'), uv = new Float32Array(p.count * 2);
+  for (let i = 0; i < p.count; i++) { uv[i * 2] = p.getX(i) / 24; uv[i * 2 + 1] = p.getZ(i) / 24; }
+  geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
 }
 
 /** One river's course within the bounds, as a ribbon as wide as its channel at the river's own level. */
@@ -50,6 +81,7 @@ function riverRibbon(river: RiverPath, bounds: GroundBounds, half: number): THRE
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setIndex(index);
   geometry.computeVertexNormals();
+  worldUv(geometry);
   return geometry;
 }
 
@@ -66,19 +98,25 @@ function floodSheet(seed: number, bounds: GroundBounds): THREE.BufferGeometry | 
     const o = (row * (cols + 1) + col) * 3, x = origin + (c0 + col) * CONGO_STEP_M, z = origin + (r0 + row) * CONGO_STEP_M;
     positions[o] = x; positions[o + 1] = lattice.vertex(c0 + col, r0 + row) + FLOOD_DEPTH_M; positions[o + 2] = z;
   }
+  const wetCorners = new Uint8Array((cols + 1) * (rows + 1));
   for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++) {
     const x = origin + (c0 + col + 0.5) * CONGO_STEP_M, z = origin + (r0 + row + 0.5) * CONGO_STEP_M;
     const at = near(x, z), half = congoChannelHalfM(at.river, grid);
     // The channel itself carries the river ribbon; the flood stands on the belt beside it.
     if (at.distanceM <= half - CONGO_STEP_M || at.distanceM > half + at.river.floodBeltM) continue;
     const a = row * (cols + 1) + col, b = a + cols + 1;
+    for (const v of [a, a + 1, b, b + 1]) wetCorners[v]!++;
     index.push(a, b, a + 1, b, b + 1, a + 1);
   }
+  // A corner shared with dry cells sinks under the ground, so the shore is where the water meets
+  // the slope inside the cell, not a 50 m step.
+  for (let v = 0; v < wetCorners.length; v++) if (wetCorners[v]! > 0 && wetCorners[v]! < 4) positions[v * 3 + 1]! -= FLOOD_DEPTH_M + 0.4;
   if (index.length === 0) return null;
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geometry.setIndex(index);
   geometry.computeVertexNormals();
+  worldUv(geometry);
   return geometry;
 }
 
@@ -96,7 +134,7 @@ export function buildCongoWater(seed: number, bounds: GroundBounds, flooded: boo
   if (flooded) {
     const geometry = floodSheet(seed, bounds);
     if (geometry) {
-      const mesh = new THREE.Mesh(geometry, waterMaterial(COLOURS.flood, 0.62));
+      const mesh = new THREE.Mesh(geometry, waterMaterial(COLOURS.flood, 0.5));
       mesh.name = 'flood'; mesh.receiveShadow = true;
       group.add(mesh);
     }

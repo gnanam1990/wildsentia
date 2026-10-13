@@ -809,7 +809,7 @@ function renderFrame(dt: number, now: number): void {
     nature.setDistantLight(store.world ? atmosphereAt(liveWorldTime(now)!, store.world.season).daylight : 1);
   }
   groundCover?.update(camera.position, 2);
-  congoForest?.update(follow.target, camera.position);
+  if (congoForest) { congoForest.update(follow.target, camera.position); atmosphere.underCanopy = congoForest.underCanopy; }
   communityLayer.update(dt, camera.position, quality.tier, reducedMotion.matches, now, followedPersonId);
   const communityText = communityLayer.playbackNotice(now, reducedMotion.matches);
   if (communityMotionNotice.textContent !== communityText) communityMotionNotice.textContent = communityText;

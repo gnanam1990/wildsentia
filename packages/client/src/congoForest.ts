@@ -7,14 +7,16 @@ import { buildCongoWater } from './congoWater.js';
 
 /** How far from the camera's focus each kind of plant is drawn one by one (metres). */
 export const KIND_RADIUS_M: Record<CongoKind, number> = {
-  emergent: 420, canopy: 380, midstory: 320, raphia: 380, sapling: 200, marantaceae: 140, herb: 70, sedge: 120, log: 260, rock: 300,
+  emergent: 420, canopy: 380, midstory: 320, raphia: 380, sapling: 200, marantaceae: 140, herb: 70, sedge: 220, log: 260, rock: 300,
 };
 /** The focus moves this far before the near plants are planted again. */
 const REFILL_MOVE_M = 60;
 /** The canopy surface's height over the ground in each forest habitat; bais and rivers are open. */
-export const CANOPY_HEIGHT_M: Record<string, number> = { terra_firme: 32, flooded_forest: 25, swamp_forest: 17 };
+export const CANOPY_HEIGHT_M: Record<string, number> = { terra_firme: 29, flooded_forest: 23, swamp_forest: 15 };
 /** The eye's height over the ground at which the canopy's cut-away starts to close, and is closed. */
 const HOLE_CLOSES_FROM_M = 60, HOLE_CLOSED_AT_M = 140;
+/** Below the first height the eye is inside the forest; above the second it looks over it. */
+const UNDER_CANOPY_FROM_M = 12, UNDER_CANOPY_TO_M = 45;
 /** Trees stand a little into the ground, so a buttress never floats on a slope. */
 const TREE_SINK_M = 0.3;
 const TREES = new Set<CongoKind>(['emergent', 'canopy', 'midstory', 'raphia', 'sapling']);
@@ -38,6 +40,9 @@ export class CongoForest {
   #shell: THREE.Mesh | null = null;
   #water: THREE.Group | null = null;
   readonly #hole = { centre: { value: new THREE.Vector2() }, radius: { value: this.canopyHole.radius } };
+
+  /** 1 while the eye is down among the trees, 0 above the canopy: how much the forest interior closes the view. */
+  underCanopy = 0;
 
   constructor() { this.root.name = 'congo-forest'; }
 
@@ -63,6 +68,8 @@ export class CongoForest {
     const moved = !this.#focus || Math.hypot(focus.x - this.#focus.x, focus.z - this.#focus.z) >= REFILL_MOVE_M;
     if (moved) { this.#focus = focus.clone(); this.#hole.centre.value.set(focus.x, focus.z); this.#plant(focus); }
     this.canopyHole = { x: this.#focus!.x, z: this.#focus!.z, radius };
+    const u = Math.max(0, Math.min(1, (above - UNDER_CANOPY_FROM_M) / (UNDER_CANOPY_TO_M - UNDER_CANOPY_FROM_M)));
+    this.underCanopy = 1 - u * u * (3 - 2 * u);
     return moved;
   }
 
@@ -158,6 +165,18 @@ export class CongoForest {
       lifted[i] = h > 0 ? 1 : 0;
       c.copy(dark).lerp(light, (spatialHash(`canopy-tone:${seed}:${c0 + col}:${r0 + row}`) / 0xffffffff));
       colours.set([c.r, c.g, c.b], i * 3);
+    }
+    // Steep faces (where the canopy drops to a river, a bai or a swamp) are walls of foliage in
+    // their own shade: darker the steeper they are.
+    for (let row = 0; row <= rows; row++) for (let col = 0; col <= cols; col++) {
+      const i = row * (cols + 1) + col, y = positions[i * 3 + 1]!;
+      let drop = 0;
+      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const c2 = col + dc, r2 = row + dr;
+        if (c2 >= 0 && r2 >= 0 && c2 <= cols && r2 <= rows) drop = Math.max(drop, Math.abs(y - positions[(r2 * (cols + 1) + c2) * 3 + 1]!));
+      }
+      const shade = Math.max(0.4, Math.min(1, 1 - (drop - 4) / 30));
+      colours[i * 3]! *= shade; colours[i * 3 + 1]! *= shade; colours[i * 3 + 2]! *= shade;
     }
     const index: number[] = [];
     for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++) {

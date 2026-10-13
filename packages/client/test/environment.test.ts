@@ -89,3 +89,18 @@ describe('the Congo haze (1A.5)', () => {
     expect(hsl.h).toBeGreaterThan(0.2); expect(hsl.h).toBeLessThan(0.45); // toward green
   });
 });
+
+describe('inside the Congo forest (1A.5)', () => {
+  it('closes the view into dim green depth while the eye is among the trees', () => {
+    const fogAt = (under: number) => {
+      const scene = new THREE.Scene(); scene.background = new THREE.Color(); scene.fog = new THREE.Fog(0, 200, 2600);
+      const atmosphere = new Atmosphere(scene, new THREE.DirectionalLight());
+      atmosphere.haze = 1; atmosphere.underCanopy = under;
+      atmosphere.update(10 * 3600, 'transition', 3, new THREE.Vector3(), false, 20);
+      return scene.fog as THREE.Fog;
+    };
+    const above = fogAt(0), inside = fogAt(1);
+    expect(inside.far).toBeLessThanOrEqual(700);
+    expect(inside.color.getHSL({ h: 0, s: 0, l: 0 }).l).toBeLessThan(above.color.getHSL({ h: 0, s: 0, l: 0 }).l * 0.6);
+  });
+});

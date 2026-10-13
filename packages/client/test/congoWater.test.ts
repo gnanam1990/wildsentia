@@ -39,7 +39,9 @@ describe('Congo rivers and flood', () => {
     expect(index.count).toBeGreaterThan(0);
     for (let k = 0; k < index.count; k += 97) {
       const i = index.getX(k);
-      expect(p.getY(i)).toBeCloseTo(lattice.sample(p.getX(i), p.getZ(i)) + 0.6, 3);
+      // 0.6 m deep inside the belt; at its shore a corner sinks under the ground, so the edge follows the slope.
+      const over = p.getY(i) - lattice.sample(p.getX(i), p.getZ(i));
+      expect([0.6, -0.4].some((d) => Math.abs(over - d) < 1e-3)).toBe(true);
       const at = near(p.getX(i), p.getZ(i));
       expect(at.distanceM).toBeLessThanOrEqual(congoChannelHalfM(at.river, CONGO_GRID) + at.river.floodBeltM + 50);
     }

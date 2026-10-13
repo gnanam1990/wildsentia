@@ -56,7 +56,7 @@ const CONGO_FLOOR: Record<string, { near: THREE.Color; far: THREE.Color }> = {
   flooded_forest: { near: hex(0x6a5844), far: hex(0x382f22) },
   swamp_forest: { near: hex(0x66603f), far: hex(0x37341f) },
 };
-const CONGO_BAI = { lush: { near: hex(0xc6d08a), far: hex(0x6f8a3e) }, mud: { near: hex(0xb49a74), far: hex(0x6a5a3c) } };
+const CONGO_BAI = { lush: { near: hex(0xa6c466), far: hex(0x5e8a34) }, mud: { near: hex(0xb49a74), far: hex(0x6a5a3c) } };
 const isCongoHabitat = (habitat: string): boolean => habitat in HABITAT_ANALOGUE;
 
 /** The two colours for one patch, in linear RGB. */
@@ -120,9 +120,10 @@ export function groundLayers(patch: GroundPatch, season: string): GroundLayers {
     const forest = patch.habitat === 'terra_firme', wetForest = patch.habitat !== 'bai' && !forest;
     return {
       litter: round(patch.habitat === 'bai' ? 0 : forest ? 0.85 + 0.1 * leafFall : 0.5),
-      bare: round(patch.habitat === 'bai' ? 0.3 : forest ? 0.1 : 0.05),
-      // Low: the stand pattern spreads it in tens-of-metres blocks over 48 km, which reads as tiles.
-      moss: round(wetForest ? 0.15 + 0.1 * wet : 0.05),
+      bare: round(patch.habitat === 'bai' ? 0.08 : forest ? 0.1 : 0.05),
+      // Low under forest: the stand pattern spreads it in tens-of-metres blocks over 48 km, which reads
+      // as tiles. A bai's wet sward is green.
+      moss: round(patch.habitat === 'bai' ? 0.5 + 0.3 * wet : wetForest ? 0.15 + 0.1 * wet : 0.05),
     };
   }
   return {

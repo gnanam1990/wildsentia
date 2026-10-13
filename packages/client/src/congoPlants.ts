@@ -22,7 +22,7 @@ const PER_PATCH: Record<string, Partial<Record<CongoKind, number>>> = {
   terra_firme: { emergent: 12, canopy: 190, midstory: 280, sapling: 600, marantaceae: 3500, herb: 14000, log: 6 },
   flooded_forest: { canopy: 150, midstory: 200, raphia: 20, sapling: 260, marantaceae: 900, herb: 3000, log: 4 },
   swamp_forest: { raphia: 200, canopy: 50, midstory: 100, sapling: 160, marantaceae: 1200, herb: 6000 },
-  bai: { sedge: 1200, log: 2 },
+  bai: { sedge: 9000, log: 2 },
 };
 /** Bank rocks tried per patch beside a river; kept only within this distance of the channel's edge. */
 const ROCK_TRIES = 40, ROCK_BANK_M = 80;
@@ -42,7 +42,8 @@ function riversOf(seed: number) {
 
 /** What grows in one patch: the same plants, in the same places, every time. */
 export function planCongoPatch(patch: Pick<PatchView, 'id' | 'habitat'>, seed: number): PlacedPlant[] {
-  const counts = PER_PATCH[patch.habitat];
+  // A river patch is water only where its channel runs; its dry edge grows the flooded forest's plants.
+  const counts = PER_PATCH[patch.habitat === 'water' ? 'flooded_forest' : patch.habitat];
   if (!counts) return [];
   const grid = worldGrid(), centre = patchCentre(grid, patch.id), half = grid.patchM / 2, { near } = riversOf(seed);
   const random = rng(spatialHash(`congo-plants:${seed}:${patch.id}`));
@@ -190,8 +191,8 @@ function plantParts(kind: CongoKind): PlantParts {
     case 'sedge': {
       const blades: THREE.BufferGeometry[] = [];
       for (let k = 0; k < 14; k++) {
-        const h = 0.7 + random() * 0.5, tint = new THREE.Color(0x8a9a4a).lerp(new THREE.Color(0x5e7a32), random());
-        blades.push(finish(new THREE.PlaneGeometry(0.05, h).translate(0, h / 2, 0).rotateX((random() - 0.5) * 0.6).rotateY(random() * Math.PI)
+        const h = 0.7 + random() * 0.7, tint = new THREE.Color(0x8a9a4a).lerp(new THREE.Color(0x5e7a32), random());
+        blades.push(finish(new THREE.PlaneGeometry(0.09, h).translate(0, h / 2, 0).rotateX((random() - 0.5) * 0.6).rotateY(random() * Math.PI)
           .translate((random() - 0.5) * 0.4, 0, (random() - 0.5) * 0.4), () => tint));
       }
       return { blades: merge(blades) };
