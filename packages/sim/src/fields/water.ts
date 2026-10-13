@@ -1,4 +1,4 @@
-import type { Patch, Season } from '@vana/shared';
+import { habitatAnalogue, type Patch, type Season } from '@vana/shared';
 
 const RAINFALL_L_PER_HOUR: Record<Season, number> = {
   monsoon: 90, wet: 45, transition: 12, dry: 2,
@@ -36,7 +36,8 @@ export function updateWater(patch: Patch, hours: number, season: Season, rainfal
   if (patch.surface === 'ocean') return { rainfallL: 0, groundwaterL: 0, evaporatedL: 0 };
   if (!Number.isFinite(rainfallScale) || rainfallScale < 0 || rainfallScale > 1) throw new Error('invalid experiment rainfall scale');
   const rainfallL = RAINFALL_L_PER_HOUR[season] * hours * rainfallScale;
-  const groundwaterL = (BASEFLOW_L_PER_HOUR[patch.habitat] ?? 0) * hours;
+  // A Congo habitat draws on its island analogue's springs (swamp forest as marsh); island habitats are their own analogue.
+  const groundwaterL = (BASEFLOW_L_PER_HOUR[habitatAnalogue(patch.habitat)] ?? 0) * hours;
   const rain = rainfallL + groundwaterL;
   const evaporated = Math.min(patch.waterVolume, patch.waterVolume * EVAPORATION_FRACTION_PER_HOUR[season] * hours);
 

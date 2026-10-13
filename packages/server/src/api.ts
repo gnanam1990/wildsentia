@@ -179,8 +179,8 @@ export function buildApi({ host, pool, narrator, insights: insightDeps, live, re
     return {
       source: 'checkpoint', nextEventSequence: view.nextSequence,
       worldTime: now,
-      formatted: formatWorldTime(now),
-      season: seasonAt(now),
+      formatted: formatWorldTime(now, host.world?.terrainProfile),
+      season: seasonAt(now, host.world?.terrainProfile),
       ...view.summary(),
       worldHoursPerRealHour: host.worldHoursPerRealHour,
     };

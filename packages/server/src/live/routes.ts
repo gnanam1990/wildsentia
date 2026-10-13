@@ -169,7 +169,7 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
       audience: audience(), slots: deps.limits.slots, registered: await store.count(), playing: live.avatars.size,
       clientScript: { path: '/agents/client.mjs', sha256: scriptHash },
       ...(llmHash ? { llmScript: { path: '/agents/llm.mjs', sha256: llmHash } } : {}),
-      guide: '/agents/guide.txt', world: { worldTime: world.now(), formatted: formatWorldTime(world.now()), season: seasonAt(world.now()) },
+      guide: '/agents/guide.txt', world: { worldTime: world.now(), formatted: formatWorldTime(world.now(), world.terrainProfile?.()), season: seasonAt(world.now()) },
       ...(deps.holding ? { holding: { tokenAddress: deps.holding.tokenAddress, chainId: deps.holding.chainId, minAtomic: String(deps.holding.minAtomic) } } : {}),
       rules: { openRadiusM: OPEN_RADIUS_M, openSeconds: 5, spotRadiusM: 10, idleReleaseMinutes: 15, possessMinutesBeforeOpening: 5,
         claimCooldownMinutes: 10, commandsPerSecond: 5, observesPerSecond: 2 },
@@ -399,7 +399,7 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
     const patch = at ? world.patchAt(at.x, at.z) : null;
     const dist = (x: number, z: number) => at ? Math.round(Math.hypot(x - at.x, z - at.z) * 10) / 10 : null;
     return {
-      worldTime: now, formatted: formatWorldTime(now), season: seasonAt(now),
+      worldTime: now, formatted: formatWorldTime(now, world.terrainProfile?.()), season: seasonAt(now, world.terrainProfile?.()),
       you: { agentId: agent.id, name: agent.name, wallet: agent.wallet, walletProven: agent.walletProven, erc8004AgentId: agent.erc8004AgentId },
       animal: avatar && animal ? {
         id: animal.id, speciesId: animal.speciesId, displayName: motion?.displayName, lifeStage: animal.lifeStage, state: animal.state,

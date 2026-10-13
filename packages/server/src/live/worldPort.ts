@@ -48,6 +48,7 @@ export function worldPort(world: () => World, worldId: () => string | null, play
   };
   return {
     busy,
+    terrainProfile: () => world().terrainProfile,
     worldId,
     treeAt: (x, z) => {
       const p = patchAt(x, z);

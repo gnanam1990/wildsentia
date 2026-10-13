@@ -371,8 +371,8 @@ export class Gateway {
   #worldMessage(view: CheckpointObservation): Record<string, unknown> {
     const now = view.worldTime;
     return {
-      type: 'world', worldTime: now, formatted: formatWorldTime(now),
-      season: seasonAt(now), population: view.summary().population,
+      type: 'world', worldTime: now, formatted: formatWorldTime(now, this.host.world?.terrainProfile),
+      season: seasonAt(now, this.host.world?.terrainProfile), population: view.summary().population,
       source: 'checkpoint', nextEventSequence: view.nextSequence,
       worldHoursPerRealHour: this.host.worldHoursPerRealHour,
       grid: this.host.grid,

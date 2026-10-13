@@ -1155,7 +1155,7 @@ export class World {
       return;
     }
     for (const agent of this.agents) locateAgent(this.grid, agent);
-    const season = seasonAt(this.#time);
+    const season = seasonAt(this.#time, this.terrainProfile);
     yield;
 
     updateDrainage(this.grid, this.patches, hours, season, this.waterBudget, this.#options.rainfallScale ?? 1);

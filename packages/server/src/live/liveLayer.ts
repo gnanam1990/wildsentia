@@ -41,6 +41,8 @@ export class WorldBusyError extends Error {
 export interface WorldPort {
   /** True while the world steps: nothing may change it (Congo 1A.3). */
   busy?(): boolean;
+  /** The world's terrain profile: it picks the calendar (Congo 1B). */
+  terrainProfile?(): string;
   worldId(): string | null;
   /** The tree this patch's climbers use, if it has one. */
   treeAt(x: number, z: number): { x: number; z: number } | null;
