@@ -2,7 +2,7 @@ import { createRng } from '../rng.js';
 import { cardinalNeighbours, patchCentre, patchCount, regionIds, regionPatchIds, type WorldGrid } from '../grid.js';
 import type { HabitatType } from '../types/patch.js';
 import { valueNoise } from './noise.js';
-import { CONGO_TERRAIN_VERSION, congoRivers, nearestRiver, type RiverPath } from './rivers.js';
+import { CONGO_TERRAIN_VERSION, congoRivers, riverIndex, type RiverPath } from './rivers.js';
 
 /** The Congo forest's ground: one height function and one habitat per patch, from the seed. */
 export interface CongoTerrain {
@@ -27,13 +27,13 @@ export const CONGO_MIN_HEIGHT_M = 250, CONGO_MAX_HEIGHT_M = 700;
 const smoothstep = (a: number, b: number, x: number): number => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 export function createCongoTerrain(seed: number, grid: WorldGrid): CongoTerrain {
-  const rivers = congoRivers(seed, grid);
+  const rivers = congoRivers(seed, grid), nearestRiver = riverIndex(rivers);
   const base = (x: number, z: number): number => CONGO_MIN_HEIGHT_M + 450 * (0.6 * valueNoise(seed, x, z, 12_000, 1)
     + 0.3 * valueNoise(seed, x, z, 4_000, 2) + 0.1 * valueNoise(seed, x, z, 1_200, 3));
   // A channel is at least one patch wide on the lattice, so a 150 m tributary still joins up.
   const channelHalf = (r: RiverPath): number => Math.max(r.widthM / 2, grid.patchM * 0.75);
   const heightAt = (x: number, z: number): number => {
-    const near = nearestRiver(rivers, x, z), half = channelHalf(near.river);
+    const near = nearestRiver(x, z), half = channelHalf(near.river);
     if (near.distanceM <= half) return near.levelM - 4;
     const ground = base(x, z), bank = near.levelM + 1;
     const blend = smoothstep(half, half + near.river.floodBeltM + 1_500, near.distanceM);
@@ -41,7 +41,7 @@ export function createCongoTerrain(seed: number, grid: WorldGrid): CongoTerrain 
   };
 
   const n = patchCount(grid), habitat: HabitatType[] = new Array(n), heights = new Float64Array(n);
-  const near = Array.from({ length: n }, (_, id) => { const c = patchCentre(grid, id); return nearestRiver(rivers, c.x, c.z); });
+  const near = Array.from({ length: n }, (_, id) => { const c = patchCentre(grid, id); return nearestRiver(c.x, c.z); });
   for (let id = 0; id < n; id++) { const c = patchCentre(grid, id); heights[id] = heightAt(c.x, c.z); }
   for (let id = 0; id < n; id++) {
     const c = patchCentre(grid, id), river = near[id]!, half = channelHalf(river.river);

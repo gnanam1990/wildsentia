@@ -85,14 +85,78 @@ export function congoRivers(seed: number, grid: WorldGrid): RiverPath[] {
   return rivers;
 }
 
-/** Exact nearest point on any river's centreline, with the river's water level there. */
+/** Distance from (x, z) to one centreline segment, and the water level at its nearest point. */
+function toSegment(a: RiverPoint, b: RiverPoint, x: number, z: number): { distanceM: number; levelM: number } {
+  const dx = b.x - a.x, dz = b.z - a.z, len2 = dx * dx + dz * dz;
+  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / len2));
+  return { distanceM: Math.hypot(x - (a.x + dx * t), z - (a.z + dz * t)), levelM: a.levelM + (b.levelM - a.levelM) * t };
+}
+
+/** Exact nearest point on any river's centreline, with the river's water level there. Ties go
+ * to the earlier river, then the earlier segment. */
 export function nearestRiver(rivers: readonly RiverPath[], x: number, z: number): { river: RiverPath; distanceM: number; levelM: number } {
   let best = { river: rivers[0]!, distanceM: Infinity, levelM: rivers[0]!.points[0]!.levelM };
   for (const river of rivers) for (let i = 0; i < river.points.length - 1; i++) {
-    const a = river.points[i]!, b = river.points[i + 1]!, dx = b.x - a.x, dz = b.z - a.z, len2 = dx * dx + dz * dz;
-    const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / len2));
-    const d = Math.hypot(x - (a.x + dx * t), z - (a.z + dz * t));
-    if (d < best.distanceM) best = { river, distanceM: d, levelM: a.levelM + (b.levelM - a.levelM) * t };
+    const s = toSegment(river.points[i]!, river.points[i + 1]!, x, z);
+    if (s.distanceM < best.distanceM) best = { river, distanceM: s.distanceM, levelM: s.levelM };
   }
   return best;
+}
+
+const CELL_M = 1_500;
+
+/**
+ * `nearestRiver` answered from 1.5 km buckets of centreline segments: the same river, distance
+ * and level for every point, ties included, but a lookup reads only the segments near it.
+ */
+export function riverIndex(rivers: readonly RiverPath[]): (x: number, z: number) => { river: RiverPath; distanceM: number; levelM: number } {
+  type Entry = { river: number; segment: number };
+  let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
+  for (const r of rivers) for (const p of r.points) { minX = Math.min(minX, p.x); minZ = Math.min(minZ, p.z); maxX = Math.max(maxX, p.x); maxZ = Math.max(maxZ, p.z); }
+  const cols = Math.floor((maxX - minX) / CELL_M) + 1, rows = Math.floor((maxZ - minZ) / CELL_M) + 1;
+  const cells: Entry[][] = Array.from({ length: cols * rows }, () => []);
+  rivers.forEach((r, ri) => {
+    for (let si = 0; si < r.points.length - 1; si++) {
+      const a = r.points[si]!, b = r.points[si + 1]!;
+      const c0 = Math.floor((Math.min(a.x, b.x) - minX) / CELL_M), c1 = Math.floor((Math.max(a.x, b.x) - minX) / CELL_M);
+      const r0 = Math.floor((Math.min(a.z, b.z) - minZ) / CELL_M), r1 = Math.floor((Math.max(a.z, b.z) - minZ) / CELL_M);
+      for (let row = r0; row <= r1; row++) for (let col = c0; col <= c1; col++) cells[row * cols + col]!.push({ river: ri, segment: si });
+    }
+  });
+  const seen = new Uint32Array(rivers.reduce((n, r) => Math.max(n, r.points.length), 0) * rivers.length);
+  const width = seen.length / rivers.length;
+  let stamp = 0;
+  return (x, z) => {
+    stamp++;
+    const qc = Math.floor((x - minX) / CELL_M), qr = Math.floor((z - minZ) / CELL_M);
+    // How far the point is from its own cell's nearest edge: rings beyond lie at least this
+    // plus whole cells away.
+    const fx = x - minX - qc * CELL_M, fz = z - minZ - qr * CELL_M;
+    const inset = Math.max(0, Math.min(fx, CELL_M - fx, fz, CELL_M - fz));
+    // Rings beyond this cover no cell at all.
+    const last = Math.max(qc, cols - 1 - qc, qr, rows - 1 - qr);
+    let best = { ri: 0, si: 0, distanceM: Infinity, levelM: rivers[0]!.points[0]!.levelM };
+    const visit = (col: number, row: number): void => {
+      if (col < 0 || row < 0 || col >= cols || row >= rows) return;
+      for (const e of cells[row * cols + col]!) {
+        const key = e.river * width + e.segment;
+        if (seen[key] === stamp) continue;
+        seen[key] = stamp;
+        const r = rivers[e.river]!, s = toSegment(r.points[e.segment]!, r.points[e.segment + 1]!, x, z);
+        if (s.distanceM < best.distanceM || (s.distanceM === best.distanceM
+          && (e.river < best.ri || (e.river === best.ri && e.segment < best.si))))
+          best = { ri: e.river, si: e.segment, distanceM: s.distanceM, levelM: s.levelM };
+      }
+    };
+    for (let ring = 0; ring <= last; ring++) {
+      // Anything in ring r or beyond is at least inset + (r − 1) cells away: stop once strictly nearer.
+      if (ring > 0 && best.distanceM < inset + (ring - 1) * CELL_M) break;
+      if (ring === 0) visit(qc, qr);
+      else for (let k = -ring; k <= ring; k++) {
+        visit(qc + k, qr - ring); visit(qc + k, qr + ring);
+        if (k > -ring && k < ring) { visit(qc - ring, qr + k); visit(qc + ring, qr + k); }
+      }
+    }
+    return { river: rivers[best.ri]!, distanceM: best.distanceM, levelM: best.levelM };
+  };
 }
