@@ -1130,6 +1130,15 @@ export class World {
   }
 
   step(hours: number): void {
+    for (const _ of this.stepSlices(hours)) { /* run the whole step at once */ }
+  }
+
+  /**
+   * The step, in slices: it yields between phases and between animals, so a host can let other
+   * work run during a long hour. Nothing outside the world may change it between slices (the
+   * host holds commands while a step is in progress); drained at once, it is exactly `step`.
+   */
+  *stepSlices(hours: number): Generator<void> {
     if (!Number.isFinite(hours) || hours <= 0) throw new Error('step hours must be finite and positive');
     // sim_0.38.0: the clock moves in whole seconds, as every recorded trace starts on one. A
     // part-hour step such as 0.1 + 0.2 h (1080.0000000000002 s) left it between seconds, and a
@@ -1141,17 +1150,21 @@ export class World {
     // calls cannot skip a fish or contact gate or count an hour twice.
     if (hours > 1) {
       let remaining = seconds;
-      while (remaining > WORLD_SECONDS_PER_HOUR) { this.step(1); remaining -= WORLD_SECONDS_PER_HOUR; }
-      if (remaining > 0) this.step(remaining / WORLD_SECONDS_PER_HOUR);
+      while (remaining > WORLD_SECONDS_PER_HOUR) { yield* this.stepSlices(1); remaining -= WORLD_SECONDS_PER_HOUR; }
+      if (remaining > 0) yield* this.stepSlices(remaining / WORLD_SECONDS_PER_HOUR);
       return;
     }
     for (const agent of this.agents) locateAgent(this.grid, agent);
     const season = seasonAt(this.#time);
+    yield;
 
     updateDrainage(this.grid, this.patches, hours, season, this.waterBudget, this.#options.rainfallScale ?? 1);
-    for (const patch of this.patches) {
+    yield;
+    for (let i = 0; i < this.patches.length; i++) {
+      const patch = this.patches[i]!;
       growPlants(patch, hours, season);
       growRooting(patch, hours, season);
+      if ((i & 4095) === 4095) yield;
     }
 
     for (const carcass of [...this.carcasses]) {
@@ -1168,9 +1181,12 @@ export class World {
       if (isSpent(carcass)) this.#retireCarcass(carcass);
     }
 
+    yield;
     const fishTransitions = stepMicroEcology(this.microEcology, this.patches, this.carcasses, hours, season, this.#time);
+    yield;
     const floweringTransitions = stepFloweringGuild(this.patches, this.microEcology,
       hours, this.#time + hours * WORLD_SECONDS_PER_HOUR);
+    yield;
 
     // Move the tick's dead into the permanent record and out of every loop that follows.
     if (this.agents.some((a) => !a.alive)) {
@@ -1182,6 +1198,7 @@ export class World {
       }
     }
 
+    yield;
     this.#reindex();
     const view = this.#view();
     const services = this.#services();
@@ -1255,6 +1272,7 @@ export class World {
     const packIndex = new Map<string, number>();
     let previous: Agent | null = null, logMark = this.log.size();
     for (let turn = 0; turn < this.agents.length; turn++) {
+      if (turn > 0 && (turn & 63) === 0) yield;
       const original = this.agents[turn]!;
       const members = original.groupId ? packOrder.get(original.groupId) : undefined;
       const index = packIndex.get(original.groupId ?? '') ?? 0;
@@ -1568,6 +1586,7 @@ export class World {
       });
     }
 
+    yield;
     const servedYoung = new Set<string>();
     for (const visit of careVisits) for (const childId of finishCare(visit,
       childrenByParent.get(visit.parent.id) ?? [], familyStarts,
@@ -1610,6 +1629,7 @@ export class World {
       finishCourtship(this.grid, visit, cfg, this.#time, this.#time + hours * 3600, density, this.#rng, this.log,
         this.#packAllowsBreeding(visit.female, cfg));
     }
+    yield;
     this.#exchangeWithLandscape(hours);
 
     for (const [speciesId, floor] of Object.entries(this.#options.minPopulation)) {
@@ -1636,6 +1656,7 @@ export class World {
     // Settle illness only after every animal and community action in this decision. A meal
     // acquired at the end cannot incubate retroactively, and a human/predator kill wins over a
     // later disease hazard instead of creating a second death or carcass.
+    yield;
     const decisionEnd = this.#time + hours * WORLD_SECONDS_PER_HOUR;
     for (const agent of this.agents) {
       if (!agent.alive || !agent.illness) continue;
