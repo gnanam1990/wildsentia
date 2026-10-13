@@ -5,9 +5,14 @@ export class SnapshotStore {
   constructor(private readonly pool: Database) {}
 
   async save(snapshot: Snapshot): Promise<void> {
+    await this.saveJson(snapshot, JSON.stringify(snapshot));
+  }
+
+  /** Saves a snapshot already serialized (in slices, by the host): `json` is `JSON.stringify(snapshot)`. */
+  async saveJson(snapshot: Pick<Snapshot, 'worldTime' | 'simVersion'>, json: string): Promise<void> {
     await this.pool.query(
       'insert into snapshots (world_time, sim_version, payload) values ($1, $2, $3::jsonb)',
-      [snapshot.worldTime, snapshot.simVersion, JSON.stringify(snapshot)],
+      [snapshot.worldTime, snapshot.simVersion, json],
     );
   }
 

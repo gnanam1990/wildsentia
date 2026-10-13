@@ -47,6 +47,24 @@ maybe('SimHost', () => {
     await host.abort();
   });
 
+  it('checkpoints in slices: the world is held only while it is copied, and restores intact (Congo 1A.3)', async () => {
+    const host = new SimHost({ ...options(), sliceMs: 0 }); await host.boot();
+    await host.advance(1);
+    let sawBusy = false, running = true;
+    const spin = (): void => { if (!running) return; sawBusy ||= host.busy; setImmediate(spin); };
+    setImmediate(spin);
+    await host.snapshotNow();
+    running = false;
+    expect(sawBusy).toBe(true);
+    expect(host.busy).toBe(false);
+    const living = host.world.livingCount('sambar'), time = host.world.now();
+    await host.abort();
+    const restored = new SimHost(options()); const boot = await restored.boot();
+    expect(boot.restoredFrom).toBe(time);
+    expect(restored.world.livingCount('sambar')).toBe(living);
+    await restored.abort();
+  });
+
   it('boots a fresh world when there is no snapshot', async () => {
     const host = new SimHost(options());
     const result = await host.boot();

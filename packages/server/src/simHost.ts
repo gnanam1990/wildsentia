@@ -5,7 +5,7 @@ import { collectLiveEncounters, indexLiveMovements, selectLiveMovements, encount
 import {
   FOREST_FLOOR, FOREST_LANDSCAPE, FOREST_POPULATION, SIM_VERSION, islandPopulation,
   upgradeV16Snapshot, upgradeV17Snapshot, upgradeV18Snapshot, upgradeV19Snapshot, upgradeV20Snapshot, upgradeV21Snapshot, upgradeV22Snapshot, upgradeV23Snapshot, upgradeV24Snapshot, upgradeV25Snapshot, upgradeV26Snapshot, upgradeV27Snapshot, upgradeV28Snapshot, upgradeV29Snapshot, upgradeV30Snapshot, upgradeV31Snapshot, upgradeV32Snapshot, upgradeV33Snapshot, upgradeV34Snapshot, upgradeV35Snapshot, upgradeV36Snapshot, upgradeV37Snapshot,
-  createWorld, restoreSnapshot, takeSnapshot, totalNutrients, upgradeV5Snapshot, upgradeV6Snapshot, upgradeV7Snapshot, upgradeV8Snapshot, upgradeV9Snapshot, upgradeV10Snapshot, upgradeV11Snapshot, upgradeV12Snapshot, upgradeV13Snapshot, upgradeV14Snapshot, upgradeV15Snapshot, type Snapshot, type World, type WorldOptions,
+  createWorld, restoreSnapshot, snapshotJson, takeSnapshot, takeSnapshotSlices, totalNutrients, upgradeV5Snapshot, upgradeV6Snapshot, upgradeV7Snapshot, upgradeV8Snapshot, upgradeV9Snapshot, upgradeV10Snapshot, upgradeV11Snapshot, upgradeV12Snapshot, upgradeV13Snapshot, upgradeV14Snapshot, upgradeV15Snapshot, type Snapshot, type World, type WorldOptions,
 } from '@vana/sim';
 import type { Pool } from './db/pool.js';
 import { gridForProfile, isIslandProfile, type WorldGrid } from '@vana/shared';
@@ -604,11 +604,11 @@ export class SimHost {
 
   async #snapshotNow(): Promise<void> {
     await this.#flush();
-    const checkpoint = takeSnapshot(this.world);
+    const checkpoint = await this.#takeSnapshotInSlices();
     // Persist every completed hour, not just `checkpoint.community.motion` (the final hour).
     // These inserts may be retried; only the subsequent durable snapshot publishes them.
     await this.#humanMotion.append(this.#pendingHumanMotion);
-    await this.#snapshots.save(checkpoint);
+    await this.#snapshots.saveJson(checkpoint, await this.#snapshotJsonInSlices(checkpoint));
     await this.#snapshots.prune(48);
     this.#publishCheckpoint(checkpoint);
     this.#pendingHumanMotion = [];
@@ -656,6 +656,37 @@ export class SimHost {
       await this.#settlePeriodicWork();
     }
     await this.#flush();
+  }
+
+  /** A checkpoint copied in slices: the world is held (busy) until the copy is complete. */
+  async #takeSnapshotInSlices(): Promise<Snapshot> {
+    this.#busy = true;
+    try {
+      const slices = takeSnapshotSlices(this.world);
+      let started = performance.now();
+      for (;;) {
+        const next = slices.next();
+        if (next.done) return next.value;
+        if (performance.now() - started < this.#options.sliceMs) continue;
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        started = performance.now();
+      }
+    } finally {
+      this.#busy = false;
+    }
+  }
+
+  /** The copy is the host's own, so it is serialized in slices without holding the world. */
+  async #snapshotJsonInSlices(snapshot: Snapshot): Promise<string> {
+    const parts: string[] = [];
+    let started = performance.now();
+    for (const part of snapshotJson(snapshot)) {
+      parts.push(part);
+      if (performance.now() - started < this.#options.sliceMs) continue;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      started = performance.now();
+    }
+    return parts.join('');
   }
 
   /** One world hour, letting other work run every `sliceMs`; nothing changes the world meanwhile. */

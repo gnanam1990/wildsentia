@@ -70,6 +70,93 @@ export function takeSnapshot(world: World): Snapshot {
   };
 }
 
+/** How many records a slice of checkpoint work handles before yielding (Congo 1A.3). */
+const SNAPSHOT_SLICE = 1_000;
+
+function* cloneInSlices<T>(items: readonly T[]): Generator<void, T[]> {
+  const out = new Array<T>(items.length);
+  for (let i = 0; i < items.length; i++) {
+    out[i] = structuredClone(items[i]!);
+    if ((i + 1) % SNAPSHOT_SLICE === 0) yield;
+  }
+  return out;
+}
+
+/**
+ * `takeSnapshot`, in slices: the large arrays are copied a slice at a time, so a host can let
+ * other work run while a large world is checkpointed. The world must not change until it
+ * returns (the host holds commands meanwhile). The result deep-equals `takeSnapshot(world)`.
+ */
+export function* takeSnapshotSlices(world: World): Generator<void, Snapshot> {
+  const state = world.__exportState();
+  const community = world.community ? structuredClone(world.community) : null;
+  const patches = yield* cloneInSlices(world.patches);
+  const agents = yield* cloneInSlices(world.agents);
+  const microEcology = structuredClone(world.microEcology);
+  yield;
+  const carcasses = yield* cloneInSlices(world.carcasses);
+  const deceased = yield* cloneInSlices(world.deceased);
+  return {
+    ...(community ? { community } : {}),
+    simVersion: SIM_VERSION,
+    terrainProfile: world.terrainProfile,
+    worldTime: world.now(),
+    seed: state.seed,
+    patches,
+    agents,
+    ledger: { ...world.ledger },
+    waterBudget: { ...world.waterBudget },
+    microEcology,
+    agentSeq: state.agentSeq,
+    rngState: state.rngState,
+    eventSequence: world.log.exportSequence(),
+    carcasses,
+    carcassSeq: state.carcassSeq,
+    deceased,
+    groupSeq: state.groupSeq,
+    groups: structuredClone(state.groups),
+    pedigree: structuredClone(state.pedigree),
+    ...(Object.keys(world.islandArrivals).length ? { islandArrivals: { ...world.islandArrivals } } : {}),
+    ...(world.pendingArrivals.length ? { pendingArrivals: structuredClone(world.pendingArrivals) } : {}),
+  };
+}
+
+/**
+ * A snapshot as JSON, in fragments: its large arrays one slice of records at a time. Joined, the
+ * fragments are byte for byte `JSON.stringify(snapshot)`.
+ */
+export function* snapshotJson(snapshot: Snapshot): Generator<string> {
+  let pending = '';
+  // Fragments accumulate into `pending` and are handed out a slice of records at a time.
+  function* value(v: unknown): Generator<string> {
+    if (Array.isArray(v) && v.length > SNAPSHOT_SLICE) {
+      pending += '[';
+      for (let i = 0; i < v.length; i++) {
+        if (i) pending += ',';
+        yield* value(v[i]);
+        if ((i + 1) % SNAPSHOT_SLICE === 0) { yield pending; pending = ''; }
+      }
+      pending += ']';
+    } else if (v !== null && typeof v === 'object' && !Array.isArray(v) && Object.getPrototypeOf(v) === Object.prototype
+      && Object.values(v).some((x) => Array.isArray(x) && x.length > SNAPSHOT_SLICE || x !== null && typeof x === 'object' && !Array.isArray(x))) {
+      pending += '{';
+      let first = true, count = 0;
+      for (const [key, x] of Object.entries(v)) {
+        if (x === undefined || typeof x === 'function' || typeof x === 'symbol') continue;
+        pending += (first ? '' : ',') + JSON.stringify(key) + ':';
+        first = false;
+        yield* value(x);
+        if (++count % SNAPSHOT_SLICE === 0) { yield pending; pending = ''; }
+      }
+      pending += '}';
+    } else {
+      pending += JSON.stringify(v) ?? 'null';
+    }
+  }
+  yield* value(snapshot);
+  yield pending;
+}
+
 export function restoreSnapshot(snapshot: Snapshot, options: WorldOptions): World {
   if ((snapshot.community?.profile ?? 'none') !== (options.communityProfile ?? 'none'))
     throw new Error('community profile mismatch: use a new database; never add or remove a saved household silently');
