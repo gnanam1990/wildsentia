@@ -75,11 +75,13 @@ const SPECIES_NAME: Record<string, string> = {
   chital: 'chital', sambar: 'sambar', gaur: 'gaur', dhole: 'dhole', jackal: 'jackal', boar: 'wild boar',
   tiger: 'tiger', leopard: 'leopard', elephant: 'elephant', langur: 'langur', squirrel: 'giant squirrel', hare: 'hare', vulture: 'vulture',
   human: 'villager',
+  african_leopard: 'African leopard', blue_duiker: 'blue duiker', water_chevrotain: 'water chevrotain',
 };
 const speciesOf = (id: string | undefined): string | null => {
   if (!id) return null;
-  const prefix = id.split('_')[0] ?? '';
-  return SPECIES_NAME[prefix] ?? null;
+  // An id is the species and a serial (`blue_duiker_00ab`); people are `person_…`.
+  const last = id.lastIndexOf('_'), prefix = id.split('_')[0] ?? '';
+  return (last > 0 ? SPECIES_NAME[id.slice(0, last)] : undefined) ?? SPECIES_NAME[prefix] ?? null;
 };
 const an = (noun: string) => (/^[aeiou]/i.test(noun) ? `An ${noun}` : `A ${noun}`);
 
@@ -98,7 +100,7 @@ export function feedSentence(event: Record<string, unknown>): string {
       case 'hunt': return second ? (outcome === 'success' ? `${an(first)} caught ${an(second).toLowerCase()}` : `${an(first)}'s hunt for ${an(second).toLowerCase()} failed`) : `${an(first)} hunted`;
       case 'human_hunt': return outcome === 'success' ? 'Villagers brought back a catch' : 'A village hunt came back empty';
       case 'scavenged': return second ? `${an(first)} fed on ${an(second).toLowerCase()} carcass` : `${an(first)} scavenged`;
-      case 'fed': return ['tiger', 'leopard', 'dhole', 'jackal'].includes(first) ? `${an(first)} ate` : `${an(first)} grazed`;
+      case 'fed': return ['tiger', 'leopard', 'dhole', 'jackal', 'African leopard'].includes(first) ? `${an(first)} ate` : `${an(first)} grazed`;
       case 'drank': return `${an(first)} drank water`;
       case 'rested': return actors.length > 1 && first === second ? `Two ${first === 'wild boar' ? 'wild boars' : `${first}s`} rested together` : `${an(first)} rested`;
       case 'moved': return failed ? `${an(first)} changed course` : `${an(first)} moved to new ground`;

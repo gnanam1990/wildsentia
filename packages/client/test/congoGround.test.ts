@@ -32,3 +32,13 @@ describe('the Congo ground in the browser (1A.4)', () => {
     expect(p.getY(1234)).toBeCloseTo(sample(p.getX(1234), p.getZ(1234)), 3); // a float32 mesh
   });
 });
+
+describe('Congo trees (1A.4)', () => {
+  it('keep four loaded regions within the island tree budget', () => {
+    setWorldGrid(CONGO_GRID);
+    const patches = [...region(4, 4), ...region(5, 4), ...region(4, 5), ...region(5, 5)];
+    const trunks = buildTerrain(patches, new Set(['trunk'])).getObjectByName('trunk') as THREE.InstancedMesh;
+    expect(trunks.count).toBeLessThanOrEqual(120_000);
+    expect(trunks.count).toBeGreaterThan(30_000);
+  });
+});

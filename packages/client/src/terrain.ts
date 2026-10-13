@@ -46,6 +46,8 @@ export interface PatchView {
 /** Metres of relief across the full 0-1 elevation range the simulation reports. */
 const RELIEF_M = 90;
 const TREES_PER_PATCH = 300;
+/** The most far-field trees drawn at once: the island's whole forest (400 patches) at full density. */
+const TREE_BUDGET = 120_000;
 
 export function patchHeight(patch: PatchView): number {
   return (patch.elevation ?? 0.5) * RELIEF_M;
@@ -439,8 +441,11 @@ export function buildTerrain(patches: readonly PatchView[], layers?: ReadonlySet
   // Trees go where the simulation reports canopy, not where they would look nice.
   const woodedPatches = patches.filter((p) => land(p) && ((p.canopyCover ?? 0) >= 0.3
     || treeAnchorRemnantForPatch(worldGrid(), p) !== null));
-  const treeCount = woodedPatches.reduce((sum, patch) => sum + (treeAnchorRemnantForPatch(worldGrid(), patch) ? 1 : TREES_PER_PATCH), 0);
-  const liveTreeCount = woodedPatches.filter((patch) => !treeAnchorRemnantForPatch(worldGrid(), patch)).length * TREES_PER_PATCH;
+  // Congo 1A.4: several loaded regions share the budget, each patch drawing fewer trees.
+  const livePatches = woodedPatches.filter((patch) => !treeAnchorRemnantForPatch(worldGrid(), patch)).length;
+  const treesPerPatch = Math.max(1, Math.min(TREES_PER_PATCH, Math.floor(TREE_BUDGET / Math.max(1, livePatches))));
+  const treeCount = woodedPatches.reduce((sum, patch) => sum + (treeAnchorRemnantForPatch(worldGrid(), patch) ? 1 : treesPerPatch), 0);
+  const liveTreeCount = livePatches * treesPerPatch;
   const trunk = wanted('trunk') ? instanced(
     new THREE.CylinderGeometry(0.22, 0.4, 7, 6).translate(0, 3.5, 0),
     new THREE.MeshStandardMaterial({ color: 0x4a3626, roughness: 1 }),
@@ -516,7 +521,7 @@ export function buildTerrain(patches: readonly PatchView[], layers?: ReadonlySet
       seed = (seed * 1664525 + 1013904223) >>> 0;
       return seed / 4294967296;
     };
-    for (let i = 0; i < (remnant ? 1 : TREES_PER_PATCH); i++) {
+    for (let i = 0; i < (remnant ? 1 : treesPerPatch); i++) {
       const plannedX = centre.x + (random() - 0.5) * worldGrid().patchM * 0.94;
       const plannedZ = centre.z + (random() - 0.5) * worldGrid().patchM * 0.94;
       const plannedScale = 0.7 + random() * 0.9;
