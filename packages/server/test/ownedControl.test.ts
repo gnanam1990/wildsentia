@@ -49,7 +49,7 @@ maybe('who steers an owned animal', () => {
     store = new OwnershipStore(pool!, 'world-test');
     live = new LiveLayer(worldPort(() => host.world, () => 'world-test', undefined, () => host.busy), null);
     lives = new LifeService(store, host, config);
-    control = new ControlService(store, live);
+    control = new ControlService(store, live, (id) => host.world.animal(id)?.assetId);
     live.onEnded = (life) => { void control.ended(life); };
   });
 
@@ -98,5 +98,16 @@ maybe('who steers an owned animal', () => {
     live.release(owner.agentId, 'gone', 'died');
     await control.idle();
     expect(await store.openLeaseOf(lifeId)).toBeNull();
+  });
+  it('ignores a life of the same animal id in another world, and a stale notice of an ended possession', async () => {
+    const { owner, lifeId, animalId } = await ownedLife(), stranger = await person(pool!, 2), assetId = await ownedAsset(store, stranger);
+    // Another world's life once held an animal with this id: it gives its owner nothing here.
+    await pool!.query("insert into animal_lives (life_id, asset_id, animal_id, world_id, status) values (gen_random_uuid(), $1, 'blue_duiker_0003', 'other-world', 'alive')", [assetId]);
+    expect(await control.take(human(stranger), 'blue_duiker_0003')).toEqual({ ok: false, reason: 'not_owned' });
+    // A notice of a possession that ended before the current lease began never ends it.
+    const before = Date.now() - 60_000;
+    expect((await control.take(human(owner), animalId)).ok).toBe(true);
+    await control.ended({ agentId: owner.agentId, animalId, speciesId: 'blue_duiker', since: before - 1000, endedAt: before, how: 'released' });
+    expect(await holders(lifeId, animalId)).toBe(owner.agentId);
   });
 });

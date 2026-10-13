@@ -191,7 +191,8 @@ export class OwnershipStore {
   }
 
   async lifeOfAnimal(animalId: string): Promise<Life | null> {
-    const row = (await this.pool.query('select * from animal_lives where animal_id=$1', [animalId])).rows[0];
+    // This world's lives only: another world may have named an animal the same.
+    const row = (await this.pool.query('select * from animal_lives where animal_id=$1 and world_id=$2', [animalId, this.worldId])).rows[0];
     return row ? life(row) : null;
   }
 
@@ -234,10 +235,18 @@ export class OwnershipStore {
     return r ? { leaseId: r.lease_id, lifeId, holderKind: r.holder_kind, holderId: r.holder_id, startedAt: r.started_at } : null;
   }
 
-  /** Ends the life's open lease only if `holderId` holds it (a late notice never ends a newer lease). */
-  async endLeaseOf(lifeId: string, holderId: string, reason: string): Promise<boolean> {
-    return ((await this.pool.query('update control_leases set ended_at=now(), end_reason=$3 where life_id=$1 and holder_id=$2 and ended_at is null',
-      [lifeId, holderId, reason])).rowCount ?? 0) > 0;
+  /**
+   * Ends the life's open lease only if `holderId` holds it and, given `startedBy`, only a lease that
+   * began by then: a late notice of an earlier possession never ends a newer lease.
+   */
+  async endLeaseOf(lifeId: string, holderId: string, reason: string, startedBy?: Date): Promise<boolean> {
+    return ((await this.pool.query(`update control_leases set ended_at=now(), end_reason=$3 where life_id=$1 and holder_id=$2 and ended_at is null
+      and ($4::timestamptz is null or started_at <= $4)`, [lifeId, holderId, reason, startedBy ?? null])).rowCount ?? 0) > 0;
+  }
+
+  /** Whether a live identity is an outside agent or a person, or null if unknown. */
+  async agentKind(agentId: string): Promise<'agent' | 'human' | null> {
+    return ((await this.pool.query('select kind from live_agents where id=$1', [agentId])).rows[0]?.kind as 'agent' | 'human' | undefined) ?? null;
   }
 
   /** The account behind a person's live identity, with its proven wallet if any. */

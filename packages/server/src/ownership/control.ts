@@ -14,7 +14,8 @@ export type TakeResult = { ok: true; animalId: string; holder: HolderKind } | { 
 export class ControlService {
   #queue: Promise<unknown> = Promise.resolve();
 
-  constructor(private readonly store: OwnershipStore, private readonly live: LiveLayer) {}
+  /** `assetOf`: the asset the world's animal carries, if any (the sim's own record of ownership). */
+  constructor(private readonly store: OwnershipStore, private readonly live: LiveLayer, private readonly assetOf: (animalId: string) => string | undefined) {}
 
   #serial<T>(work: () => Promise<T>): Promise<T> {
     const next = this.#queue.then(work, work);
@@ -28,7 +29,8 @@ export class ControlService {
   take(who: Steerer, animalId: string): Promise<TakeResult> {
     return this.#serial(async () => {
       const life = await this.store.lifeOfAnimal(animalId);
-      if (!life || life.status !== 'alive') return { ok: false, reason: 'not_owned' };
+      // The database's life and the world's animal must name the same asset.
+      if (!life || life.status !== 'alive' || this.assetOf(animalId) !== life.assetId) return { ok: false, reason: 'not_owned' };
       const asset = (await this.store.asset(life.assetId))!;
       let holder: HolderKind | null = null;
       if (who.kind === 'human' && (await this.store.accountOfAgent(who.id))?.accountId === asset.ownerAccountId) holder = 'owner';
@@ -84,8 +86,10 @@ export class ControlService {
   /** The live layer ended a possession (death, capture, idling): an owned animal's lease ends with it. */
   ended(life: EndedLife): Promise<void> {
     return this.#serial(async () => {
+      // Already steering it again (a later take): this notice is of an earlier possession.
+      if (this.live.avatars.get(life.agentId)?.animalId === life.animalId) return;
       const owned = await this.store.lifeOfAnimal(life.animalId);
-      if (owned) await this.store.endLeaseOf(owned.lifeId, life.agentId, life.how);
+      if (owned) await this.store.endLeaseOf(owned.lifeId, life.agentId, life.how, new Date(life.endedAt));
     });
   }
 }

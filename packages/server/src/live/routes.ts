@@ -14,6 +14,7 @@ import { networkKey } from '../network.js';
 import type { AcceptResult, ChallengeEngine, Player } from '../challenges/engine.js';
 import { sameOriginJson } from '../accounts/cookies.js';
 import { MIN_X_ACCOUNT_DAYS } from '../accounts/store.js';
+import { installOwnershipRoutes, type OwnedDeps } from '../ownership/routes.js';
 
 /**
  * The agent API (docs/2026-09-26-live-agents-design.md). Everything under /agents/me is
@@ -38,6 +39,8 @@ export interface LiveRouteDeps {
   clientScriptPath: string;
   /** Signed-in people, when accounts are on: they steer animals at /play/* (docs/2026-10-09-challenges-design.md §14). */
   humans?: HumanSessions | undefined;
+  /** Congo 1C: owned animals only; who owns and steers them. */
+  owned?: OwnedDeps | undefined;
   /** ERC-8004 identities, when configured: who owns one (spec §13, plan 4b). */
   identity?: { owner(agentId: bigint): Promise<`0x${string}` | null> } | undefined;
   /** The species configs the simulation runs on, for the field guide. */
@@ -252,6 +255,14 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
           try { if (!(await holds(ctx.agent.wallet))) return reply.code(403).send({ error: 'holding_below_minimum' }); }
           catch { return reply.code(503).send({ error: 'holding_check_unavailable' }); }
         }
+        if (deps.owned) {
+          // Congo 1C: only owned animals are steered, by their owner or an agent they authorised.
+          if (!animalId) return reply.code(409).send({ error: 'owned_only' });
+          const taken = await deps.owned.control.take({ id: ctx.agent.id, kind: ctx.agent.kind, name: ctx.agent.name }, animalId);
+          if (!taken.ok) return reply.code(taken.reason === 'not_authorised' ? 403 : 409).send({ error: taken.reason });
+          const avatar = live.avatars.get(ctx.agent.id)!;
+          return { animalId: avatar.animalId, speciesId: avatar.speciesId, controller: taken.holder };
+        }
         const result = live.possess(ctx.agent.id, ctx.agent.name, { ...(animalId ? { animalId } : {}), ...(speciesId ? { speciesId } : {}) });
         if (result.ok) return { animalId: result.avatar.animalId, speciesId: result.avatar.speciesId };
         // Waiting in line for a species with none free: the agent is told its place and notified when its turn comes.
@@ -261,7 +272,8 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
 
       scope.post(`${prefix}/release`, async (req, reply) => {
         const ctx = await resolve(req, reply, commands); if (!ctx) return reply;
-        return live.release(ctx.agent.id) ? { ok: true } : reply.code(409).send({ error: 'not_possessing' });
+        const released = deps.owned ? await deps.owned.control.release(ctx.agent.id) : live.release(ctx.agent.id);
+        return released ? { ok: true } : reply.code(409).send({ error: 'not_possessing' });
       });
 
       scope.post(`${prefix}/move`, async (req, reply) => {
@@ -373,6 +385,10 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
     };
     commandRoutes('/agents/me', me);
     if (deps.humans) commandRoutes('/play', person(deps.humans));
+    if (deps.humans && deps.owned) {
+      const asPerson = person(deps.humans);
+      installOwnershipRoutes(scope, deps.owned, (req, reply) => asPerson(req, reply, commands));
+    }
 
     scope.post('/agents/me/open', async (req, reply) => {
       const ctx = await me(req, reply, commands); if (!ctx) return reply;
