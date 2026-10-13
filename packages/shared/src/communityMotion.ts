@@ -1,4 +1,4 @@
-import { isWorldPosition, type WorldPosition } from './spatial.js';
+import { ISLAND_GRID, isWorldPosition, type WorldPosition } from './grid.js';
 import type { CommunityState, HumanAction } from './types/community.js';
 
 export interface HumanMotionSample {
@@ -34,7 +34,7 @@ export function isCommunityMotion(value: unknown, community: Pick<CommunityState
     ids.add(track.personId); let previous: HumanMotionSample | null = null;
     for (const sample of track.samples) {
       if (!record(sample) || !finite(sample.seconds) || sample.seconds < 0 || sample.seconds > duration
-        || !isWorldPosition(sample.position) || typeof sample.alive !== 'boolean'
+        || !isWorldPosition(ISLAND_GRID, sample.position) || typeof sample.alive !== 'boolean'
         || !(sample.action === null || typeof sample.action === 'string' && actions.has(sample.action))
         || !(sample.phase === null || sample.phase === 'travel' || sample.phase === 'work')
         || !(sample.taskEventId === null || typeof sample.taskEventId === 'string' && sample.taskEventId.length > 0 && sample.taskEventId.length <= 128)

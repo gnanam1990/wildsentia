@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { isMovementTrace, movementAt, type MovementTrace } from '../src/movement.js';
+import { ISLAND_GRID } from '../src/grid.js';
 
 const p = (x: number, z: number, heading = 0) => ({ x, z, heading });
 const route = (): MovementTrace => ({ version: 1, actorId: 's', startWorldTime: 0, destinationPatchId: 0,
@@ -25,7 +26,7 @@ describe('recorded route interpolation', () => {
     expect(movementAt(t, 10)).toEqual({ ...p(0, 0, 1), moving: false });
   });
   it('preserves turns, section speed, exact endpoints and heading without easing the route', () => {
-    const t = route(); expect(isMovementTrace(t)).toBe(true);
+    const t = route(); expect(isMovementTrace(ISLAND_GRID, t)).toBe(true);
     expect(movementAt(t, 5)).toEqual({ ...p(50, 0, Math.PI / 2), moving: true });
     expect(movementAt(t, 10)).toEqual({ ...p(100, 0), moving: true });
     expect(movementAt(t, 20)).toEqual({ ...p(100, 50), moving: true });
@@ -36,12 +37,12 @@ describe('recorded route interpolation', () => {
   it('accepts stationary and unfinished routes without pretending they arrived', () => {
     const t = route(); t.completed = false; t.destinationPatchId = 399;
     t.samples = [t.samples[0]!];
-    expect(isMovementTrace(t)).toBe(true);
+    expect(isMovementTrace(ISLAND_GRID, t)).toBe(true);
     expect(movementAt(t, 0).moving).toBe(false);
-    t.completed = true; expect(isMovementTrace(t)).toBe(false);
+    t.completed = true; expect(isMovementTrace(ISLAND_GRID, t)).toBe(false);
   });
   it('rejects malformed, out-of-world, duplicate/reversed timestamps and excessive payloads', () => {
-    const mutate = (fn: (t: MovementTrace) => void) => { const t = route(); fn(t); expect(isMovementTrace(t)).toBe(false); };
+    const mutate = (fn: (t: MovementTrace) => void) => { const t = route(); fn(t); expect(isMovementTrace(ISLAND_GRID, t)).toBe(false); };
     mutate((t) => { t.samples[1]!.seconds = 0; });
     mutate((t) => { t.samples[2]!.seconds = 9; });
     mutate((t) => { t.samples[2]!.seconds = 3601; });
@@ -52,7 +53,7 @@ describe('recorded route interpolation', () => {
     mutate((t) => { t.destinationPatchId = -1; });
     mutate((t) => { t.samples = Array(2049).fill(t.samples[0]); });
     expect(() => movementAt(route(), NaN)).toThrow('invalid movement playhead');
-    expect(isMovementTrace(null)).toBe(false);
-    expect(isMovementTrace({ ...route(), goal: 'user-command' })).toBe(false);
+    expect(isMovementTrace(ISLAND_GRID, null)).toBe(false);
+    expect(isMovementTrace(ISLAND_GRID, { ...route(), goal: 'user-command' })).toBe(false);
   });
 });

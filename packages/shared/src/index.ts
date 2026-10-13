@@ -2,6 +2,7 @@ export const VANA_VERSION = '0.1.0';
 export * from './rng.js';
 export * from './time.js';
 export * from './spatial.js';
+export * from './grid.js';
 export * from './treeAnchor.js';
 export * from './island.js';
 export * from './encounter.js';

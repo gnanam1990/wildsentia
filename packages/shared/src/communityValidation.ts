@@ -1,5 +1,12 @@
-import { positionInPatch, isWorldPosition, patchAtPosition, patchCentre } from './spatial.js';
-import { PATCH_METRES } from './types/patch.js';
+import { ISLAND_GRID, isWorldPosition as isGridPosition, patchAtPosition as gridPatchAt, patchCentre as gridCentre,
+  positionInPatch as gridPositionInPatch, type WorldPosition } from './grid.js';
+
+// A community exists only on the island profiles, whose lattice is always the island grid.
+const positionInPatch = (value: unknown, patchId: number): value is WorldPosition => gridPositionInPatch(ISLAND_GRID, value, patchId);
+const isWorldPosition = (value: unknown): value is WorldPosition => isGridPosition(ISLAND_GRID, value);
+const patchAtPosition = (value: Parameters<typeof gridPatchAt>[1]): number => gridPatchAt(ISLAND_GRID, value);
+const patchCentre = (id: number): { x: number; z: number } => gridCentre(ISLAND_GRID, id);
+const PATCH_METRES = ISLAND_GRID.patchM;
 import { HOME_STAGES, HOME_SHELTER_THRESHOLD, type CommunityState } from './types/community.js';
 import { isCommunityMotion } from './communityMotion.js';
 

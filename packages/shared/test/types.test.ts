@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { GRID_SIZE, NUTRIENT_PER_KG_BIOMASS, PATCH_METRES, isGoalId } from '../src/index.js';
+import { NUTRIENT_PER_KG_BIOMASS, isGoalId } from '../src/index.js';
+import { ISLAND_GRID } from '../src/grid.js';
 
 describe('domain constants', () => {
   it('describes a 20x20 grid of 300m patches', () => {
-    expect(GRID_SIZE).toBe(20);
-    expect(PATCH_METRES).toBe(300);
-    expect(GRID_SIZE * GRID_SIZE).toBe(400);
+    expect(ISLAND_GRID.cols).toBe(20);
+    expect(ISLAND_GRID.patchM).toBe(300);
+    expect(ISLAND_GRID.cols * ISLAND_GRID.cols).toBe(400);
   });
 
   it('fixes the nutrient content of biomass', () => {

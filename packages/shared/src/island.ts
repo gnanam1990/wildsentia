@@ -1,5 +1,9 @@
-import { GRID_SIZE, PATCH_METRES, type Patch } from './types/patch.js';
-import { patchCentre, spatialHash, isWorldPosition, type WorldPosition } from './spatial.js';
+import type { Patch } from './types/patch.js';
+import { spatialHash } from './spatial.js';
+import { ISLAND_GRID, patchCentre, isWorldPosition, type WorldPosition } from './grid.js';
+
+// Island geometry is defined on the 20 × 20 island lattice.
+const GRID_SIZE = ISLAND_GRID.cols, PATCH_METRES = ISLAND_GRID.patchM;
 
 export type TerrainProfile = 'mainland' | 'island_v1' | 'island_v2';
 
@@ -84,13 +88,13 @@ export const landWalkable = (patch: Pick<Patch, 'surface'> | undefined): boolean
 
 /** Exact grid-boundary ray traversal. Stops just inside the last permitted land cell. */
 export function landRayDistance(patches: readonly Patch[], origin: WorldPosition, heading: number): number {
-  if (!isWorldPosition(origin) || !Number.isFinite(heading)) throw new Error('invalid land ray');
+  if (!isWorldPosition(ISLAND_GRID, origin) || !Number.isFinite(heading)) throw new Error('invalid land ray');
   const vx = Math.sin(heading), vz = Math.cos(heading);
   let col = Math.floor((origin.x + PATCH_METRES / 2) / PATCH_METRES);
   let row = Math.floor((origin.z + PATCH_METRES / 2) / PATCH_METRES);
   if (!landWalkable(patches[row * GRID_SIZE + col])) return 0;
   for (let n = 0; n <= GRID_SIZE * 2; n++) {
-    const c = patchCentre(row * GRID_SIZE + col);
+    const c = patchCentre(ISLAND_GRID, row * GRID_SIZE + col);
     const tx = Math.abs(vx) < 1e-12 ? Infinity : (c.x + Math.sign(vx) * PATCH_METRES / 2 - origin.x) / vx;
     const tz = Math.abs(vz) < 1e-12 ? Infinity : (c.z + Math.sign(vz) * PATCH_METRES / 2 - origin.z) / vz;
     const next = Math.min(tx, tz);

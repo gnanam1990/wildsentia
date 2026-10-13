@@ -1,6 +1,5 @@
-import { isWorldPosition, patchAtPosition, type WorldPosition } from './spatial.js';
+import { isWorldPosition, patchAtPosition, patchCount, type WorldGrid, type WorldPosition } from './grid.js';
 import { isGoalId, type GoalId } from './types/agent.js';
-import { PATCH_COUNT } from './types/patch.js';
 import type { EncounterAppearance } from './encounter.js';
 import { atRecordedWaterAccess } from './waterAccess.js';
 
@@ -37,7 +36,7 @@ export interface DrinkingActivity {
   litres: number;
 }
 
-export function isDrinkingActivity(value: unknown): value is DrinkingActivity {
+export function isDrinkingActivity(grid: WorldGrid, value: unknown): value is DrinkingActivity {
   if (typeof value !== 'object' || value === null) return false;
   const a = value as Record<string, unknown>;
   return a.type === 'drinking' && typeof a.eventId === 'string' && !!a.eventId
@@ -46,30 +45,30 @@ export function isDrinkingActivity(value: unknown): value is DrinkingActivity {
     && a.endSeconds > a.startSeconds && a.endSeconds <= 3600
     && typeof a.litres === 'number' && Number.isFinite(a.litres) && a.litres > 0
     // Recordings may predate sim_0.30.0, when the access point was the patch centre.
-    && isWorldPosition(a.position) && atRecordedWaterAccess(a.position, patchAtPosition(a.position));
+    && isWorldPosition(grid, a.position) && atRecordedWaterAccess(grid, a.position, patchAtPosition(grid, a.position));
 }
 
 /** Routes belong to one hourly decision. Reject teleports hidden behind equal timestamps. */
-export function isMovementTrace(value: unknown): value is MovementTrace {
+export function isMovementTrace(grid: WorldGrid, value: unknown): value is MovementTrace {
   if (typeof value !== 'object' || value === null) return false;
   const t = value as Record<string, unknown>;
   if (t.version !== 1 || typeof t.actorId !== 'string' || !t.actorId
     || typeof t.startWorldTime !== 'number' || !Number.isSafeInteger(t.startWorldTime) || t.startWorldTime < 0
     || typeof t.destinationPatchId !== 'number' || !Number.isInteger(t.destinationPatchId)
-    || t.destinationPatchId < 0 || t.destinationPatchId >= PATCH_COUNT
+    || t.destinationPatchId < 0 || t.destinationPatchId >= patchCount(grid)
     || typeof t.goal !== 'string' || !isGoalId(t.goal) || typeof t.completed !== 'boolean'
     || !Array.isArray(t.samples) || t.samples.length < 1 || t.samples.length > MAX_MOVEMENT_SAMPLES) return false;
   let previous = -1;
   for (const sample of t.samples) {
     if (typeof sample !== 'object' || sample === null || typeof sample.seconds !== 'number'
       || !Number.isFinite(sample.seconds) || sample.seconds < 0 || sample.seconds > 3600
-      || sample.seconds <= previous || !isWorldPosition(sample.position)
+      || sample.seconds <= previous || !isWorldPosition(grid, sample.position)
       || sample.altitudeM !== undefined && (typeof sample.altitudeM !== 'number'
         || !Number.isFinite(sample.altitudeM) || sample.altitudeM < 0 || sample.altitudeM > 2_000)) return false;
     previous = sample.seconds;
   }
   if (t.samples[0].seconds !== 0) return false;
-  return !t.completed || patchAtPosition(t.samples.at(-1).position) === t.destinationPatchId;
+  return !t.completed || patchAtPosition(grid, t.samples.at(-1).position) === t.destinationPatchId;
 }
 
 /** Piecewise linear time interpolation preserves the route's corners and speed changes. */
