@@ -1,4 +1,4 @@
-import { isWorldPosition, landWalkable, patchAtPosition, patchCentre, patchIdAt, treeAnchorForPatch, waterAccessPosition, type Agent, type WorldGrid } from '@vana/shared';
+import { terrainCostFor, isWorldPosition, landWalkable, patchAtPosition, patchCentre, patchIdAt, treeAnchorForPatch, waterAccessPosition, type Agent, type HabitatType, type WorldGrid } from '@vana/shared';
 import { locomotionFactor, type World } from '@vana/sim';
 import type { AnimalView, PatchView, SpeciesMotion, WorldPort } from './liveLayer.js';
 import { landRoute } from './route.js';
@@ -77,7 +77,7 @@ export function worldPort(world: () => World, worldId: () => string | null, play
       const w = world(), agent = w.animal(id), patch = patchAt(x, z);
       const cfg = agent && w.species.get(agent.speciesId);
       if (!agent || !cfg || !patch) return 1;
-      const cost = cfg.locomotion.terrainCost[patch.habitat as keyof typeof cfg.locomotion.terrainCost] ?? 1;
+      const cost = terrainCostFor(cfg, patch.habitat);
       return locomotionFactor(agent, cfg) / Math.max(1, cost);
     },
     patchAt: (x, z): PatchView | null => {
@@ -113,8 +113,7 @@ export function worldPort(world: () => World, worldId: () => string | null, play
       .map(({ patchId, x: wx, z: wz, litres }) => ({ patchId, x: wx, z: wz, litres })),
     route: (speciesId, from, to) => {
       const cfg = world().species.get(speciesId);
-      const costs = cfg?.locomotion.terrainCost as Record<string, number> | undefined;
-      return landRoute(world().grid, world().patches, from, to, (habitat) => costs?.[habitat] ?? 1);
+      return landRoute(world().grid, world().patches, from, to, (habitat) => cfg ? terrainCostFor(cfg, habitat as HabitatType) : 1);
     },
     candidates: (speciesId, limit) => world().possessionCandidates(speciesId, limit).map((a) => view(world().grid, a)),
     playedPosition: (id) => {

@@ -5,11 +5,18 @@ import { ISLAND_GRID, patchCentre, isWorldPosition, type WorldPosition } from '.
 // Island geometry is defined on the 20 × 20 island lattice.
 const ISLAND_COLS = ISLAND_GRID.cols, ISLAND_PATCH_M = ISLAND_GRID.patchM;
 
-export type TerrainProfile = 'mainland' | 'island_v1' | 'island_v2';
+export type TerrainProfile = 'mainland' | 'island_v1' | 'island_v2' | 'congo_v1';
 
 /** Both closed island profiles (sim_0.37.0 adds `island_v2`, a larger island in the same grid). */
 export const isIslandProfile = (profile: TerrainProfile | undefined): boolean =>
   profile === 'island_v1' || profile === 'island_v2';
+
+/** The 48 km Congo-inspired forest (congo_terrain_v1): a separate world, never an island. */
+export const isCongoProfile = (profile: TerrainProfile | undefined): boolean => profile === 'congo_v1';
+
+/** A closed world: no mainland exchange or population floors (the islands and Congo). */
+export const isClosedProfile = (profile: TerrainProfile | undefined): boolean =>
+  isIslandProfile(profile) || isCongoProfile(profile);
 
 /**
  * sim_0.37.0: island geometry is keyed by `Patch.islandSeed`, which every consumer (the simulation,

@@ -10,6 +10,11 @@ const habitatCost = z.object({
   rock: z.number().positive(),
   marsh: z.number().positive(),
   water: z.number().positive(),
+  // Congo habitats: optional; one left out costs as its island analogue (terrainCostFor).
+  terra_firme: z.number().positive().optional(),
+  flooded_forest: z.number().positive().optional(),
+  swamp_forest: z.number().positive().optional(),
+  bai: z.number().positive().optional(),
 });
 
 export const SpeciesConfigSchema = z

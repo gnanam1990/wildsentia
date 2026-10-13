@@ -1,4 +1,4 @@
-import { initialPosition, patchAtPosition, patchCentre, positionInPatch, landWalkable,
+import { terrainCostFor, initialPosition, patchAtPosition, patchCentre, positionInPatch, landWalkable,
   type WorldGrid, type Agent, type Patch, type SpeciesConfig, type WorldPosition, type MovementTrace, type GoalId } from '@vana/shared';
 import { approachContact } from './movement.js';
 import { locateAgent } from './spatial.js';
@@ -8,7 +8,7 @@ type Piece = { target: WorldPosition; cost: number };
 const distance = (a: WorldPosition, b: WorldPosition): number => Math.hypot(a.x - b.x, a.z - b.z);
 const costOf = (p: Patch, cfg: SpeciesConfig): number => {
   if (!landWalkable(p)) return Infinity;
-  const value = cfg.locomotion.terrainCost[p.habitat];
+  const value = terrainCostFor(cfg, p.habitat);
   return Number.isFinite(value) && value > 0 ? value : Infinity;
 };
 

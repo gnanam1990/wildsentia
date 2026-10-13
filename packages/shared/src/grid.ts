@@ -14,8 +14,8 @@ export interface WorldGrid { readonly cols: number; readonly rows: number; reado
 export const ISLAND_GRID: WorldGrid = Object.freeze({ cols: 20, rows: 20, patchM: 300, regionPatches: 20 });
 export const CONGO_GRID: WorldGrid = Object.freeze({ cols: 160, rows: 160, patchM: 300, regionPatches: 20 });
 
-/** Every existing profile is the 20 × 20 island lattice. */
-export function gridForProfile(_profile: TerrainProfile): WorldGrid { return ISLAND_GRID; }
+/** The Congo forest is 160 × 160 patches; every other profile is the 20 × 20 island lattice. */
+export function gridForProfile(profile: TerrainProfile): WorldGrid { return profile === 'congo_v1' ? CONGO_GRID : ISLAND_GRID; }
 
 export const patchCount = (g: WorldGrid): number => g.cols * g.rows;
 export const patchColRow = (g: WorldGrid, id: number): { col: number; row: number } => ({ col: id % g.cols, row: Math.floor(id / g.cols) });

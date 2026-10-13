@@ -1,4 +1,4 @@
-import type { HabitatType } from './patch.js';
+import { HABITAT_ANALOGUE, type CongoHabitat, type HabitatType, type IslandHabitat } from './patch.js';
 import type { LifeStage, SkillId } from './agent.js';
 
 export type Archetype =
@@ -28,7 +28,8 @@ export interface SpeciesConfig {
     trotMs: number;
     sprintMs: number;
     sprintStaminaS: number;
-    terrainCost: Record<HabitatType, number>;
+    /** Island habitats are required; a Congo habitat left out costs as its analogue (`terrainCostFor`). */
+    terrainCost: Record<IslandHabitat, number> & Partial<Record<CongoHabitat, number>>;
     /**
      * sim_0.37.0: climbs its patch's tree to escape a ground predator in the same patch (langur,
      * giant squirrel, leopard). Omitted: a ground animal.
@@ -243,4 +244,10 @@ export interface SpeciesConfig {
     condition?: { conditionDays: number; minBreedingCondition: number; fullBreedingCondition: number };
     dispersalDays: number;
   };
+}
+
+/** What crossing a habitat costs this species: its own figure, or its analogue's for a Congo habitat it does not name. */
+export function terrainCostFor(cfg: Pick<SpeciesConfig, 'locomotion'>, habitat: HabitatType): number {
+  const own = (cfg.locomotion.terrainCost as Partial<Record<HabitatType, number>>)[habitat];
+  return own ?? cfg.locomotion.terrainCost[HABITAT_ANALOGUE[habitat as CongoHabitat] ?? (habitat as IslandHabitat)];
 }

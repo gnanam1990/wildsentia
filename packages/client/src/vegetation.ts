@@ -1,3 +1,4 @@
+import { habitatAnalogue } from '@vana/shared';
 import { worldGrid } from './worldGrid.js';
 import * as THREE from 'three';
 import { ObstacleField, obstaclesFrom } from './obstacles.js';
@@ -227,7 +228,7 @@ export function planVegetation(
     const nearX = Math.max(0, Math.abs(centre.x - focus.x) - worldGrid().patchM / 2);
     const nearZ = Math.max(0, Math.abs(centre.z - focus.z) - worldGrid().patchM / 2);
     const nearestInPatch = Math.hypot(nearX, nearZ);
-    const mix = HABITAT_MIX[patch.habitat] ?? [];
+    const mix = HABITAT_MIX[habitatAnalogue(patch.habitat)] ?? [];
     mix.forEach(([kind, perPatch, driver], k) => {
       if (options.only !== undefined && !options.only(kind)) return;
       const kindRadius = Math.min(radiusM, options.radiusForKind?.(kind) ?? radiusM);
@@ -312,7 +313,7 @@ export class TreePlacementCache {
     const byId = new Map(patches.map((p) => [p.id, p]));
     for (const patch of patches) {
       ids.add(patch.id);
-      const counts = (HABITAT_MIX[patch.habitat] ?? []).filter(([kind]) => isTree(kind))
+      const counts = (HABITAT_MIX[habitatAnalogue(patch.habitat)] ?? []).filter(([kind]) => isTree(kind))
         .map(([kind, perPatch, driver]) => [kind, placementCount(patch, perPatch, driver)]);
       const col = patch.id % worldGrid().cols, row = Math.floor(patch.id / worldGrid().cols);
       const neighbours = [-1, 0, 1].flatMap((dr) => [-1, 0, 1].map((dc) =>

@@ -1,3 +1,4 @@
+import { habitatAnalogue } from '@vana/shared';
 import { worldGrid } from './worldGrid.js';
 import * as THREE from 'three';
 
@@ -54,7 +55,7 @@ export function patchGroundColours(patch: GroundPatch, season: string): { near: 
     // Grass decides the open ground: thick and seasonal green, thin and grazed, or dry gold.
     const open = palette.golden.clone().lerp(palette.lush, greenness)
       .lerp(palette.bare, Math.max(0, 0.35 - grassFraction(patch)) / 0.35 * 0.6);
-    switch (patch.habitat) {
+    switch (habitatAnalogue(patch.habitat)) {
       case 'rock': return palette.rock.clone();
       case 'water': return palette.water.clone();
       case 'marsh': return palette.marsh.clone().lerp(open, 0.25);
@@ -92,7 +93,7 @@ export function groundLayers(patch: GroundPatch, season: string): GroundLayers {
   if (patch.surface === 'ocean' || patch.habitat === 'water') return { litter: 0, bare: 0, moss: 0 };
   const canopy = clamp01(patch.canopyCover ?? (patch.habitat === 'shola' ? 0.8 : 0));
   const grass = grassFraction(patch), wet = SEASON_WET[season] ?? 0.5, leafFall = SEASON_LEAF_FALL[season] ?? 0.6;
-  const damp = Math.max(HABITAT_DAMP[patch.habitat] ?? 0, clamp01((patch.water ?? 0) / 60_000),
+  const damp = Math.max(HABITAT_DAMP[habitatAnalogue(patch.habitat)] ?? 0, clamp01((patch.water ?? 0) / 60_000),
     clamp01((patch.drainage?.outflowL ?? 0) / 3_000));
   if (patch.habitat === 'rock') return { litter: 0, bare: round(0.35 * (1 - grass)), moss: round(0.3 * damp * wet) };
   return {

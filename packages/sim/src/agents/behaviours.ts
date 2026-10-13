@@ -1,5 +1,5 @@
 import {
-  NUTRIENT_PER_KG_BIOMASS, edibleMass, takeEdibleMass, patchAtPosition, patchCentre, positionInPatch, atWaterAccess, waterAccessPosition, waterContactPosition, WATER_CONTACT_RADIUS_M, landRayDistance, landWalkable, treeAnchorForPatch, treeAnchorGeometry,
+  NUTRIENT_PER_KG_BIOMASS, terrainCostFor, edibleMass, takeEdibleMass, patchAtPosition, patchCentre, positionInPatch, atWaterAccess, waterAccessPosition, waterContactPosition, WATER_CONTACT_RADIUS_M, landRayDistance, landWalkable, treeAnchorForPatch, treeAnchorGeometry,
   type Agent, type Carcass, type DeathCause, type Patch, type Rng, type SkillId, type WorldGrid,
   type SpeciesConfig, type WorldTime, type WorldPosition, type MovementTrace,
 } from '@vana/shared';
@@ -430,8 +430,8 @@ function hunt(ctx: BehaviourContext): void {
 
   const preySpecies = ctx.view.speciesOf(victim.speciesId);
   const terrain = ctx.percept.patch.habitat;
-  const predatorTerrainCost = ctx.species.locomotion.terrainCost[terrain];
-  const preyTerrainCost = preySpecies.locomotion.terrainCost[terrain];
+  const predatorTerrainCost = terrainCostFor(ctx.species, terrain);
+  const preyTerrainCost = terrainCostFor(preySpecies, terrain);
   const predatorScale = locomotionFactor(ctx.agent, ctx.species);
   // A denned young that cannot yet walk does not run (sim_0.36.0); 1% keeps the solver's speeds positive.
   const preyScale = locomotionFactor(victim, preySpecies) * (cannotYetWalk(victim, preySpecies) ? 0.01 : 1);
@@ -584,7 +584,7 @@ function consume(ctx: BehaviourContext, carcass: Carcass, elapsedSeconds = 0, ca
   const radius = Math.max(0.35, ctx.species.body.shoulderHeightM * 0.65);
   const habitat = ctx.patches[ctx.agent.patchId]!.habitat;
   const speed = ctx.species.locomotion.walkMs * locomotionFactor(ctx.agent, ctx.species)
-    * Math.max(0.15, 1 - ctx.agent.drives.fatigue * 0.5) / ctx.species.locomotion.terrainCost[habitat];
+    * Math.max(0.15, 1 - ctx.agent.drives.fatigue * 0.5) / terrainCostFor(ctx.species, habitat);
   const movement = approachContact(ctx.view.grid, from, target, speed, secondsAvailable, radius);
   ctx.agent.position = movement.position;
   const nextPatch = patchAtPosition(ctx.view.grid, movement.position);

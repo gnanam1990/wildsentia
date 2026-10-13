@@ -1,4 +1,5 @@
 import { spatialHash } from './spatial.js';
+import { habitatAnalogue } from './types/patch.js';
 import { patchCentre, patchCount, type WorldGrid } from './grid.js';
 
 /** A small authoritative subset of trees, not an inventory of decorative vegetation. */
@@ -48,10 +49,10 @@ export function treeAnchorForPatch(grid: WorldGrid, patch: TreeAnchorPatch): Tre
   if (!geometry || patch.surface === 'coast' || patch.surface === 'ocean'
     || !(patch.canopyCover !== undefined && Number.isFinite(patch.canopyCover)
       && patch.canopyCover >= 0.3 && patch.canopyCover <= 1)
-    || (patch.habitat !== 'shola' && patch.habitat !== 'riparian')) return null;
+    || (habitatAnalogue(patch.habitat) !== 'shola' && habitatAnalogue(patch.habitat) !== 'riparian')) return null;
   return {
     ...geometry,
-    visualKind: patch.habitat === 'shola' ? 'CommonTree_1' : 'TwistedTree_1',
+    visualKind: habitatAnalogue(patch.habitat) === 'shola' ? 'CommonTree_1' : 'TwistedTree_1',
     visualScale: 1.8,
   };
 }
@@ -59,7 +60,7 @@ export function treeAnchorForPatch(grid: WorldGrid, patch: TreeAnchorPatch): Tre
 /** A non-climbable standing remnant keeps a previously occupied trunk visible after canopy loss. */
 export function treeAnchorRemnantForPatch(grid: WorldGrid, patch: TreeAnchorPatch): TreeAnchorGeometry | null {
   if (patch.surface === 'coast' || patch.surface === 'ocean'
-    || (patch.habitat !== 'shola' && patch.habitat !== 'riparian')
+    || (habitatAnalogue(patch.habitat) !== 'shola' && habitatAnalogue(patch.habitat) !== 'riparian')
     || patch.canopyCover === undefined || !Number.isFinite(patch.canopyCover)
     || patch.canopyCover < 0 || patch.canopyCover > 1
     || treeAnchorForPatch(grid, patch)) return null;

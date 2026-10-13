@@ -24,8 +24,10 @@ export function islandFreshwaterBasinIds(patches: readonly Patch[]): number[] {
   const existing = land.filter(p => p.habitat === 'water').map(p => p.id);
   if (hasSeparatedPair(patches, existing)) return [];
 
+  // Island patches only; the Congo forest never reaches this.
   const habitatPriority: Record<HabitatType, number> = {
     marsh: 0, riparian: 1, shola: 2, grassland: 3, rock: 4, water: 5,
+    swamp_forest: 0, flooded_forest: 1, terra_firme: 2, bai: 3,
   };
   const candidates = land.filter(p => p.habitat !== 'water').sort((a, b) =>
     habitatPriority[a.habitat] - habitatPriority[b.habitat]
@@ -52,6 +54,11 @@ const CAPACITY_BY_HABITAT: Record<HabitatType, { grass: number; browse: number }
   marsh:     { grass: 3500, browse: 900 },
   rock:      { grass: 300,  browse: 200 },
   water:     { grass: 0,    browse: 0 },
+  // congo_terrain_v1 (spec §1): closed dry forest, seasonally flooded forest, swamp forest, open bai.
+  terra_firme:    { grass: 800,  browse: 7500 },
+  flooded_forest: { grass: 2500, browse: 5000 },
+  swamp_forest:   { grass: 3000, browse: 2500 },
+  bai:            { grass: 8000, browse: 600 },
 };
 
 function habitatFor(elevation: number, moisture: number): HabitatType {

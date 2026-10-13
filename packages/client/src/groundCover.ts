@@ -1,3 +1,4 @@
+import { habitatAnalogue } from '@vana/shared';
 import { worldGrid } from './worldGrid.js';
 import * as THREE from 'three';
 import { spatialHash } from '@vana/shared';
@@ -77,11 +78,11 @@ function* visitGroundCover(
         // An island patch's water is its pool, not the whole patch as on the mainland plane.
         const pool = pools.get(patch.id);
         if (pool ? insidePool(pool, x, z, BANK_CLEAR_M(pool)) : patch.water > 20_000) continue;
-        const vigour = Math.min(1, patch.grass / (CAPACITY[patch.habitat] ?? 9000));
+        const vigour = Math.min(1, patch.grass / (CAPACITY[habitatAnalogue(patch.habitat)] ?? 9000));
         // Under a clump of trees the floor is shaded litter; grass crowds into the light gaps.
         // Same stand pattern as the trees (forestStructure.ts); the patch biomass still caps it.
         const open = coverOpenness(patch.habitat, x, z);
-        if (random() > Math.sqrt(vigour) * (DENSITY[patch.habitat] ?? 0) * open) continue;
+        if (random() > Math.sqrt(vigour) * (DENSITY[habitatAnalogue(patch.habitat)] ?? 0) * open) continue;
         const rotation = random() * Math.PI * 2;
         // Broad, coherent patches break up the identical height/colour of a planted lawn.
         // This is visual variation only; the server's biomass remains authoritative.
