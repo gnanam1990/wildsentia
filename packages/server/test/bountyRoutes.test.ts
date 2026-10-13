@@ -89,6 +89,8 @@ maybe('bounties over the API', () => {
     const published = (await asAdmin('POST', `/congo/admin/bounties/${draft.bountyId}/publish`)).json();
     expect(published).toMatchObject({ status: 'active', rulesHash: expect.stringMatching(/^[0-9a-f]{64}$/) });
 
+    // The public routes serve the last checkpoint: take one that holds the owned animals (as a spawn does in the server).
+    await host.snapshotNow();
     // Public: species, region, amount and time left; never the animal, its life or its owner.
     const list = (await app.inject({ method: 'GET', url: '/congo/bounties' })).json();
     expect(list.bounties).toEqual([expect.objectContaining({ bountyId: draft.bountyId, speciesId: 'blue_duiker', amountAtomic: '10000000' })]);
@@ -104,6 +106,12 @@ maybe('bounties over the API', () => {
     const gateway = new Gateway(host), socket = new FakeSocket();
     gateway.handle(socket); gateway.disconnect(socket);
     bodies.push(...socket.raw);
+    // Nothing public says which animals are owned (that would narrow a bounty's target without sensing it).
+    for (const body of bodies) {
+      expect(body.includes('assetId')).toBe(false);
+      expect(body.includes('ownedDeath')).toBe(false);
+      expect(body.includes('"owned"')).toBe(false);
+    }
     for (const body of bodies) {
       expect(body.includes(draft.bountyId)).toBe(false);
       expect(body.includes(duiker.lifeId)).toBe(false);

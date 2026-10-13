@@ -19,7 +19,8 @@ describe('owned animals', () => {
     expect(duiker.patchId).toBe(patchId);
     expect(['adult', 'elder']).toContain(duiker.lifeStage);
     const event = world.log.all().find((e) => e.type === 'agent_spawned' && e.actors[0] === duiker.id)!;
-    expect(event.conditions.owned).toBe(1);
+    // The public log does not say it is owned: that would point bounty hunters at owned animals.
+    expect(event.conditions.owned).toBeUndefined();
     expect(() => world.spawnOwned('blue_duiker', world.patches.find((p) => p.habitat === 'water' && p.deepWater)!.id, 'asset-2')).toThrow();
     expect(() => world.spawnOwned('tiger', patchId, 'asset-3')).toThrow();
   });

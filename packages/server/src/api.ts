@@ -1,5 +1,5 @@
 import Fastify, { type FastifyError, type FastifyInstance, type FastifyRequest } from 'fastify';
-import { RECAP_EVENT_TYPES, SKILL_IDS, formatWorldTime, seasonAt, thoughtFor, type Agent, type Patch } from '@vana/shared';
+import { RECAP_EVENT_TYPES, SKILL_IDS, formatWorldTime, isCongoProfile, seasonAt, thoughtFor, type Agent, type Patch } from '@vana/shared';
 import { confidenceOf } from '@vana/sim';
 import type { Pool } from './db/pool.js';
 import { EventStore } from './db/eventStore.js';
@@ -243,7 +243,10 @@ export function buildApi({ host, pool, narrator, insights: insightDeps, live, re
   app.get<{ Params: { id: string } }>('/animals/:id', async (request, reply) => {
     const agent = observed(request).animal(request.params.id);
     if (!agent) return reply.code(404).send({ error: 'not_found' });
-    return agent;
+    // Congo 1D: nothing public says an animal is owned (or steered, which implies it there):
+    // that would point bounty hunters at a target they have not sensed.
+    const { assetId: _asset, ownedDeath: _death, ...shown } = agent;
+    return isCongoProfile(host.world.terrainProfile) ? (({ controller: _c, ...rest }) => rest)(shown) : shown;
   });
 
   /**

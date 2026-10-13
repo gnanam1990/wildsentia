@@ -43,7 +43,12 @@ export class BountyEngine {
    */
   constructor(private readonly bounties: BountyStore, private readonly ownership: OwnershipStore, private readonly host: { readonly world: World },
     private readonly settlement: SettlementAdapter, private readonly rate: () => number,
-    private readonly eventsOf: (animalIds: string[], from: number, to: number) => Promise<unknown[]> = async () => []) {}
+    private readonly eventsOf: (animalIds: string[], from: number, to: number) => Promise<unknown[]> = async () => [],
+    /**
+     * The world time viewers and live hunters are at: the hour being played trails the world's
+     * own clock by up to an hour, and a live kill inside that hour may still beat the deadline.
+     */
+    private readonly played: () => number = () => this.host.world.now()) {}
 
   #serial<T>(work: () => Promise<T>): Promise<T> {
     const next = this.#queue.then(work, work);
@@ -121,6 +126,11 @@ export class BountyEngine {
   adjudicate(now: Date = new Date()): Promise<Decision[]> {
     return this.#serial(async () => {
       const decisions: Decision[] = [];
+      // A bounty an earlier world left open can never be decided here: its reservation returns.
+      for (const b of await this.bounties.activeElsewhere()) {
+        if (await this.bounties.decide(b.bountyId, { outcome: 'void', payeeWallet: null, winnerAnimalId: null, worldTime: b.publishedWorldTime ?? 0 }))
+          decisions.push({ bountyId: b.bountyId, outcome: 'void', payeeWallet: null });
+      }
       for (const b of await this.bounties.active()) {
         if (b.status !== 'active') continue;
         const decision = await this.#decide(b, now);
@@ -136,13 +146,14 @@ export class BountyEngine {
     const survives = async (): Promise<Decision | null> => {
       // Deadlines are in world time; an outage that stretched the real window far beyond its due is held for review.
       const dueMs = b.windowWorldSeconds / 3600 / Math.max(1e-9, this.rate()) * 3_600_000;
-      if (b.publishedAt && now.getTime() - b.publishedAt.getTime() > OUTAGE_FACTOR * dueMs) {
+      if (!b.holdCleared && b.publishedAt && now.getTime() - b.publishedAt.getTime() > OUTAGE_FACTOR * dueMs) {
         await this.bounties.hold(b.bountyId, 'outage: the real time far exceeded the world-time window');
         return { bountyId: b.bountyId, outcome: 'on_hold', payeeWallet: null };
       }
       return this.#close(b, { outcome: 'survived', payeeWallet: b.targetOwnerWallet, winnerAnimalId: b.targetAnimalId, worldTime: deadline });
     };
-    if (animal?.alive && animal.assetId === b.targetAssetId) return world.now() >= deadline ? survives() : null;
+    // Alive at the deadline only once the hour being played has reached it: a live kill may still come before.
+    if (animal?.alive && animal.assetId === b.targetAssetId) return world.now() >= deadline && this.played() >= deadline ? survives() : null;
     const death = animal && !animal.alive ? animal.ownedDeath : undefined;
     if (death && death.at > deadline) return survives();
     if (death?.cause === 'predation' && death.killerId) {

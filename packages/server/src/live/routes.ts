@@ -16,6 +16,7 @@ import { sameOriginJson } from '../accounts/cookies.js';
 import { MIN_X_ACCOUNT_DAYS } from '../accounts/store.js';
 import { installOwnershipRoutes, type OwnedDeps } from '../ownership/routes.js';
 import { installBountyRoutes, type BountyDeps } from '../bounties/routes.js';
+import { motionOf } from '../bounties/discovery.js';
 
 /**
  * The agent API (docs/2026-09-26-live-agents-design.md). Everything under /agents/me is
@@ -415,9 +416,8 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
   /** Congo 1D: what this animal senses (sight, smell, hearing), each bounty target it senses flagged. */
   function sensed(agentId: string, avatar: { animalId: string; speciesId: string; x: number; z: number }) {
     const near = world.nearby(avatar.x, avatar.z, 900, 120).filter((a) => a.id !== avatar.animalId).map((a) => {
-      const p = live.positionOf(a.id) ?? a.position, runner = live.wild.get(a.id);
-      const moving = !!runner && runner.mode !== 'idle' || a.state === 'travelling' || a.state === 'fleeing' || a.state === 'chasing' || a.state === 'stalking';
-      return { id: a.id, x: p.x, z: p.z, moving, running: !!runner && runner.mode !== 'idle' || a.state === 'fleeing' || a.state === 'chasing' };
+      const p = live.positionOf(a.id) ?? a.position;
+      return { id: a.id, x: p.x, z: p.z, ...motionOf(a, live.wild.get(a.id), live.avatars.byAnimal(a.id)) };
     }).filter((a) => Math.hypot(a.x - avatar.x, a.z - avatar.z) <= 400);
     return deps.bounties!.discovery.view(agentId, avatar, near, { canopyAt: (x, z) => world.patchAt(x, z)?.canopyCover ?? 0, worldTime: world.now() });
   }
@@ -455,7 +455,9 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
         .map((a) => ({ a, p: live.positionOf(a.id) ?? a.position }))
         .map(({ a, p }) => ({ a, p, d: dist(p.x, p.z)! }))
         // Congo 1D: only what the animal senses, however near; elsewhere everything within 200 m.
-        .filter(({ a, d }) => sensedBy ? sensedBy.has(a.id) : d <= 200).sort((x, y) => x.d - y.d).slice(0, 30)
+        .filter(({ a, d }) => sensedBy ? sensedBy.has(a.id) : d <= 200)
+        // A sensed bounty target leads, then nearest first: a crowd never pushes it out.
+        .sort((x, y) => Number(!!sensedBy?.get(y.a.id)?.bounty) - Number(!!sensedBy?.get(x.a.id)?.bounty) || x.d - y.d).slice(0, 30)
         .map(({ a, p, d }) => {
           const runner = live.wild.get(a.id), s = sensedBy?.get(a.id);
           return { id: a.id, speciesId: a.speciesId, x: Math.round(p.x * 10) / 10, z: Math.round(p.z * 10) / 10, distance: d,

@@ -94,10 +94,12 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
       for (const e of host.world.log.all()) if (e.worldTime >= from && e.worldTime <= to && e.actors.some((a) => ids.includes(a))) seen.set(e.id, e);
       return [...seen.values()].sort((a, b) => a.worldTime - b.worldTime || a.id.localeCompare(b.id));
     };
-    const engine = new BountyEngine(store, owned.store, host, new DevSettlementAdapter(store), () => host.worldHoursPerRealHour, eventsOf);
+    // The hour being played (what viewers and live hunters see) trails the world's clock by up to an hour.
+    const played = () => { const f = host.liveEncounterFrame(); return f ? f.startWorldTime + f.elapsedWorldSeconds : host.world.now(); };
+    const engine = new BountyEngine(store, owned.store, host, new DevSettlementAdapter(store), () => host.worldHoursPerRealHour, eventsOf, played);
     owned.bountyActive = async (lifeId) => (await store.activeOnLife(lifeId)) !== null;
     return { store, engine, discovery: new BountyDiscovery(store, () => host.worldId ?? 'unknown'), adminToken: env.VANA_BOUNTY_ADMIN_TOKEN?.trim() || null,
-      now: () => host.world.now() };
+      now: played };
   })() : null;
   live.onHunt = (hunt) => {
     if (bounties && hunt.killed) void bounties.engine.adjudicate().catch((e) => console.error('[bounty] adjudicate failed', e));

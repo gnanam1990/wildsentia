@@ -1064,7 +1064,8 @@ export class World {
     if (!assetId) throw new Error('asset id required');
     const eligible = cfg.locomotion.swims ? this.#waterMarginPatches : this.#dryLandPatches;
     if (!eligible.some((p) => p.id === patchId)) throw new Error(`${speciesId} cannot be placed on patch ${patchId}`);
-    const agent = this.#spawn(speciesId, false, false, { patchId, at: this.#time, conditions: { owned: 1 } });
+    // Logged as any founder is: the public log never says which animals are owned (Congo 1D).
+    const agent = this.#spawn(speciesId, false, false, { patchId, at: this.#time, conditions: {} });
     agent.assetId = assetId;
     return agent;
   }

@@ -33,11 +33,13 @@ afterAll(async () => { await host?.abort(); await pool?.end(); });
 maybe('bounty scenarios', () => {
   let ownership: OwnershipStore, lives: LifeService, bounties: BountyStore, engine: BountyEngine;
   let n = 0;
-  const fresh = () => { bounties = new BountyStore(pool!, 'world-test'); engine = new BountyEngine(bounties, ownership, host, new DevSettlementAdapter(bounties), () => 12); };
+  let played: (() => number) | undefined;
+  const fresh = () => { bounties = new BountyStore(pool!, 'world-test'); engine = new BountyEngine(bounties, ownership, host, new DevSettlementAdapter(bounties), () => 12, undefined, () => (played ?? (() => host.world.now()))()); };
   beforeEach(async () => {
     await pool!.query('truncate bounty_records, bounty_entrants, bounty_settlements, bounties, control_leases, asset_agent_grants, animal_lives, animal_assets, sim_ledger, sim_purchases, accounts, live_agents cascade');
     ownership = new OwnershipStore(pool!, 'world-test');
     lives = new LifeService(ownership, host, config);
+    played = undefined;
     fresh();
   });
   const fund = (amount = 1_000_000_000n) => ownership.ledgerPost(pool!, [{ category: 'reward_pool', amountAtomic: amount, decimals: 6, ref: 'test top-up' }]);
@@ -194,5 +196,42 @@ maybe('bounty scenarios', () => {
     // 3600 world seconds at 12 world hours per real hour is five real minutes; an hour later is an outage.
     expect(await engine.adjudicate(new Date(Date.now() + 3_600_000))).toEqual([{ bountyId: b.bountyId, outcome: 'on_hold', payeeWallet: null }]);
     expect((await bounties.get(b.bountyId))!.status).toBe('on_hold');
+  });
+  it('pays survival after an admin resumes a held bounty', async () => {
+    await fund();
+    const [prey] = await people();
+    const b = await published((await owned(prey, 'blue_duiker')).animalId, 3600);
+    await host.advance(1);
+    const late = new Date(Date.now() + 3_600_000);
+    expect((await engine.adjudicate(late))[0]!.outcome).toBe('on_hold');
+    expect(await bounties.resume(b.bountyId)).toBe(true);
+    expect(await engine.adjudicate(late)).toEqual([{ bountyId: b.bountyId, outcome: 'survived', payeeWallet: prey.wallet }]);
+  });
+
+  it('decides survival only once the hour being played has passed the deadline', async () => {
+    await fund();
+    const [prey] = await people();
+    const b = await published((await owned(prey, 'blue_duiker')).animalId, 3600);
+    await host.advance(1);
+    // The world has stepped past the deadline, but viewers and live hunters are still in the hour before it.
+    played = () => b.deadlineWorldTime! - 600;
+    expect(await engine.adjudicate()).toEqual([]);
+    played = () => b.deadlineWorldTime!;
+    expect((await engine.adjudicate())[0]).toMatchObject({ outcome: 'survived' });
+  });
+
+  it('voids a bounty left active by an earlier world, returning its reservation and unlocking the asset', async () => {
+    await fund(10_000_000n);
+    const [prey] = await people();
+    const duiker = await owned(prey, 'blue_duiker');
+    const old = new BountyStore(pool!, 'old-world');
+    const oldEngine = new BountyEngine(old, ownership, host, new DevSettlementAdapter(old), () => 12);
+    const d = await oldEngine.draft({ targetAnimalId: duiker.animalId, preset: 'standard' });
+    if (!d.ok) throw new Error(d.reason);
+    expect((await oldEngine.publish(d.bounty.bountyId)).ok).toBe(true);
+    expect(await ownership.poolBalance()).toBe(0n);
+    expect(await engine.adjudicate()).toEqual([{ bountyId: d.bounty.bountyId, outcome: 'void', payeeWallet: null }]);
+    expect(await ownership.poolBalance()).toBe(10_000_000n);
+    expect((await ownership.asset(duiker.assetId))!.status).toBe('active');
   });
 });

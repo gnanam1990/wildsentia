@@ -20,6 +20,8 @@ export interface Bounty {
   eligiblePredators: string[]; rules: Record<string, unknown>; rulesHash: string | null; validation: Record<string, unknown> | null;
   outcome: Outcome | null; winnerWallet: string | null; winnerAnimalId: string | null; decidedWorldTime: number | null;
   adjudicatedAt: Date | null; cancelReason: string | null; holdReason: string | null; createdAt: Date;
+  /** An admin resumed it after an outage hold: decided normally from then on. */
+  holdCleared: boolean;
 }
 export interface Settlement { settlementId: string; bountyId: string; payeeWallet: string; amountAtomic: bigint; decimals: number; status: 'intent' | 'recorded' }
 
@@ -35,6 +37,7 @@ const bounty = (r: Record<string, unknown>): Bounty => ({
   validation: r.validation as Record<string, unknown> | null, outcome: r.outcome as Outcome | null, winnerWallet: r.winner_wallet as string | null,
   winnerAnimalId: r.winner_animal_id as string | null, decidedWorldTime: n(r.decided_world_time), adjudicatedAt: r.adjudicated_at as Date | null,
   cancelReason: r.cancel_reason as string | null, holdReason: r.hold_reason as string | null, createdAt: r.created_at as Date,
+  holdCleared: r.hold_cleared === true,
 });
 const settlement = (r: Record<string, unknown>): Settlement => ({ settlementId: r.settlement_id as string, bountyId: r.bounty_id as string,
   payeeWallet: r.payee_wallet as string, amountAtomic: BigInt(r.amount_atomic as string), decimals: r.decimals as number, status: r.status as 'intent' | 'recorded' });
@@ -82,6 +85,11 @@ export class BountyStore {
   /** Active (and held) bounties of this world. */
   async active(): Promise<Bounty[]> {
     return (await this.pool.query("select * from bounties where world_id=$1 and status in ('active','on_hold') order by published_at", [this.worldId])).rows.map(bounty);
+  }
+
+  /** Bounties left active or held by an earlier world (founded again since). */
+  async activeElsewhere(): Promise<Bounty[]> {
+    return (await this.pool.query("select * from bounties where world_id<>$1 and status in ('active','on_hold')", [this.worldId])).rows.map(bounty);
   }
 
   /** The active bounty on a life, if any. */
@@ -143,7 +151,7 @@ export class BountyStore {
 
   /** Releases a held bounty back to adjudication (an admin's review). */
   async resume(bountyId: string): Promise<boolean> {
-    return ((await this.pool.query("update bounties set status='active', hold_reason=null where bounty_id=$1 and status='on_hold'", [bountyId])).rowCount ?? 0) > 0;
+    return ((await this.pool.query("update bounties set status='active', hold_reason=null, hold_cleared=true where bounty_id=$1 and status='on_hold'", [bountyId])).rowCount ?? 0) > 0;
   }
 
   /**
