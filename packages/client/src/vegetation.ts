@@ -322,7 +322,8 @@ export class TreePlacementCache {
         treeAnchorRemnantForPatch(worldGrid(), patch) !== null, neighbours]);
       let entry = this.#patches.get(patch.id);
       if (!entry || entry.key !== key) {
-        entry = { key, plan: planVegetation([patch], { x: 2850, z: 2850 }, 4500, groundAt, { only: isTree, canopyAt }) };
+        // Every tree of the patch: planned from its own centre, out past its corners (any world size).
+        entry = { key, plan: planVegetation([patch], patchCentre(worldGrid(), patch.id), worldGrid().patchM * 1.5, groundAt, { only: isTree, canopyAt }) };
         this.#patches.set(patch.id, entry);
       }
       order.push(entry);

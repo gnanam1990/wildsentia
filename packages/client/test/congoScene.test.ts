@@ -32,4 +32,18 @@ describe('a Congo region scene in the browser', () => {
     expect(updates.receive(scene([congoPatch(0), congoPatch(1, 'terra_firme', { congoSeed: undefined, islandSeed: 3 })]), 0)).toBe(false);
     setWorldGrid(ISLAND_GRID);
   });
+  it('prepares the ground again when the regions change within one checkpoint', async () => {
+    const prepared: number[][] = [];
+    const updates = new SceneUpdates<number[]>({
+      async prepare(env) { const ids = env.patches.map((p) => p.id); prepared.push(ids); return ids; },
+      commit() {}, discard() {}, status: vi.fn() });
+    const settle = async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); };
+    expect(updates.receive(scene([congoPatch(12_880)]), 0)).toBe(true);
+    await settle();
+    // The viewer moved: the same checkpoint, now region r3_3 and its patches.
+    expect(updates.receive({ ...scene([congoPatch(9_660)]), regions: ['r3_3'] }, 1)).toBe(true);
+    await settle();
+    expect(prepared).toEqual([[12_880], [9_660]]);
+    setWorldGrid(ISLAND_GRID);
+  });
 });

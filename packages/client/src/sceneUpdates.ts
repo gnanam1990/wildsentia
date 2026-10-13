@@ -86,6 +86,7 @@ export class SceneUpdates<Prepared> {
   #received: SceneUpdate | null = null;
   #pending: SceneUpdate | null = null;
   #committedId: string | null = null;
+  #committedEnvironment: SceneEnvironment | null = null;
   #generation = 0;
   #running = false;
   constructor(private readonly hooks: {
@@ -96,7 +97,7 @@ export class SceneUpdates<Prepared> {
   }) {}
 
   reset(): void {
-    this.#generation++; this.#received = null; this.#pending = null; this.#committedId = null;
+    this.#generation++; this.#received = null; this.#pending = null; this.#committedId = null; this.#committedEnvironment = null;
     this.hooks.status('stale');
   }
 
@@ -140,16 +141,18 @@ export class SceneUpdates<Prepared> {
         const generation = this.#generation;
         let prepared: Prepared | undefined;
         try {
-          if (update.checkpointId !== this.#committedId) {
+          // A new checkpoint, or (Congo 1A.4) other regions of the same one: new ground to draw.
+          if (update.checkpointId !== this.#committedId || update.environment !== this.#committedEnvironment) {
             this.hooks.status('loading'); prepared = await this.hooks.prepare(update.environment);
           }
           const latest = this.#pending as SceneUpdate | null;
-          if (generation !== this.#generation || (latest && latest.checkpointId !== update.checkpointId)) {
+          if (generation !== this.#generation || (latest && (latest.checkpointId !== update.checkpointId
+            || latest.environment !== update.environment))) {
             if (prepared !== undefined) this.hooks.discard(prepared);
             continue;
           }
           if (latest) { update = latest; this.#pending = null; }
-          this.hooks.commit(update, prepared); this.#committedId = update.checkpointId;
+          this.hooks.commit(update, prepared); this.#committedId = update.checkpointId; this.#committedEnvironment = update.environment;
           this.hooks.status('ready');
         } catch {
           if (prepared !== undefined) this.hooks.discard(prepared);

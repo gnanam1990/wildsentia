@@ -1029,7 +1029,9 @@ function frame(): void {
 /** Tells the server where the camera looks, so it sends the agents there; at most once a second. */
 let viewSentAt = 0, viewSent: { x: number; z: number; radius: number } | null = null;
 function sendView(force = false): void {
-  if (socket?.readyState !== WebSocket.OPEN) return;
+  // Before a scene is drawn the camera is at its default spot, not where the viewer looks; on a
+  // regional world that would load (and then, ten seconds later, unload) a far corner (Congo 1A.4).
+  if (socket?.readyState !== WebSocket.OPEN || terrainRoot === null) return;
   const now = performance.now();
   const view = { x: follow.target.x, z: follow.target.z, radius: Math.min(1500, Math.max(300, follow.distance * 2.5 + 200)) };
   const moved = !viewSent || Math.hypot(view.x - viewSent.x, view.z - viewSent.z) > 25 || Math.abs(view.radius - viewSent.radius) > viewSent.radius * 0.2;
