@@ -1,0 +1,174 @@
+{
+  "id": "water_chevrotain",
+  "displayName": "Water chevrotain",
+  "archetype": "herd_grazer",
+  "trophicRole": [
+    "browser"
+  ],
+  "body": {
+    "adultMassKg": 11,
+    "shoulderHeightM": 0.35,
+    "massBySexKg": {
+      "female": 12,
+      "male": 9.7
+    }
+  },
+  "locomotion": {
+    "walkMs": 0.5,
+    "trotMs": 2.5,
+    "sprintMs": 6.0,
+    "sprintStaminaS": 3,
+    "swims": {
+      "swimMs": 0.7,
+      "diveSeconds": 240
+    },
+    "terrainCost": {
+      "shola": 1.2,
+      "grassland": 1.5,
+      "riparian": 0.9,
+      "rock": 1.8,
+      "marsh": 1.0,
+      "water": 0.8,
+      "terra_firme": 1.2,
+      "flooded_forest": 0.9,
+      "swamp_forest": 1.0,
+      "bai": 1.4
+    },
+    "floodedTerrainCost": {
+      "flooded_forest": 0.8,
+      "water": 0.8
+    }
+  },
+  "senses": {
+    "sightRangeM": 20,
+    "hearingRangeM": 60,
+    "smellRangeM": 80
+  },
+  "escape": {
+    "detectionDistanceM": 25,
+    "flightInitiationM": 10,
+    "evasiveness": 0.6,
+    "freezeFirst": true
+  },
+  "diet": {
+    "eats": [
+      {
+        "target": "roots",
+        "preference": 1.0
+      },
+      {
+        "target": "browse",
+        "preference": 0.33,
+        "foodValue": 0.7
+      }
+    ],
+    "dailyIntakeKg": 0.9,
+    "maxDailyIntakeKg": 1.4,
+    "waterNeedLPerDay": 0.5,
+    "canScavenge": false,
+    "carrionTolerance": 0.0
+  },
+  "social": {
+    "structure": "solitary",
+    "groupSize": [
+      1,
+      1
+    ],
+    "alarmSharing": false
+  },
+  "activity": {
+    "hourly": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      0.6,
+      0.3,
+      0.15,
+      0.15,
+      0.15,
+      0.15,
+      0.15,
+      0.15,
+      0.15,
+      0.15,
+      0.15,
+      0.15,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ]
+  },
+  "learning": {
+    "innate": {
+      "forage_efficiency": 0.3,
+      "water_locations": 0.25,
+      "predator_avoidance": 0.35
+    },
+    "learnRateFromParent": 0.02
+  },
+  "lifecycle": {
+    "followFromDays": 14,
+    "forageFromDays": 21,
+    "drinkFromDays": 30,
+    "maxAgeDays": 4800,
+    "baselineMortalityPerDay": 0.0004,
+    "condition": {
+      "conditionDays": 30,
+      "minBreedingCondition": 0.2,
+      "fullBreedingCondition": 0.6
+    },
+    "stages": [
+      {
+        "name": "newborn",
+        "startDays": 0,
+        "sizeFactor": 0.1,
+        "dependent": true,
+        "mortalityPerDay": 0.004
+      },
+      {
+        "name": "juvenile",
+        "startDays": 30,
+        "sizeFactor": 0.35,
+        "dependent": true,
+        "mortalityPerDay": 0.002
+      },
+      {
+        "name": "subadult",
+        "startDays": 120,
+        "sizeFactor": 0.7,
+        "dependent": false,
+        "mortalityPerDay": 0.001
+      },
+      {
+        "name": "adult",
+        "startDays": 400,
+        "sizeFactor": 1.0,
+        "dependent": false,
+        "mortalityPerDay": 0.0004
+      },
+      {
+        "name": "elder",
+        "startDays": 4300,
+        "sizeFactor": 0.95,
+        "dependent": false,
+        "mortalityPerDay": 0.002
+      }
+    ],
+    "sexualMaturityDays": 400,
+    "gestationDays": 230,
+    "litterSize": [
+      1,
+      1
+    ],
+    "interBirthIntervalDays": 365,
+    "oestrusCycleDays": 21,
+    "weanDays": 120,
+    "dispersalDays": 400
+  }
+}

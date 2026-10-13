@@ -1,0 +1,42 @@
+{
+  "_doc": "docs/2026-10-13-congo-species-sources.md (numbers in brackets are its source list)",
+  "african_leopard": {
+    "body.massBySexKg": "[1],[2]: male 31-65, female 17-58; forest animals lower in the range (assumption: F 30, M 45)",
+    "body.shoulderHeightM": "assumption: textbook 0.60-0.70 m",
+    "locomotion.walkMs/trotMs": "assumption: typical for a 30-45 kg cat",
+    "locomotion.sprintMs": "[1]: up to ~16.7 m/s",
+    "locomotion.sprintStaminaS": "assumption: forest attacks are short ambush lunges; full sprints under ~20 s",
+    "locomotion.climbsTrees": "[1]",
+    "locomotion.terrainCost/floodedTerrainCost": "assumption: wades and swims short distances; never chases into water [1],[7]",
+    "senses": "assumption: dense understorey limits sight to 20-40 m",
+    "diet.dailyIntakeKg": "[8]: 1.6-4.9 kg/day",
+    "hunting.preferredPrey": "[4],[6]: duikers and chevrotains are taken; Phase 1 has only these two prey",
+    "hunting.maxPreyKg/preferredPreyKg": "[1],[4]: prefers 10-40 kg; mean forest prey 19.7-31.6 kg; Phase 1 prey are 4-12 kg",
+    "hunting.baseSuccess": "assumption: sim-tuned contest parameter, as the island leopard's; forest attack success 15-25% [9]",
+    "hunting.cachesKills": "[2],[10]: no forest study reports caching; no kleptoparasites in rainforest",
+    "social.territory": "[4]: Ta\u00ef male 86 km\u00b2, females 22-29 km\u00b2 (assumption: Gabon F 25, M 80)",
+    "activity": "[2],[7]: diurnal and crepuscular in forest",
+    "lifecycle": "[1]: gestation 96 d, litter 2-3, weaned ~90 d, mature ~771-937 d, max 17 y, 15-24 months between litters"
+  },
+  "blue_duiker": {
+    "body": "[11],[12],[4]: 3.5-9 kg, typically 4-5 kg; shoulder 0.32-0.41 m",
+    "locomotion": "assumption: small antelope: walk 0.6-0.9, trot 2-3, zig-zag dash 8-10 m/s for 2-5 s",
+    "senses/escape": "assumption: sight 15-25 m, FID 10-20 m; freezes first [12],[13]",
+    "diet": "[11],[12],[13]: ~3/4 fruit (modelled as fallen fruit and seed, 'roots') and browse; water mostly from food (assumption)",
+    "diet.dailyIntakeKg": "assumption: ~0.15 kg dry matter \u2248 0.45 kg fresh",
+    "social": "[11],[12],[13],[14]: monogamous pairs on 2.5-4 ha",
+    "activity": "[12],[14]: diurnal",
+    "lifecycle": "[12],[14]: gestation 196-216 d, 1 young, weaned 70-90 d, mature 270-540 d, max 12 y, ~265 d between births"
+  },
+  "water_chevrotain": {
+    "body": "[18],[19]: F ~12 kg, M ~9.7 kg; shoulder 0.30-0.40 m",
+    "locomotion": "assumption: short legs: walk 0.4-0.7, dash 5-7 m/s for 2-4 s to water",
+    "locomotion.swims": "[19],[20]: dives and swims underwater, up to ~4 min; swim speed assumption 0.7 m/s",
+    "senses/escape": "assumption: nocturnal: sight 10-20 m; freezes first, then to water [19]",
+    "diet": "[19]: fruit 68.7%, stems 20.5%, leaves 9.9% (fruit modelled as 'roots')",
+    "diet.dailyIntakeKg": "assumption: ~0.3 kg dry matter \u2248 0.9 kg fresh",
+    "social": "[19]: solitary, not territorial; female 13-14 ha, male 20-30 ha",
+    "activity": "[19]: strictly nocturnal 18:00-06:00",
+    "lifecycle": "[18],[19]: gestation 188-272 d, 1 young, weaned 90-180 d, mature 270-790 d, max 13-14 y, ~12 months between births"
+  }
+}
