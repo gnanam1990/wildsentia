@@ -72,12 +72,14 @@ export function takeSnapshot(world: World): Snapshot {
 
 /** How many records a slice of checkpoint work handles before yielding (Congo 1A.3). */
 const SNAPSHOT_SLICE = 1_000;
+/** Copying is heavier than serializing: a quarter as many records per slice. */
+const CLONE_SLICE = 250;
 
 function* cloneInSlices<T>(items: readonly T[]): Generator<void, T[]> {
   const out = new Array<T>(items.length);
   for (let i = 0; i < items.length; i++) {
     out[i] = structuredClone(items[i]!);
-    if ((i + 1) % SNAPSHOT_SLICE === 0) yield;
+    if ((i + 1) % CLONE_SLICE === 0) yield;
   }
   return out;
 }

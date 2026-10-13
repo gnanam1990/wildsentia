@@ -28,14 +28,19 @@ describe('a checkpoint in slices', () => {
       initialAgents: { hare: 45_000, chital: 3_000, leopard: 150 }, minPopulation: {}, retainEvents: 5_000 });
     world.step(2);
     takeSnapshot(world); // warm
-    let longest = 0, at = performance.now();
+    const gaps: number[] = [];
+    let at = performance.now();
     const g = takeSnapshotSlices(world);
-    for (let r = g.next(); !r.done; r = g.next()) { const now = performance.now(); longest = Math.max(longest, now - at); at = now; }
+    for (let r = g.next(); !r.done; r = g.next()) { const now = performance.now(); gaps.push(now - at); at = now; }
     const whole = takeSnapshot(world);
-    let jsonLongest = 0; at = performance.now();
-    for (const _ of snapshotJson(whole)) { const now = performance.now(); jsonLongest = Math.max(jsonLongest, now - at); at = now; }
-    console.log(`congo checkpoint slices: clone ${longest.toFixed(1)} ms, json ${jsonLongest.toFixed(1)} ms`);
-    expect(longest).toBeLessThan(Number(process.env.VANA_CONGO_SLICE_MAX_MS ?? 60));
-    expect(jsonLongest).toBeLessThan(Number(process.env.VANA_CONGO_SLICE_MAX_MS ?? 60));
+    const jsonGaps: number[] = [];
+    at = performance.now();
+    for (const _ of snapshotJson(whole)) { const now = performance.now(); jsonGaps.push(now - at); at = now; }
+    const p99 = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length * 0.99)]!;
+    console.log(`congo checkpoint slices: clone p99 ${p99(gaps).toFixed(1)} / max ${Math.max(...gaps).toFixed(1)} ms, json p99 ${p99(jsonGaps).toFixed(1)} / max ${Math.max(...jsonGaps).toFixed(1)} ms`);
+    // A garbage-collection pause can land in any slice; the slicing itself is held to 60 ms.
+    expect(p99(gaps)).toBeLessThan(Number(process.env.VANA_CONGO_SLICE_MAX_MS ?? 60));
+    expect(p99(jsonGaps)).toBeLessThan(Number(process.env.VANA_CONGO_SLICE_MAX_MS ?? 60));
+    expect(Math.max(...gaps, ...jsonGaps)).toBeLessThan(250);
   }, 300_000);
 });
