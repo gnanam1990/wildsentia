@@ -117,7 +117,9 @@ export function selectLiveMovements(
     result.push(movement); samples += movement.trace.samples.length;
   };
   const priority = priorityActorId === null ? undefined : index.get(priorityActorId);
-  if (priority && include(priority)) add(priority);
+  // The followed animal is always sent, wherever its movement ends: the camera follows it across
+  // a region border, and the viewer's regions follow the camera (Congo 1A.4).
+  if (priority) add(priority);
   for (const movement of index.values()) {
     if (movement !== priority && include(movement)) add(movement);
     if (result.length >= MAX_LIVE_MOVEMENTS || samples >= MAX_LIVE_MOVEMENT_SAMPLES) break;

@@ -167,6 +167,17 @@ maybe('a world served by region', () => {
     gateway.disconnect(socket);
   });
 
+  it('keeps a followed animal in a regional frame when its movement ends outside the regions (1A.4)', () => {
+    const scene = new Gateway(host), socket = new FakeSocket();
+    scene.handle(socket);
+    const regions = new Set(socket.scenes()[0]!.regions as string[]);
+    scene.disconnect(socket);
+    const away = host.liveEncounterFrame()!.movements!.find((m) => !regions.has(regionOfPatch(CONGO_GRID, m.trace.destinationPatchId)))!;
+    expect(away).toBeDefined();
+    const frame = host.liveEncounterFrame(away.actor.id, regions)!;
+    expect(frame.movements!.some((m) => m.actor.id === away.actor.id)).toBe(true);
+  });
+
   it('sends a regional viewer only the movements in its regions (1A.4)', () => {
     const gateway = new Gateway(host), socket = new FakeSocket();
     gateway.handle(socket);
