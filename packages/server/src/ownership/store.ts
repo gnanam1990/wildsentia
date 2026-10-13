@@ -234,6 +234,18 @@ export class OwnershipStore {
     return r ? { leaseId: r.lease_id, lifeId, holderKind: r.holder_kind, holderId: r.holder_id, startedAt: r.started_at } : null;
   }
 
+  /** Ends the life's open lease only if `holderId` holds it (a late notice never ends a newer lease). */
+  async endLeaseOf(lifeId: string, holderId: string, reason: string): Promise<boolean> {
+    return ((await this.pool.query('update control_leases set ended_at=now(), end_reason=$3 where life_id=$1 and holder_id=$2 and ended_at is null',
+      [lifeId, holderId, reason])).rowCount ?? 0) > 0;
+  }
+
+  /** The account behind a person's live identity, with its proven wallet if any. */
+  async accountOfAgent(agentId: string): Promise<{ accountId: string; wallet: string | null } | null> {
+    const row = (await this.pool.query('select a.id, l.wallet, l.wallet_proven from accounts a join live_agents l on l.id = a.agent_id where a.agent_id=$1', [agentId])).rows[0];
+    return row ? { accountId: row.id as string, wallet: row.wallet_proven ? row.wallet as string : null } : null;
+  }
+
   /** Every open lease in this world, for a restart to restore. */
   async openLeases(): Promise<Array<Lease & { animalId: string }>> {
     return (await this.pool.query(`select c.*, l.animal_id from control_leases c join animal_lives l using (life_id)

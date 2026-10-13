@@ -79,7 +79,7 @@ export function worldPort(world: () => World, worldId: () => string | null, play
         climbs: cfg.locomotion.climbsTrees === true, flies: cfg.id === 'vulture' };
     },
     possessionBlock: (id) => world().possessionBlock(id),
-    possess: (id, controller) => { held(); return world().possess(id, controller); },
+    possess: (id, controller, opts) => { held(); return world().possess(id, controller, opts); },
     release: (id) => { held(); return world().release(id); },
     place: (id, position) => { held(); return world().placeControlled(id, position); },
     act: (id, action, seconds) => { held(); return world().applyControlledAction(id, action, seconds); },

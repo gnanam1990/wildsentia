@@ -56,7 +56,7 @@ export interface WorldPort {
   animal(id: string): AnimalView | null;
   species(id: string): SpeciesMotion | null;
   possessionBlock(id: string): string | null;
-  possess(id: string, controller: string): string | null;
+  possess(id: string, controller: string, opts?: { owner?: boolean }): string | null;
   release(id: string): void;
   place(id: string, position: { x: number; z: number; heading: number }): boolean;
   act(id: string, action: 'graze' | 'drink' | 'rest', seconds: number): boolean;
@@ -242,7 +242,8 @@ export class LiveLayer {
   }
 
   /** Takes over an animal: a named one, or any free one of a species. */
-  possess(agentId: string, agentName: string, choice: { animalId?: string; speciesId?: string }, queueIfNone = true): { ok: true; avatar: Avatar } | { ok: false; reason: string } {
+  /** `owner`: the caller has already shown it may steer this owned animal (Congo 1C). */
+  possess(agentId: string, agentName: string, choice: { animalId?: string; speciesId?: string; owner?: boolean }, queueIfNone = true): { ok: true; avatar: Avatar } | { ok: false; reason: string } {
     this.#held();
     if (this.avatars.has(agentId)) return { ok: false, reason: 'already_possessing' };
     // After an animal dies, a short wait before the next: death has to cost something.
@@ -259,7 +260,7 @@ export class LiveLayer {
       return { ok: false, reason: 'no_free_animal' };
     }
     if (this.wild.has(target)) return { ok: false, reason: 'in_a_chase' };
-    const block = this.world.possess(target, agentId);
+    const block = this.world.possess(target, agentId, choice.owner === true && choice.animalId !== undefined ? { owner: true } : {});
     if (block) return { ok: false, reason: block };
     const animal = this.world.animal(target)!;
     // Spectators see it where the hour's recording is being played, which trails the world's own
@@ -281,12 +282,13 @@ export class LiveLayer {
   }
 
   /** Restores an avatar saved before a restart, if the world still agrees it is this agent's. */
-  restore(saved: { agentId: string; agentName: string; animalId: string; x: number; z: number; heading: number; since: number; lastCommand?: number }): boolean {
+  restore(saved: { agentId: string; agentName: string; animalId: string; x: number; z: number; heading: number; since: number; lastCommand?: number },
+    owner = false): boolean {
     let animal = this.world.animal(saved.animalId);
     if (!animal?.alive) return false;
     if (animal.controller !== saved.agentId) {
       // The world's last checkpoint may predate the possession; take it again if still allowed.
-      if (animal.controller || this.world.possess(saved.animalId, saved.agentId)) return false;
+      if (animal.controller || this.world.possess(saved.animalId, saved.agentId, owner ? { owner: true } : {})) return false;
       animal = this.world.animal(saved.animalId)!;
     }
     const at = this.world.place(saved.animalId, { x: saved.x, z: saved.z, heading: saved.heading })
