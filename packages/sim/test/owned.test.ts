@@ -11,16 +11,15 @@ const congo = () => createWorld({ ...options, initialAgents: { african_leopard: 
 
 // Congo 1C: an owned animal is a sim animal that carries its asset; only its owner's side may steer it.
 describe('owned animals', () => {
-  it('are placed as adults on a patch their species can live on, logged as spawned', () => {
+  it('are placed as adults on a patch their species can live on, with nothing public to mark them', () => {
     const world = congo();
     const patchId = world.safeSpawnPatches('blue_duiker', 300)[0]!;
     const duiker = world.spawnOwned('blue_duiker', patchId, 'asset-1');
     expect(duiker.assetId).toBe('asset-1');
     expect(duiker.patchId).toBe(patchId);
     expect(['adult', 'elder']).toContain(duiker.lifeStage);
-    const event = world.log.all().find((e) => e.type === 'agent_spawned' && e.actors[0] === duiker.id)!;
-    // The public log does not say it is owned: that would point bounty hunters at owned animals.
-    expect(event.conditions.owned).toBeUndefined();
+    // No public event marks the spawn: after founding, any spawn would point bounty hunters at an owned animal.
+    expect(world.log.all().some((e) => e.actors.includes(duiker.id))).toBe(false);
     expect(() => world.spawnOwned('blue_duiker', world.patches.find((p) => p.habitat === 'water' && p.deepWater)!.id, 'asset-2')).toThrow();
     expect(() => world.spawnOwned('tiger', patchId, 'asset-3')).toThrow();
   });

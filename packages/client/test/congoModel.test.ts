@@ -1,0 +1,33 @@
+import { describe, expect, it } from 'vitest';
+import { assetState, countdown, simAmount, timeLeft } from '../src/congoModel.js';
+
+const life = (over: Record<string, unknown> = {}) => ({ lifeId: 'l1', animalId: 'african_leopard_0001', status: 'alive', spawnedAt: '2026-10-13T10:00:00Z',
+  diedAt: null, deathCause: null, killerAnimalId: null, cooldownUntil: null, controller: null, bountyActive: false, ...over });
+const asset = (over: Record<string, unknown> = {}) => ({ assetId: 'a1', speciesId: 'african_leopard', status: 'active', agents: [], life: life(), ...over });
+
+// Congo 1E: the states a person sees for each of their animals (spec §7).
+describe('the Congo player pages', () => {
+  it('shows each state the spec names', () => {
+    const now = Date.parse('2026-10-13T12:00:00Z');
+    expect(assetState(asset({ animal: { state: 'resting' } }), now).label).toBe('Resting');
+    expect(assetState(asset({ animal: { state: 'chasing' } }), now).label).toBe('Hunting');
+    expect(assetState(asset({ animal: { state: 'fleeing' } }), now).label).toBe('Fleeing');
+    expect(assetState(asset({ animal: { state: 'grazing' } }), now).label).toBe('Alive');
+    expect(assetState(asset({ life: life({ controller: { kind: 'agent', id: 'ag_1' } }), animal: { state: 'resting', steered: false } }), now).label).toBe('Disconnected');
+    expect(assetState(asset({ life: life({ bountyActive: true }), animal: { state: 'resting' } }), now)).toMatchObject({ label: 'Bounty active', tone: 'warn' });
+    expect(assetState(asset({ life: life({ status: 'cooldown', diedAt: '2026-10-13T11:30:00Z', cooldownUntil: '2026-10-13T13:05:00Z', deathCause: 'predation' }) }), now))
+      .toMatchObject({ label: 'Cooldown', detail: 'Can respawn in 1 h 05 min · died of predation' });
+    expect(assetState(asset({ life: life({ status: 'dead' }) }), now).label).toBe('Ready to respawn');
+    expect(assetState(asset({ life: null }), now).label).toBe('Not yet spawned');
+    expect(assetState(asset({ bounty: { outcome: 'predator', payout: { status: 'intent' } } }), now).label).toBe('Payout pending (SIMULATED)');
+    expect(assetState(asset({ bounty: { outcome: 'survived', payout: { status: 'recorded' } } }), now).label).toBe('Payout recorded (SIMULATED)');
+    expect(assetState(asset({ bounty: { outcome: 'void', payout: null } }), now).label).toBe('Outcome verified');
+  });
+  it('writes amounts in exact units, always marked SIMULATED, and times left plainly', () => {
+    expect(simAmount('10000000', 6, 'SIM-USDC')).toBe('10.00 SIM-USDC (SIMULATED)');
+    expect(simAmount('2500001', 6, 'SIM-USDC')).toBe('2.500001 SIM-USDC (SIMULATED)');
+    expect(countdown(65 * 60_000)).toBe('1 h 05 min');
+    expect(countdown(30_000)).toBe('under a minute');
+    expect(timeLeft(2 * 86_400 + 3 * 3600)).toBe('2 world days 3 h');
+  });
+});

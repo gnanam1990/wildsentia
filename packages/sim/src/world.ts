@@ -619,7 +619,7 @@ export class World {
   }
 
   #spawn(speciesId: string, immigrant: boolean, atEdge = false,
-    arrival?: { patchId: number; at: WorldTime; conditions: Record<string, string | number> }, sexOverride?: 'female' | 'male'): Agent {
+    arrival?: { patchId: number; at: WorldTime; conditions: Record<string, string | number> }, sexOverride?: 'female' | 'male', silent = false): Agent {
     const cfg = this.species.get(speciesId);
     if (!cfg) throw new Error(`unknown species: ${speciesId}`);
 
@@ -664,6 +664,7 @@ export class World {
     if (arrival || atEdge) agent.patchId = patchId;
     locateAgent(this.grid, agent);
     if (immigrant) this.ledger.imported += agent.massKg * NUTRIENT_PER_KG_BIOMASS;
+    if (silent) return agent;
 
     this.log.append({
       type: immigrant ? 'immigration' : 'agent_spawned',
@@ -1064,8 +1065,9 @@ export class World {
     if (!assetId) throw new Error('asset id required');
     const eligible = cfg.locomotion.swims ? this.#waterMarginPatches : this.#dryLandPatches;
     if (!eligible.some((p) => p.id === patchId)) throw new Error(`${speciesId} cannot be placed on patch ${patchId}`);
-    // Logged as any founder is: the public log never says which animals are owned (Congo 1D).
-    const agent = this.#spawn(speciesId, false, false, { patchId, at: this.#time, conditions: {} });
+    // Not logged: after founding, any spawn in the public log would mark an owned animal (Congo 1D).
+    // Its life is recorded by the server (animal_lives), which no public route shows.
+    const agent = this.#spawn(speciesId, false, false, { patchId, at: this.#time, conditions: {} }, undefined, true);
     agent.assetId = assetId;
     return agent;
   }
