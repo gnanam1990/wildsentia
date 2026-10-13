@@ -136,7 +136,12 @@ export class GroundTint {
   readonly farRange = { value: new THREE.Vector2(220, 1100) };
   #key = '';
 
-  constructor(readonly size = worldGrid().cols) {
+  /** Texels a side: one per patch column of the world drawn (20 on the island, 160 in the Congo forest). */
+  get size(): number { return this.#size; }
+  #size: number;
+
+  constructor(size = worldGrid().cols) {
+    this.#size = size;
     const make = () => {
       const texture = new THREE.DataTexture(new Uint8Array(size * size * 4).fill(255), size, size, THREE.RGBAFormat);
       texture.magFilter = texture.minFilter = THREE.LinearFilter;
@@ -149,11 +154,25 @@ export class GroundTint {
     (this.layers.image.data as Uint8Array).fill(0);
   }
 
+  /** Congo 1A.4: the same texture objects (materials hold them), re-allocated for another lattice. */
+  #resize(size: number): void {
+    this.#size = size; this.#key = '';
+    for (const [texture, fill] of [[this.near, 255], [this.far, 255], [this.layers, 0]] as const) {
+      texture.image = { data: new Uint8Array(size * size * 4).fill(fill), width: size, height: size };
+      texture.dispose(); texture.needsUpdate = true;
+    }
+    if (this.#stand) {
+      const baked = bakeStandTexture();
+      this.#stand.image = baked.image; this.#stand.dispose(); this.#stand.needsUpdate = true; baked.dispose();
+    }
+  }
+
   /** Baked on first use, not at import: tests and the server-side bundle never pay for it. */
   get stand(): THREE.DataTexture { return this.#stand ??= bakeStandTexture(); }
 
   /** Recolours from the latest checkpoint. Returns false when nothing visible changed. */
   update(patches: readonly GroundPatch[], season: string): boolean {
+    if (worldGrid().cols !== this.#size) this.#resize(worldGrid().cols);
     const key = season + JSON.stringify(patches.map((p) => [p.id, p.habitat, Math.round(grassFraction(p) * 50),
       Math.round((p.canopyCover ?? -1) * 50), p.surface, Object.values(groundLayers(p, season))]));
     if (key === this.#key) return false;
@@ -232,7 +251,8 @@ float groundNoise(vec2 p) {
         diffuseColor.rgb = mix(diffuseColor.rgb * nearTint * 1.6, farColour, groundFarness);
       `);
     };
-    material.customProgramCacheKey = () => 'vana-ground-tint-v2';
+    // The world's span is compiled into the shader: one program per world size, not one shared.
+    material.customProgramCacheKey = () => `vana-ground-tint-v2:${span}`;
     material.needsUpdate = true;
   }
 }
