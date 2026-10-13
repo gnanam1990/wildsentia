@@ -95,6 +95,7 @@ export const SpeciesConfigSchema = z
       .optional(),
     social: z.object({
       structure: z.enum(['solitary', 'pair', 'herd', 'troop', 'pack', 'family']),
+      pairBond: z.boolean().optional(),
       groupSize: z.tuple([z.number().int().positive(), z.number().int().positive()]),
       alarmSharing: z.boolean(),
       heedsAlarmOf: z.array(z.string().min(1)).optional(),

@@ -61,7 +61,7 @@ describe('blue duikers live in pairs (1B)', () => {
     expect(pairMateFor(f, cfg, [f, mate, rival])?.id).toBe('m1');
     expect(pairMateFor(f, cfg, [f, { ...mate, alive: false }, rival])).toBeNull();
     expect(pairMateFor({ ...f, groupId: null }, cfg, [f, mate, rival])).toBeNull();
-    const chitalCfg = { ...cfg, social: { ...cfg.social, structure: 'herd' as const } };
+    const chitalCfg = { ...cfg, social: { ...cfg.social, pairBond: false } };
     expect(pairMateFor(f, chitalCfg, [f, mate])).toBeNull();
   });
 

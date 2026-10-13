@@ -517,7 +517,7 @@ export class World {
       const living = group.memberIds.filter((id) => this.#agentsById.get(id)?.alive === true).length;
       if (living >= max) continue;
       // Congo 1B: a pair species pairs a male and a female who are not kin.
-      if (structure === 'pair' && group.memberIds.some((id) => {
+      if (cfg.social.pairBond && group.memberIds.some((id) => {
         const member = this.#agentsById.get(id);
         return !member?.alive || member.sex === agent.sex || assessMate(agent, member, this.pedigree) === null;
       })) continue;
@@ -1721,7 +1721,7 @@ export class World {
  * paired animal courts only it; a widow, or one never paired, may court any.
  */
 export function pairMateFor(agent: Agent, cfg: SpeciesConfig, agents: readonly Agent[]): Agent | null {
-  if (cfg.social.structure !== 'pair' || agent.groupId == null) return null;
+  if (!cfg.social.pairBond || agent.groupId == null) return null;
   return agents.find((a) => a.alive && a.groupId === agent.groupId && a.id !== agent.id && a.sex !== agent.sex
     && a.lifeStage !== 'newborn' && a.lifeStage !== 'juvenile') ?? null;
 }

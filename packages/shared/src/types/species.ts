@@ -136,6 +136,8 @@ export interface SpeciesConfig {
   };
   social: {
     structure: 'solitary' | 'pair' | 'herd' | 'troop' | 'pack' | 'family';
+    /** Congo 1B: a bonded pair (blue duiker): founded as unrelated male-female pairs, kept together, courting only each other. */
+    pairBond?: boolean;
     groupSize: [min: number, max: number];
     alarmSharing: boolean;
     /** sim_0.34.0: other species whose alarm calls this one takes up when standing with them. */

@@ -69,7 +69,8 @@
       1,
       2
     ],
-    "alarmSharing": true
+    "alarmSharing": true,
+    "pairBond": true
   },
   "activity": {
     "hourly": [
