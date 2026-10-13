@@ -38,4 +38,18 @@ describe('buildGrid', () => {
     expect(grid.some((p) => p.habitat === 'water')).toBe(true);
     expect(grid.some((p) => p.habitat === 'grassland')).toBe(true);
   });
+
+  it('builds the 48 km congo_v1 grid from congo_terrain_v1', () => {
+    const patches = buildGrid(7, 'congo_v1');
+    expect(patches).toHaveLength(25_600);
+    expect(patches.every((p, i) => p.id === i && p.congoSeed === 7 && p.islandSeed === undefined && p.surface === 'land')).toBe(true);
+    expect(patches[0]!.neighbours).toEqual([1, 160]);
+    expect(patches[161]!).toMatchObject({ x: 1, y: 1 });
+    const river = patches.filter((p) => p.habitat === 'water');
+    expect(river.length).toBeGreaterThan(0);
+    expect(river.every((p) => p.waterVolume >= 300_000 && p.canopyCover === 0)).toBe(true);
+    expect(patches.find((p) => p.habitat === 'bai')!.canopyCover).toBe(0.05);
+    expect(patches.every((p) => p.elevation >= 0 && p.elevation <= 1)).toBe(true);
+    expect(buildGrid(7, 'congo_v1')).toEqual(patches);
+  }, 60_000);
 });

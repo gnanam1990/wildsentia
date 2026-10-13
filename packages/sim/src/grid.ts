@@ -1,5 +1,5 @@
 import {
-  ISLAND_GRID, cardinalNeighbours, createRng, gridForProfile, islandPatchSurface, islandHeightAt, patchCentre, patchCount,
+  CONGO_HABITAT_STATS, CONGO_MIN_HEIGHT_M, ISLAND_GRID, cardinalNeighbours, createCongoTerrain, createRng, gridForProfile, islandPatchSurface, islandHeightAt, patchCentre, patchCount,
   patchIdAt, landWalkable, isIslandProfile, islandGeometrySeed, type HabitatType, type Patch, type TerrainProfile, type WorldGrid,
 } from '@vana/shared';
 
@@ -70,7 +70,30 @@ function habitatFor(elevation: number, moisture: number): HabitatType {
   return 'shola';
 }
 
+/** The 48 km Congo forest's patches, from congo_terrain_v1 (spec §1). */
+function buildCongoPatches(seed: number, grid: WorldGrid): Patch[] {
+  const terrain = createCongoTerrain(seed, grid);
+  return Array.from({ length: patchCount(grid) }, (_, id): Patch => {
+    const habitat = terrain.habitatAt(id), stats = CONGO_HABITAT_STATS[habitat as keyof typeof CONGO_HABITAT_STATS];
+    if (!stats) throw new Error(`congo terrain produced a non-Congo habitat: ${habitat}`);
+    const centre = patchCentre(grid, id), height = terrain.heightAt(centre.x, centre.z);
+    const soilMoisture = habitat === 'water' ? 1 : habitat === 'flooded_forest' ? 0.85 : habitat === 'swamp_forest' ? 0.9 : 0.55;
+    const capacity = { grass: stats.grass, browse: stats.browse };
+    return {
+      id, x: id % grid.cols, y: Math.floor(id / grid.cols),
+      elevation: Math.max(0, Math.min(1, (height - CONGO_MIN_HEIGHT_M) / 500)),
+      congoSeed: seed, surface: 'land', habitat, canopyCover: stats.canopy,
+      plant: { grass: capacity.grass * 0.6, browse: capacity.browse * 0.6 }, capacity,
+      soilMoisture, soilNutrients: 400 + soilMoisture * 200,
+      waterVolume: habitat === 'water' ? terrain.riverKindAt(id) === 'main' ? 2_000_000 : 300_000
+        : habitat === 'flooded_forest' ? 20_000 : habitat === 'swamp_forest' ? 12_000 : soilMoisture * 600,
+      neighbours: cardinalNeighbours(grid, id),
+    };
+  });
+}
+
 export function buildGrid(seed: number, profile: TerrainProfile = 'mainland', grid: WorldGrid = gridForProfile(profile)): Patch[] {
+  if (profile === 'congo_v1') return buildCongoPatches(seed, grid);
   const island = isIslandProfile(profile), geometry = island ? islandGeometrySeed(seed, profile) : seed;
   const rng = createRng(seed, 'grid');
   const count = patchCount(grid);

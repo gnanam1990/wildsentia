@@ -24,3 +24,4 @@ export * from './pacing.js';
 export * from './experiences.js';
 export * from './congo/noise.js';
 export * from './congo/rivers.js';
+export * from './congo/terrain.js';
