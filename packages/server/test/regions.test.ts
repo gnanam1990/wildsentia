@@ -148,6 +148,25 @@ maybe('a world served by region', () => {
     for (const socket of sockets) gateway.disconnect(socket);
   });
 
+  it('sends each Congo patch its flood and deep-river flags, in the scene and by region (1A.4)', async () => {
+    const gateway = new Gateway(host), socket = new FakeSocket();
+    gateway.handle(socket);
+    const scene = socket.scenes()[0]!, region = (scene.regions as string[])[0]!;
+    const sent = (scene.environment as { patches: Array<{ id: number; flooded?: boolean; deepWater?: boolean }> }).patches;
+    const world = host.observation()!.patches();
+    const app = buildApi({ host, pool: pool! });
+    const served = (await app.inject({ method: 'GET', url: `/regions/${region}` })).json() as { patches: typeof sent };
+    await app.close();
+    for (const patches of [sent, served.patches]) {
+      expect(patches.some((p) => p.flooded === true)).toBe(true);
+      for (const p of patches) {
+        expect(p.flooded ?? false).toBe(world[p.id]!.flooded ?? false);
+        expect(p.deepWater ?? false).toBe(world[p.id]!.deepWater ?? false);
+      }
+    }
+    gateway.disconnect(socket);
+  });
+
   it('sends a regional viewer only the movements in its regions (1A.4)', () => {
     const gateway = new Gateway(host), socket = new FakeSocket();
     gateway.handle(socket);

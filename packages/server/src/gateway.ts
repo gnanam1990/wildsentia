@@ -430,7 +430,9 @@ export class Gateway {
   #patchView(p: Patch): Record<string, unknown> {
     return { id: p.id, x: p.x, y: p.y, habitat: p.habitat,
       elevation: p.elevation, canopyCover: p.canopyCover, islandSeed: p.islandSeed,
-      ...(p.congoSeed === undefined ? {} : { congoSeed: p.congoSeed }), surface: p.surface, grass: p.plant.grass,
+      ...(p.congoSeed === undefined ? {} : { congoSeed: p.congoSeed }),
+      // Congo 1A.4: the flooded forest under water in the rains, and the great river's deep middle.
+      ...(p.flooded ? { flooded: true } : {}), ...(p.deepWater ? { deepWater: true } : {}), surface: p.surface, grass: p.plant.grass,
       browse: p.plant.browse, floweringGuild: floweringGuildSummary(p),
       water: p.waterVolume, drainage: p.drainage };
   }
