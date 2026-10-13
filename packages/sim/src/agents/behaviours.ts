@@ -297,8 +297,9 @@ function wander(ctx: BehaviourContext): void {
   if (options.length === 0) { ctx.agent.state = 'resting'; return; }
 
   const structure = ctx.species.social.structure;
+  // Congo 1B: a pair keeps together as a herd does, two strong.
   const gregarious = structure === 'herd' || structure === 'troop'
-    || structure === 'pack' || structure === 'family';
+    || structure === 'pack' || structure === 'family' || structure === 'pair';
 
   if (gregarious) {
     // Cohesion pulls an animal back only when it is genuinely alone. Holding a whole herd on
@@ -307,7 +308,7 @@ function wander(ctx: BehaviourContext): void {
     // Loose association: enough companions to keep a herd findable, few enough that they do
     // not strip a single 300 m patch and starve themselves out of breeding condition.
     const countHere = ctx.percept.herdSize;
-    const cohesionTarget = Math.min(3, ctx.species.social.groupSize[0]);
+    const cohesionTarget = structure === 'pair' ? 2 : Math.min(3, ctx.species.social.groupSize[0]);
 
     if (countHere < cohesionTarget) {
       // First try the local gradient: a neighbouring patch holding more of its own kind.

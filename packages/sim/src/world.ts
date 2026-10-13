@@ -516,6 +516,11 @@ export class World {
       if (group.speciesId !== agent.speciesId) continue;
       const living = group.memberIds.filter((id) => this.#agentsById.get(id)?.alive === true).length;
       if (living >= max) continue;
+      // Congo 1B: a pair species pairs a male and a female who are not kin.
+      if (structure === 'pair' && group.memberIds.some((id) => {
+        const member = this.#agentsById.get(id);
+        return !member?.alive || member.sex === agent.sex || assessMate(agent, member, this.pedigree) === null;
+      })) continue;
       group.memberIds.push(agent.id);
       agent.groupId = groupId;
       // Join the group where it stands, rather than appearing somewhere it is not.
@@ -760,10 +765,13 @@ export class World {
     // Coarse perception policy: same/adjacent patches AND within a configured sensory range.
     // Use the recorded start location, never a mate's future end-of-decision position.
     let best: ReturnType<typeof assessMate> = null;
+    const pairMate = pairMateFor(agent, cfg, this.agents);
     const here = locateAgent(this.grid, agent), senseRange = Math.max(cfg.senses.sightRangeM, cfg.senses.hearingRangeM, cfg.senses.smellRangeM);
     for (const patchId of [agent.patchId, ...this.patches[agent.patchId]!.neighbours]) {
       for (const other of view.agentsInPatch(patchId)) {
         if (!other.alive || other.speciesId !== agent.speciesId || (other.altitudeM ?? 0) > 0) continue;
+        // Congo 1B: a paired animal courts only its pair-mate while that mate lives.
+        if (pairMate && other.id !== pairMate.id) continue;
         // An agent-steered animal is not led off by a wild suitor's plan.
         if (other.controller) continue;
         if (!isReceptive(other, cfg, this.#time)) continue;
@@ -1706,6 +1714,16 @@ export class World {
     this.#pruneGroups();
     this.#time += seconds;
   }
+}
+
+/**
+ * Congo 1B: a pair species' living, grown pair-mate (the other sex in its group), or null: a
+ * paired animal courts only it; a widow, or one never paired, may court any.
+ */
+export function pairMateFor(agent: Agent, cfg: SpeciesConfig, agents: readonly Agent[]): Agent | null {
+  if (cfg.social.structure !== 'pair' || agent.groupId == null) return null;
+  return agents.find((a) => a.alive && a.groupId === agent.groupId && a.id !== agent.id && a.sex !== agent.sex
+    && a.lifeStage !== 'newborn' && a.lifeStage !== 'juvenile') ?? null;
 }
 
 export function createWorld(options: WorldOptions): World {
