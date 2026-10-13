@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { CONGO_GRID, ISLAND_GRID, congoHeightFn } from '@vana/shared';
 import { setWorldGrid } from '../src/worldGrid.js';
 import { terrainKeys } from '../src/terrainCheckpoints.js';
-import { buildTerrain, congoWaterLevel, makeHeightSampler, CONGO_BASE_M, type PatchView } from '../src/terrain.js';
+import { buildTerrain, congoLattice, congoWaterLevel, makeHeightSampler, CONGO_BASE_M, CONGO_STEP_M, type PatchView } from '../src/terrain.js';
 
 afterEach(() => setWorldGrid(ISLAND_GRID));
 const region = (rc: number, rr: number): PatchView[] => {
@@ -31,6 +31,28 @@ describe('the Congo ground in the browser (1A.4)', () => {
     expect(ground.geometry.attributes.position!.count).toBe((240 + 1) * (120 + 1));
     const sample = makeHeightSampler(patches), p = ground.geometry.attributes.position!;
     expect(p.getY(1234)).toBeCloseTo(sample(p.getX(1234), p.getZ(1234)), 3); // a float32 mesh
+  });
+  it('draws no ground for the empty corner of an L of loaded regions', () => {
+    setWorldGrid(CONGO_GRID);
+    const ground = buildTerrain([...region(4, 4), ...region(5, 4), ...region(4, 5)], new Set(['ground'])).getObjectByName('ground') as THREE.Mesh;
+    expect(ground.geometry.index!.count).toBe(3 * 120 * 120 * 6);
+  });
+  it('lays the soil texture by world position, one 3.2 m tile however many regions are loaded', () => {
+    setWorldGrid(CONGO_GRID);
+    const ground = buildTerrain(region(4, 4), new Set(['ground'])).getObjectByName('ground') as THREE.Mesh;
+    const p = ground.geometry.attributes.position!, uv = ground.geometry.attributes.uv!;
+    for (const i of [0, 777, p.count - 1]) {
+      expect(uv.getX(i)).toBeCloseTo(p.getX(i) / 3.2, 2);
+      expect(uv.getY(i)).toBeCloseTo(p.getZ(i) / 3.2, 2);
+    }
+  });
+  it('keeps heights sampled past the east edge from overwriting the west edge', () => {
+    setWorldGrid(CONGO_GRID);
+    const lattice = congoLattice(11), h = congoHeightFn(11, CONGO_GRID), width = 48_000 / CONGO_STEP_M + 1;
+    lattice.sample(48_000 + 25, 600); // a camera ray running past the forest's east edge
+    // That sample reads columns 963-964 of rows 15-16; keyed row * 961 + column, column 963 of row 15 was vertex (2, 16).
+    expect(lattice.vertex(2, 16)).toBeCloseTo(h(-150 + 2 * CONGO_STEP_M, -150 + 16 * CONGO_STEP_M) - CONGO_BASE_M, 5);
+    expect(width).toBe(961);
   });
 });
 

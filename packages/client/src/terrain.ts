@@ -260,13 +260,14 @@ function buildDrainageFlow(patches: readonly PatchView[], groundAt: HeightSample
  */
 /** Locally served CC0 scans; data maps stay linear, albedo is sRGB. Each terrain owns its
  * textures so refreshing a snapshot can dispose them without breaking another scene. */
-export function scannedGroundMaps(): Pick<THREE.MeshStandardMaterialParameters, 'map' | 'normalMap' | 'roughnessMap' | 'normalScale'> {
+export function scannedGroundMaps(repeat: readonly [number, number] = [worldGrid().cols * worldGrid().patchM / 3.2, worldGrid().rows * worldGrid().patchM / 3.2]):
+  Pick<THREE.MeshStandardMaterialParameters, 'map' | 'normalMap' | 'roughnessMap' | 'normalScale'> {
   if (typeof document === 'undefined') return {};
   const loader = new THREE.TextureLoader();
   const load = (suffix: string, colour: boolean): THREE.Texture => {
     const texture = loader.load(`/assets/ground/forest_ground_04_${suffix}_1k.jpg`);
     texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-    texture.repeat.set(worldGrid().cols * worldGrid().patchM / 3.2, worldGrid().rows * worldGrid().patchM / 3.2);
+    texture.repeat.set(repeat[0], repeat[1]);
     texture.anisotropy = 8;
     texture.colorSpace = colour ? THREE.SRGBColorSpace : THREE.NoColorSpace;
     return texture;
@@ -287,12 +288,17 @@ export const CONGO_STEP_M = 50;
 let congoCache: { seed: number; vertex: (col: number, row: number) => number; sample: HeightSampler } | null = null;
 export function congoLattice(seed: number): { vertex: (col: number, row: number) => number; sample: HeightSampler } {
   if (congoCache?.seed === seed) return congoCache;
-  const grid = worldGrid(), height = congoHeightFn(seed, grid), memo = new Map<number, number>();
+  const grid = worldGrid(), height = congoHeightFn(seed, grid);
   const origin = -grid.patchM / 2, width = Math.round(grid.cols * grid.patchM / CONGO_STEP_M) + 1;
+  const depth = Math.round(grid.rows * grid.patchM / CONGO_STEP_M) + 1;
+  // One slot per lattice vertex (NaN until computed). A point past the forest's edge (a camera
+  // ray, say) reads the edge vertex: it never shares a slot with another vertex.
+  const memo = new Float32Array(width * depth).fill(NaN);
   const vertex = (col: number, row: number): number => {
+    col = Math.max(0, Math.min(width - 1, col)); row = Math.max(0, Math.min(depth - 1, row));
     const key = row * width + col;
-    let h = memo.get(key);
-    if (h === undefined) { h = height(origin + col * CONGO_STEP_M, origin + row * CONGO_STEP_M) - CONGO_BASE_M; memo.set(key, h); }
+    let h = memo[key]!;
+    if (Number.isNaN(h)) { h = memo[key] = height(origin + col * CONGO_STEP_M, origin + row * CONGO_STEP_M) - CONGO_BASE_M; }
     return h;
   };
   const sample: HeightSampler = (x, z) => {
@@ -318,11 +324,16 @@ export function congoWaterLevel(patch: Pick<PatchView, 'id' | 'habitat'>, ground
   return patch.habitat === 'water' ? heights[0]! + 3.6 : heights[heights.length >> 1]! + 0.5;
 }
 
-/** Congo 1A.4: one ground mesh over the loaded regions' bounding box, on the 50 m lattice. */
+/**
+ * Congo 1A.4: one ground mesh on the 50 m lattice over the loaded regions only (an L of three
+ * regions draws three, not their bounding box), its soil texture laid by world position.
+ */
 function buildCongoGround(patches: readonly PatchView[], seed: number): THREE.Mesh {
   const grid = worldGrid(), side = grid.regionPatches;
   let c0 = Infinity, c1 = -Infinity, r0 = Infinity, r1 = -Infinity;
+  const loaded = new Set<string>();
   for (const p of patches) {
+    loaded.add(`${Math.floor(p.x / side)},${Math.floor(p.y / side)}`);
     c0 = Math.min(c0, Math.floor(p.x / side)); c1 = Math.max(c1, Math.floor(p.x / side));
     r0 = Math.min(r0, Math.floor(p.y / side)); r1 = Math.max(r1, Math.floor(p.y / side));
   }
@@ -336,9 +347,20 @@ function buildCongoGround(patches: readonly PatchView[], seed: number): THREE.Me
     const col = i % (cols + 1), row = Math.floor(i / (cols + 1));
     position.setY(i, lattice.vertex(c0 * per + col, r0 * per + row));
   }
+  // Two triangles a cell, a cell's six indices at (row * cols + col) * 6: keep the loaded regions' cells.
+  const all = geometry.index!.array, kept: number[] = [];
+  for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++) {
+    if (!loaded.has(`${c0 + Math.floor(col / per)},${r0 + Math.floor(row / per)}`)) continue;
+    const o = (row * cols + col) * 6;
+    for (let k = 0; k < 6; k++) kept.push(all[o + k]!);
+  }
+  geometry.setIndex(kept);
+  // One 3.2 m soil tile wherever the ground is, so it neither shrinks nor shifts as regions load.
+  const uv = geometry.attributes.uv!;
+  for (let i = 0; i < position.count; i++) uv.setXY(i, position.getX(i) / 3.2, position.getZ(i) / 3.2);
   geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(position.count * 3).fill(1), 3));
   geometry.computeVertexNormals();
-  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, ...scannedGroundMaps() });
+  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, ...scannedGroundMaps([1, 1]) });
   groundTint.apply(material);
   const mesh = new THREE.Mesh(geometry, material);
   mesh.name = 'ground'; mesh.receiveShadow = true;
