@@ -1,9 +1,23 @@
-export const GRID_SIZE = 20;
-export const PATCH_METRES = 300;
-export const PATCH_COUNT = GRID_SIZE * GRID_SIZE;
 export const NUTRIENT_PER_KG_BIOMASS = 0.02;
 
-export type HabitatType = 'shola' | 'grassland' | 'riparian' | 'rock' | 'marsh' | 'water';
+export type IslandHabitat = 'shola' | 'grassland' | 'riparian' | 'rock' | 'marsh' | 'water';
+/** The Congo forest's own habitats (congo_terrain_v1). Its river channels are `water`. */
+export type CongoHabitat = 'terra_firme' | 'flooded_forest' | 'swamp_forest' | 'bai';
+export type HabitatType = IslandHabitat | CongoHabitat;
+
+export const ISLAND_HABITATS: readonly IslandHabitat[] = ['shola', 'grassland', 'riparian', 'rock', 'marsh', 'water'];
+export const CONGO_HABITATS: readonly CongoHabitat[] = ['terra_firme', 'flooded_forest', 'swamp_forest', 'bai'];
+/**
+ * The island habitat each Congo habitat behaves like wherever a table has no Congo entry of its
+ * own: dry closed forest as shola, seasonally flooded forest as riparian, swamp forest as marsh,
+ * an open bai as grassland.
+ */
+export const HABITAT_ANALOGUE: Readonly<Record<CongoHabitat, IslandHabitat>> = {
+  terra_firme: 'shola', flooded_forest: 'riparian', swamp_forest: 'marsh', bai: 'grassland',
+};
+/** The island habitat a patch looks and behaves like where only island figures exist. */
+export const habitatAnalogue = (habitat: string): IslandHabitat =>
+  (HABITAT_ANALOGUE as Partial<Record<string, IslandHabitat>>)[habitat] ?? habitat as IslandHabitat;
 export type PatchId = number;
 
 export interface PlantBiomass {
@@ -35,6 +49,12 @@ export interface Patch {
   elevation: number;
   /** Absent on legacy mainland worlds. Island geometry and mask share the versioned seed. */
   islandSeed?: number;
+  /** Congo worlds only: the seed of their congo_terrain_v1 geometry. */
+  congoSeed?: number;
+  /** Congo 1B: flooded forest under the season's flood (set each hour by the world); absent elsewhere. */
+  flooded?: boolean;
+  /** Congo 1B: the deep middle of the great river (no dry ground beside it): no land animal walks it. */
+  deepWater?: boolean;
   surface?: 'land' | 'coast' | 'ocean';
   habitat: HabitatType;
   canopyCover: number;

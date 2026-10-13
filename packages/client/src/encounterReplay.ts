@@ -1,3 +1,4 @@
+import { worldGrid } from './worldGrid.js';
 import { isWorldPosition, positionInPatch, type EncounterTrace, type WorldPosition } from '@vana/shared';
 
 export interface RecordedEncounter {
@@ -26,13 +27,13 @@ export function isRecordedEncounter(value: unknown): value is RecordedEncounter 
   for (const s of t.samples) {
     if (!record(s) || typeof s.seconds !== 'number' || !Number.isFinite(s.seconds)
       || s.seconds < 0 || s.seconds < previous || typeof s.phase !== 'string' || !phases.has(s.phase)
-      || !isWorldPosition(s.predator) || !isWorldPosition(s.prey)) return false;
+      || !isWorldPosition(worldGrid(), s.predator) || !isWorldPosition(worldGrid(), s.prey)) return false;
     previous = s.seconds;
   }
   const first = t.samples[0] as EncounterTrace['samples'][number];
   const last = t.samples.at(-1) as EncounterTrace['samples'][number];
-  if (typeof t.patchId !== 'number' || !positionInPatch(first.predator, t.patchId)
-    || !positionInPatch(first.prey, t.patchId) || first.seconds !== 0) return false;
+  if (typeof t.patchId !== 'number' || !positionInPatch(worldGrid(), first.predator, t.patchId)
+    || !positionInPatch(worldGrid(), first.prey, t.patchId) || first.seconds !== 0) return false;
   // A kill ends at contact, or (sim_0.36 and later) at the end of the hold that follows it.
   return value.outcome !== 'success' || ((last.phase === 'contact' || last.phase === 'subdue')
     && t.samples.some((s) => (s as EncounterTrace['samples'][number]).phase === 'contact')

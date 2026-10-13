@@ -5,6 +5,7 @@ import { migrate } from '../src/db/migrate.js';
 import { EventStore } from '../src/db/eventStore.js';
 import { SnapshotStore } from '../src/db/snapshotStore.js';
 import { testDatabaseUrl } from './testDatabase.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const url = testDatabaseUrl();
 const maybe = url ? describe : describe.skip;
@@ -31,7 +32,7 @@ maybe('EventStore', () => {
   });
 
   it('round-trips a batch of events', async () => {
-    const store = new EventStore(pool!);
+    const store = new EventStore(pool!, ISLAND_GRID);
     await store.appendBatch([event('fed_1', 100), event('fed_2', 200)]);
     const recent = await store.recent(10);
     expect(recent).toHaveLength(2);
@@ -42,7 +43,7 @@ maybe('EventStore', () => {
   });
 
   it('round-trips precise lifecycle locations without backfilling legacy or invalid stored locations', async () => {
-    const store = new EventStore(pool!);
+    const store = new EventStore(pool!, ISLAND_GRID);
     const position = { x: 908.125, z: -14.75, heading: 1.5 };
     const birth: WorldEvent = { ...event('birth_location', 100), type: 'born', position };
     const death: WorldEvent = { ...event('death_location', 200), type: 'died', position };
@@ -57,7 +58,7 @@ maybe('EventStore', () => {
   });
 
   it('rejects an invalid position anywhere in a multi-chunk batch before inserting anything', async () => {
-    const store = new EventStore(pool!);
+    const store = new EventStore(pool!, ISLAND_GRID);
     const batch = Array.from({ length: 501 }, (_, i) => event(`valid_${i}`, i));
     batch[500]!.position = { x: NaN, z: 0, heading: 0 };
     await expect(store.appendBatch(batch)).rejects.toThrow('recorded patch');
@@ -65,7 +66,7 @@ maybe('EventStore', () => {
   });
 
   it('preserves joint encounter samples exactly while leaving old events without invented paths', async () => {
-    const store = new EventStore(pool!);
+    const store = new EventStore(pool!, ISLAND_GRID);
     const hunt: WorldEvent = { ...event('hunt_trace', 105), type: 'hunt', actors: ['tiger', 'deer'],
       encounter: { version: 1, predatorId: 'tiger', preyId: 'deer', patchId: 0, startWorldTime: 100,
         contactRadiusM: 1, samples: [{ seconds: 5.125, phase: 'contact',
@@ -76,14 +77,14 @@ maybe('EventStore', () => {
   });
 
   it('ignores a duplicate id instead of failing the batch', async () => {
-    const store = new EventStore(pool!);
+    const store = new EventStore(pool!, ISLAND_GRID);
     await store.appendBatch([event('fed_1', 100)]);
     await store.appendBatch([event('fed_1', 100), event('fed_2', 200)]);
     expect(await store.total()).toBe(2);
   });
 
   it('preserves ordinary movement samples without inventing routes for legacy events', async () => {
-    const store = new EventStore(pool!);
+    const store = new EventStore(pool!, ISLAND_GRID);
     const movement: WorldEvent = { ...event('move_route', 105), type: 'moved', movement: {
       version: 1, actorId: 'a1', startWorldTime: 100, destinationPatchId: 4, goal: 'find_water', completed: false,
       samples: [{ seconds: 0, position: { x: 10, z: 30, heading: 0 } },
@@ -96,13 +97,13 @@ maybe('EventStore', () => {
   });
 
   it('finds events by actor, newest first', async () => {
-    const store = new EventStore(pool!);
+    const store = new EventStore(pool!, ISLAND_GRID);
     await store.appendBatch([event('fed_1', 100, 'tiger'), event('fed_2', 200, 'deer'), event('fed_3', 300, 'tiger')]);
     expect((await store.byActor('tiger', 10)).map((e) => e.id)).toEqual(['fed_3', 'fed_1']);
   });
 
   it('finds an animal\'s death however much happened to its carcass afterwards', async () => {
-    const store = new EventStore(pool!);
+    const store = new EventStore(pool!, ISLAND_GRID);
     // A death names the dead first and its killer, if any, second.
     const died: WorldEvent = { ...event('died_1', 100), type: 'died', actors: ['sambar_1', 'tiger_1'] };
     const scavenged = Array.from({ length: 60 }, (_, i) =>
@@ -116,7 +117,7 @@ maybe('EventStore', () => {
   });
 
   it('returns an animal\'s events since a moment, oldest first', async () => {
-    const store = new EventStore(pool!);
+    const store = new EventStore(pool!, ISLAND_GRID);
     await store.appendBatch([event('e1', 100), event('e2', 200), event('e3', 300), event('x1', 250, 'other')]);
     expect((await store.byActorSince('a1', 150, 100)).map((e) => e.id)).toEqual(['e2', 'e3']);
     await store.appendBatch([{ ...event('b1', 260), type: 'born' }]);
@@ -124,7 +125,7 @@ maybe('EventStore', () => {
   });
 
   it('counts and deletes events after a world time', async () => {
-    const store = new EventStore(pool!);
+    const store = new EventStore(pool!, ISLAND_GRID);
     await store.appendBatch([event('fed_1', 100), event('fed_2', 200), event('fed_3', 300)]);
     expect(await store.countAfter(150)).toBe(2);
     expect(await store.deleteAfter(150)).toBe(2);
@@ -132,7 +133,7 @@ maybe('EventStore', () => {
   });
 
   it('uses the exclusive sequence boundary for equal-timestamp current IDs without deleting legacy history', async () => {
-    const store = new EventStore(pool!);
+    const store = new EventStore(pool!, ISLAND_GRID);
     const id = (n: number) => `born_00000001${n.toString(16).padStart(16, '0')}`;
     const entries = [2, 3, 4].map((n) => ({ ...event(id(n), 100), type: 'born' as const }));
     await store.appendBatch([...entries, { ...event('born_12345678', 100), type: 'born' }, { ...event('old', 99), type: 'born' }]);
@@ -143,7 +144,7 @@ maybe('EventStore', () => {
   });
 
   it('applies the same checkpoint to feeds, timelines, death lookups and sequence-aware recaps before limiting', async () => {
-    const store = new EventStore(pool!);
+    const store = new EventStore(pool!, ISLAND_GRID);
     const id = (n: number) => `died_00000001${n.toString(16).padStart(16, '0')}`;
     const entries = [2, 3, 4].map((n) => ({ ...event(id(n), 100), type: 'died' as const }));
     await store.appendBatch(entries);

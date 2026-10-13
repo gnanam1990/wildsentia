@@ -1,5 +1,7 @@
+import { HABITAT_ANALOGUE, habitatAnalogue } from '@vana/shared';
+import { worldGrid } from './worldGrid.js';
 import * as THREE from 'three';
-import { GRID_SIZE, PATCH_METRES } from '@vana/shared';
+
 import { standDensity } from './forestStructure.js';
 
 /**
@@ -45,15 +47,34 @@ const NEAR = {
 /** Grass fraction of a full sward, 0-1. */
 const grassFraction = (patch: GroundPatch): number => Math.max(0, Math.min(1, patch.grass / 6000));
 
+/**
+ * Congo 1A.5: a rainforest floor is leaf litter over red-brown laterite, darker mud where it
+ * floods or stays wet, and sedge and mud in a bai, never the island's grassland greens.
+ */
+const CONGO_FLOOR: Record<string, { near: THREE.Color; far: THREE.Color }> = {
+  terra_firme: { near: hex(0x6e5a46), far: hex(0x3a2f22) },
+  flooded_forest: { near: hex(0x6a5844), far: hex(0x382f22) },
+  swamp_forest: { near: hex(0x66603f), far: hex(0x37341f) },
+};
+const CONGO_BAI = { lush: { near: hex(0xa6c466), far: hex(0x5e8a34) }, mud: { near: hex(0xb49a74), far: hex(0x6a5a3c) } };
+const isCongoHabitat = (habitat: string): boolean => habitat in HABITAT_ANALOGUE;
+
 /** The two colours for one patch, in linear RGB. */
 export function patchGroundColours(patch: GroundPatch, season: string): { near: THREE.Color; far: THREE.Color } {
   if (patch.surface === 'ocean') return { near: NEAR.sea.clone(), far: FAR.sea.clone() };
+  if (patch.habitat === 'bai') {
+    // Sedge as green as its grass and the season allow, else trampled mud.
+    const green = grassFraction(patch) * (SEASON_GREEN[season] ?? 0.7);
+    return { near: CONGO_BAI.mud.near.clone().lerp(CONGO_BAI.lush.near, green), far: CONGO_BAI.mud.far.clone().lerp(CONGO_BAI.lush.far, green) };
+  }
+  const floor = CONGO_FLOOR[patch.habitat];
+  if (floor) return { near: floor.near.clone(), far: floor.far.clone() };
   const pick = (palette: typeof FAR): THREE.Color => {
     const greenness = grassFraction(patch) * (SEASON_GREEN[season] ?? 0.7);
     // Grass decides the open ground: thick and seasonal green, thin and grazed, or dry gold.
     const open = palette.golden.clone().lerp(palette.lush, greenness)
       .lerp(palette.bare, Math.max(0, 0.35 - grassFraction(patch)) / 0.35 * 0.6);
-    switch (patch.habitat) {
+    switch (habitatAnalogue(patch.habitat)) {
       case 'rock': return palette.rock.clone();
       case 'water': return palette.water.clone();
       case 'marsh': return palette.marsh.clone().lerp(open, 0.25);
@@ -91,9 +112,20 @@ export function groundLayers(patch: GroundPatch, season: string): GroundLayers {
   if (patch.surface === 'ocean' || patch.habitat === 'water') return { litter: 0, bare: 0, moss: 0 };
   const canopy = clamp01(patch.canopyCover ?? (patch.habitat === 'shola' ? 0.8 : 0));
   const grass = grassFraction(patch), wet = SEASON_WET[season] ?? 0.5, leafFall = SEASON_LEAF_FALL[season] ?? 0.6;
-  const damp = Math.max(HABITAT_DAMP[patch.habitat] ?? 0, clamp01((patch.water ?? 0) / 60_000),
+  const damp = Math.max(HABITAT_DAMP[habitatAnalogue(patch.habitat)] ?? 0, clamp01((patch.water ?? 0) / 60_000),
     clamp01((patch.drainage?.outflowL ?? 0) / 3_000));
   if (patch.habitat === 'rock') return { litter: 0, bare: round(0.35 * (1 - grass)), moss: round(0.3 * damp * wet) };
+  if (isCongoHabitat(patch.habitat)) {
+    // Litter carpets a closed forest year round; laterite shows through in places; wet ground mosses.
+    const forest = patch.habitat === 'terra_firme', wetForest = patch.habitat !== 'bai' && !forest;
+    return {
+      litter: round(patch.habitat === 'bai' ? 0 : forest ? 0.85 + 0.1 * leafFall : 0.5),
+      bare: round(patch.habitat === 'bai' ? 0.08 : forest ? 0.1 : 0.05),
+      // Low under forest: the stand pattern spreads it in tens-of-metres blocks over 48 km, which reads
+      // as tiles. A bai's wet sward is green.
+      moss: round(patch.habitat === 'bai' ? 0.5 + 0.3 * wet : wetForest ? 0.15 + 0.1 * wet : 0.05),
+    };
+  }
   return {
     litter: round(clamp01(canopy * (0.6 + 0.4 * leafFall))),
     bare: round(clamp01((1 - grass) * (1 - 0.6 * canopy) * (0.6 + 0.4 * (1 - wet)))),
@@ -105,10 +137,10 @@ const round = (v: number) => Math.round(v * 50) / 50;
 /** The stand pattern baked for the GPU: one texel per ~11.7 m across the 6 km island. */
 export const STAND_TEXELS = 512;
 export function bakeStandTexture(size = STAND_TEXELS): THREE.DataTexture {
-  const span = GRID_SIZE * PATCH_METRES, data = new Uint8Array(size * size);
+  const span = worldGrid().cols * worldGrid().patchM, data = new Uint8Array(size * size);
   for (let row = 0; row < size; row++) for (let col = 0; col < size; col++) {
-    data[row * size + col] = channel(standDensity((col + 0.5) / size * span - PATCH_METRES / 2,
-      (row + 0.5) / size * span - PATCH_METRES / 2));
+    data[row * size + col] = channel(standDensity((col + 0.5) / size * span - worldGrid().patchM / 2,
+      (row + 0.5) / size * span - worldGrid().patchM / 2));
   }
   const texture = new THREE.DataTexture(data, size, size, THREE.RedFormat, THREE.UnsignedByteType);
   texture.magFilter = texture.minFilter = THREE.LinearFilter;
@@ -134,7 +166,12 @@ export class GroundTint {
   readonly farRange = { value: new THREE.Vector2(220, 1100) };
   #key = '';
 
-  constructor(readonly size = GRID_SIZE) {
+  /** Texels a side: one per patch column of the world drawn (20 on the island, 160 in the Congo forest). */
+  get size(): number { return this.#size; }
+  #size: number;
+
+  constructor(size = worldGrid().cols) {
+    this.#size = size;
     const make = () => {
       const texture = new THREE.DataTexture(new Uint8Array(size * size * 4).fill(255), size, size, THREE.RGBAFormat);
       texture.magFilter = texture.minFilter = THREE.LinearFilter;
@@ -147,11 +184,25 @@ export class GroundTint {
     (this.layers.image.data as Uint8Array).fill(0);
   }
 
+  /** Congo 1A.4: the same texture objects (materials hold them), re-allocated for another lattice. */
+  #resize(size: number): void {
+    this.#size = size; this.#key = '';
+    for (const [texture, fill] of [[this.near, 255], [this.far, 255], [this.layers, 0]] as const) {
+      texture.image = { data: new Uint8Array(size * size * 4).fill(fill), width: size, height: size };
+      texture.dispose(); texture.needsUpdate = true;
+    }
+    if (this.#stand) {
+      const baked = bakeStandTexture();
+      this.#stand.image = baked.image; this.#stand.dispose(); this.#stand.needsUpdate = true; baked.dispose();
+    }
+  }
+
   /** Baked on first use, not at import: tests and the server-side bundle never pay for it. */
   get stand(): THREE.DataTexture { return this.#stand ??= bakeStandTexture(); }
 
   /** Recolours from the latest checkpoint. Returns false when nothing visible changed. */
   update(patches: readonly GroundPatch[], season: string): boolean {
+    if (worldGrid().cols !== this.#size) this.#resize(worldGrid().cols);
     const key = season + JSON.stringify(patches.map((p) => [p.id, p.habitat, Math.round(grassFraction(p) * 50),
       Math.round((p.canopyCover ?? -1) * 50), p.surface, Object.values(groundLayers(p, season))]));
     if (key === this.#key) return false;
@@ -175,7 +226,7 @@ export class GroundTint {
    * the island's beaches (white inland).
    */
   apply(material: THREE.MeshStandardMaterial): void {
-    const span = GRID_SIZE * PATCH_METRES;
+    const span = worldGrid().cols * worldGrid().patchM;
     material.onBeforeCompile = (shader) => {
       shader.uniforms.groundNear = { value: this.near };
       shader.uniforms.groundFar = { value: this.far };
@@ -197,7 +248,7 @@ float groundNoise(vec2 p) {
   return mix(mix(groundHash(i), groundHash(i + vec2(1.0, 0.0)), u.x),
     mix(groundHash(i + vec2(0.0, 1.0)), groundHash(i + vec2(1.0, 1.0)), u.x), u.y);
 }\n` + shader.fragmentShader.replace('#include <color_fragment>', `
-        vec2 groundUv = (vGroundWorld.xz + ${(PATCH_METRES / 2).toFixed(1)}) / ${span.toFixed(1)};
+        vec2 groundUv = (vGroundWorld.xz + ${(worldGrid().patchM / 2).toFixed(1)}) / ${span.toFixed(1)};
         vec3 nearTint = texture2D(groundNear, groundUv).rgb;
         vec3 farColour = texture2D(groundFar, groundUv).rgb;
         // Litter, bare soil and moss shares for this patch, laid out by the trees' stand pattern
@@ -230,7 +281,8 @@ float groundNoise(vec2 p) {
         diffuseColor.rgb = mix(diffuseColor.rgb * nearTint * 1.6, farColour, groundFarness);
       `);
     };
-    material.customProgramCacheKey = () => 'vana-ground-tint-v2';
+    // The world's span is compiled into the shader: one program per world size, not one shared.
+    material.customProgramCacheKey = () => `vana-ground-tint-v2:${span}`;
     material.needsUpdate = true;
   }
 }

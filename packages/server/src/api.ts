@@ -1,5 +1,5 @@
 import Fastify, { type FastifyError, type FastifyInstance, type FastifyRequest } from 'fastify';
-import { RECAP_EVENT_TYPES, SKILL_IDS, formatWorldTime, seasonAt, thoughtFor, type Agent } from '@vana/shared';
+import { RECAP_EVENT_TYPES, SKILL_IDS, formatWorldTime, isCongoProfile, seasonAt, thoughtFor, type Agent, type Patch } from '@vana/shared';
 import { confidenceOf } from '@vana/sim';
 import type { Pool } from './db/pool.js';
 import { EventStore } from './db/eventStore.js';
@@ -24,8 +24,11 @@ import type { PlaceDropLedger } from './live/liveStore.js';
 import { GENERAL_LIMIT_DEFAULTS, NetworkRateLimit, type GeneralLimits } from './limits.js';
 import { networkKey } from './network.js';
 import { countResponse, type HttpStats } from './metrics.js';
+import type { ExperienceService } from './experiences/service.js';
+import { installExperiences } from './experiences/routes.js';
 
 export interface ApiDeps {
+  experiences?: ExperienceService;
   host: SimHost;
   pool: Pool;
   /** Rewords recap lines through the grounding check. Without one, recaps are templates. */
@@ -74,7 +77,7 @@ export function trustedProxyHops(env: NodeJS.ProcessEnv): number {
  * World routes are read-only. The optional reward ledger has independent write routes and
  * receives only a read-only subject visibility adapter, never a simulation mutation capability.
  */
-export function buildApi({ host, pool, narrator, insights: insightDeps, live, rewards, receiptRpc, social, holder, holderChain, trustedProxyHops: hops = 0, limits, httpStats, challenges, accounts, challengeSocial }: ApiDeps): FastifyInstance {
+export function buildApi({ host, pool, narrator, insights: insightDeps, live, rewards, receiptRpc, social, holder, holderChain, trustedProxyHops: hops = 0, limits, httpStats, challenges, accounts, challengeSocial, experiences }: ApiDeps): FastifyInstance {
   // Without this, behind Caddy every visitor has the proxy's address and shares one rate limit.
   const app = Fastify({ logger: false, trustProxy: hops > 0 ? (_address: string, hop: number) => hop < hops : false });
   if (httpStats) app.addHook('onResponse', async (_req, reply) => { countResponse(httpStats, reply.statusCode); });
@@ -97,8 +100,9 @@ export function buildApi({ host, pool, narrator, insights: insightDeps, live, re
     console.error('[api] request failed', error);
     return reply.code(500).send({ error: 'internal_error' });
   });
-  const events = new EventStore(pool);
-  const life = new LifeStore(pool);
+  const events = new EventStore(pool, host.grid);
+  if (experiences) installExperiences(app, experiences);
+  const life = new LifeStore(pool, host.grid);
   const humanMotion = new HumanMotionStore(pool);
   const historyCursors = new HistoryCursors();
   installRewards(app, { pool, config: rewards, ...(receiptRpc ? { receiptRpc } : {}), subject: (id) => host.rewardSubject(id), world: () => host.worldId,
@@ -124,6 +128,8 @@ export function buildApi({ host, pool, narrator, insights: insightDeps, live, re
   const observationRoutes = new Set(['/world', '/animals', '/animals/:id', '/patches', '/hydrology', '/micro-ecology', '/carcasses', '/event-map', '/animals/:id/passport', '/animals/:id/life', '/animals/:id/encounters/:eventId', '/animals/:id/movements/:eventId', '/animals/:id/recap', '/animals/:id/events', '/events']);
   const observations = new WeakMap<FastifyRequest, CheckpointObservation>();
   observationRoutes.add('/community');
+  observationRoutes.add('/regions');
+  observationRoutes.add('/regions/:id');
   observationRoutes.add('/people/:id');
   observationRoutes.add('/people/:id/events');
   observationRoutes.add('/people/:id/motion');
@@ -164,7 +170,7 @@ export function buildApi({ host, pool, narrator, insights: insightDeps, live, re
   app.get('/event-map', async (request) => {
     const view = observed(request);
     return { worldTime: view.worldTime, markers: (await events.mapEvents(view.worldTime, view.nextSequence))
-      .map(eventMarker).filter((marker) => marker !== null),
+      .map((event) => eventMarker(host.grid, event)).filter((marker) => marker !== null),
     notice: 'Recent recorded events, not live alerts. Events without valid recorded positions use approximate patch centres.' };
   });
 
@@ -173,8 +179,8 @@ export function buildApi({ host, pool, narrator, insights: insightDeps, live, re
     return {
       source: 'checkpoint', nextEventSequence: view.nextSequence,
       worldTime: now,
-      formatted: formatWorldTime(now),
-      season: seasonAt(now),
+      formatted: formatWorldTime(now, host.world?.terrainProfile),
+      season: seasonAt(now, host.world?.terrainProfile),
       ...view.summary(),
       worldHoursPerRealHour: host.worldHoursPerRealHour,
     };
@@ -231,23 +237,16 @@ export function buildApi({ host, pool, narrator, insights: insightDeps, live, re
 
   app.get('/animals', async (request) => ({
     worldTime: observed(request).worldTime, source: 'checkpoint',
-    animals: observed(request).livingAnimals()
-      .map((a) => ({
-        id: a.id, speciesId: a.speciesId, patchId: a.patchId, state: a.state,
-        position: a.position,
-        ...(a.altitudeM === undefined ? {} : { altitudeM: a.altitudeM, locomotionMode: a.locomotionMode ?? 'flight' }),
-        currentGoal: a.currentGoal, alternativeGoal: a.alternativeGoal, goalScore: a.goalScore,
-        ...(a.illness?.phase === 'active' ? { illnessStatus: 'symptomatic' } : {}),
-        ...(a.wound ? { woundStatus: a.wound.phase } : {}),
-        dependent: a.dependentOn !== null,
-        drives: a.drives, bornAt: a.bornAt, massKg: a.massKg,
-      })),
+    animals: observed(request).livingAnimals().map(animalView),
   }));
 
   app.get<{ Params: { id: string } }>('/animals/:id', async (request, reply) => {
     const agent = observed(request).animal(request.params.id);
     if (!agent) return reply.code(404).send({ error: 'not_found' });
-    return agent;
+    // Congo 1D: nothing public says an animal is owned (or steered, which implies it there):
+    // that would point bounty hunters at a target they have not sensed.
+    const { assetId: _asset, ownedDeath: _death, ...shown } = agent;
+    return isCongoProfile(host.world.terrainProfile) ? (({ controller: _c, ...rest }) => rest)(shown) : shown;
   });
 
   /**
@@ -470,6 +469,7 @@ export function buildApi({ host, pool, narrator, insights: insightDeps, live, re
   // Observer insights: estimates from TypeSafe AI's Jev about saved state, shown to viewers
   // and never read by the simulation. Absent unless a key is configured.
   const insights = insightDeps ?? new Insights(null);
+  insights.profile = host.world?.terrainProfile;
   const speciesFacts = (id: string) => {
     const config = host.world.species.get(id);
     return { displayName: config?.displayName ?? id, hunts: config?.hunting !== undefined, scavenges: config?.diet.canScavenge ?? false };
@@ -495,17 +495,45 @@ export function buildApi({ host, pool, narrator, insights: insightDeps, live, re
     return result.ok ? { available: true, ...result.value, notice: INSIGHT_NOTICE } : { available: false, reason: result.reason };
   });
 
+  const patchView = (p: Patch) => ({
+    id: p.id, x: p.x, y: p.y, habitat: p.habitat,
+    elevation: p.elevation, canopyCover: p.canopyCover,
+    islandSeed: p.islandSeed, ...(p.congoSeed === undefined ? {} : { congoSeed: p.congoSeed }),
+      // Congo 1A.4: the flooded forest under water in the rains, and the great river's deep middle.
+      ...(p.flooded ? { flooded: true } : {}), ...(p.deepWater ? { deepWater: true } : {}), surface: p.surface,
+    grass: p.plant.grass, browse: p.plant.browse,
+    floweringGuild: floweringGuildSummary(p),
+    water: p.waterVolume, soilNutrients: p.soilNutrients, drainage: p.drainage,
+  });
+  const animalView = (a: Agent) => ({
+    id: a.id, speciesId: a.speciesId, patchId: a.patchId, state: a.state,
+    position: a.position,
+    ...(a.altitudeM === undefined ? {} : { altitudeM: a.altitudeM, locomotionMode: a.locomotionMode ?? 'flight' }),
+    ...(a.locomotionMode === 'submerged' ? { locomotionMode: 'submerged' } : {}),
+    currentGoal: a.currentGoal, alternativeGoal: a.alternativeGoal, goalScore: a.goalScore,
+    ...(a.illness?.phase === 'active' ? { illnessStatus: 'symptomatic' } : {}),
+    ...(a.wound ? { woundStatus: a.wound.phase } : {}),
+    dependent: a.dependentOn !== null,
+    drives: a.drives, bornAt: a.bornAt, massKg: a.massKg,
+  });
+
   app.get('/patches', async (request) => ({
     worldTime: observed(request).worldTime, source: 'checkpoint',
-    patches: observed(request).patches().map((p) => ({
-      id: p.id, x: p.x, y: p.y, habitat: p.habitat,
-      elevation: p.elevation, canopyCover: p.canopyCover,
-      islandSeed: p.islandSeed, surface: p.surface,
-      grass: p.plant.grass, browse: p.plant.browse,
-      floweringGuild: floweringGuildSummary(p),
-      water: p.waterVolume, soilNutrients: p.soilNutrients, drainage: p.drainage,
-    })),
+    patches: observed(request).patches().map(patchView),
   }));
+
+  // Congo 1A.3: a large world is read a region (6 km square) at a time.
+  app.get('/regions', async (request) => ({
+    worldTime: observed(request).worldTime, source: 'checkpoint', grid: host.grid, regions: observed(request).regionIds(),
+  }));
+  app.get<{ Params: { id: string } }>('/regions/:id', async (request, reply) => {
+    const { id } = request.params;
+    if (!/^r(0|[1-9]\d{0,3})_(0|[1-9]\d{0,3})$/.test(id)) return reply.code(400).send({ error: 'bad_region_id' });
+    const view = observed(request);
+    if (!view.regionIds().includes(id)) return reply.code(404).send({ error: 'region_outside_world' });
+    return { worldTime: view.worldTime, source: 'checkpoint', id,
+      patches: view.regionPatches(id).map(patchView), animals: view.regionAnimals(id).map(animalView) };
+  });
 
   app.get('/hydrology', async (request) => {
     const view = observed(request), patches = view.patches(), budget = view.waterBudget();

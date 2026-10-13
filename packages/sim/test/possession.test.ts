@@ -5,6 +5,7 @@ import { createWorld, type World } from '../src/world.js';
 import { perceive } from '../src/agents/perception.js';
 import { assertNutrientsConserved } from '../src/fields/nutrients.js';
 import { restoreSnapshot, takeSnapshot } from '../src/snapshot.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const speciesDir = fileURLToPath(new URL('../../../config/species', import.meta.url));
 
@@ -48,11 +49,11 @@ describe('agent-steered animals', () => {
     const animal = adults(world, 'sambar')[0]!;
     world.possess(animal.id, 'agent_a');
     const land = world.patches.find((p) => landWalkable(p) && p.id !== animal.patchId)!;
-    const centre = patchCentre(land.id);
+    const centre = patchCentre(ISLAND_GRID, land.id);
     expect(world.placeControlled(animal.id, { ...centre, heading: 1 })).toBe(true);
     expect(animal.patchId).toBe(land.id);
     const sea = world.patches.find((p) => !landWalkable(p))!;
-    expect(world.placeControlled(animal.id, { ...patchCentre(sea.id), heading: 0 })).toBe(false);
+    expect(world.placeControlled(animal.id, { ...patchCentre(ISLAND_GRID, sea.id), heading: 0 })).toBe(false);
     expect(world.placeControlled(animal.id, { x: Number.NaN, z: 0, heading: 0 })).toBe(false);
     expect(animal.patchId).toBe(land.id);
     world.release(animal.id);
@@ -79,7 +80,7 @@ describe('agent-steered animals', () => {
     world.possess(animal.id, 'agent_a');
     const wet = world.patches.filter((p) => landWalkable(p)).sort((a, b) => b.waterVolume - a.waterVolume)[0]!;
     expect(wet.waterVolume).toBeGreaterThan(0);
-    const access = waterAccessPosition(wet.id, world.patches);
+    const access = waterAccessPosition(ISLAND_GRID, wet.id, world.patches);
     world.placeControlled(animal.id, { x: access.x + 20, z: access.z, heading: 0 });
     animal.drives.thirst = 0.6;
     world.applyControlledAction(animal.id, 'drink', 300);

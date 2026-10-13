@@ -1,0 +1,200 @@
+{
+  "id": "african_leopard",
+  "displayName": "African leopard",
+  "archetype": "apex_predator",
+  "trophicRole": [
+    "apex_predator"
+  ],
+  "body": {
+    "adultMassKg": 38,
+    "shoulderHeightM": 0.65,
+    "massBySexKg": {
+      "female": 30,
+      "male": 45
+    }
+  },
+  "locomotion": {
+    "walkMs": 1.2,
+    "trotMs": 3.5,
+    "sprintMs": 16.0,
+    "sprintStaminaS": 15,
+    "climbsTrees": true,
+    "terrainCost": {
+      "shola": 1.0,
+      "grassland": 1.1,
+      "riparian": 1.0,
+      "rock": 1.0,
+      "marsh": 1.6,
+      "water": 3.0,
+      "terra_firme": 1.0,
+      "flooded_forest": 1.4,
+      "swamp_forest": 1.6,
+      "bai": 1.1
+    },
+    "floodedTerrainCost": {
+      "flooded_forest": 3.0
+    }
+  },
+  "senses": {
+    "sightRangeM": 40,
+    "hearingRangeM": 200,
+    "smellRangeM": 120
+  },
+  "escape": {
+    "detectionDistanceM": 60,
+    "flightInitiationM": 20,
+    "evasiveness": 0.6
+  },
+  "diet": {
+    "eats": [
+      {
+        "target": "meat",
+        "preference": 1.0
+      }
+    ],
+    "dailyIntakeKg": 2.5,
+    "gutCapacityBodyFraction": 0.14,
+    "waterNeedLPerDay": 3,
+    "canScavenge": true,
+    "carrionTolerance": 0.6
+  },
+  "hunting": {
+    "preferredPrey": [
+      "blue_duiker",
+      "water_chevrotain"
+    ],
+    "stalkConcealment": 0.8,
+    "commitDistanceM": 15,
+    "baseSuccess": 0.6,
+    "staminaCostPerChase": 0.3,
+    "huntFromHunger": 0.35,
+    "maxPreyKg": 120,
+    "preferredPreyKg": [
+      3,
+      40
+    ],
+    "subdueSeconds": [
+      [
+        0,
+        5
+      ],
+      [
+        23,
+        20
+      ],
+      [
+        23,
+        60
+      ],
+      [
+        100,
+        180
+      ]
+    ],
+    "subdueBreakFree": 0.2,
+    "cachesKills": false
+  },
+  "social": {
+    "structure": "solitary",
+    "groupSize": [
+      1,
+      1
+    ],
+    "alarmSharing": false,
+    "territory": {
+      "femaleKm2": 25,
+      "maleKm2": 80,
+      "floaterMortalityPerDay": 0.004
+    }
+  },
+  "activity": {
+    "hourly": [
+      0.35,
+      0.35,
+      0.35,
+      0.35,
+      0.5,
+      0.85,
+      1,
+      1,
+      0.8,
+      0.7,
+      0.7,
+      0.7,
+      0.7,
+      0.7,
+      0.7,
+      0.75,
+      0.9,
+      1,
+      1,
+      0.8,
+      0.5,
+      0.4,
+      0.35,
+      0.35
+    ]
+  },
+  "learning": {
+    "innate": {
+      "stalk_technique": 0.25,
+      "water_locations": 0.2,
+      "predator_avoidance": 0.3
+    },
+    "learnRateFromParent": 0.05
+  },
+  "lifecycle": {
+    "followFromDays": 60,
+    "maxAgeDays": 6120,
+    "baselineMortalityPerDay": 0.00018,
+    "stages": [
+      {
+        "name": "newborn",
+        "startDays": 0,
+        "sizeFactor": 0.03,
+        "dependent": true,
+        "mortalityPerDay": 0.002
+      },
+      {
+        "name": "juvenile",
+        "startDays": 90,
+        "sizeFactor": 0.4,
+        "dependent": true,
+        "mortalityPerDay": 0.001
+      },
+      {
+        "name": "subadult",
+        "startDays": 570,
+        "sizeFactor": 0.75,
+        "dependent": false,
+        "mortalityPerDay": 0.00027
+      },
+      {
+        "name": "adult",
+        "startDays": 900,
+        "sizeFactor": 1.0,
+        "dependent": false,
+        "mortalityPerDay": 0.00018
+      },
+      {
+        "name": "elder",
+        "startDays": 4320,
+        "sizeFactor": 0.92,
+        "dependent": false,
+        "mortalityPerDay": 0.00072
+      }
+    ],
+    "sexualMaturityDays": 900,
+    "gestationDays": 96,
+    "litterSize": [
+      2,
+      3
+    ],
+    "interBirthIntervalDays": 600,
+    "oestrusCycleDays": 46,
+    "weanDays": 90,
+    "drinkFromDays": 60,
+    "meatFromDays": 45,
+    "dispersalDays": 570
+  }
+}

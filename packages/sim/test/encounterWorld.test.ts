@@ -3,6 +3,7 @@ import { patchCentre } from '@vana/shared';
 import { createWorld } from '../src/world.js';
 import { takeSnapshot, restoreSnapshot } from '../src/snapshot.js';
 import { SPECIES_DIR } from './helpers.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 describe('encounters in the authoritative world', () => {
   it('links a real death/carcass to a recorded contact, conserves mass and replays after restart', () => {
@@ -10,7 +11,7 @@ describe('encounters in the authoritative world', () => {
       const options = { seed, speciesDir: SPECIES_DIR, initialAgents: { tiger: 1, sambar: 2 }, minPopulation: {} };
       const world = createWorld(options);
       const patch = world.patches.find((p) => p.habitat === 'grassland')!;
-      const centre = patchCentre(patch.id);
+      const centre = patchCentre(ISLAND_GRID, patch.id);
       for (const [i, a] of world.agents.entries()) {
         a.patchId = patch.id; a.position = { x: centre.x + i * 15, z: centre.z, heading: 0 };
         a.sex = 'male'; a.drives = { hunger: a.speciesId === 'tiger' ? 0.8 : 0.2, thirst: 0, fatigue: 0, fear: 0 };

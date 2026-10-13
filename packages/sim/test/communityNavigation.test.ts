@@ -5,6 +5,7 @@ import { createWorld } from '../src/world.js';
 import { stepCommunity } from '../src/community.js';
 import { explorationSite, humanRoute, humanWalkable, nearbyResource, travelHuman } from '../src/communityNavigation.js';
 import { restoreSnapshot, takeSnapshot } from '../src/snapshot.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const options = { seed: 1, speciesDir: fileURLToPath(new URL('../../../config/species', import.meta.url)),
   terrainProfile: 'island_v1' as const, communityProfile: 'household_v1' as const,
@@ -30,11 +31,11 @@ describe('household v5 cross-patch resource journeys', () => {
     expect(Math.hypot(person.position.x - origin.x, person.position.z - origin.z)).toBeCloseTo(1.1, 8);
     expect(person.inventory.foodKg).toBe(0); expect(source.plant.browse).toBe(20);
     for (let minute = 0; minute < 60 && person.inventory.foodKg === 0; minute++) {
-      step(60); expect(positionInPatch(person.position, person.patchId)).toBe(true); expect(isCommunityState(c)).toBe(true);
+      step(60); expect(positionInPatch(ISLAND_GRID, person.position, person.patchId)).toBe(true); expect(isCommunityState(c)).toBe(true);
     }
     const gathering = w.log.all().find(e => e.type === 'human_task_finished' && e.conditions.action === 'gather_food')!;
     expect(gathering).toMatchObject({ patchId: source.id, conditions: { sourcePatchId: source.id }, outcome: 'success' });
-    expect(positionInPatch(gathering.position, source.id)).toBe(true);
+    expect(positionInPatch(ISLAND_GRID, gathering.position, source.id)).toBe(true);
     expect(source.plant.browse).toBeCloseTo(20 - gathering.effects.foodKg!, 9);
     expect(home.plant.browse).toBe(0); expect(c.stores.foodKg).toBe(0); expect(person.inventory.foodKg).toBeGreaterThan(0);
     expect(person.task).toMatchObject({ kind: 'deliver', journey: { destinationPatchId: home.id } });
@@ -108,10 +109,10 @@ describe('household v5 cross-patch resource journeys', () => {
   it('routes around deep water, rejects coast/disconnected routes and charges travel without skipping waypoints', () => {
     const w = createWorld({ ...options, terrainProfile: 'mainland', communityProfile: 'none' });
     for (const p of w.patches) p.habitat = 'grassland';
-    const from = { ...patchCentre(210), heading: 0 }, to = { ...patchCentre(212), heading: 0 };
+    const from = { ...patchCentre(ISLAND_GRID, 210), heading: 0 }, to = { ...patchCentre(ISLAND_GRID, 212), heading: 0 };
     w.patches[211]!.habitat = 'water';
     const route = humanRoute(from, to, w.patches)!;
-    expect(route.length).toBeGreaterThan(3); expect(route.every(point => patchAtPosition(point) !== 211)).toBe(true);
+    expect(route.length).toBeGreaterThan(3); expect(route.every(point => patchAtPosition(ISLAND_GRID, point) !== 211)).toBe(true);
     const { person } = fixture(); person.position = from; person.patchId = 210;
     const task = { kind: 'gather_food' as const, phase: 'travel' as const, destination: to,
       remainingSeconds: 900, startedAt: 0, eventId: 'route-test', journey: { destinationPatchId: 212, waypoints: route } };
@@ -126,19 +127,19 @@ describe('household v5 cross-patch resource journeys', () => {
 
   it('keeps actual island paths above the shoreline and refuses stale dry labels over submerged mesh', () => {
     const w = createWorld({ ...options, communityProfile: 'none' });
-    const from = { ...patchCentre(210), heading: 0 }, to = { ...patchCentre(212), heading: 0 };
+    const from = { ...patchCentre(ISLAND_GRID, 210), heading: 0 }, to = { ...patchCentre(ISLAND_GRID, 212), heading: 0 };
     expect(w.patches[211]!.surface).toBe('land');
     w.patches[211]!.habitat = 'water';
     const route = humanRoute(from, to, w.patches)!;
     expect(route).not.toBeNull();
-    expect(route.every(point => patchAtPosition(point) !== 211)).toBe(true);
+    expect(route.every(point => patchAtPosition(ISLAND_GRID, point) !== 211)).toBe(true);
     let previous = from;
     for (const point of route) {
       const metres = Math.hypot(point.x - previous.x, point.z - previous.z);
       for (let i = 0; i <= Math.ceil(metres / 25); i++) {
         const t = i / Math.max(1, Math.ceil(metres / 25));
         const x = previous.x + (point.x - previous.x) * t, z = previous.z + (point.z - previous.z) * t;
-        expect(w.patches[patchAtPosition({ x, z, heading: 0 })]!.habitat).not.toBe('water');
+        expect(w.patches[patchAtPosition(ISLAND_GRID, { x, z, heading: 0 })]!.habitat).not.toBe('water');
         expect(islandHeightAt(1, x, z)).toBeGreaterThanOrEqual(2 - 1e-6);
       }
       previous = point;
@@ -147,13 +148,13 @@ describe('household v5 cross-patch resource journeys', () => {
     const coast = w.patches[69]!;
     expect(coast.surface).toBe('coast');
     coast.surface = 'land'; coast.habitat = 'grassland';
-    expect(humanRoute({ ...patchCentre(89), heading: 0 }, { ...patchCentre(69), heading: 0 }, w.patches)).toBeNull();
+    expect(humanRoute({ ...patchCentre(ISLAND_GRID, 89), heading: 0 }, { ...patchCentre(ISLAND_GRID, 69), heading: 0 }, w.patches)).toBeNull();
   });
 
   it('uses a reachable resource and exploration site when a nearer labelled-land coast cell is physically wet', () => {
     const { person } = fixture();
     const w = createWorld({ ...options, communityProfile: 'none' });
-    person.position = { ...patchCentre(89), heading: 0 }; person.patchId = 89;
+    person.position = { ...patchCentre(ISLAND_GRID, 89), heading: 0 }; person.patchId = 89;
     person.visitedSites = [{ patchId: 89, at: 0 }];
     for (const patch of w.patches) patch.plant.browse = 0;
     w.patches[69]!.surface = 'land'; w.patches[69]!.habitat = 'grassland';
@@ -166,11 +167,11 @@ describe('household v5 cross-patch resource journeys', () => {
     const { person } = fixture();
     const w = createWorld({ ...options, terrainProfile: 'mainland', communityProfile: 'none' });
     for (const patch of w.patches) patch.habitat = 'grassland';
-    const origin = { ...patchCentre(210), heading: 0 }, goal = { ...patchCentre(212), heading: 0 };
+    const origin = { ...patchCentre(ISLAND_GRID, 210), heading: 0 }, goal = { ...patchCentre(ISLAND_GRID, 212), heading: 0 };
     person.position = { ...origin }; person.patchId = 210;
     const makeTask = (ids: number[]) => ({ kind: 'gather_food' as const, phase: 'travel' as const,
       destination: goal, remainingSeconds: 900, startedAt: 0, eventId: 'route-test',
-      journey: { destinationPatchId: 212, waypoints: ids.map(id => ({ ...patchCentre(id), heading: 0 })) } });
+      journey: { destinationPatchId: 212, waypoints: ids.map(id => ({ ...patchCentre(ISLAND_GRID, id), heading: 0 })) } });
     w.patches[211]!.habitat = 'water';
     const blocked = makeTask([210, 211, 212]);
     expect(() => travelHuman(person, blocked, w.patches, 300)).toThrow('invalid human land route');
@@ -203,7 +204,7 @@ describe('household v5 cross-patch resource journeys', () => {
     expect(takeSnapshot(b)).toEqual(takeSnapshot(w)); expect(b.log.all()).toEqual(w.log.all());
     expect(isCommunityState(w.community)).toBe(true);
     const bad = structuredClone(saved);
-    bad.community!.people[0]!.task!.journey!.waypoints[0] = { ...patchCentre(399), heading: 0 };
+    bad.community!.people[0]!.task!.journey!.waypoints[0] = { ...patchCentre(ISLAND_GRID, 399), heading: 0 };
     expect(isCommunityState(bad.community)).toBe(false); expect(() => restoreSnapshot(bad, options)).toThrow();
     const duplicate = structuredClone(saved.community!);
     duplicate.people[0]!.visitedSites!.push({ ...duplicate.people[0]!.visitedSites![0]! });
@@ -217,7 +218,7 @@ describe('household v5 cross-patch resource journeys', () => {
 
   it('returns carried spoilage and a remote body to its actual soil, not to the household patch', () => {
     const { w, c, person, home, source, step } = fixture();
-    person.position = { ...patchCentre(source.id), heading: 0 }; person.patchId = source.id;
+    person.position = { ...patchCentre(ISLAND_GRID, source.id), heading: 0 }; person.patchId = source.id;
     person.alive = false; person.diedAt = 0; person.inventory.foodKg = 2;
     for (const p of c.people.slice(1)) { p.massKg = 0; }
     const homeSoil = home.soilNutrients, sourceSoil = source.soilNutrients, baseline = w.totalNutrients();

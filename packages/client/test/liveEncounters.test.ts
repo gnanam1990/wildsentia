@@ -4,6 +4,7 @@ import { isLiveEncounterFrame, LiveEncounterPlayer, recordedClimbPhase, recorded
   withRecordedVisualIdentity } from '../src/liveEncounters.js';
 import type { AnimalState } from '../src/protocol.js';
 import { PositionTracker } from '../src/space.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const p = (x: number) => ({ x, z: 0, heading: Math.PI / 2 });
 function frame(): LiveEncounterFrame {
@@ -70,7 +71,7 @@ describe('checkpointed live encounter playback', () => {
     expect(isLiveEncounterFrame(badStage)).toBe(false);
   });
   it('uses only same-trunk saved altitude samples for langur/squirrel climb phases', () => {
-    const anchor = treeAnchorGeometry(210)!;
+    const anchor = treeAnchorGeometry(ISLAND_GRID, 210)!;
     const position = { x: anchor.x, z: anchor.z, heading: 0 };
     const f = frame(); f.encounters = [];
     f.movements = [{ eventId: 'climb', actor: { id: 'l', speciesId: 'langur', sizeRatio: 1, coatVariant: 0 },

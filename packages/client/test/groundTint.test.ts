@@ -3,6 +3,8 @@ import * as THREE from 'three';
 import { bakeStandTexture, groundLayers, GroundTint, patchGroundColours } from '../src/groundTint.js';
 import { standDensity } from '../src/forestStructure.js';
 import { skyColours } from '../src/sky.js';
+import { CONGO_GRID, ISLAND_GRID } from '@vana/shared';
+import { setWorldGrid } from '../src/worldGrid.js';
 
 const patch = (habitat: string, grass: number, canopyCover?: number) => ({ id: 0, habitat, grass, ...(canopyCover === undefined ? {} : { canopyCover }) });
 const greenness = (c: { r: number; g: number; b: number }) => c.g - (c.r + c.b) / 2;
@@ -92,5 +94,22 @@ describe('sky colours', () => {
     expect(day.zenith.b).toBeGreaterThan(day.zenith.r);
     expect(dawn.horizon.r).toBeGreaterThan(day.horizon.r);
     expect(Math.abs(rainy.zenith.r - rainy.zenith.b)).toBeLessThan(Math.abs(day.zenith.r - day.zenith.b));
+  });
+});
+
+describe('ground colour on the Congo lattice (1A.4)', () => {
+  it('tints Congo patches, growing its textures to the 160-patch lattice, and compiles a program per world span', () => {
+    const tint = new GroundTint();
+    const island = new THREE.MeshStandardMaterial(); tint.apply(island);
+    setWorldGrid(CONGO_GRID);
+    try {
+      const id = 94 * 160 + 96;
+      expect(tint.update([{ id, habitat: 'terra_firme', grass: 400, canopyCover: 0.9 }], 'monsoon')).toBe(true);
+      expect(tint.near.image.width).toBe(160);
+      const texel = Array.from((tint.near.image.data as Uint8Array).slice(id * 4, id * 4 + 3));
+      expect(texel).not.toEqual([255, 255, 255]);
+      const congo = new THREE.MeshStandardMaterial(); tint.apply(congo);
+      expect(congo.customProgramCacheKey()).not.toBe(island.customProgramCacheKey());
+    } finally { setWorldGrid(ISLAND_GRID); }
   });
 });

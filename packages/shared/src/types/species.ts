@@ -1,4 +1,4 @@
-import type { HabitatType } from './patch.js';
+import { HABITAT_ANALOGUE, type CongoHabitat, type HabitatType, type IslandHabitat } from './patch.js';
 import type { LifeStage, SkillId } from './agent.js';
 
 export type Archetype =
@@ -28,12 +28,17 @@ export interface SpeciesConfig {
     trotMs: number;
     sprintMs: number;
     sprintStaminaS: number;
-    terrainCost: Record<HabitatType, number>;
+    /** Island habitats are required; a Congo habitat left out costs as its analogue (`terrainCostFor`). */
+    terrainCost: Record<IslandHabitat, number> & Partial<Record<CongoHabitat, number>>;
     /**
      * sim_0.37.0: climbs its patch's tree to escape a ground predator in the same patch (langur,
      * giant squirrel, leopard). Omitted: a ground animal.
      */
     climbsTrees?: boolean;
+    /** Congo 1B: swims, and dives to escape, staying under for up to `diveSeconds`. Omitted: never swims. */
+    swims?: { swimMs: number; diveSeconds: number };
+    /** Congo 1B: what crossing water or flooded forest costs while it is flooded, where not `terrainCost`. */
+    floodedTerrainCost?: { water?: number; flooded_forest?: number };
   };
   senses: { sightRangeM: number; hearingRangeM: number; smellRangeM: number };
   escape: {
@@ -43,6 +48,8 @@ export interface SpeciesConfig {
      * though they do not hunt it (leopards avoid tigers: Odden et al. 2010; Harihar et al. 2011).
      */
     avoids?: string[];
+    /** Congo 1B: holds still first when a predator has not yet seen it (duikers, chevrotains). */
+    freezeFirst?: boolean;
   };
   diet: {
     eats: Array<{
@@ -113,6 +120,8 @@ export interface SpeciesConfig {
      * scavengers and other predators (leopards: Balme et al. 2017).
      */
     cachesKills?: boolean;
+    /** Congo 1B: the life stages of prey it takes; omitted: every stage. */
+    preyLifeStages?: LifeStage[];
     /**
      * sim_0.37.0: the heaviest individual prey (kg) this hunter goes for, by the prey's own mass,
      * so a leopard takes sambar fawns and wild pig piglets but not an adult sambar stag.
@@ -127,6 +136,8 @@ export interface SpeciesConfig {
   };
   social: {
     structure: 'solitary' | 'pair' | 'herd' | 'troop' | 'pack' | 'family';
+    /** Congo 1B: a bonded pair (blue duiker): founded as unrelated male-female pairs, kept together, courting only each other. */
+    pairBond?: boolean;
     groupSize: [min: number, max: number];
     alarmSharing: boolean;
     /** sim_0.34.0: other species whose alarm calls this one takes up when standing with them. */
@@ -243,4 +254,15 @@ export interface SpeciesConfig {
     condition?: { conditionDays: number; minBreedingCondition: number; fullBreedingCondition: number };
     dispersalDays: number;
   };
+}
+
+/**
+ * What crossing a habitat costs this species: its own figure, or its analogue's for a Congo
+ * habitat it does not name. Flooded ground (Congo 1B) costs its `floodedTerrainCost` where it has one.
+ */
+export function terrainCostFor(cfg: Pick<SpeciesConfig, 'locomotion'>, habitat: HabitatType, flooded = false): number {
+  const wet = flooded ? (cfg.locomotion.floodedTerrainCost as Partial<Record<HabitatType, number>> | undefined)?.[habitat] : undefined;
+  if (wet !== undefined) return wet;
+  const own = (cfg.locomotion.terrainCost as Partial<Record<HabitatType, number>>)[habitat];
+  return own ?? cfg.locomotion.terrainCost[HABITAT_ANALOGUE[habitat as CongoHabitat] ?? (habitat as IslandHabitat)];
 }

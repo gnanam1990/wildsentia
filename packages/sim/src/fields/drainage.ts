@@ -1,4 +1,4 @@
-import { GRID_SIZE, type Patch, type Season, type WaterBudget } from '@vana/shared';
+import { patchCount, type Patch, type WorldGrid, type Season, type WaterBudget } from '@vana/shared';
 import { updateWater, waterRetentionL } from './water.js';
 
 export const surfaceWaterL = (patches: readonly Patch[]): number => patches.reduce((sum, p) => sum + p.waterVolume, 0);
@@ -14,30 +14,30 @@ export function waterBudgetResidual(patches: readonly Patch[], budget: WaterBudg
 /** Strictly downhill cardinal drainage: deterministic, acyclic and independent of storage order.
  * Flat/interior sinks retain water. Boundary export is to the surrounding landscape, not a
  * fabricated ocean. This is a coarse catchment model, not river-bed geometry or hydraulic flow. */
-export function drainageGraph(patches: readonly Patch[]): Map<number, number | null> {
+export function drainageGraph(grid: WorldGrid, patches: readonly Patch[]): Map<number, number | null> {
   const byId = new Map(patches.map(p => [p.id, p]));
   if (byId.size !== patches.length || patches.some(p => !Number.isInteger(p.id) || p.id < 0
-    || p.id >= GRID_SIZE * GRID_SIZE || !Number.isFinite(p.elevation)
+    || p.id >= patchCount(grid) || !Number.isFinite(p.elevation)
     || !Number.isFinite(p.waterVolume) || p.waterVolume < 0 || (p.surface === 'ocean' && p.waterVolume !== 0))) throw new Error('invalid drainage patches');
   return new Map(patches.map(p => {
     if (p.surface === 'ocean' || (p.surface === 'coast' && p.elevation === 0)) return [p.id, null];
     const lower = p.neighbours.map(id => byId.get(id)).filter((n): n is Patch => !!n
-      && Math.abs(n.id % GRID_SIZE - p.id % GRID_SIZE) + Math.abs(Math.floor(n.id / GRID_SIZE) - Math.floor(p.id / GRID_SIZE)) === 1
+      && Math.abs(n.id % grid.cols - p.id % grid.cols) + Math.abs(Math.floor(n.id / grid.cols) - Math.floor(p.id / grid.cols)) === 1
       && n.elevation < p.elevation).sort((a, b) => a.elevation - b.elevation || a.id - b.id);
     return [p.id, lower[0]?.id ?? null];
   }));
 }
 
-export function updateDrainage(patches: Patch[], hours: number, season: Season, budget: WaterBudget): void {
+export function updateDrainage(grid: WorldGrid, patches: Patch[], hours: number, season: Season, budget: WaterBudget, rainfallScale = 1): void {
   if (!Number.isFinite(hours) || hours <= 0) throw new Error('invalid drainage duration');
-  const graph = drainageGraph(patches), byId = new Map(patches.map(p => [p.id, p]));
+  const graph = drainageGraph(grid, patches), byId = new Map(patches.map(p => [p.id, p]));
   for (const p of patches) {
-    const flux = updateWater(p, hours, season);
+    const flux = updateWater(p, hours, season, rainfallScale);
     budget.rainfallL += flux.rainfallL; budget.groundwaterL += flux.groundwaterL; budget.evaporatedL += flux.evaporatedL;
-    const x = p.id % GRID_SIZE, y = Math.floor(p.id / GRID_SIZE);
+    const x = p.id % grid.cols, y = Math.floor(p.id / grid.cols);
     const downstreamPatchId = graph.get(p.id)!;
     p.drainage = { downstreamPatchId, boundaryOutlet: downstreamPatchId === null
-      && (x === 0 || y === 0 || x === GRID_SIZE - 1 || y === GRID_SIZE - 1 || p.surface === 'coast' && p.elevation === 0),
+      && (x === 0 || y === 0 || x === grid.cols - 1 || y === grid.rows - 1 || p.surface === 'coast' && p.elevation === 0),
       inflowL: 0, outflowL: 0, hours };
   }
   // High-to-low routing is a quasi-steady solve for this decision. Water may traverse several

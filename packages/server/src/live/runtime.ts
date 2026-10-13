@@ -9,6 +9,17 @@ import { AgentStore, PlaceDropLedger } from './liveStore.js';
 import type { HoldingGate, LiveRouteDeps } from './routes.js';
 import { randomLandSpot, worldPort } from './worldPort.js';
 import { WindowMax } from '../metrics.js';
+import { isCongoProfile } from '@vana/shared';
+import { OwnershipStore } from '../ownership/store.js';
+import { SimulatedPurchaseAdapter, loadOwnershipConfig } from '../ownership/purchase.js';
+import { LifeService } from '../ownership/lives.js';
+import { ControlService } from '../ownership/control.js';
+import type { OwnedDeps } from '../ownership/routes.js';
+import { BountyStore } from '../bounties/store.js';
+import { BountyEngine, DevSettlementAdapter } from '../bounties/engine.js';
+import { BountyDiscovery } from '../bounties/discovery.js';
+import type { BountyDeps } from '../bounties/routes.js';
+import { EventStore } from '../db/eventStore.js';
 
 /**
  * Starts and stops the live layer beside the SimHost (docs/2026-09-26-live-agents-design.md).
@@ -57,7 +68,7 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
     position: (id) => host.playedPosition(id),
     time: () => { const f = host.liveEncounterFrame(); return f ? f.startWorldTime + f.elapsedWorldSeconds : host.world.now(); },
     rate: () => host.worldHoursPerRealHour,
-  });
+  }, () => host.busy);
   const port: typeof inner = { ...inner,
     resolveHunt: (...args) => { huntPending = true; changedAt = Date.now(); return inner.resolveHunt(...args); },
     act: (...args) => { changedAt = Date.now(); return inner.act(...args); },
@@ -65,13 +76,49 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
   };
   const ledger = rewards ? new PlaceDropLedger(pool, rewards, () => host.worldId, store) : null;
   const live = new LiveLayer(port, ledger);
-  live.onEnded = (life) => { void store.recordLife(life).catch((e) => console.error('[live] life record failed', e)); };
+  // Congo 1C: owned animals, who steers them, their lives and the simulated store.
+  const owned: OwnedDeps | null = isCongoProfile(host.world.terrainProfile) ? (() => {
+    const config = loadOwnershipConfig(env.VANA_OWNERSHIP_CONFIG ?? fileURLToPath(new URL('../../../../config/ownership-congo.json', import.meta.url)));
+    const ownership = new OwnershipStore(pool, host.worldId ?? 'unknown');
+    return { store: ownership, config, shop: new SimulatedPurchaseAdapter(ownership, config),
+      animalOf: (id: string) => { const a = host.world.animal(id); return a?.alive ? { state: a.state, steered: live.avatars.byAnimal(id) !== undefined } : null; },
+      lives: new LifeService(ownership, host, config, () => host.snapshotNow()),
+      control: new ControlService(ownership, live, { assetOf: (id) => host.world.animal(id)?.assetId,
+        block: (id) => host.world.possessionBlock(id, { owner: true, ignoreController: true }), exclusive: (work) => host.exclusive(work) }) };
+  })() : null;
+  // Congo 1D: bounties on owned animals, found by perception, settled in the SIMULATED ledger.
+  const bounties: BountyDeps | null = owned ? (() => {
+    const store = new BountyStore(pool, host.worldId ?? 'unknown'), events = new EventStore(pool, host.world.grid);
+    const eventsOf = async (ids: string[], from: number, to: number) => {
+      const seen = new Map<string, { id: string; worldTime: number }>();
+      for (const id of ids) for (const e of await events.byActorSince(id, from - 1, 500)) if (e.worldTime <= to) seen.set(e.id, e);
+      for (const e of host.world.log.all()) if (e.worldTime >= from && e.worldTime <= to && e.actors.some((a) => ids.includes(a))) seen.set(e.id, e);
+      return [...seen.values()].sort((a, b) => a.worldTime - b.worldTime || a.id.localeCompare(b.id));
+    };
+    // The hour being played (what viewers and live hunters see) trails the world's clock by up to an hour.
+    const played = () => { const f = host.liveEncounterFrame(); return f ? f.startWorldTime + f.elapsedWorldSeconds : host.world.now(); };
+    const engine = new BountyEngine(store, owned.store, host, new DevSettlementAdapter(store), () => host.worldHoursPerRealHour, eventsOf, played);
+    owned.bountyActive = async (lifeId) => (await store.activeOnLife(lifeId)) !== null;
+    owned.lastBounty = (assetId) => store.lastDecidedOnAsset(assetId);
+    return { store, engine, discovery: new BountyDiscovery(store, () => host.worldId ?? 'unknown'), adminToken: env.VANA_BOUNTY_ADMIN_TOKEN?.trim() || null,
+      now: played };
+  })() : null;
+  live.onHunt = (hunt) => {
+    if (bounties && hunt.killed) void bounties.engine.adjudicate().catch((e) => console.error('[bounty] adjudicate failed', e));
+  };
+  live.onEnded = (life) => {
+    void store.recordLife(life).catch((e) => console.error('[live] life record failed', e));
+    if (owned) {
+      void owned.control.ended(life).catch((e) => console.error('[owned] lease end failed', e));
+      if (life.how === 'died' || life.how === 'caught') void owned.lives.reconcile().catch((e) => console.error('[owned] reconcile failed', e));
+    }
+  };
   const timers: NodeJS.Timeout[] = [];
   const tickLag = new WindowMax();
   const save = async () => { const id = host.worldId; if (id) await store.savePossessions(id, live.avatars.values()); };
   const holding = holdingGate(env);
   const routes: LiveRouteDeps = {
-    live, world: port, store, ledger, ...(holding ? { holding } : {}),
+    live, world: port, store, ledger, ...(holding ? { holding } : {}), ...(owned ? { owned } : {}), ...(bounties ? { bounties } : {}),
     limits: { slots: positiveSetting(env, 'VANA_AGENT_SLOTS', 500), perNetworkPerDay: positiveSetting(env, 'VANA_AGENT_REGISTRATIONS_PER_NETWORK', 5) },
     networkSecret: env.VANA_LIVE_SECRET?.trim() || rewards?.adminToken || randomBytes(32).toString('hex'),
     clientScriptPath: fileURLToPath(new URL('../../agent-client/client.mjs', import.meta.url)),
@@ -82,14 +129,32 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
     async start(broadcast) {
       const id = host.worldId;
       const restored = new Set<string>();
-      if (id) for (const saved of await store.loadPossessions(id)) if (live.restore(saved)) restored.add(saved.animalId);
-      // An animal still marked as steered, with no saved possession, goes back to the wild.
-      for (const animal of host.world.agents) if (animal.controller && !restored.has(animal.id)) host.world.release(animal.id);
+      // Between steps, never inside one: the host may already be stepping when the live layer starts.
+      // An owned animal's life is settled first (the world may have rolled back past a death or a
+      // spawn), and its possession comes back only for the holder of its open lease.
+      const leases = owned ? await (async () => { await owned.lives.reconcile(); return owned.store.openLeases(); })() : [];
+      const leased = new Map(leases.map((l) => [l.animalId, l.holderId]));
+      await host.exclusive(async () => {
+        if (id) for (const saved of await store.loadPossessions(id)) {
+          const isOwned = host.world.animal(saved.animalId)?.assetId !== undefined;
+          // On Congo only owned animals are steered, and only by their lease's holder.
+          if (owned && (!isOwned || leased.get(saved.animalId) !== saved.agentId)) continue;
+          if (live.restore(saved, isOwned)) restored.add(saved.animalId);
+        }
+        // An animal still marked as steered, with no saved possession, goes back to the wild.
+        for (const animal of host.world.agents) if (animal.controller && !restored.has(animal.id)) host.world.release(animal.id);
+      });
+      // A lease whose possession did not come back (saved every 10 s) ends: no holder without control.
+      if (owned) for (const lease of leases) if (!restored.has(lease.animalId)) await owned.store.endLeaseOf(lease.lifeId, lease.holderId, 'restart');
       await ledger?.refresh().catch((e) => console.error('[live] drop refresh failed', e));
-      let last = performance.now();
+      let last = performance.now(), held = false;
       timers.push(setInterval(() => {
         const now = performance.now();
-        tickLag.record(Math.max(0, (now - last) / 1000 - 1 / TICK_HZ));
+        // While the world steps nothing may move it: the tick holds, and the next one catches up.
+        // The held time is the step's, not event-loop lag, so it is not recorded as lag.
+        if (host.busy) { held = true; return; }
+        if (!held) tickLag.record(Math.max(0, (now - last) / 1000 - 1 / TICK_HZ));
+        held = false;
         try { live.tick((now - last) / 1000); } catch (e) { console.error('[live] tick failed', e); }
         last = now;
       }, 1000 / TICK_HZ));
@@ -103,6 +168,15 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
         void host.snapshotNow().catch((e) => console.error('[live] checkpoint failed', e));
       }, 10_000));
       timers.push(setInterval(() => { void store.reapInactive().catch(() => undefined); }, 6 * 3_600_000));
+      // Owned lives follow their animals: deaths in the hourly step end their lives within seconds.
+      if (owned) timers.push(setInterval(() => { void owned.lives.reconcile().catch((e) => console.error('[owned] reconcile failed', e)); }, 10_000));
+      if (bounties) {
+        // A payout decided before a stop is recorded now; then deaths and deadlines are checked every 10 s.
+        await bounties.engine.settlePending().catch((e) => console.error('[bounty] settle failed', e));
+        await bounties.discovery.refresh().catch(() => undefined);
+        timers.push(setInterval(() => { void bounties.engine.adjudicate().catch((e) => console.error('[bounty] adjudicate failed', e)); }, 10_000));
+        timers.push(setInterval(() => { void bounties.discovery.refresh().catch(() => undefined); }, 2000));
+      }
       // Four times a second, filtered per viewer by the gateway; the roster every two seconds.
       timers.push(setInterval(() => broadcast.live(live.publicState(), Date.now()), 250));
       let wasEmpty = true;

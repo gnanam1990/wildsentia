@@ -1,0 +1,24 @@
+/* Congo 1E: the owner's animals, the store and the bounty board; the admin's bounty editor. */
+.congo-assets, .congo-store, .congo-dev { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 14px; }
+.congo-asset { border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+.congo-asset-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; }
+.congo-asset-head h3 { margin: 0; font-size: 1.1rem; overflow-wrap: anywhere; }
+.congo-state { font-weight: 700; padding: 4px 10px; border-radius: 999px; background: var(--line); }
+.tone-ok .congo-state { background: color-mix(in srgb, var(--moss) 22%, transparent); }
+.tone-warn .congo-state { background: color-mix(in srgb, #d9a441 30%, transparent); }
+.tone-bad .congo-state { background: color-mix(in srgb, #c4553a 30%, transparent); }
+.congo-asset .actions, .congo-inline { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 10px; }
+.congo-inline input { min-height: 44px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line); background: transparent; color: inherit; flex: 1 1 14rem; min-width: 0; font: inherit; }
+.congo-inline label { flex: 1 0 100%; font-weight: 600; }
+.congo-agents { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+.congo-agents code { overflow-wrap: anywhere; }
+.congo-quote { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.sim-badge { font-size: .75rem; letter-spacing: .06em; padding: 3px 8px; border-radius: 6px; border: 1px solid currentColor; vertical-align: middle; }
+.congo-feedback:empty { display: none; }
+.congo-status { white-space: pre-wrap; overflow-wrap: anywhere; font: .86rem/1.5 var(--mono); background: var(--line); padding: 12px; border-radius: 10px; }
+.congo-checks { list-style: none; padding: 0; display: grid; gap: 4px; }
+.congo-checks .pass::before { content: '✓ '; } .congo-checks .fail::before { content: '✗ '; }
+@media (max-width: 520px) { .congo-asset { padding: 12px; } .holder-page button { width: 100%; } }
+/* Secondary actions (sell, revoke, cancel) read as secondary. */
+.congo-page button.quiet { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+.congo-page button.quiet:hover { background: var(--line); color: var(--ink); }

@@ -12,6 +12,7 @@ import { testDatabaseUrl } from './testDatabase.js';
 import { SceneUpdates, type SceneEnvironment } from '../../client/src/sceneUpdates.js';
 import { makeHeightSampler } from '../../client/src/terrain.js';
 import { asLegacySnapshot } from '../../sim/test/legacySnapshot.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const url = testDatabaseUrl(), pool = url ? createPool(url) : null, maybe = url ? describe : describe.skip;
 const options = () => ({ pool: pool!, seed: 1, speciesDir: fileURLToPath(new URL('../../../config/species', import.meta.url)),
@@ -29,7 +30,7 @@ maybe('durable island world', () => {
     // Nearly the whole founding cohort (1,382 at sim_0.33.0) is still alive and tracked at hour six.
     const founded = Object.values(ISLAND_POPULATION).reduce((n, c) => n + c, 0);
     expect(rows.rowCount).toBeGreaterThan(founded * 0.95);
-    expect(rows.rows.every(r => positionInPatch({ x: r.position_x, z: r.position_z, heading: r.heading }, r.patch_id))).toBe(true);
+    expect(rows.rows.every(r => positionInPatch(ISLAND_GRID, { x: r.position_x, z: r.position_z, heading: r.heading }, r.patch_id))).toBe(true);
     const saved = takeSnapshot(host.world); await host.abort();
     const resumed = new SimHost(config); await resumed.boot(); expect(takeSnapshot(resumed.world)).toEqual(saved);
   });

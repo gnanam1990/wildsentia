@@ -62,6 +62,7 @@ maybe('Gateway', () => {
     expect(socket.sent[0]).toMatchObject({ type: 'scene', protocol: 1, checkpointId: expect.any(String),
       environment: { patches: expect.any(Array), carcasses: expect.any(Array) } });
     expect(socket.lastOfType('world')).toBeDefined();
+    expect((socket.sent[0] as { world: { grid: unknown } }).world.grid).toEqual({ cols: 20, rows: 20, patchM: 300, regionPatches: 20 });
     expect(socket.lastOfType('animals')).toBeDefined();
     expect(socket.lastOfType('encounters')).toMatchObject({ frame: { startWorldTime: 39600, endWorldTime: 43200 } });
   });

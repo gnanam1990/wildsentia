@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { ISLAND_SEGMENTS, ISLAND_STEP_M, PATCH_METRES, islandHeightAt, islandVertexHeight } from '@vana/shared';
+import { ISLAND_SEGMENTS, ISLAND_STEP_M, islandHeightAt, islandVertexHeight } from '@vana/shared';
 import { islandHeightField } from '../src/islandHeightField.js';
 import { makeHeightSampler, type PatchView } from '../src/terrain.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 describe('exact client island height field', () => {
   it('stores every authoritative vertex exactly and samples both triangles, edges and diagonals in every cell', () => {
@@ -12,8 +13,8 @@ describe('exact client island height field', () => {
         expect(field.vertex(col, row)).toBe(islandVertexHeight(seed, col, row));
         if (row === ISLAND_SEGMENTS || col === ISLAND_SEGMENTS) continue;
         for (const [fx, fz] of [[0, 0], [.2, .3], [.8, .7], [.25, .75], [1, .5]]) {
-          const x = (col + fx!) * ISLAND_STEP_M - PATCH_METRES / 2;
-          const z = (row + fz!) * ISLAND_STEP_M - PATCH_METRES / 2;
+          const x = (col + fx!) * ISLAND_STEP_M - ISLAND_GRID.patchM / 2;
+          const z = (row + fz!) * ISLAND_STEP_M - ISLAND_GRID.patchM / 2;
           expect(field.sample(x, z)).toBe(islandHeightAt(seed, x, z));
         }
       }

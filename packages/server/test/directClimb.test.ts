@@ -9,6 +9,7 @@ import { SimHost } from './trackedHost.js';
 import { buildApi } from '../src/api.js';
 import { testDatabaseUrl } from './testDatabase.js';
 import { loadSelectedClimb } from '../../client/src/lifeHistory.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const url = testDatabaseUrl(), pool = url ? createPool(url) : null, maybe = url ? describe : describe.skip;
 const options = () => ({ pool: pool!, seed: 44, speciesDir: fileURLToPath(new URL('../../../config/species', import.meta.url)),
@@ -21,7 +22,7 @@ maybe('direct retained tree-route retrieval', () => {
     const host = new SimHost(options()); await host.boot();
     const langur = host.world.agents.find(a => a.speciesId === 'langur')!;
     const squirrel = host.world.agents.find(a => a.speciesId === 'squirrel')!;
-    const anchor = treeAnchorGeometry(210)!;
+    const anchor = treeAnchorGeometry(ISLAND_GRID, 210)!;
     const position = { x: anchor.x, z: anchor.z, heading: 0 };
     const trace = { version: 1 as const, actorId: langur.id, startWorldTime: 0, destinationPatchId: 210,
       goal: 'flee' as const, completed: true,
@@ -75,7 +76,7 @@ maybe('direct retained tree-route retrieval', () => {
       expect(fetcher).toHaveBeenCalledTimes(1); expect(pages).not.toHaveBeenCalled(); expect(tracks).not.toHaveBeenCalled();
       expect(loaded.track).toEqual([]); expect(loaded.climbs?.[0]).toMatchObject({ trace });
 
-      await new LifeStore(pool!).pruneRoutine(100);
+      await new LifeStore(pool!, ISLAND_GRID).pruneRoutine(100);
       expect((await api.inject(path)).statusCode).toBe(200); // Significant climb survives routine pruning.
       host.lastError = 'private-error';
       const failed = await api.inject(path); expect(failed.statusCode).toBe(503); expect(failed.body).not.toContain('private');

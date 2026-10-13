@@ -1,6 +1,6 @@
 import type { IncomingMessage, Server } from 'node:http';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { formatWorldTime, seasonAt } from '@vana/shared';
+import { formatWorldTime, patchAtPosition, regionIds, regionOfPatch, seasonAt, worldExtentM, type Agent, type Carcass, type Patch } from '@vana/shared';
 import type { CheckpointObservation, SimHost } from './simHost.js';
 import { floweringGuildSummary } from './floweringObservation.js';
 import { ConnectionCaps, GENERAL_LIMIT_DEFAULTS } from './limits.js';
@@ -54,6 +54,12 @@ export interface LiveBroadcast {
 }
 /** Largest view a viewer may ask for: past this the island is dots, not animals. */
 export const MAX_VIEW_RADIUS_M = 1500;
+/** Congo 1A.3: a region is sent once a viewer's view comes within this of it. */
+const REGION_MARGIN_M = 300;
+/** Distinct region sets serialized per checkpoint; beyond this a set is built per viewer. */
+const MAX_REGION_SCENES = 64;
+/** A viewer is sent a new region set at most this often, however often its view moves. */
+export const REGION_SWITCH_MIN_MS = 10_000;
 
 interface Session {
   socket: GatewaySocket;
@@ -64,6 +70,12 @@ interface Session {
   lastHeartbeatAt: number;
   view: { x: number; z: number; radius: number } | null;
   liveEmpty: boolean;
+  /** Congo 1A.3: on a world of many regions, those this viewer was last sent, and whether its view has moved off them. */
+  regions: string[] | null;
+  /** The regions its view now reaches; they become `regions` when they are next sent. */
+  wantedRegions: string[] | null;
+  regionsDirty: boolean;
+  lastRegionSceneAt: number;
 }
 
 /**
@@ -75,6 +87,9 @@ export class Gateway {
   readonly #watchers = new Map<string, Set<GatewaySocket>>();
   #wss: WebSocketServer | null = null;
   #cachedScene: { id: string; base: string; environment: string } | null = null;
+  #regionScenes: { checkpointId: string; scenes: Map<string, { base: string; environment: string }> } = { checkpointId: '', scenes: new Map() };
+  /** A world of more than one region (Congo) is served a region at a time; the island is one region. */
+  get #regional(): boolean { return regionIds(this.host.grid).length > 1; }
   readonly #caps: ConnectionCaps;
   readonly #hops: number;
 
@@ -98,10 +113,12 @@ export class Gateway {
   handle(socket: GatewaySocket): void {
     const view = this.host.observation();
     if (!view) { this.stats.refused.world_unavailable++; socket.close(LIVE_BUSY_CLOSE_CODE, 'world_unavailable'); return; }
-    const frame = this.host.liveEncounterFrame();
+    const regions = this.#regional ? this.#regionsFor(null) : null;
+    const frame = this.host.liveEncounterFrame(null, regions ? new Set(regions) : undefined);
     this.#sessions.set(socket, { socket, watching: null, recordedFrameId: frame?.id ?? null,
-      recordingDirty: false, checkpointId: view.id, lastHeartbeatAt: Date.now(), view: null, liveEmpty: true });
-    const scene = this.#scene(view);
+      recordingDirty: false, checkpointId: view.id, lastHeartbeatAt: Date.now(), view: null, liveEmpty: true,
+      regions, wantedRegions: regions, regionsDirty: false, lastRegionSceneAt: 0 });
+    const scene = regions ? this.#regionScene(view, regions) : this.#scene(view);
     this.#send(socket, `${scene.base},"environment":${scene.environment},"frame":${JSON.stringify(frame)}}`);
   }
 
@@ -129,6 +146,11 @@ export class Gateway {
       const { x, z, radius } = message;
       if (![x, z, radius].every((v) => typeof v === 'number' && Number.isFinite(v)) || radius <= 0) return;
       session.view = { x, z, radius: Math.min(radius, MAX_VIEW_RADIUS_M) };
+      if (session.regions) {
+        const next = this.#regionsFor(session.view);
+        session.wantedRegions = next;
+        session.regionsDirty = next.join(',') !== session.regions.join(',');
+      }
       return;
     }
 
@@ -201,18 +223,25 @@ export class Gateway {
       this.#sessions.clear(); this.#watchers.clear();
       return;
     }
-    const scene = this.#scene(view);
+    // The whole-world scene is built only if a one-region (island) viewer needs it.
+    let wholeScene: { id: string; base: string; environment: string } | null = null;
+    const scene = (): { id: string; base: string; environment: string } => wholeScene ??= this.#scene(view);
     const frame = this.host.liveEncounterFrame();
     const frameId = frame?.id ?? null;
     // One serialization per distinct recording, and one encoded copy per distinct message: every
     // viewer due the same scene is handed the same Buffer. Building and converting a ~1.6 MB
     // string per viewer held the event loop for ~1.9 s at 500 viewers (load test, 5 October).
-    type Recording = { payload: string; id: string | null; encoded: Map<boolean, Buffer> };
+    // Encoded once per (region set, fresh or not): viewers looking at the same regions share a Buffer.
+    type Recording = { payload: string; id: string | null; encoded: Map<string, Buffer>; actors?: Set<string> };
     const recordings = new Map<string | null, Recording>();
     let custom = 0;
     for (const session of this.#sessions.values()) {
       const { socket } = session;
-      const freshCheckpoint = session.checkpointId !== view.id;
+      // A viewer that has moved onto other regions is sent them as a fresh scene, at most once
+      // per REGION_SWITCH_MIN_MS: a view flipping back and forth cannot make a 2 MB scene a second.
+      const moved = session.regionsDirty && Date.now() - session.lastRegionSceneAt >= REGION_SWITCH_MIN_MS;
+      const freshCheckpoint = session.checkpointId !== view.id || moved;
+      if (moved && session.wantedRegions) session.regions = session.wantedRegions;
       if (!freshCheckpoint && !session.recordingDirty && session.recordedFrameId === frameId) {
         // A world hour takes five real minutes. Repeating the unchanged ~1 MB scene every
         // second wastes tens of GB per viewer/day without advancing the client playhead.
@@ -220,6 +249,34 @@ export class Gateway {
           this.#send(socket, JSON.stringify({ type: 'heartbeat', checkpointId: view.id }));
           session.lastHeartbeatAt = Date.now();
         }
+        continue;
+      }
+      // A regional viewer (Congo 1A.4) is sent only what ends in its regions: one recording per
+      // region set, shared by every viewer of it who follows no one outside it.
+      const regionKey = session.regions?.join(',') ?? null;
+      if (regionKey !== null) {
+        const build = (watching: string | null, key: string): Recording => {
+          const selected = this.host.liveEncounterFrame(watching, new Set(session.regions!));
+          const timed = selected && frame && selected.id === frame.id
+            ? { ...selected, elapsedWorldSeconds: frame.elapsedWorldSeconds } : selected;
+          const recording = { payload: JSON.stringify(timed), id: timed?.id ?? null, encoded: new Map(),
+            actors: new Set((timed?.movements ?? []).map((m) => m.actor.id)) };
+          recordings.set(key, recording);
+          return recording;
+        };
+        const sharedKey = `|${regionKey}`;
+        const shared = recordings.get(sharedKey) ?? build(null, sharedKey);
+        // A followed animal gets its own selection only if it moved this hour and the shared one
+        // left it out, and only for eight such viewers a broadcast: ids that name nothing, or more
+        // followers than that, share the regional recording.
+        const watching = session.watching;
+        let recording = shared;
+        if (watching !== null && !shared.actors!.has(watching) && this.host.hasLiveMovement(watching)) {
+          const own = recordings.get(`${watching}|${regionKey}`);
+          if (own) recording = own;
+          else if (custom < 8) { custom++; recording = build(watching, `${watching}|${regionKey}`); }
+        }
+        this.#sendRecording(session, recording, view, freshCheckpoint, moved, scene);
         continue;
       }
       let recording = recordings.get(session.watching);
@@ -238,19 +295,32 @@ export class Gateway {
         }
         if (shared) recordings.set(session.watching, recording);
       }
-      // Immutable checkpoint geometry can exceed 1 MB: only a viewer new to this checkpoint gets it.
-      let message = recording.encoded.get(freshCheckpoint);
-      if (!message) {
-        message = Buffer.from(`${scene.base}${freshCheckpoint ? `,"environment":${scene.environment}` : ''},"frame":${recording.payload}}`);
-        recording.encoded.set(freshCheckpoint, message);
-      }
-      this.#send(socket, message);
-      session.recordedFrameId = recording.id;
-      session.recordingDirty = false;
-      session.checkpointId = view.id;
-      session.lastHeartbeatAt = Date.now();
+      this.#sendRecording(session, recording, view, freshCheckpoint, moved, scene);
     }
     for (const actorId of this.#watchers.keys()) this.#publishViewerCount(actorId);
+  }
+
+  #sendRecording(session: Session, recording: { payload: string; id: string | null; encoded: Map<string, Buffer> },
+    view: CheckpointObservation, freshCheckpoint: boolean, moved: boolean,
+    scene: () => { id: string; base: string; environment: string }): void {
+    // Immutable checkpoint geometry can exceed 1 MB: only a viewer new to this checkpoint gets it.
+    const encodedKey = `${session.regions?.join(',') ?? ''}|${freshCheckpoint}`;
+    let message = recording.encoded.get(encodedKey);
+    if (!message) {
+      const part = session.regions ? this.#regionScene(view, session.regions) : scene();
+      message = Buffer.from(`${part.base}${freshCheckpoint ? `,"environment":${part.environment}` : ''},"frame":${recording.payload}}`);
+      recording.encoded.set(encodedKey, message);
+    }
+    this.#send(session.socket, message);
+    session.recordedFrameId = recording.id;
+    session.recordingDirty = false;
+    if (session.regions) {
+      if (moved) session.lastRegionSceneAt = Date.now();
+      // Still dirty if the view wants other regions than those just sent (a checkpoint's scene, not a move).
+      session.regionsDirty = (session.wantedRegions ?? session.regions).join(',') !== session.regions.join(',');
+    }
+    session.checkpointId = view.id;
+    session.lastHeartbeatAt = Date.now();
   }
 
   attach(server: Server): void {
@@ -335,10 +405,11 @@ export class Gateway {
   #worldMessage(view: CheckpointObservation): Record<string, unknown> {
     const now = view.worldTime;
     return {
-      type: 'world', worldTime: now, formatted: formatWorldTime(now),
-      season: seasonAt(now), population: view.summary().population,
+      type: 'world', worldTime: now, formatted: formatWorldTime(now, this.host.world?.terrainProfile),
+      season: seasonAt(now, this.host.world?.terrainProfile), population: view.summary().population,
       source: 'checkpoint', nextEventSequence: view.nextSequence,
       worldHoursPerRealHour: this.host.worldHoursPerRealHour,
+      grid: this.host.grid,
     };
   }
 
@@ -348,38 +419,92 @@ export class Gateway {
     const base = JSON.stringify({ type: 'scene', protocol: 1, checkpointId: view.id,
       world: this.#worldMessage(view), animals: this.#animalsMessage(view).animals }).slice(0, -1);
     const environment = JSON.stringify({
-      patches: view.patches().map((p) => ({ id: p.id, x: p.x, y: p.y, habitat: p.habitat,
-        elevation: p.elevation, canopyCover: p.canopyCover, islandSeed: p.islandSeed, surface: p.surface, grass: p.plant.grass,
-        browse: p.plant.browse, floweringGuild: floweringGuildSummary(p),
-        water: p.waterVolume, drainage: p.drainage })),
+      patches: view.patches().map((p) => this.#patchView(p)),
       microEcology: view.microEcology(),
       community: view.community(),
-      carcasses: view.carcasses().map((c) => ({ id: c.originId, speciesId: c.speciesId,
-        patchId: c.patchId, position: c.position, state: 'dead', currentGoal: '',
-        decayStage: c.decayStage,
-        sizeRatio: c.originalMassKg / (this.host.world.species.get(c.speciesId)?.body.adultMassKg ?? c.originalMassKg),
-        drives: { hunger: 0, thirst: 0, fatigue: 0, fear: 0 } })),
+      carcasses: view.carcasses().map((c) => this.#carcassView(c)),
     });
     return this.#cachedScene = { id: view.id, base, environment };
+  }
+
+  #patchView(p: Patch): Record<string, unknown> {
+    return { id: p.id, x: p.x, y: p.y, habitat: p.habitat,
+      elevation: p.elevation, canopyCover: p.canopyCover, islandSeed: p.islandSeed,
+      ...(p.congoSeed === undefined ? {} : { congoSeed: p.congoSeed }),
+      // Congo 1A.4: the flooded forest under water in the rains, and the great river's deep middle.
+      ...(p.flooded ? { flooded: true } : {}), ...(p.deepWater ? { deepWater: true } : {}), surface: p.surface, grass: p.plant.grass,
+      browse: p.plant.browse, floweringGuild: floweringGuildSummary(p),
+      water: p.waterVolume, drainage: p.drainage };
+  }
+
+  #carcassView(c: Carcass): Record<string, unknown> {
+    return { id: c.originId, speciesId: c.speciesId,
+      patchId: c.patchId, position: c.position, state: 'dead', currentGoal: '',
+      decayStage: c.decayStage,
+      sizeRatio: c.originalMassKg / (this.host.world.species.get(c.speciesId)?.body.adultMassKg ?? c.originalMassKg),
+      drives: { hunger: 0, thirst: 0, fatigue: 0, fear: 0 } };
   }
 
   #animalsMessage(view: CheckpointObservation): Record<string, unknown> {
     return {
       type: 'animals',
       worldTime: view.worldTime, source: 'checkpoint', nextEventSequence: view.nextSequence,
-      animals: view.livingAnimals().map((a) => ({
-        id: a.id, speciesId: a.speciesId, patchId: a.patchId,
-        position: a.position,
-        state: a.state, currentGoal: a.currentGoal, drives: a.drives,
-        ...(a.illness?.phase === 'active' ? { illnessStatus: 'symptomatic' } : {}),
-        ...(a.wound ? { woundStatus: a.wound.phase } : {}),
-        ...(a.altitudeM === undefined ? {} : { altitudeM: a.altitudeM, locomotionMode: a.locomotionMode ?? 'flight' }),
-        lifeStage: a.lifeStage, sex: a.sex, coatVariant: a.traits.coatVariant,
-        sizeRatio: a.massKg / (this.host.world.species.get(a.speciesId)?.body.adultMassKg ?? a.massKg),
-        dependentOn: a.dependentOn, groupId: a.groupId ?? null,
-        // What the thought bubble reads; see thoughtFor in @vana/shared.
-        alternativeGoal: a.alternativeGoal, goalScore: a.goalScore, dependent: a.dependentOn !== null,
-      })),
+      animals: view.livingAnimals().map((a) => this.#animalView(a)),
     };
+  }
+
+  #animalView(a: Agent): Record<string, unknown> {
+    return {
+      id: a.id, speciesId: a.speciesId, patchId: a.patchId,
+      position: a.position,
+      state: a.state, currentGoal: a.currentGoal, drives: a.drives,
+      ...(a.illness?.phase === 'active' ? { illnessStatus: 'symptomatic' } : {}),
+      ...(a.wound ? { woundStatus: a.wound.phase } : {}),
+      ...(a.altitudeM === undefined ? {} : { altitudeM: a.altitudeM, locomotionMode: a.locomotionMode ?? 'flight' }),
+      ...(a.locomotionMode === 'submerged' ? { locomotionMode: 'submerged' } : {}),
+      lifeStage: a.lifeStage, sex: a.sex, coatVariant: a.traits.coatVariant,
+      sizeRatio: a.massKg / (this.host.world.species.get(a.speciesId)?.body.adultMassKg ?? a.massKg),
+      dependentOn: a.dependentOn, groupId: a.groupId ?? null,
+      // What the thought bubble reads; see thoughtFor in @vana/shared.
+      alternativeGoal: a.alternativeGoal, goalScore: a.goalScore, dependent: a.dependentOn !== null,
+    };
+  }
+
+  /** Congo 1A.3: the regions (6 km squares) a viewer is sent: those its view reaches, or the centre one. */
+  #regionsFor(view: Session['view']): string[] {
+    const grid = this.host.grid, side = grid.regionPatches * grid.patchM, min = -grid.patchM / 2;
+    if (!view) {
+      const e = worldExtentM(grid);
+      return [regionOfPatch(grid, patchAtPosition(grid, { x: (e.min + e.maxX) / 2, z: (e.min + e.maxZ) / 2, heading: 0 }))];
+    }
+    const reach = view.radius + REGION_MARGIN_M;
+    return regionIds(grid).filter((id) => {
+      const [c, r] = id.slice(1).split('_').map(Number) as [number, number];
+      const x0 = min + c * side, z0 = min + r * side;
+      const dx = Math.max(x0 - view.x, 0, view.x - (x0 + side)), dz = Math.max(z0 - view.z, 0, view.z - (z0 + side));
+      return Math.hypot(dx, dz) <= reach;
+    });
+  }
+
+  /** One serialization per checkpoint and region set: animals, patches and the rest of those regions only. */
+  #regionScene(view: CheckpointObservation, regions: readonly string[]): { base: string; environment: string } {
+    const key = regions.join(',');
+    if (this.#regionScenes.checkpointId !== view.id) this.#regionScenes = { checkpointId: view.id, scenes: new Map() };
+    const cached = this.#regionScenes.scenes.get(key);
+    if (cached) return cached;
+    const base = JSON.stringify({ type: 'scene', protocol: 1, checkpointId: view.id, regions,
+      world: this.#worldMessage(view), animals: regions.flatMap((id) => view.regionAnimals(id)).map((a) => this.#animalView(a)) }).slice(0, -1);
+    const micro = regions.map((id) => view.regionMicroEcology(id));
+    const environment = JSON.stringify({
+      patches: regions.flatMap((id) => view.regionPatches(id)).map((p) => this.#patchView(p)),
+      microEcology: { updatedAt: micro[0]?.updatedAt ?? view.worldTime, patches: micro.flatMap((m) => m.patches) },
+      community: null,
+      carcasses: regions.flatMap((id) => view.regionCarcasses(id)).map((c) => this.#carcassView(c)),
+    });
+    const scene = { base, environment };
+    // Least recently built first out: no set of viewers can pin the cache full.
+    if (this.#regionScenes.scenes.size >= MAX_REGION_SCENES) this.#regionScenes.scenes.delete(this.#regionScenes.scenes.keys().next().value!);
+    this.#regionScenes.scenes.set(key, scene);
+    return scene;
   }
 }

@@ -16,6 +16,7 @@ import { isPersonHistoryPage } from '../../client/src/personHistory.js';
 import { SceneUpdates } from '../../client/src/sceneUpdates.js';
 import { CommunityPlayback } from '../../client/src/communityPlayback.js';
 import { humanMotionAt } from '@vana/shared';
+import { ISLAND_GRID } from '@vana/shared';
 
 const url = testDatabaseUrl(), pool = url ? createPool(url) : null, maybe = url ? describe : describe.skip;
 const worldOptions = { seed: 1, speciesDir: fileURLToPath(new URL('../../../config/species', import.meta.url)),
@@ -37,7 +38,7 @@ maybe('durable cross-patch household journeys', () => {
       hare.position = { x: home.x + 5 + (i % 4) * 2, z: home.z + 5 + Math.floor(i / 4) * 2, heading: 0 };
     }
     const baseline = seed.totalNutrients();
-    await new EventStore(pool!).appendBatch(seed.log.take());
+    await new EventStore(pool!, ISLAND_GRID).appendBatch(seed.log.take());
     await new SnapshotStore(pool!).save(takeSnapshot(seed));
     const host = new SimHost({ ...options(), initialCommunityRulesVersion: 6, initialAgents: { hare: 24 } });
     await host.boot();
@@ -57,7 +58,7 @@ maybe('durable cross-patch household journeys', () => {
         && m.actorId === success.conditions?.preyId)).toBe(true);
       expect(host.world.carcasses.some(c => c.id === success.conditions?.carcassId
         && c.originId === success.conditions?.preyId)).toBe(true);
-      const history = await new EventStore(pool!).byActor(String(success.conditions?.preyId), 100);
+      const history = await new EventStore(pool!, ISLAND_GRID).byActor(String(success.conditions?.preyId), 100);
       expect(history.some(e => e.type === 'died' && e.conditions.cause === 'predation')).toBe(true);
       expect(host.world.totalNutrients()).toBeCloseTo(baseline, 4);
     } finally { await api.close(); await host.abort(); }
@@ -73,7 +74,7 @@ maybe('durable cross-patch household journeys', () => {
     seed.step(.01); const snapshot = takeSnapshot(seed);
     expect(snapshot.community!.version).toBe(5);
     expect(snapshot.community!.people[0]!.task).toMatchObject({ kind: 'gather_food', phase: 'travel', journey: { destinationPatchId: source.id } });
-    await new EventStore(pool!).appendBatch(seed.log.take()); await new SnapshotStore(pool!).save(snapshot);
+    await new EventStore(pool!, ISLAND_GRID).appendBatch(seed.log.take()); await new SnapshotStore(pool!).save(snapshot);
     const host = new SimHost(options()); await host.boot(); expect(host.world.community).toEqual(snapshot.community);
     const api = buildApi({ host, pool: pool! });
     try {
@@ -118,7 +119,7 @@ maybe('durable cross-patch household journeys', () => {
       expect(host.world.community!.stores.foodKg).toBeGreaterThan(0);
       expect(host.world.totalNutrients()).toBeCloseTo(nutrients, 6);
       const actor = collected[0]!.actors[0]!;
-      await new LifeStore(pool!).pruneRoutine(host.world.now() + 1);
+      await new LifeStore(pool!, ISLAND_GRID).pruneRoutine(host.world.now() + 1);
       const history = (await api.inject(`/people/${actor}/events?limit=500`)).json();
       expect(isPersonHistoryPage(history, actor)).toBe(true);
       expect(history.events.some((e: { id: string }) => e.id === collected[0]!.id)).toBe(true);

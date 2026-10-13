@@ -1,6 +1,6 @@
 import {
-  NUTRIENT_PER_KG_BIOMASS, edibleMass, takeEdibleMass, patchAtPosition, patchCentre, positionInPatch, atWaterAccess, waterAccessPosition, waterContactPosition, WATER_CONTACT_RADIUS_M, landRayDistance, landWalkable, treeAnchorForPatch, treeAnchorGeometry,
-  type Agent, type Carcass, type DeathCause, type Patch, type Rng, type SkillId,
+  NUTRIENT_PER_KG_BIOMASS, terrainCostFor, edibleMass, takeEdibleMass, patchAtPosition, patchCentre, positionInPatch, atWaterAccess, waterAccessPosition, waterContactPosition, WATER_CONTACT_RADIUS_M, landRayDistance, landWalkable, treeAnchorForPatch, treeAnchorGeometry,
+  type Agent, type Carcass, type DeathCause, type Patch, type Rng, type SkillId, type WorldGrid,
   type SpeciesConfig, type WorldTime, type WorldPosition, type MovementTrace,
 } from '@vana/shared';
 import { confidenceOf, skillFactor } from './learning.js';
@@ -18,6 +18,7 @@ import { allowsDependentGoal, cannotYetWalk, canEatMaternalCarcass, canHuntIndep
   mealRoom, needsOf, needsProvisioning } from './needs.js';
 import { exposeToCarrion } from './illness.js';
 import { exposeToContactWound } from './wound.js';
+import { waterRefuge } from './aquatic.js';
 import { advanceTreeVertical } from './arboreal.js';
 
 /** The only writes a behaviour may make outside its own agent and patch. */
@@ -116,8 +117,8 @@ function emit(
 }
 
 function moveTo(ctx: BehaviourContext, patchId: number, fleeing = false, endpoint?: WorldPosition) {
-  const from = ctx.agent.patchId, start = { patchId: from, position: { ...locateAgent(ctx.agent) } };
-  const result = navigate(ctx.agent, ctx.species, ctx.patches, patchId, ctx.choice.goal, ctx.worldTime, ctx.hours * 3600, fleeing, endpoint);
+  const from = ctx.agent.patchId, start = { patchId: from, position: { ...locateAgent(ctx.view.grid, ctx.agent) } };
+  const result = navigate(ctx.view.grid, ctx.agent, ctx.species, ctx.patches, patchId, ctx.choice.goal, ctx.worldTime, ctx.hours * 3600, fleeing, endpoint);
   ctx.agent.state = result.unreachable ? 'resting' : fleeing ? 'fleeing' : 'travelling';
   const event = ctx.log.append({
     type: fleeing ? 'fled' : 'moved', worldTime: Math.floor(ctx.worldTime + result.seconds), simVersion: '',
@@ -237,14 +238,14 @@ function drink(ctx: BehaviourContext, mayMove = true, causalParents: string[] = 
 
   // Same rule as feeding: drink what is here unless there is not enough of it.
   if (mayMove && (patch.waterVolume < wanted || ctx.percept.dangerous.has(patch.id)) && target !== null && target.patchId !== patch.id) {
-    const travel = moveTo(ctx, target.patchId, false, waterContactPosition(ctx.agent.id, target.patchId, ctx.patches));
+    const travel = moveTo(ctx, target.patchId, false, waterContactPosition(ctx.view.grid, ctx.agent.id, target.patchId, ctx.patches));
     if (travel.trace.completed && travel.seconds < ctx.hours * 3600) drink(afterTravel(ctx, travel.seconds), false, [travel.eventId]);
     return;
   }
   if (patch.waterVolume <= 0) { ctx.agent.state = 'travelling'; return; }
   // sim_0.38.0: a lake's access point is on its shore (waterAccessPosition), so pass the ground.
-  if (!atWaterAccess(locateAgent(ctx.agent), patch.id, ctx.patches)) {
-    const travel = moveTo(ctx, patch.id, false, waterContactPosition(ctx.agent.id, patch.id, ctx.patches));
+  if (!atWaterAccess(ctx.view.grid, locateAgent(ctx.view.grid, ctx.agent), patch.id, ctx.patches)) {
+    const travel = moveTo(ctx, patch.id, false, waterContactPosition(ctx.view.grid, ctx.agent.id, patch.id, ctx.patches));
     if (travel.trace.completed && travel.seconds < ctx.hours * 3600) drink(afterTravel(ctx, travel.seconds), false, [...causalParents, travel.eventId]);
     return;
   }
@@ -257,7 +258,7 @@ function drink(ctx: BehaviourContext, mayMove = true, causalParents: string[] = 
   );
   ctx.agent.state = 'drinking';
   ctx.services.practised(ctx.agent, 'water_locations', true);
-  const source = waterAccessPosition(patch.id, ctx.patches), position = locateAgent(ctx.agent);
+  const source = waterAccessPosition(ctx.view.grid, patch.id, ctx.patches), position = locateAgent(ctx.view.grid, ctx.agent);
   position.heading = Math.atan2(source.x - position.x, source.z - position.z);
   ctx.log.append({ type: 'drank', worldTime: Math.floor(ctx.endWorldTime ?? ctx.worldTime + ctx.hours * 3600),
     simVersion: '', patchId: patch.id, position: { ...position }, actors: [ctx.agent.id], goal: ctx.choice.goal,
@@ -296,8 +297,10 @@ function wander(ctx: BehaviourContext): void {
   if (options.length === 0) { ctx.agent.state = 'resting'; return; }
 
   const structure = ctx.species.social.structure;
+  // Congo 1B: a bonded pair (pairBond) keeps together as a herd does, two strong.
+  const bonded = ctx.species.social.pairBond === true;
   const gregarious = structure === 'herd' || structure === 'troop'
-    || structure === 'pack' || structure === 'family';
+    || structure === 'pack' || structure === 'family' || bonded;
 
   if (gregarious) {
     // Cohesion pulls an animal back only when it is genuinely alone. Holding a whole herd on
@@ -306,7 +309,7 @@ function wander(ctx: BehaviourContext): void {
     // Loose association: enough companions to keep a herd findable, few enough that they do
     // not strip a single 300 m patch and starve themselves out of breeding condition.
     const countHere = ctx.percept.herdSize;
-    const cohesionTarget = Math.min(3, ctx.species.social.groupSize[0]);
+    const cohesionTarget = bonded ? 2 : Math.min(3, ctx.species.social.groupSize[0]);
 
     if (countHere < cohesionTarget) {
       // First try the local gradient: a neighbouring patch holding more of its own kind.
@@ -430,8 +433,8 @@ function hunt(ctx: BehaviourContext): void {
 
   const preySpecies = ctx.view.speciesOf(victim.speciesId);
   const terrain = ctx.percept.patch.habitat;
-  const predatorTerrainCost = ctx.species.locomotion.terrainCost[terrain];
-  const preyTerrainCost = preySpecies.locomotion.terrainCost[terrain];
+  const predatorTerrainCost = terrainCostFor(ctx.species, terrain, ctx.percept.patch.flooded === true);
+  const preyTerrainCost = terrainCostFor(preySpecies, terrain, ctx.percept.patch.flooded === true);
   const predatorScale = locomotionFactor(ctx.agent, ctx.species);
   // A denned young that cannot yet walk does not run (sim_0.36.0); 1% keeps the solver's speeds positive.
   const preyScale = locomotionFactor(victim, preySpecies) * (cannotYetWalk(victim, preySpecies) ? 0.01 : 1);
@@ -449,9 +452,12 @@ function hunt(ctx: BehaviourContext): void {
   }
   const preyCondition = Math.max(0.15, 1 - victim.drives.fatigue * 0.5) * preyScale;
   const outcome = resolveSpatialHunt({
-    ...(ctx.percept.patch.islandSeed === undefined ? {} : { landBoundaryM: (p: WorldPosition, heading: number) => landRayDistance(ctx.patches, p, heading) }),
+    grid: ctx.view.grid,
+    // A chase ends at the sea on an island, and (Congo 1B) at the great river's deep middle.
+    ...(ctx.percept.patch.islandSeed === undefined && ctx.percept.patch.congoSeed === undefined ? {}
+      : { landBoundaryM: (p: WorldPosition, heading: number) => landRayDistance(ctx.view.grid, ctx.patches, p, heading) }),
     predatorId: ctx.agent.id, preyId: victim.id, patchId: ctx.agent.patchId, worldTime: ctx.worldTime,
-    predator: locateAgent(ctx.agent), prey: locateAgent(victim),
+    predator: locateAgent(ctx.view.grid, ctx.agent), prey: locateAgent(ctx.view.grid, victim),
     predatorWalkMs: ctx.species.locomotion.walkMs * predatorScale * 0.45 / predatorTerrainCost,
     predatorSprintMs: ctx.species.locomotion.sprintMs * predatorCondition / predatorTerrainCost,
     preySprintMs: preySpecies.locomotion.sprintMs * preyCondition / preyTerrainCost,
@@ -488,7 +494,7 @@ function hunt(ctx: BehaviourContext): void {
   ctx.agent.position = { ...last.predator };
   victim.position = { ...last.prey };
   for (const animal of [ctx.agent, victim]) {
-    const patch = patchAtPosition(animal.position!);
+    const patch = patchAtPosition(ctx.view.grid, animal.position!);
     if (patch !== animal.patchId) { animal.previousPatchId = animal.patchId; animal.patchId = patch; }
   }
   ctx.agent.stamina = clamp01((ctx.agent.stamina ?? 1) - outcome.staminaSpent);
@@ -509,7 +515,7 @@ function hunt(ctx: BehaviourContext): void {
   }
   const at = Math.floor(ctx.worldTime + last.seconds);
   // sim_0.37.0: a leopard hauls its kill into the tree of the patch it fell in, where there is one.
-  const cached = outcome.killed && hunting.cachesKills === true && treeAnchorForPatch(ctx.patches[victim.patchId]!) !== null;
+  const cached = outcome.killed && hunting.cachesKills === true && treeAnchorForPatch(ctx.view.grid, ctx.patches[victim.patchId]!) !== null;
   const event = ctx.log.append({
     type: 'hunt', worldTime: at, simVersion: '', patchId: victim.patchId,
     actors: [ctx.agent.id, victim.id], goal: ctx.choice.goal,
@@ -527,7 +533,7 @@ function hunt(ctx: BehaviourContext): void {
   });
 
   if (!outcome.killed) {
-    exposeToContactWound(victim, event, ctx.endWorldTime ?? ctx.worldTime + ctx.hours * 3600, ctx.rng, ctx.log);
+    exposeToContactWound(ctx.view.grid, victim, event, ctx.endWorldTime ?? ctx.worldTime + ctx.hours * 3600, ctx.rng, ctx.log);
     const continuing = outcome.stage === 'approaching' || outcome.stage === 'time_exhausted';
     ctx.agent.state = continuing ? 'stalking' : 'resting';
     ctx.agent.targetId = continuing ? victim.id : null;
@@ -548,13 +554,13 @@ function hunt(ctx: BehaviourContext): void {
   consume(ctx, carcass, last.seconds, event.id);
   // The pack feeds together at once (sim_0.36.0). Each packmate walks over land from where it ran
   // to the kill, and feeds with the time it has left.
-  const target = locateCarcass(carcass), reach = Math.max(0.35, ctx.species.body.shoulderHeightM * 0.65);
+  const target = locateCarcass(ctx.view.grid, carcass), reach = Math.max(0.35, ctx.species.body.shoulderHeightM * 0.65);
   for (const mate of [...party, ...followers]) {
     if (party.includes(mate)) mate.stamina = clamp01((mate.stamina ?? 1) - outcome.staminaSpent);
     mate.state = 'feeding'; mate.targetId = null;
     const mateCtx = afterTravel({ ...ctx, agent: mate }, last.seconds);
     if (!mate.alive || !(mateCtx.hours > 0)) continue;
-    const at = locateAgent(mate);
+    const at = locateAgent(ctx.view.grid, mate);
     if (mate.patchId === carcass.patchId && Math.hypot(at.x - target.x, at.z - target.z) <= reach) {
       consume(mateCtx, carcass, 0, event.id); continue;
     }
@@ -578,15 +584,15 @@ function consume(ctx: BehaviourContext, carcass: Carcass, elapsedSeconds = 0, ca
   const start = Math.max(ctx.worldTime + elapsedSeconds, carcass.diedAt);
   const secondsAvailable = Math.max(0, end - start);
   if (secondsAvailable === 0) return;
-  const from = { ...locateAgent(ctx.agent) };
-  const target = locateCarcass(carcass);
+  const from = { ...locateAgent(ctx.view.grid, ctx.agent) };
+  const target = locateCarcass(ctx.view.grid, carcass);
   const radius = Math.max(0.35, ctx.species.body.shoulderHeightM * 0.65);
   const habitat = ctx.patches[ctx.agent.patchId]!.habitat;
   const speed = ctx.species.locomotion.walkMs * locomotionFactor(ctx.agent, ctx.species)
-    * Math.max(0.15, 1 - ctx.agent.drives.fatigue * 0.5) / ctx.species.locomotion.terrainCost[habitat];
-  const movement = approachContact(from, target, speed, secondsAvailable, radius);
+    * Math.max(0.15, 1 - ctx.agent.drives.fatigue * 0.5) / terrainCostFor(ctx.species, habitat, ctx.patches[ctx.agent.patchId]!.flooded === true);
+  const movement = approachContact(ctx.view.grid, from, target, speed, secondsAvailable, radius);
   ctx.agent.position = movement.position;
-  const nextPatch = patchAtPosition(movement.position);
+  const nextPatch = patchAtPosition(ctx.view.grid, movement.position);
   if (nextPatch !== ctx.agent.patchId) { ctx.agent.previousPatchId = ctx.agent.patchId; ctx.agent.patchId = nextPatch; }
   const parents = causalParent ? [causalParent] : [];
   if (movement.distanceM > 0) {
@@ -675,11 +681,16 @@ function flee(ctx: BehaviourContext): void {
   });
   const anchor = threat?.patchId === ctx.agent.patchId && !needsProvisioning(ctx.agent, ctx.species)
     && ctx.agent.dependentOn === null && ctx.agent.pregnantSince === null && !raisingYoung
-    ? treeAnchorForPatch(ctx.percept.patch) : null;
+    ? treeAnchorForPatch(ctx.view.grid, ctx.percept.patch) : null;
   // Tree climbers (langur, giant squirrel and, sim_0.37.0, the leopard escaping a tiger).
   if (anchor && ctx.species.locomotion.climbsTrees) {
     climbToEscape(ctx, anchor);
     return;
+  }
+  // Congo 1B: a swimmer (the water chevrotain) runs for water and dives, out of sight and reach.
+  if (threat && ctx.species.locomotion.swims && !needsProvisioning(ctx.agent, ctx.species)) {
+    const refuge = waterRefuge(ctx.view.grid, ctx.agent, ctx.patches, ctx.view.season, locateAgent(ctx.view.grid, ctx.agent));
+    if (refuge) { diveToEscape(ctx, refuge, ctx.species.locomotion.swims.diveSeconds); return; }
   }
 
   ctx.agent.state = 'fleeing';
@@ -695,8 +706,8 @@ function flee(ctx: BehaviourContext): void {
   // exact tie is broken by the world's random stream.
   let farthest: number | null = null;
   if (threat) {
-    const t = positionInPatch(threat.agent.position, threat.agent.patchId) ? threat.agent.position : patchCentre(threat.patchId);
-    const gap = (id: number) => { const c = patchCentre(id); return Math.hypot(c.x - t.x, c.z - t.z); };
+    const t = positionInPatch(ctx.view.grid, threat.agent.position, threat.agent.patchId) ? threat.agent.position : patchCentre(ctx.view.grid, threat.patchId);
+    const gap = (id: number) => { const c = patchCentre(ctx.view.grid, id); return Math.hypot(c.x - t.x, c.z - t.z); };
     const best = Math.max(...pool.map(gap));
     const tied = pool.filter(id => gap(id) >= best - 1e-6);
     farthest = tied.length === 1 ? tied[0]! : tied[ctx.rng.int(tied.length)]!;
@@ -710,17 +721,39 @@ function flee(ctx: BehaviourContext): void {
   ctx.agent.drives.fatigue = clamp01(ctx.agent.drives.fatigue + 0.12 * travel.seconds / 3600);
 }
 
+/** Congo 1B: to the water's edge (or nowhere, standing in flood), then under, for the dive's length. */
+function diveToEscape(ctx: BehaviourContext, refuge: { patchId: number; position: WorldPosition }, diveSeconds: number): void {
+  const agent = ctx.agent, startPatchId = agent.patchId, budget = ctx.hours * 3600;
+  const travel = navigate(ctx.view.grid, agent, ctx.species, ctx.patches, refuge.patchId, 'flee', ctx.worldTime, budget, true, refuge.position);
+  agent.currentGoal = 'flee'; agent.alternativeGoal = ctx.choice.alternative; agent.goalScore = ctx.choice.score;
+  agent.stamina = clamp01((agent.stamina ?? 1) - travel.sprintSeconds / ctx.species.locomotion.sprintStaminaS);
+  agent.drives.fatigue = clamp01(agent.drives.fatigue + 0.12 * travel.seconds / 3600);
+  const reached = travel.trace.completed && !travel.unreachable && travel.seconds < budget;
+  if (reached) {
+    agent.locomotionMode = 'submerged';
+    agent.submergedUntil = Math.floor(ctx.worldTime + travel.seconds + diveSeconds);
+    agent.state = 'resting';
+  } else agent.state = 'fleeing';
+  ctx.log.append({ type: 'fled', worldTime: Math.floor(ctx.worldTime + travel.seconds), simVersion: '',
+    patchId: agent.patchId, position: { ...locateAgent(ctx.view.grid, agent) }, actors: [agent.id], goal: 'flee',
+    conditions: { escape: 'dive', from: startPatchId, destination: refuge.patchId,
+      ...(reached ? { submergedUntil: agent.submergedUntil! } : {}) },
+    outcome: reached ? 'success' : 'interrupted',
+    effects: { distanceM: travel.distanceM, durationSeconds: travel.seconds, sprintSeconds: travel.sprintSeconds },
+    causalParents: [], confidence: 'authoritative', movement: travel.trace });
+}
+
 /** One event for the actual ground approach and vertical segment. Two events in a single
  * hour would be deliberately rejected by the live movement index as ambiguous ownership. */
 function climbToEscape(ctx: BehaviourContext, anchor: NonNullable<ReturnType<typeof treeAnchorForPatch>>): void {
   const agent = ctx.agent, startPatchId = agent.patchId, budget = ctx.hours * 3600;
   const endpoint = { x: anchor.x, z: anchor.z, heading: agent.position?.heading ?? 0 };
-  const ground = navigate(agent, ctx.species, ctx.patches, anchor.patchId, 'flee', ctx.worldTime, budget, true, endpoint);
+  const ground = navigate(ctx.view.grid, agent, ctx.species, ctx.patches, anchor.patchId, 'flee', ctx.worldTime, budget, true, endpoint);
   // Reaching the trunk is not a completed ascent. Zero remaining time must never be
   // reported as a successful climb or replayed as if it acquired altitude.
   let trace: MovementTrace = { ...ground.trace, completed: false }, verticalDistanceM = 0, verticalSeconds = 0;
   if (ground.trace.completed && !ground.unreachable && ground.seconds < budget) {
-    const vertical = advanceTreeVertical(agent, ctx.patches[anchor.patchId]!, 'ascend', 'flee', ctx.worldTime,
+    const vertical = advanceTreeVertical(ctx.view.grid, agent, ctx.patches[anchor.patchId]!, 'ascend', 'flee', ctx.worldTime,
       budget - ground.seconds, ctx.species.locomotion.climbsTrees === true);
     if (!vertical.unreachable) {
       verticalDistanceM = vertical.distanceM; verticalSeconds = vertical.seconds;
@@ -741,7 +774,7 @@ function climbToEscape(ctx: BehaviourContext, anchor: NonNullable<ReturnType<typ
   agent.stamina = clamp01((agent.stamina ?? 1) - ground.sprintSeconds / ctx.species.locomotion.sprintStaminaS);
   agent.drives.fatigue = clamp01(agent.drives.fatigue + 0.12 * seconds / 3600);
   ctx.log.append({ type: 'tree_climbed', worldTime: Math.floor(ctx.worldTime + seconds), simVersion: '',
-    patchId: agent.patchId, position: { ...locateAgent(agent) }, actors: [agent.id], goal: 'flee',
+    patchId: agent.patchId, position: { ...locateAgent(ctx.view.grid, agent) }, actors: [agent.id], goal: 'flee',
     conditions: { direction: 'ascend', treeAnchorId: anchor.id, reason: 'local_threat',
       from: startPatchId, destination: anchor.patchId },
     outcome: trace.completed ? 'success' : 'interrupted',
@@ -752,16 +785,16 @@ function climbToEscape(ctx: BehaviourContext, anchor: NonNullable<ReturnType<typ
 
 /** A saved perched animal spends real time returning along its exact stable trunk. Ground
  * actions resume on the next decision, never retroactively in the remainder of this hour. */
-export function descendPerchedAnimal(agent: Agent, patch: Patch, worldTime: WorldTime, hours: number,
+export function descendPerchedAnimal(grid: WorldGrid, agent: Agent, patch: Patch, worldTime: WorldTime, hours: number,
   reason: 'threat_gone' | 'canopy_lost' | 'urgent_need', log: EventLog, climbs?: boolean): void {
-  const anchor = treeAnchorGeometry(patch.id);
+  const anchor = treeAnchorGeometry(grid, patch.id);
   if (!anchor || !agent.altitudeM) throw new Error('descent requires a perched agent at a stable anchor');
-  const vertical = advanceTreeVertical(agent, patch, 'descend', 'rest', worldTime, Math.min(3600, hours * 3600), climbs);
+  const vertical = advanceTreeVertical(grid, agent, patch, 'descend', 'rest', worldTime, Math.min(3600, hours * 3600), climbs);
   if (vertical.unreachable) throw new Error('persisted tree descent became unreachable');
   agent.currentGoal = 'rest'; agent.alternativeGoal = null; agent.goalScore = 1;
   if (vertical.trace.completed) agent.state = 'resting';
   log.append({ type: 'tree_climbed', worldTime: Math.floor(worldTime + vertical.seconds), simVersion: '',
-    patchId: patch.id, position: { ...locateAgent(agent) }, actors: [agent.id], goal: 'rest',
+    patchId: patch.id, position: { ...locateAgent(grid, agent) }, actors: [agent.id], goal: 'rest',
     conditions: { direction: 'descend', treeAnchorId: anchor.id, reason, from: patch.id, destination: patch.id },
     outcome: vertical.trace.completed ? 'success' : 'interrupted',
     effects: { distanceM: vertical.distanceM, horizontalDistanceM: 0, verticalDistanceM: vertical.distanceM,
@@ -781,7 +814,7 @@ export function controlledAction(ctx: BehaviourContext, action: ControlledAction
   if (action === 'graze') feed(ctx, false);
   else if (action === 'drink') {
     // Wild drinking walks to the access point; an agent has to bring its animal there.
-    if (!atWaterAccess(locateAgent(ctx.agent), ctx.agent.patchId, ctx.patches)) { ctx.agent.state = 'resting'; return; }
+    if (!atWaterAccess(ctx.view.grid, locateAgent(ctx.view.grid, ctx.agent), ctx.agent.patchId, ctx.patches)) { ctx.agent.state = 'resting'; return; }
     drink(ctx, false);
   } else rest(ctx);
 }

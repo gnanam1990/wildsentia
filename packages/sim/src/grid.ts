@@ -1,6 +1,6 @@
 import {
-  GRID_SIZE, PATCH_COUNT, createRng, islandPatchSurface, islandHeightAt, patchCentre, landWalkable,
-  isIslandProfile, islandGeometrySeed, type HabitatType, type Patch, type TerrainProfile,
+  CONGO_HABITAT_STATS, CONGO_MIN_HEIGHT_M, ISLAND_GRID, cardinalNeighbours, createCongoTerrain, createRng, gridForProfile, islandPatchSurface, islandHeightAt, patchCentre, patchCount,
+  patchIdAt, landWalkable, isIslandProfile, islandGeometrySeed, type HabitatType, type Patch, type TerrainProfile, type WorldGrid,
 } from '@vana/shared';
 
 /** Six 300 m cardinal patches keep the two perennial basins in separate local ranges. */
@@ -18,14 +18,16 @@ const hasSeparatedPair = (patches: readonly Patch[], ids: readonly number[]): bo
  * and separately account for any displaced vegetation; only new world generation seeds stock.
  */
 export function islandFreshwaterBasinIds(patches: readonly Patch[]): number[] {
-  if (patches.length !== PATCH_COUNT || patches.some((p, i) => p.id !== i || p.islandSeed === undefined))
+  if (patches.length !== patchCount(ISLAND_GRID) || patches.some((p, i) => p.id !== i || p.islandSeed === undefined))
     throw new Error('island basins require a complete island patch grid');
   const land = patches.filter(landWalkable);
   const existing = land.filter(p => p.habitat === 'water').map(p => p.id);
   if (hasSeparatedPair(patches, existing)) return [];
 
+  // Island patches only; the Congo forest never reaches this.
   const habitatPriority: Record<HabitatType, number> = {
     marsh: 0, riparian: 1, shola: 2, grassland: 3, rock: 4, water: 5,
+    swamp_forest: 0, flooded_forest: 1, terra_firme: 2, bai: 3,
   };
   const candidates = land.filter(p => p.habitat !== 'water').sort((a, b) =>
     habitatPriority[a.habitat] - habitatPriority[b.habitat]
@@ -52,6 +54,11 @@ const CAPACITY_BY_HABITAT: Record<HabitatType, { grass: number; browse: number }
   marsh:     { grass: 3500, browse: 900 },
   rock:      { grass: 300,  browse: 200 },
   water:     { grass: 0,    browse: 0 },
+  // congo_terrain_v1 (spec §1): closed dry forest, seasonally flooded forest, swamp forest, open bai.
+  terra_firme:    { grass: 800,  browse: 7500 },
+  flooded_forest: { grass: 2500, browse: 5000 },
+  swamp_forest:   { grass: 3000, browse: 2500 },
+  bai:            { grass: 8000, browse: 600 },
 };
 
 function habitatFor(elevation: number, moisture: number): HabitatType {
@@ -63,16 +70,46 @@ function habitatFor(elevation: number, moisture: number): HabitatType {
   return 'shola';
 }
 
-export function buildGrid(seed: number, profile: TerrainProfile = 'mainland'): Patch[] {
+/** The 48 km Congo forest's patches, from congo_terrain_v1 (spec §1). */
+function buildCongoPatches(seed: number, grid: WorldGrid): Patch[] {
+  const terrain = createCongoTerrain(seed, grid);
+  return Array.from({ length: patchCount(grid) }, (_, id): Patch => {
+    const habitat = terrain.habitatAt(id), stats = CONGO_HABITAT_STATS[habitat as keyof typeof CONGO_HABITAT_STATS];
+    if (!stats) throw new Error(`congo terrain produced a non-Congo habitat: ${habitat}`);
+    const centre = patchCentre(grid, id), height = terrain.heightAt(centre.x, centre.z);
+    const soilMoisture = habitat === 'water' ? 1 : habitat === 'flooded_forest' ? 0.85 : habitat === 'swamp_forest' ? 0.9 : 0.55;
+    const capacity = { grass: stats.grass, browse: stats.browse };
+    return {
+      id, x: id % grid.cols, y: Math.floor(id / grid.cols),
+      elevation: Math.max(0, Math.min(1, (height - CONGO_MIN_HEIGHT_M) / 500)),
+      congoSeed: seed, surface: 'land', habitat, canopyCover: stats.canopy,
+      plant: { grass: capacity.grass * 0.6, browse: capacity.browse * 0.6 }, capacity,
+      soilMoisture, soilNutrients: 400 + soilMoisture * 200,
+      waterVolume: habitat === 'water' ? terrain.riverKindAt(id) === 'main' ? 2_000_000 : 300_000
+        : habitat === 'flooded_forest' ? 20_000 : habitat === 'swamp_forest' ? 12_000 : soilMoisture * 600,
+      neighbours: cardinalNeighbours(grid, id),
+    };
+  }).map((patch, _i, all) => {
+    // The great river's deep middle: water with no dry ground beside it.
+    if (patch.habitat === 'water' && patch.neighbours.every((n) => terrainHabitat(all, n) === 'water')) patch.deepWater = true;
+    return patch;
+  });
+}
+
+const terrainHabitat = (patches: readonly Patch[], id: number): string | undefined => patches[id]?.habitat;
+
+export function buildGrid(seed: number, profile: TerrainProfile = 'mainland', grid: WorldGrid = gridForProfile(profile)): Patch[] {
+  if (profile === 'congo_v1') return buildCongoPatches(seed, grid);
   const island = isIslandProfile(profile), geometry = island ? islandGeometrySeed(seed, profile) : seed;
   const rng = createRng(seed, 'grid');
-  const elevationNoise = Array.from({ length: PATCH_COUNT }, () => rng.next());
-  const moistureNoise = Array.from({ length: PATCH_COUNT }, () => rng.next());
+  const count = patchCount(grid);
+  const elevationNoise = Array.from({ length: count }, () => rng.next());
+  const moistureNoise = Array.from({ length: count }, () => rng.next());
 
   const patches: Patch[] = [];
-  for (let id = 0; id < PATCH_COUNT; id++) {
-    const x = id % GRID_SIZE;
-    const y = Math.floor(id / GRID_SIZE);
+  for (let id = 0; id < count; id++) {
+    const x = id % grid.cols;
+    const y = Math.floor(id / grid.cols);
 
     // Smooth the noise against neighbours so habitats form contiguous regions.
     const smooth = (source: number[]): number => {
@@ -80,10 +117,9 @@ export function buildGrid(seed: number, profile: TerrainProfile = 'mainland'): P
       let n = 0;
       for (let dy = -2; dy <= 2; dy++) {
         for (let dx = -2; dx <= 2; dx++) {
-          const nx = x + dx;
-          const ny = y + dy;
-          if (nx < 0 || ny < 0 || nx >= GRID_SIZE || ny >= GRID_SIZE) continue;
-          sum += source[ny * GRID_SIZE + nx]!;
+          const at = patchIdAt(grid, x + dx, y + dy);
+          if (at === null) continue;
+          sum += source[at]!;
           n++;
         }
       }
@@ -95,11 +131,7 @@ export function buildGrid(seed: number, profile: TerrainProfile = 'mainland'): P
     const habitat = habitatFor(elevation, moisture);
     const capacity = { ...CAPACITY_BY_HABITAT[habitat] };
 
-    const neighbours: number[] = [];
-    if (x > 0) neighbours.push(id - 1);
-    if (x < GRID_SIZE - 1) neighbours.push(id + 1);
-    if (y > 0) neighbours.push(id - GRID_SIZE);
-    if (y < GRID_SIZE - 1) neighbours.push(id + GRID_SIZE);
+    const neighbours = cardinalNeighbours(grid, id);
 
     patches.push({
       id, x, y, elevation, habitat,
@@ -114,7 +146,7 @@ export function buildGrid(seed: number, profile: TerrainProfile = 'mainland'): P
   }
   if (island) for (const p of patches) {
     p.islandSeed = geometry; p.surface = islandPatchSurface(geometry, p.id);
-    const centre = patchCentre(p.id);
+    const centre = patchCentre(grid, p.id);
     p.elevation = Math.max(0, islandHeightAt(geometry, centre.x, centre.z)) / 90;
     if (p.surface !== 'land') {
       p.habitat = p.surface === 'ocean' ? 'water' : 'rock';

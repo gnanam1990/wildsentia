@@ -4,6 +4,7 @@ import { isCommunityState, waterAccessPosition } from '@vana/shared';
 import { createWorld } from '../src/world.js';
 import { restoreSnapshot, takeSnapshot } from '../src/snapshot.js';
 import { stepCommunity } from '../src/community.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const options = { seed: 1, speciesDir: fileURLToPath(new URL('../../../config/species', import.meta.url)),
   terrainProfile: 'island_v1' as const, communityProfile: 'household_v1' as const, initialCommunityRulesVersion: 2 as const, initialAgents: {}, minPopulation: {} };
@@ -29,7 +30,7 @@ describe('local fish catch, carrying and cooking', () => {
     const caught = attempts.reduce((n, e) => n + (e.effects.rawFishKg ?? 0), 0);
     expect(pool.fishBiomassKg).toBeCloseTo(2 - caught, 10); expect(caught).toBeGreaterThan(0);
     expect(attempts.every(e => e.worldTime >= 1800 && e.causalParents.length === 1)).toBe(true);
-    expect(attempts.every(e => e.position!.x === waterAccessPosition(c.patchId).x && e.position!.z === waterAccessPosition(c.patchId).z)).toBe(true);
+    expect(attempts.every(e => e.position!.x === waterAccessPosition(ISLAND_GRID, c.patchId).x && e.position!.z === waterAccessPosition(ISLAND_GRID, c.patchId).z)).toBe(true);
     expect(w.totalNutrients()).toBeCloseTo(before, 7);
   });
   it('rechecks depleted/dry supply at contact, so simultaneous attempts never duplicate fish', () => {

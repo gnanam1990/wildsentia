@@ -4,7 +4,7 @@ import { deadlineText } from './challengesModel.js';
 /** What each refusal from the live layer means, in the player's words (codes as the server sends them). */
 export const COMMAND_ERRORS: Record<string, string> = {
   not_possessing: 'You have no animal.', not_a_hunter: 'Your animal does not hunt.',
-  not_its_prey: 'That is not prey your animal hunts.', out_of_sight: 'That animal is out of sight.', too_far: 'That is too far away.',
+  not_its_prey: 'That is not prey your animal hunts.', incompatible_prey: 'Your animal cannot take that one: too big, too young or old, or out of reach.', out_of_sight: 'That animal is out of sight.', too_far: 'That is too far away.',
   no_such_animal: 'That animal is no longer here.', no_tree_here: 'There is no tree to climb here.', cannot_climb: 'Your animal cannot climb.',
   come_down_first: 'Come down from the tree first.', not_at_water: 'There is no water here: go to the shore first.',
   does_not_eat_meat: 'Your animal does not eat meat.', does_not_graze: 'Your animal eats meat, not plants: hunt or feed instead.', no_carcass_here: 'There is no carcass here.', no_such_drop: 'That find is gone.',
@@ -16,7 +16,11 @@ export const COMMAND_ERRORS: Record<string, string> = {
   no_free_animal: 'No animal of that species is free.', already_controlled: 'Someone else is steering that animal.',
   species_cap: 'Enough of that species are being steered already; most stay wild.', not_adult: 'Only adults can be taken.',
   dependent: 'That animal is still a dependent youngster.', raising_young: 'That animal is raising young.',
-  off_the_ground: 'That animal is up off the ground.', not_alive: 'That animal is no longer alive.',
+  owned: 'That animal belongs to someone; only its owner or an agent they choose may steer it.',
+  owned_only: 'In this forest you steer an animal you own: choose one of yours.',
+  not_owned: 'That animal is not owned by anyone here.',
+  not_authorised: 'Only its owner, or an agent they have authorised, may steer that animal.',
+  off_the_ground: 'That animal is up off the ground.', not_alive: 'That animal is no longer alive.', under_water: 'That animal is under water right now; try again in a few minutes.',
 };
 
 export interface NearbyAnimal { id: string; speciesId: string; x: number; z: number; distance: number; predator: boolean; huntsYou: boolean; chasingYou: boolean }
@@ -146,4 +150,15 @@ export function keyCommand(o: PlayObservation, key: string, mods: { repeat?: boo
   }
   if (key === 'Escape') return { kind: 'stop' };
   return null;
+}
+
+/**
+ * Sends a command again while the world is stepping (the server refuses it with world_busy for
+ * about a second every few minutes), up to `tries` times in all. Any other error is final.
+ */
+export async function retryWhenBusy<T>(send: () => Promise<T>, wait: (ms: number) => Promise<void>, tries = 3): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try { return await send(); }
+    catch (e) { if ((e as Error).message !== 'world_busy' || attempt >= tries) throw e; await wait(300); }
+  }
 }

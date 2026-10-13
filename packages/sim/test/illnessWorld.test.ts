@@ -7,10 +7,11 @@ import { executeGoal } from '../src/agents/behaviours.js';
 import { makeCarcass } from '../src/fields/decomposition.js';
 import { EventLog } from '../src/events/log.js';
 import { makeAgent, makeServices, makeView, speciesOf, SPECIES_DIR } from './helpers.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 function carrionMeal(seconds: number, pathogenLoad = 1) {
   const patches = buildGrid(1), patch = patches[210]!;
-  const centre = patchCentre(patch.id);
+  const centre = patchCentre(ISLAND_GRID, patch.id);
   const agent = makeAgent('jackal', { patchId: patch.id,
     position: { ...centre, heading: 0 },
     drives: { hunger: 0.8, thirst: 0, fatigue: 0, fear: 0 } });
@@ -43,7 +44,7 @@ describe('authoritative carrion illness lifecycle', () => {
     const opts = { seed: 37, speciesDir: SPECIES_DIR, initialAgents: { jackal: 1 }, minPopulation: {} };
     const world = createWorld(opts), agent = world.agents[0]!;
     const patch = world.patches.find(p => p.habitat === 'grassland')!;
-    agent.patchId = patch.id; agent.position = { ...patchCentre(patch.id), heading: 0 };
+    agent.patchId = patch.id; agent.position = { ...patchCentre(ISLAND_GRID, patch.id), heading: 0 };
     agent.drives = { hunger: 0.8, thirst: 0, fatigue: 0, fear: 0 };
     const carcass = makeCarcass('carc_source', 'chital_dead', 'chital', patch.id, 0,
       'natural', 'high', 100);

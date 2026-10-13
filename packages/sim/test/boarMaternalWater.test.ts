@@ -6,6 +6,7 @@ import { boarMaternalWaterCap, needsOf, provisionYoung } from '../src/agents/nee
 import { takeSnapshot, restoreSnapshot } from '../src/snapshot.js';
 import { createWorld } from '../src/world.js';
 import { makeAgent, speciesOf, SPECIES_DIR } from './helpers.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const boar = speciesOf('boar');
 const HOUR = 3600;
@@ -103,7 +104,7 @@ describe('boar maternal hydration arrears', () => {
       drives: { hunger: 0.1, thirst: 0.1, fatigue: 0, fear: 0 } });
     const pup = makeAgent('dhole', { id: 'dhole_pup', dependentOn: donor.id, ageDays: 7,
       position: { x: 0, z: 0, heading: 0 }, drives: { hunger: 0.4, thirst: 0.4, fatigue: 0, fear: 0 } });
-    const unchanged = provisionYoung(donor, pup, other, 1, undefined, 4 * HOUR);
+    const unchanged = provisionYoung(ISLAND_GRID, donor, pup, other, 1, undefined, 4 * HOUR);
     expect(unchanged.foodEquivalentKg).toBeCloseTo(needsOf(pup, other).foodKg / 8);
     expect(unchanged.waterEquivalentL).toBeCloseTo(needsOf(pup, other).waterL / 8);
     expect(pup.lastMaternalWaterAt).toBeUndefined();

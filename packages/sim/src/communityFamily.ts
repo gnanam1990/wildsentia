@@ -1,4 +1,4 @@
-import {
+import { ISLAND_GRID,
   NUTRIENT_PER_KG_BIOMASS, emptyCommunityInventory, homeCondition, positionInPatch, spatialHash,
   type CommunityState, type Person, type Patch,
 } from '@vana/shared';
@@ -71,7 +71,7 @@ export function advanceCommunityFamily(state: CommunityState, patches: Patch[], 
       id: `person_${String(idNumber).padStart(4, '0')}`, name: `${names[(idNumber - 5) % names.length]!} ${idNumber}`,
       householdId: state.householdId, appearanceSeed: spatialHash(`${state.id}:child:${idNumber}`),
       ageDays: 0, massKg: pregnancy.fetusKg, alive: true, diedAt: null, patchId: mother.patchId,
-      position: positionInPatch(proposed, mother.patchId) ? proposed : { ...mother.position }, health: 1,
+      position: positionInPatch(ISLAND_GRID, proposed, mother.patchId) ? proposed : { ...mother.position }, health: 1,
       needs: { hunger: .15, thirst: .15, fatigue: .1 },
       skills: { gathering: .1, building: .1, fishing: .1, hunting: .1 },
       inventory: { ...emptyCommunityInventory(), rawMeatKg: 0 }, task: null, retryAfter: {},

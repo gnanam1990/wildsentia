@@ -4,14 +4,15 @@ import { describe, expect, it } from 'vitest';
 import { navigate } from '../src/agents/navigation.js';
 import { restoreSnapshot, takeSnapshot } from '../src/snapshot.js';
 import { createWorld } from '../src/world.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const speciesDir = fileURLToPath(new URL('../../../config/species', import.meta.url));
 const options = { seed: 5, speciesDir, initialAgents: { langur: 1, squirrel: 1 }, minPopulation: {} };
 
 function perchedSnapshot() {
   const snapshot = takeSnapshot(createWorld(options));
-  const patch = snapshot.patches.find(patch => treeAnchorForPatch(patch))!;
-  const anchor = treeAnchorForPatch(patch)!;
+  const patch = snapshot.patches.find(patch => treeAnchorForPatch(ISLAND_GRID, patch))!;
+  const anchor = treeAnchorForPatch(ISLAND_GRID, patch)!;
   const animal = snapshot.agents.find(agent => agent.speciesId === 'langur')!;
   animal.patchId = patch.id;
   animal.position = { x: anchor.x, z: anchor.z, heading: 0 };
@@ -29,11 +30,11 @@ describe('optional authoritative vertical fields in snapshots', () => {
     expect(restored.agents.find(a => a.id === animal.id)).toEqual(animal);
     expect(snapshot).toEqual(before);
     patch.canopyCover = 0;
-    expect(treeAnchorForPatch(patch)).toBeNull();
+    expect(treeAnchorForPatch(ISLAND_GRID, patch)).toBeNull();
     const remnant = restoreSnapshot(snapshot, options);
     expect(remnant.agents.find(a => a.id === animal.id)?.treeAnchorId).toBe(anchor.id);
     expect(remnant.agents.find(a => a.id === animal.id)?.altitudeM).toBe(1.25);
-    expect(treeAnchorGeometry(patch.id)?.id).toBe(anchor.id);
+    expect(treeAnchorGeometry(ISLAND_GRID, patch.id)?.id).toBe(anchor.id);
   });
 
   it('rejects malformed tree identity, position, species, height and mode without repairing them', () => {
@@ -42,7 +43,7 @@ describe('optional authoritative vertical fields in snapshots', () => {
       { treeAnchorId: `tree-v1:${patch.id + 1}` },
       { treeAnchorId: undefined },
       { position: { ...animal.position!, x: anchor.x + .001 } },
-      { position: initialPosition('wrong-patch', patch.neighbours[0]!) },
+      { position: initialPosition(ISLAND_GRID, 'wrong-patch', patch.neighbours[0]!) },
       { position: undefined },
       { speciesId: 'boar' },
       { altitudeM: undefined },
@@ -75,14 +76,14 @@ describe('optional authoritative vertical fields in snapshots', () => {
     const islandOptions = { ...options, seed: 1, terrainProfile: 'island_v1' as const,
       initialAgents: { langur: 1 } };
     const snapshot = takeSnapshot(createWorld(islandOptions));
-    const wooded = snapshot.patches.find(patch => treeAnchorForPatch(patch))!;
-    const anchor = treeAnchorForPatch(wooded)!;
+    const wooded = snapshot.patches.find(patch => treeAnchorForPatch(ISLAND_GRID, patch))!;
+    const anchor = treeAnchorForPatch(ISLAND_GRID, wooded)!;
     const animal = snapshot.agents[0]!;
     Object.assign(animal, { patchId: wooded.id, position: { x: anchor.x, z: anchor.z, heading: 0 },
       altitudeM: 2.5, locomotionMode: 'climb', treeAnchorId: anchor.id });
     expect(restoreSnapshot(snapshot, islandOptions).agents[0]).toEqual(animal);
     const coast = snapshot.patches.find(patch => patch.surface === 'coast')!;
-    const falseAnchor = treeAnchorGeometry(coast.id)!;
+    const falseAnchor = treeAnchorGeometry(ISLAND_GRID, coast.id)!;
     animal.patchId = coast.id;
     animal.position = { x: falseAnchor.x, z: falseAnchor.z, heading: 0 };
     animal.treeAnchorId = falseAnchor.id;
@@ -96,7 +97,7 @@ describe('optional authoritative vertical fields in snapshots', () => {
     const flightOptions = { ...options, initialAgents: { vulture: 1 } };
     const flightWorld = createWorld(flightOptions), bird = flightWorld.agents[0]!;
     const destination = (bird.patchId + 24) % flightWorld.patches.length;
-    const moved = navigate(bird, flightWorld.species.get('vulture')!, flightWorld.patches,
+    const moved = navigate(ISLAND_GRID, bird, flightWorld.species.get('vulture')!, flightWorld.patches,
       destination, 'scavenge', 0, 5);
     expect(moved.trace.completed).toBe(false);
     expect(bird.locomotionMode).toBe('flight');

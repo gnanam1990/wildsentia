@@ -4,6 +4,7 @@ import { treeAnchorForPatch, treeAnchorGeometry } from '@vana/shared';
 import { buildTerrain, makeHeightSampler, type PatchView } from '../src/terrain.js';
 import { planVegetation, TreePlacementCache } from '../src/vegetation.js';
 import { disposeTerrain } from '../src/environment.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const patch: PatchView = { id: 210, x: 10, y: 10, habitat: 'shola', grass: 1000, browse: 3000,
   water: 200, canopyCover: .8, elevation: .5, islandSeed: 1, surface: 'land' };
@@ -15,7 +16,7 @@ const instanceAt = (mesh: THREE.InstancedMesh, index: number): THREE.Vector3 => 
 
 describe('exact visible trunk for a shared tree anchor', () => {
   it('places a near GLB and first far trunk on the same authoritative x/z without increasing live tree count', () => {
-    const anchor = treeAnchorForPatch(patch)!;
+    const anchor = treeAnchorForPatch(ISLAND_GRID, patch)!;
     const ground = makeHeightSampler([patch]);
     const plan = planVegetation([patch], { x: anchor.x, z: anchor.z }, 4500, ground, { only: onlyTrees });
     const live = plan.get(anchor.visualKind)!;
@@ -33,8 +34,8 @@ describe('exact visible trunk for a shared tree anchor', () => {
 
   it('retains one visible, non-climbable remnant at the same x/z after canopy loss', () => {
     const depleted = { ...patch, canopyCover: 0 };
-    const geometry = treeAnchorGeometry(patch.id)!;
-    expect(treeAnchorForPatch(depleted)).toBeNull();
+    const geometry = treeAnchorGeometry(ISLAND_GRID, patch.id)!;
+    expect(treeAnchorForPatch(ISLAND_GRID, depleted)).toBeNull();
     const ground = makeHeightSampler([depleted]);
     const plan = new TreePlacementCache().get([depleted], ground);
     expect(plan.get('CommonTree_1')).toHaveLength(0);

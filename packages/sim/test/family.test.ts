@@ -10,6 +10,7 @@ import { createWorld, SIM_VERSION } from '../src/world.js';
 import { takeSnapshot, restoreSnapshot, upgradeV10Snapshot } from '../src/snapshot.js';
 import { makeAgent, SPECIES_DIR, speciesOf } from './helpers.js';
 import { asLegacySnapshot } from './legacySnapshot.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 function fixture() {
   const cfg = structuredClone(speciesOf('dhole')), patches = buildGrid(1);
@@ -22,20 +23,20 @@ function fixture() {
   parent.offspringIds = [child.id];
   const starts = new Map([[child.id, { patchId: 0, position: { ...child.position! } }]]);
   const log = new EventLog(1, SIM_VERSION);
-  const visit = (seconds: number) => travelToFamily(parent, cfg, patches, starts.get(child.id)!, 'care_for_young', 0, seconds / 3600, log);
+  const visit = (seconds: number) => travelToFamily(ISLAND_GRID, parent, cfg, patches, starts.get(child.id)!, 'care_for_young', 0, seconds / 3600, log);
   return { cfg, patches, parent, child, starts, log, visit };
 }
 
 describe('contact-based family care', () => {
   it('rejects same-patch remote, missing, invalid and nonfinite provisioning', () => {
     const s = fixture();
-    expect(provisionYoung(s.parent, s.child, s.cfg, 1).foodEquivalentKg).toBe(0);
+    expect(provisionYoung(ISLAND_GRID, s.parent, s.child, s.cfg, 1).foodEquivalentKg).toBe(0);
     s.parent.position = { ...s.child.position! };
-    for (const hours of [0, -1, NaN, Infinity]) expect(provisionYoung(s.parent, s.child, s.cfg, hours).foodEquivalentKg).toBe(0);
+    for (const hours of [0, -1, NaN, Infinity]) expect(provisionYoung(ISLAND_GRID, s.parent, s.child, s.cfg, hours).foodEquivalentKg).toBe(0);
     delete s.child.position;
-    expect(provisionYoung(s.parent, s.child, s.cfg, 1).foodEquivalentKg).toBe(0);
+    expect(provisionYoung(ISLAND_GRID, s.parent, s.child, s.cfg, 1).foodEquivalentKg).toBe(0);
     s.child.position = { x: NaN, z: 0, heading: 0 };
-    expect(provisionYoung(s.parent, s.child, s.cfg, 1).foodEquivalentKg).toBe(0);
+    expect(provisionYoung(ISLAND_GRID, s.parent, s.child, s.cfg, 1).foodEquivalentKg).toBe(0);
   });
   it('spends travel time before transferring and never relocates the waiting litter', () => {
     const s = fixture(), before = structuredClone(s.child);
@@ -43,7 +44,7 @@ describe('contact-based family care', () => {
     expect(s.child).toEqual(before); expect(s.parent.position!.x).toBeGreaterThan(-100);
     expect(s.log.all().some(e => e.type === 'provisioned')).toBe(false);
     const trace = s.log.all()[0]!.movement!;
-    expect(isMovementTrace(trace)).toBe(true); expect(trace.completed).toBe(false);
+    expect(isMovementTrace(ISLAND_GRID, trace)).toBe(true); expect(trace.completed).toBe(false);
     expect(s.log.all()[0]!.effects.distanceM).toBeCloseTo(10);
   });
   it('requires positive contact time and records exact cost, coordinates and causal route', () => {
@@ -188,21 +189,21 @@ describe('world family coordination', () => {
     const [mother, calf] = world.agents.filter(a => a.speciesId === 'chital');
     for (const id of [motherPatch, calfPatch]) expect(landWalkable(world.patches[id]!)).toBe(true);
     Object.assign(mother!, { sex: 'female', pregnantSince: null, patchId: motherPatch, offspringIds: [calf!.id],
-      position: { ...patchCentre(motherPatch), heading: 0 }, drives: { hunger: 0, thirst: 0, fatigue: 0, fear: 0 } });
+      position: { ...patchCentre(ISLAND_GRID, motherPatch), heading: 0 }, drives: { hunger: 0, thirst: 0, fatigue: 0, fear: 0 } });
     Object.assign(calf!, { dependentOn: mother!.id, motherId: mother!.id, ageDays: 20, lifeStage: 'newborn', massKg: 8,
-      patchId: calfPatch, position: { ...patchCentre(calfPatch), heading: 0 }, drives: { hunger: 0, thirst: 0, fatigue: 0, fear: 0 } });
+      patchId: calfPatch, position: { ...patchCentre(ISLAND_GRID, calfPatch), heading: 0 }, drives: { hunger: 0, thirst: 0, fatigue: 0, fear: 0 } });
     return { world, mother: mother!, calf: calf!, cfg: world.species.get('chital')! };
   }
   it('tethers only idle wandering to young that cannot follow, within perceiving range (sim_0.32.0)', () => {
     const { world, mother, calf, cfg } = chitalPair(0, 3);
-    expect(perceptionRadius(cfg)).toBe(1);
+    expect(perceptionRadius(ISLAND_GRID, cfg)).toBe(1);
     const at = (c: typeof calf) => new Map([[c.id, { patchId: c.patchId, position: { ...c.position! } }]]);
-    expect(idleRangeAnchor(mother, cfg, [calf], at(calf), world.patches)).toMatchObject({ patchId: 3 });
+    expect(idleRangeAnchor(ISLAND_GRID, mother, cfg, [calf], at(calf), world.patches)).toMatchObject({ patchId: 3 });
     // Within one patch the mother ranges freely; a weaned calf, or one that can follow, never tethers.
-    expect(idleRangeAnchor({ ...mother, patchId: 2 }, cfg, [calf], at(calf), world.patches)).toBeNull();
-    expect(idleRangeAnchor(mother, cfg, [{ ...calf, ageDays: cfg.lifecycle.weanDays }], at(calf), world.patches)).toBeNull();
+    expect(idleRangeAnchor(ISLAND_GRID, { ...mother, patchId: 2 }, cfg, [calf], at(calf), world.patches)).toBeNull();
+    expect(idleRangeAnchor(ISLAND_GRID, mother, cfg, [{ ...calf, ageDays: cfg.lifecycle.weanDays }], at(calf), world.patches)).toBeNull();
     const elephant = speciesOf('elephant');
-    expect(idleRangeAnchor({ ...mother, speciesId: 'elephant' }, elephant, [{ ...calf, speciesId: 'elephant' }], at(calf), world.patches)).toBeNull();
+    expect(idleRangeAnchor(ISLAND_GRID, { ...mother, speciesId: 'elephant' }, elephant, [{ ...calf, speciesId: 'elephant' }], at(calf), world.patches)).toBeNull();
     // A fed, watered, unafraid mother would wander; instead she heads back towards the calf, and
     // the trip provisions nothing because the calf needs nothing yet.
     world.step(1);
@@ -247,7 +248,7 @@ describe('world family coordination', () => {
       patchId: 0, position: { x: -100, z: 0, heading: 0 }, drives: { hunger: 0, thirst: 0, fatigue: 0, fear: 0 } });
     const parentStart = { ...parent!.position! }; world.step(1);
     const movement = world.log.all().find(e => e.actors[0] === calf!.id && e.goal === 'follow_parent')!;
-    expect(isMovementTrace(movement.movement)).toBe(true);
+    expect(isMovementTrace(ISLAND_GRID, movement.movement)).toBe(true);
     expect(movement.conditions.targetX).toBe(parentStart.x);
     expect(parent!.position).not.toEqual(parentStart);
     expect(Math.hypot(calf!.position!.x - parentStart.x, calf!.position!.z - parentStart.z)).toBeLessThan(careRadius(world.species.get('elephant')!));

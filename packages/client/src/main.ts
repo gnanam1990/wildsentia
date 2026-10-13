@@ -8,8 +8,10 @@ import { NEAR_RADIUS_M, TREE_DETAIL_RADIUS_M, NearVegetation } from './vegetatio
 import { InsightPanel } from './insights.js';
 import { LiveAgents, activityOf, isLiveMessage, isRosterMessage, rosterActivity, usdc } from './liveAgents.js';
 import { COVER_RADIUS_M, GroundCover } from './groundCover.js';
+import { CongoForest } from './congoForest.js';
+import { congoPlantMaterials } from './congoPlants.js';
 import { AnimalLayer } from './animals.js';
-import { FollowCamera, followDistanceFor } from './camera.js';
+import { FollowCamera, followDistanceFor, viewMessage } from './camera.js';
 import { nearestOnScreen } from './picking.js';
 import { Hud } from './hud.js';
 import { ThoughtBubble } from './bubble.js';
@@ -38,6 +40,8 @@ import { SceneUpdates } from './sceneUpdates.js';
 import { AdaptiveQuality, qualityMode, RenderPacer } from './renderQuality.js';
 import { MicroEcologyLayer } from './microEcologyLayer.js';
 import { animalFromHash, followedHash, initialFollowId } from './animalLink.js';
+import { isAnimalLinkId } from './animalLink.js';
+import { captureHighlight, highlightStart, type CaptureHandle } from './highlightCapture.js';
 import { LazyDialog } from './lazyDialog.js';
 import { ReturnPath } from './returnPath.js';
 import { renderBaseY } from './space.js';
@@ -56,6 +60,7 @@ const bubbleHeight = (animal: AnimalState | undefined): number => {
 
 const canvas = document.querySelector<HTMLCanvasElement>('#view')!;
 const { renderer, scene, camera, sun, setQuality, prepareShadows, setObserverCenter } = createScene(canvas);
+let experienceViewPaused = false;
 const observerChrome = initObserverChrome(setObserverCenter);
 const atmosphere = new Atmosphere(scene, sun);
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
@@ -332,12 +337,16 @@ async function startReplay(id: string, selectedEventId?: string, kind: 'encounte
     replay = { life, records, climbs, encounter: null, climb: null, clock: new ReplayClock(1) };
     recordingPicker.disabled = false; replaySeek.disabled = false; replayPlay.disabled = false;
     const selected = records.findIndex((e) => e.eventId === selectedEventId);
-    recordingPicker.value = kind === 'climb' && climbs.length ? 'climb:0'
+    const selectedClimb = climbs.findIndex((e) => e.eventId === selectedEventId);
+    if (selectedEventId && (kind === 'climb' ? selectedClimb : selected) < 0) throw new Error('This selected recording is no longer retained.');
+    recordingPicker.value = kind === 'climb' && climbs.length ? `climb:${Math.max(0, selectedClimb)}`
       : selected >= 0 ? String(selected) : life.track.length ? 'life' : '0';
     selectRecording();
     replayPlay.focus();
   } catch (error) {
     if (request !== replayRequest) return;
+    replay = null;
+    replaySeek.disabled = true; replayPlay.disabled = true; recordingPicker.disabled = true;
     replayStatus.textContent = `${error instanceof Error ? error.message : 'Recorded history is unavailable.'} Return to live and try again.`;
   }
 }
@@ -476,6 +485,8 @@ function loadNature(patches: ConstructorParameters<typeof NearVegetation>[0]): v
 }
 let groundCover: GroundCover | null = null;
 let terrainRoot: THREE.Object3D | null = null;
+/** Congo 1A.5: the rainforest of the loaded regions, in place of the island's vegetation. */
+let congoForest: CongoForest | null = null;
 const graphics = document.querySelector<HTMLSelectElement>('#render-quality')!;
 const graphicsStatus = document.querySelector<HTMLOutputElement>('#render-quality-status')!;
 let savedQuality: unknown;
@@ -501,7 +512,7 @@ document.addEventListener('visibilitychange', () => {
 addEventListener('pagehide', (event) => {
   ambientAudio.stop(); setAmbientUi('Sound off.');
   // Preserve resources if the browser keeps this document alive in its back/forward cache.
-  if (!(event as PageTransitionEvent).persisted) { nature?.dispose(); natureLoading?.dispose(); natureLoading = null; groundCover?.dispose(); microEcology.dispose(); communityLayer.dispose(); terrainCheckpoints.dispose(); }
+  if (!(event as PageTransitionEvent).persisted) { congoForest?.dispose(); nature?.dispose(); natureLoading?.dispose(); natureLoading = null; groundCover?.dispose(); microEcology.dispose(); communityLayer.dispose(); terrainCheckpoints.dispose(); }
 });
 const carcasses = new Map<string, AnimalState>();
 const sceneStatus = document.querySelector<HTMLElement>('#scene-status')!;
@@ -512,7 +523,10 @@ const sceneUpdates = new SceneUpdates<{
   async prepare(environment) {
     const terrain = terrainCheckpoints.prepare(environment.patches);
     let cover: GroundCover | null = null;
+    // Congo 1A.5: the Congo forest layer draws its own plants, rivers and canopy.
+    const congo = environment.patches[0]?.congoSeed !== undefined;
     try {
+      if (congo) return { terrain, cover };
       if (groundCover === null) cover = new GroundCover(environment.patches, (x, z) => animals.groundHeightAt(x, z));
       // Detailed trees and rocks are most of a first visit's bytes. The terrain's fallback
       // trunks and canopies show the forest meanwhile, so they load after the scene appears.
@@ -538,6 +552,16 @@ const sceneUpdates = new SceneUpdates<{
       else groundCover?.setPatches(update.environment.patches);
       groundCover?.setQuality(quality.tier);
       nature?.setPatches(update.environment.patches);
+      const congoSeed = update.environment.patches[0]?.congoSeed;
+      if (congoSeed !== undefined) {
+        if (congoForest === null) {
+          congoForest = new CongoForest(); scene.add(congoForest.root);
+          // Plants between the camera and a followed animal are cut away, as the island's trees are.
+          for (const material of Object.values(congoPlantMaterials())) observerVisibility.patch(material);
+        }
+        congoForest.setScene(update.environment.patches, congoSeed, update.environment.patches.some((p) => p.flooded === true));
+        atmosphere.haze = 1;
+      }
       const ground = waterGround(update.environment.patches);
       animals.pools = update.environment.patches.flatMap((patch) => { const pool = islandPool(patch, ground); return pool ? [pool] : []; });
       microEcology.sync(update.environment.microEcology, update.environment.patches, prepared.terrain.height);
@@ -790,6 +814,7 @@ function renderFrame(dt: number, now: number): void {
     nature.setDistantLight(store.world ? atmosphereAt(liveWorldTime(now)!, store.world.season).daylight : 1);
   }
   groundCover?.update(camera.position, 2);
+  if (congoForest) { congoForest.update(follow.target, camera.position); atmosphere.underCanopy = congoForest.underCanopy; }
   communityLayer.update(dt, camera.position, quality.tier, reducedMotion.matches, now, followedPersonId);
   const communityText = communityLayer.playbackNotice(now, reducedMotion.matches);
   if (communityMotionNotice.textContent !== communityText) communityMotionNotice.textContent = communityText;
@@ -808,7 +833,8 @@ const frameAnimals = new Map<string, AnimalState>();
 function frame(): void {
   requestAnimationFrame(frame);
   const now = performance.now();
-  const elapsedMs = pacer.next(now, document.hidden);
+  const elapsedMs = pacer.next(now, document.hidden || experienceViewPaused);
+  if (experienceViewPaused) return;
   if (elapsedMs === null) return;
   if (elapsedMs > 0 && quality.sample(elapsedMs)) applyQuality();
   const dt = Math.min(elapsedMs / 1000, 0.1);
@@ -936,9 +962,11 @@ function frame(): void {
   animals.sync(visibleAnimals, now, followedId, { x: follow.target.x, z: follow.target.z }, poses);
   animals.update(dt);
 
+  viewFocus = null;
   if (followedId !== null) {
     const position = animals.positionOf(followedId, now);
     if (position !== null) {
+      viewFocus = { x: position.x, z: position.z };
       const speciesId = store.animals.get(followedId)?.speciesId ?? carcasses.get(followedId)?.speciesId ?? '';
       observerSubjects = [observerSubject(speciesId, position, characterScale(visibleAnimals.get(followedId) ?? {}))];
       const partner = followedEncounter && livePairFrame.checked ? poses.get(followedEncounter.partnerId)?.position : undefined;
@@ -1020,14 +1048,18 @@ function frame(): void {
 
 /** Tells the server where the camera looks, so it sends the agents there; at most once a second. */
 let viewSentAt = 0, viewSent: { x: number; z: number; radius: number } | null = null;
+/** The followed animal's drawn position this frame, if any: the view is centred on it. */
+let viewFocus: { x: number; z: number } | null = null;
 function sendView(force = false): void {
-  if (socket?.readyState !== WebSocket.OPEN) return;
+  // Before a scene is drawn the camera is at its default spot, not where the viewer looks; on a
+  // regional world that would load (and then, ten seconds later, unload) a far corner (Congo 1A.4).
+  if (socket?.readyState !== WebSocket.OPEN || terrainRoot === null) return;
   const now = performance.now();
-  const view = { x: follow.target.x, z: follow.target.z, radius: Math.min(1500, Math.max(300, follow.distance * 2.5 + 200)) };
+  const view = viewMessage(follow.target, follow.distance, viewFocus);
   const moved = !viewSent || Math.hypot(view.x - viewSent.x, view.z - viewSent.z) > 25 || Math.abs(view.radius - viewSent.radius) > viewSent.radius * 0.2;
   if (!force && (!moved || now - viewSentAt < 1000)) return;
   viewSentAt = now; viewSent = view;
-  socket.send(JSON.stringify({ type: 'view', x: Math.round(view.x), z: Math.round(view.z), radius: Math.round(view.radius) }));
+  socket.send(JSON.stringify({ type: 'view', ...view }));
 }
 
 const agentTags: HTMLElement[] = [];
@@ -1152,6 +1184,67 @@ addEventListener('hashchange', () => {
   if (id !== null) watch(id);
 });
 
+// Same-origin experience pages may guide the observer and capture its actual rendered scene.
+// No external window can invoke this bridge; all actor/event references remain bounded.
+let experienceCapture: CaptureHandle | null = null;
+let experienceCaptureStarting = false, experienceCaptureGeneration = 0;
+let experienceCanCapture = false;
+const experienceEmbed = new URLSearchParams(location.search).get('embed') === 'experiences';
+const experienceReply = (data: unknown, transfer: Transferable[] = []) => {
+  if (experienceEmbed && parent !== window) parent.postMessage({ ...(data as Record<string, unknown>), session: new URLSearchParams(location.search).get('experienceSession') ?? '' }, location.origin, transfer);
+};
+async function experienceReady(): Promise<void> {
+  const params = new URLSearchParams(location.hash.slice(1)), id = animalFromHash(location.hash), event = params.get('event'), kind = params.get('kind');
+  if (id && event && /^[a-zA-Z0-9_-]{1,128}$/.test(event) && ['hunt', 'climb'].includes(kind ?? '')) {
+    await startReplay(id, event, kind === 'climb' ? 'climb' : 'encounter');
+    if (!replay) { experienceReply({ type: 'wildsentia:capture-error', message: 'The selected recording is unavailable.' }); return; }
+  }
+  await new Promise(resolve => setTimeout(resolve, 300));
+  const readyUntil = performance.now() + 15_000;
+  while (animals.pendingModelCount > 0 && performance.now() < readyUntil) await new Promise(resolve => setTimeout(resolve, 250));
+  if (animals.pendingModelCount > 0) { experienceReply({ type:'wildsentia:capture-error', message:'Animal models are still loading. Reopen the preview and try again.' }); return; }
+  experienceCanCapture = true;
+  experienceReply({ type: 'wildsentia:ready' });
+}
+if (experienceEmbed) addEventListener('message', async (event: MessageEvent) => {
+  if (event.origin !== location.origin || event.source !== parent || !event.data || typeof event.data !== 'object') return;
+  const data = event.data as Record<string, unknown>;
+  if (data.type === 'wildsentia:visibility' && typeof data.visible === 'boolean') { experienceViewPaused = !data.visible; return; }
+  if (data.type === 'wildsentia:follow' && isAnimalLinkId(data.animalId)) { watch(data.animalId); return; }
+  if (data.type === 'wildsentia:cancel-capture') { ++experienceCaptureGeneration; experienceCapture?.cancel(); return; }
+  if (data.type !== 'wildsentia:capture' || !experienceCanCapture || data.session !== new URLSearchParams(location.search).get('experienceSession') || experienceCapture || experienceCaptureStarting || ![15,20,30].includes(Number(data.duration))
+    || !['title','caption','context'].every(k => typeof data[k] === 'string' && (data[k] as string).length <= 500)) return;
+  experienceCaptureStarting = true;
+  const generation = ++experienceCaptureGeneration;
+  try {
+    const shared = new URLSearchParams(location.hash.slice(1)), eventId = shared.get('event'), actorId = animalFromHash(location.hash);
+    if (eventId && actorId) {
+      // The embedded viewer has its own replay picker; recording must return to the
+      // exact shared event so its caption cannot describe different footage.
+      await startReplay(actorId, eventId, shared.get('kind') === 'climb' ? 'climb' : 'encounter');
+      if (!replay) throw new Error('selected recording unavailable');
+    }
+    if (generation !== experienceCaptureGeneration || experienceViewPaused || document.hidden) throw new Error('capture cancelled');
+    if (replay?.encounter || replay?.climb) {
+      replay.clock.speed = 1;
+      replay.clock.seek(highlightStart(replay.clock.durationMs, Number(data.duration)));
+      replayAutoFrame.checked = false;
+      follow.distance = followDistanceFor(replay.life.speciesId, visualFor(replay.life.speciesId).heightM);
+      // Render the selected actor at the saved clip start before capture begins. Long
+      // stalks remain honest recordings without a distant camera aimed between actors.
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      if (generation !== experienceCaptureGeneration || experienceViewPaused || document.hidden) throw new Error('capture cancelled');
+      replay.clock.play();
+    }
+    const handle = experienceCapture = captureHighlight(canvas, { duration: data.duration as 15|20|30, title: data.title as string, caption: data.caption as string, context: data.context as string });
+    void handle.done.then(clip => experienceReply({ type:'wildsentia:clip', ...clip }, [clip.bytes]))
+      .catch(() => experienceReply({ type:'wildsentia:capture-error', message:'Recording stopped or unavailable. Try again in a browser with video capture.' }))
+      .finally(() => { if (experienceCapture === handle) experienceCapture = null; });
+  } catch { experienceReply({ type:'wildsentia:capture-error', message:'Recording stopped or its selected replay is unavailable. Reopen the preview and try again.' }); }
+  finally { experienceCaptureStarting = false; }
+});
+addEventListener('pagehide', () => experienceCapture?.cancel());
+
 // Explicit shared links include dead/departed animals and take priority over local preferences.
 const stop = store.onChange(() => {
   if (store.world === null) return;
@@ -1160,4 +1253,5 @@ const stop = store.onChange(() => {
     if (id !== null) { follow.distance = 22; watch(id); }
   }
   stop();
+  void experienceReady();
 });

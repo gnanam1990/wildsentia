@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { ISLAND_GRID } from '@vana/shared';
 import { readFileSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
@@ -12,7 +13,7 @@ import { testDatabaseUrl } from './testDatabase.js';
 
 /** Workstream D: the operator's /metrics, on its own internal port and never through Caddy. */
 
-const standInHost = { worldId: null, rewardSubject: () => null, observation: () => null, isWriterActive: true,
+const standInHost = { grid: ISLAND_GRID, worldId: null, rewardSubject: () => null, observation: () => null, isWriterActive: true,
   lastError: null, hasFreshCheckpoint: true, checkpointTime: 7200 } as unknown as Parameters<typeof buildApi>[0]['host'];
 const standInPool = { query: async () => ({ rows: [] }) } as unknown as Pool;
 
@@ -153,8 +154,10 @@ describe('where /metrics is served', () => {
 
   it('is refused by Caddy: /api/metrics is answered 404 before the API proxy', () => {
     const caddyfile = readFileSync(fileURLToPath(new URL('../../../deploy/Caddyfile', import.meta.url)), 'utf8');
-    // Caddy sorts handle blocks by path specificity, so this longer path wins over /api/*.
-    expect(caddyfile).toMatch(/\n {2}handle \/api\/metrics\* \{\n {4}respond 404\n {2}\}\n/);
+    // Inside the explicit route, refusal precedes the general API proxy regardless
+    // of indentation or whether Caddy's formatter uses tabs.
+    expect(caddyfile).toMatch(/\bhandle \/api\/metrics\*\s*\{\s*respond 404\s*}/);
+    expect(caddyfile.indexOf('handle /api/metrics')).toBeLessThan(caddyfile.indexOf('handle_path /api/'));
     expect(caddyfile).not.toMatch(/9464/);
   });
 });

@@ -1,4 +1,5 @@
-import { ISLAND_SEGMENTS, ISLAND_STEP_M, PATCH_METRES, islandVertexHeight } from '@vana/shared';
+import { worldGrid } from './worldGrid.js';
+import { ISLAND_SEGMENTS, ISLAND_STEP_M, islandVertexHeight } from '@vana/shared';
 
 export interface IslandHeightField {
   readonly seed: number;
@@ -20,8 +21,8 @@ export function islandHeightField(seed: number): IslandHeightField {
     values[row * side + col] = islandVertexHeight(seed, col, row);
   const sample = (x: number, z: number): number => {
     // Preserve islandHeightAt's clamp, triangle split and arithmetic order exactly.
-    const gx = Math.max(0, Math.min(ISLAND_SEGMENTS - 1e-9, (x + PATCH_METRES / 2) / ISLAND_STEP_M));
-    const gz = Math.max(0, Math.min(ISLAND_SEGMENTS - 1e-9, (z + PATCH_METRES / 2) / ISLAND_STEP_M));
+    const gx = Math.max(0, Math.min(ISLAND_SEGMENTS - 1e-9, (x + worldGrid().patchM / 2) / ISLAND_STEP_M));
+    const gz = Math.max(0, Math.min(ISLAND_SEGMENTS - 1e-9, (z + worldGrid().patchM / 2) / ISLAND_STEP_M));
     const col = Math.floor(gx), row = Math.floor(gz), fx = gx - col, fz = gz - row;
     const index = row * side + col;
     const a = values[index]!, b = values[index + side]!, c = values[index + side + 1]!, d = values[index + 1]!;

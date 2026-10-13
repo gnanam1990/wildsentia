@@ -5,6 +5,7 @@ import { ISLAND_POPULATION } from '../src/forest.js';
 import { isFloater } from '../src/agents/territory.js';
 import { careRadius } from '../src/agents/needs.js';
 import { makeAgent, SPECIES_DIR, speciesOf } from './helpers.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const dhole = speciesOf('dhole');
 
@@ -16,10 +17,10 @@ function denWorld(seed: number, pupDays: number) {
   world.step(MORNING); // sim_0.37.0: dholes hunt by day; start at 07:00
   const dholes = world.agents.filter(a => a.speciesId === 'dhole');
   const mother = dholes[0]!, pups = dholes.slice(3);
-  const den = patchCentre(210);
+  const den = patchCentre(ISLAND_GRID, 210);
   world.agents.forEach((a, i) => {
     a.patchId = 211;
-    a.position = { x: patchCentre(211).x + i * 3, z: den.z, heading: 0 };
+    a.position = { x: patchCentre(ISLAND_GRID, 211).x + i * 3, z: den.z, heading: 0 };
     a.drives = { hunger: 0.6, thirst: 0.1, fatigue: 0, fear: 0 };
     delete a.gutKg;
   });

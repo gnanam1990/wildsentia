@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
-import type { SpeciesConfig } from '@vana/shared';
+import { LIFE_STAGES, type SpeciesConfig } from '@vana/shared';
 
 const habitatCost = z.object({
   shola: z.number().positive(),
@@ -10,6 +10,11 @@ const habitatCost = z.object({
   rock: z.number().positive(),
   marsh: z.number().positive(),
   water: z.number().positive(),
+  // Congo habitats: optional; one left out costs as its island analogue (terrainCostFor).
+  terra_firme: z.number().positive().optional(),
+  flooded_forest: z.number().positive().optional(),
+  swamp_forest: z.number().positive().optional(),
+  bai: z.number().positive().optional(),
 });
 
 export const SpeciesConfigSchema = z
@@ -32,6 +37,11 @@ export const SpeciesConfigSchema = z
       sprintStaminaS: z.number().positive(),
       terrainCost: habitatCost,
       climbsTrees: z.boolean().optional(),
+      // Congo 1B: swimmers and divers, and what crossing ground costs while it is flooded.
+      swims: z.object({ swimMs: z.number().positive().finite(), diveSeconds: z.number().positive().max(3_600) }).optional(),
+      floodedTerrainCost: z.object({
+        water: z.number().positive().optional(), flooded_forest: z.number().positive().optional(),
+      }).strict().optional(),
     }),
     senses: z.object({
       sightRangeM: z.number().nonnegative(),
@@ -43,6 +53,7 @@ export const SpeciesConfigSchema = z
       flightInitiationM: z.number().nonnegative(),
       evasiveness: z.number().min(0).max(1),
       avoids: z.array(z.string().min(1)).optional(),
+      freezeFirst: z.boolean().optional(),
     }),
     diet: z.object({
       eats: z
@@ -79,10 +90,12 @@ export const SpeciesConfigSchema = z
         cachesKills: z.boolean().optional(),
         preferredPreyKg: z.tuple([z.number().min(0).finite(), z.number().positive().finite()])
           .refine(([lo, hi]) => lo <= hi, 'preferred prey range must be ordered').optional(),
+        preyLifeStages: z.array(z.enum(LIFE_STAGES)).min(1).optional(),
       })
       .optional(),
     social: z.object({
       structure: z.enum(['solitary', 'pair', 'herd', 'troop', 'pack', 'family']),
+      pairBond: z.boolean().optional(),
       groupSize: z.tuple([z.number().int().positive(), z.number().int().positive()]),
       alarmSharing: z.boolean(),
       heedsAlarmOf: z.array(z.string().min(1)).optional(),

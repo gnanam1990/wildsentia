@@ -1,9 +1,11 @@
-import { GRID_SIZE, PATCH_METRES, edibleMass, landWalkable, patchCentre, positionInPatch, type Agent, type Carcass, type Patch, type SpeciesConfig } from '@vana/shared';
+import { edibleMass, landWalkable, patchCentre, patchIdAt, positionInPatch, type WorldGrid, type Agent, type Carcass, type Patch, type SpeciesConfig, type Season } from '@vana/shared';
 import { confidenceOf } from './learning.js';
 import { canEatMaternalCarcass, canFollowParent, needsOf, needsProvisioning } from './needs.js';
 
 /** What the behaviour layer is allowed to ask the world. Agents never read global state. */
 export interface WorldView {
+  /** The world's patch lattice. */
+  grid: WorldGrid;
   patches: Patch[];
   agentsInPatch(patchId: number): readonly Agent[];
   carcassesInPatch(patchId: number): readonly Carcass[];
@@ -12,6 +14,8 @@ export interface WorldView {
   agentById?(id: string): Agent | undefined;
   /** The decision's world time, where the rule needs it (the held-kill check). */
   worldTime?: number;
+  /** Congo 1B: the season, for flooding; absent in array-backed test views. */
+  season?: Season;
   /** Where a group currently is, so a separated member can rejoin it. Null if the group is gone. */
   groupPatch(groupId: string): number | null;
 }
@@ -63,6 +67,19 @@ export function threatens(predator: SpeciesConfig | undefined, prey: SpeciesConf
   return (predator.hunting?.preferredPrey ?? []).includes(prey.id) || (prey.escape.avoids ?? []).includes(predator.id);
 }
 
+/**
+ * Congo 1B: whether this predator may take this animal at all: its prey species, within the
+ * weight it takes, at a life stage it takes, and within reach (on the ground, above water).
+ * Every hunt checks it: the sim's own, a live agent's, and the world's record of a live kill.
+ */
+export function canHunt(predator: SpeciesConfig, prey: SpeciesConfig, animal: Pick<Agent, 'massKg' | 'lifeStage' | 'altitudeM' | 'locomotionMode'>): boolean {
+  const hunting = predator.hunting;
+  if (!hunting || !hunting.preferredPrey.includes(prey.id)) return false;
+  if (animal.massKg > (hunting.maxPreyKg ?? Infinity)) return false;
+  if (hunting.preyLifeStages && !hunting.preyLifeStages.includes(animal.lifeStage)) return false;
+  return (animal.altitudeM ?? 0) <= 0 && animal.locomotionMode !== 'submerged';
+}
+
 /** What a predator is visibly doing, as prey can read it. */
 export type ThreatPosture = 'hunting' | 'moving' | 'settled';
 
@@ -107,7 +124,7 @@ export function threatPosture(predator: Agent): ThreatPosture {
   return predator.state === 'travelling' || predator.state === 'fleeing' ? 'moving' : 'settled';
 }
 
-const where = (agent: Agent) => positionInPatch(agent.position, agent.patchId) ? agent.position! : patchCentre(agent.patchId);
+const where = (grid: WorldGrid, agent: Agent) => positionInPatch(grid, agent.position, agent.patchId) ? agent.position! : patchCentre(grid, agent.patchId);
 
 export const MAX_PERCEPTION_RADIUS = 8;
 
@@ -152,12 +169,12 @@ export const CARRION_SEARCH_RADIUS = 4;
  * by scent through cover, and until this existed both saw exactly one patch in each direction —
  * which starved every wide-ranging forager in the world.
  */
-export function perceptionRadius(config: SpeciesConfig): number {
+export function perceptionRadius(grid: WorldGrid, config: SpeciesConfig): number {
   const reach = Math.max(config.senses.sightRangeM, config.senses.smellRangeM);
-  return Math.min(MAX_PERCEPTION_RADIUS, Math.max(1, Math.round(reach / PATCH_METRES)));
+  return Math.min(MAX_PERCEPTION_RADIUS, Math.max(1, Math.round(reach / grid.patchM)));
 }
 
-function patchesWithin(patch: Patch, radius: number, patches: Patch[]): Patch[] {
+function patchesWithin(grid: WorldGrid, patch: Patch, radius: number, patches: Patch[]): Patch[] {
   if (radius <= 1) return [patch, ...patch.neighbours.map((id) => patches[id]!)].filter(landWalkable);
 
   const found: Patch[] = [];
@@ -165,9 +182,10 @@ function patchesWithin(patch: Patch, radius: number, patches: Patch[]): Patch[] 
     for (let dx = -radius; dx <= radius; dx++) {
       const x = patch.x + dx;
       const y = patch.y + dy;
-      if (x < 0 || y < 0 || x >= GRID_SIZE || y >= GRID_SIZE) continue;
+      const id = patchIdAt(grid, x, y);
+      if (id === null) continue;
       if (Math.abs(dx) + Math.abs(dy) > radius) continue;
-      found.push(patches[y * GRID_SIZE + x]!);
+      found.push(patches[id]!);
     }
   }
   return found.filter(landWalkable);
@@ -180,7 +198,7 @@ function patchesWithin(patch: Patch, radius: number, patches: Patch[]): Patch[] 
 export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView): Percept {
   const patch = view.patches[agent.patchId]!;
   const neighbours = patch.neighbours.map((id) => view.patches[id]!).filter(landWalkable);
-  const visible = patchesWithin(patch, perceptionRadius(species), view.patches);
+  const visible = patchesWithin(view.grid, patch, perceptionRadius(view.grid, species), view.patches);
 
   let bestFood: Percept['bestFood'] = null;
   let bestWater: Percept['bestWater'] = null;
@@ -193,7 +211,7 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
   const preferred = new Set(species.hunting?.preferredPrey ?? []);
 
   // Detect first, so food and water choices can keep away from what was detected.
-  const here = where(agent);
+  const here = where(view.grid, agent);
   const senseM = Math.max(species.senses.sightRangeM, species.senses.smellRangeM);
   for (const p of visible) {
     for (const other of view.agentsInPatch(p.id)) {
@@ -202,7 +220,7 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
       if (!isPredator(otherSpecies) || !threatens(otherSpecies, species)) continue;
       const posture = threatPosture(other);
       const rangeM = posture === 'hunting' ? senseM * (1 - (otherSpecies.hunting?.stalkConcealment ?? 0)) : senseM;
-      const at = where(other), distanceM = Math.hypot(at.x - here.x, at.z - here.z);
+      const at = where(view.grid, other), distanceM = Math.hypot(at.x - here.x, at.z - here.z);
       if (distanceM > rangeM) continue;
       dangerous.add(p.id);
       const fear = threatFear(posture, distanceM, rangeM, species.escape);
@@ -230,12 +248,14 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
         // The current hunt solver is planar: it cannot make physical contact with an
         // animal on an exact tree anchor above ground. No general invulnerability is implied.
         if (!other.alive || other.id === agent.id || !preferred.has(other.speciesId)
-          || (other.altitudeM ?? 0) > 0) continue;
+          || (other.altitudeM ?? 0) > 0 || other.locomotionMode === 'submerged') continue;
         // sim_0.37.0 intraguild avoidance: a hunter does not hunt where a predator that hunts it
         // stands (leopards keep away from tigers), unless it is starving.
         if (dangerous.has(p.id) && !starving) continue;
         // sim_0.37.0: prey heavier than the hunter will take (an adult sambar for a leopard).
         if (other.massKg > (species.hunting?.maxPreyKg ?? Infinity)) continue;
+        // Congo 1B: only the life stages it takes (no island species names any).
+        if (species.hunting?.preyLifeStages && !species.hunting.preyLifeStages.includes(other.lifeStage)) continue;
         // An agent-steered animal is hunted in real time by the live layer, not by the
         // hourly solver, which cannot know where its agent will take it.
         if (other.controller) continue;
@@ -274,9 +294,9 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
     // animal does. Limiting both left a thirsty, food-limited sow on island_v2 blind to water
     // past her senses (two patches); she grazed 400-950 m from the nest at thirst 0.7-0.86, too
     // thirsty to nurse, and her 9-day piglets died of thirst.
-    const foodReach = tethered ? perceptionRadius(species) : RANGE_MEMORY_RADIUS;
+    const foodReach = tethered ? perceptionRadius(view.grid, species) : RANGE_MEMORY_RADIUS;
     const reach = needFood ? Math.max(tethered && needWater ? waterReach : 0, foodReach) : waterReach;
-    for (const p of patchesWithin(patch, reach, view.patches)) {
+    for (const p of patchesWithin(view.grid, patch, reach, view.patches)) {
       if (dangerous.has(p.id) && !(needFood ? starving : thirsty)) continue;
       const steps = Math.abs(p.x - patch.x) + Math.abs(p.y - patch.y);
       if (needFood && steps <= foodReach) {
@@ -303,7 +323,7 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
   // found by scent alone, it found only what it stood beside and starved over country full
   // of carcasses.
   if (species.diet.canScavenge) {
-    const sightPatches = Math.round(species.senses.sightRangeM / PATCH_METRES);
+    const sightPatches = Math.round(species.senses.sightRangeM / view.grid.patchM);
     const reach = Math.min(MAX_PERCEPTION_RADIUS, Math.max(CARRION_SEARCH_RADIUS, sightPatches));
     const enough = dailyNeed * 2;
     let bestWorth = 0;
@@ -313,10 +333,10 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
     // alone to a cached kill, splitting the litter, and its mother, shuttling between the two,
     // let both halves die of thirst. (A tiger's cubs follow before they eat meat.)
     const lies = needsProvisioning(agent, species) && !canFollowParent(agent, species);
-    for (const p of patchesWithin(patch, reach, view.patches)) {
+    for (const p of patchesWithin(view.grid, patch, reach, view.patches)) {
       if (lies && p.id !== patch.id) continue;
       const steps = Math.abs(p.x - patch.x) + Math.abs(p.y - patch.y);
-      const distanceM = steps * PATCH_METRES;
+      const distanceM = steps * view.grid.patchM;
       // Nothing walks up to a carcass something that hunts it is standing over. Without this
       // boar took two-thirds of every tiger kill, and tigers killed three times as often.
       const guarded = view.agentsInPatch(p.id).some((other) =>
@@ -352,7 +372,7 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
   const sized = species.hunting?.preferredPreyKg;
   if (sized && !tethered && !prey.some(p => p.agent.massKg >= sized[0])) {
     let best = 0;
-    for (const p of patchesWithin(patch, RANGE_MEMORY_RADIUS, view.patches)) {
+    for (const p of patchesWithin(view.grid, patch, RANGE_MEMORY_RADIUS, view.patches)) {
       if (dangerous.has(p.id) || p.id === patch.id) continue;
       let count = 0;
       for (const other of view.agentsInPatch(p.id)) if (other.alive && preferred.has(other.speciesId) && (other.altitudeM ?? 0) === 0

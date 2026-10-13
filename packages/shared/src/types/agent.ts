@@ -1,5 +1,6 @@
 import type { PatchId } from './patch.js';
 import type { WorldTime } from '../time.js';
+import type { DeathCause } from './carcass.js';
 import type { WorldPosition } from '../spatial.js';
 
 export type AgentState =
@@ -8,7 +9,8 @@ export type AgentState =
   /** Walked out of this stretch of forest into the country around it. Alive, but gone. */
   | 'emigrated';
 
-export type LocomotionMode = 'ground' | 'flight' | 'climb';
+/** Congo 1B adds 'submerged': a diver under water, unseen and out of reach until `submergedUntil`. */
+export type LocomotionMode = 'ground' | 'flight' | 'climb' | 'submerged';
 
 /** Skills an animal learns, is taught, and loses with disuse (spec §8). */
 export const SKILL_IDS = [
@@ -170,10 +172,19 @@ export interface Agent {
    * does come from the live layer. Absent for every wild animal.
    */
   controller?: string;
+  /**
+   * Congo 1C: the owned asset this animal is a life of. Absent for every wild animal. An owned
+   * animal lives wild when unsteered, and only its owner's side may steer it.
+   */
+  assetId?: string;
+  /** Congo 1C: how an owned animal died, kept on its record for its owner's life history. */
+  ownedDeath?: { cause: DeathCause; killerId: string | null; at: WorldTime };
   /** Optional only for legacy snapshots; initialized deterministically by the simulation. */
   position?: WorldPosition;
   /** Authoritative non-ground travel state. Absent on old/ground-only checkpoints. */
   altitudeM?: number;
+  /** Congo 1B: while `locomotionMode` is 'submerged', the world time it surfaces. */
+  submergedUntil?: number;
   locomotionMode?: LocomotionMode;
   /** Stable shared trunk identity while an arboreal animal is above ground. */
   treeAnchorId?: string;

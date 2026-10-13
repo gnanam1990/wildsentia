@@ -3,6 +3,7 @@ import { createRng, patchCentre, type Agent } from '@vana/shared';
 import { choosePrey, resolveHunt } from '../src/agents/predation.js';
 import { createWorld } from '../src/world.js';
 import { makeAgent, SPECIES_DIR, speciesOf } from './helpers.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const dhole = speciesOf('dhole');
 const MORNING = 7;
@@ -11,7 +12,7 @@ const MORNING = 7;
 function packWorld(seed: number) {
   const world = createWorld({ seed, speciesDir: SPECIES_DIR, initialAgents: { dhole: 4, chital: 12 }, minPopulation: {} });
   world.step(MORNING); // sim_0.37.0: dholes hunt by day; start at 07:00
-  const centre = patchCentre(210);
+  const centre = patchCentre(ISLAND_GRID, 210);
   world.agents.forEach((a, i) => {
     a.patchId = 210;
     a.position = { x: centre.x + (a.speciesId === 'dhole' ? -60 + i * 8 : 20 + i * 3), z: centre.z, heading: 0 };
@@ -132,13 +133,13 @@ describe('dholes hunt as a pack (sim_0.36.0)', () => {
       for (let seed = 1; seed <= 30; seed++) {
         const world = createWorld({ seed, speciesDir: SPECIES_DIR, initialAgents: { dhole: 2, hare: 6, chital: 1 }, minPopulation: {} });
         world.step(MORNING); // sim_0.37.0: dholes hunt by day; start at 07:00
-        const centre = patchCentre(210);
+        const centre = patchCentre(ISLAND_GRID, 210);
         const [lead, mate] = world.agents.filter(a => a.speciesId === 'dhole') as [Agent, Agent];
         world.agents.forEach((a, i) => { a.patchId = 210; a.position = { x: centre.x + 30 + i * 4, z: centre.z, heading: 0 };
           a.drives = { hunger: 0.2, thirst: 0.1, fatigue: 0, fear: 0 }; });
         lead.position = { x: centre.x - 40, z: centre.z, heading: 0 };
         lead.drives.hunger = 0.7; delete lead.gutKg;
-        mate.position = packmates ? { x: centre.x - 45, z: centre.z, heading: 0 } : { ...patchCentre(250), heading: 0 };
+        mate.position = packmates ? { x: centre.x - 45, z: centre.z, heading: 0 } : { ...patchCentre(ISLAND_GRID, 250), heading: 0 };
         if (!packmates) { mate.patchId = 250; mate.alive = false; }
         world.__reindexForTest();
         world.step(1);
@@ -158,13 +159,13 @@ describe('dholes hunt as a pack (sim_0.36.0)', () => {
     for (let seed = 1; seed <= 20; seed++) {
       const world = createWorld({ seed, speciesDir: SPECIES_DIR, initialAgents: { dhole: 2, hare: 6 }, minPopulation: {} });
       world.step(MORNING); // sim_0.37.0: dholes hunt by day; start at 07:00
-      const centre = patchCentre(210);
+      const centre = patchCentre(ISLAND_GRID, 210);
       const [lead, mate] = world.agents.filter(a => a.speciesId === 'dhole') as [Agent, Agent];
       world.agents.forEach((a, i) => { a.patchId = 210; a.position = { x: centre.x + 30 + i * 4, z: centre.z, heading: 0 };
         a.drives = { hunger: 0.2, thirst: 0.1, fatigue: 0, fear: 0 }; });
       lead.position = { x: centre.x - 40, z: centre.z, heading: 0 };
       lead.drives.hunger = 0.7; delete lead.gutKg;
-      mate.patchId = 250; mate.position = { ...patchCentre(250), heading: 0 };
+      mate.patchId = 250; mate.position = { ...patchCentre(ISLAND_GRID, 250), heading: 0 };
       world.__reindexForTest();
       world.step(1);
       if (world.log.all().some(e => e.type === 'hunt' && e.actors[0] === lead.id)) solo++;
@@ -178,7 +179,7 @@ describe('dholes hunt as a pack (sim_0.36.0)', () => {
     for (let seed = 1; seed <= 10; seed++) {
       const world = createWorld({ seed, speciesDir: SPECIES_DIR, initialAgents: { dhole: 2, hare: 6 }, minPopulation: {} });
       world.step(MORNING);
-      const centre = patchCentre(210);
+      const centre = patchCentre(ISLAND_GRID, 210);
       const [lead, carrier] = world.agents.filter(a => a.speciesId === 'dhole') as [Agent, Agent];
       world.carcasses.length = 0;
       world.agents.forEach((a, i) => {
@@ -187,7 +188,7 @@ describe('dholes hunt as a pack (sim_0.36.0)', () => {
         delete a.gutKg; delete a.failedHunts;
       });
       lead.position = { x: centre.x - 40, z: centre.z, heading: 0 }; lead.drives.hunger = 0.7;
-      carrier.patchId = 250; carrier.position = { ...patchCentre(250), heading: 0 };
+      carrier.patchId = 250; carrier.position = { ...patchCentre(ISLAND_GRID, 250), heading: 0 };
       carrier.packFood = { kg: 1, moistureLPerKg: 0.65, sourceCarcassId: 'reserved', sourceActorId: 'prey',
         sourceEventId: 'reserved-event', collectedAt: world.now(), expiresAt: world.now() + 6 * 3600,
         recipientId: 'recipient', packId: carrier.groupId! };

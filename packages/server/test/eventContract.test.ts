@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { WorldEvent } from '@vana/shared';
 import { EventStore, eventSequence } from '../src/db/eventStore.js';
 import type { Pool } from '../src/db/pool.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 describe('event SQL binding contract (not a PostgreSQL integration test)', () => {
   it('binds sixteen values per row, including nullable or JSON traces, positions and sequence', async () => {
@@ -20,7 +21,7 @@ describe('event SQL binding contract (not a PostgreSQL integration test)', () =>
       actorId: 'tiger', startWorldTime: 0, destinationPatchId: 1, goal: 'wander', completed: false,
       samples: [{ seconds: 0, position: { x: 0, z: 0, heading: 0 } }, { seconds: 1, position: { x: 1, z: 0, heading: 0 } }] } };
     const birth: WorldEvent = { ...event, id: 'born_00000001000000000000002a', type: 'born', position: { x: 15.125, z: -6.5, heading: 1.2 } };
-    await new EventStore(pool).appendBatch([event, withTrace, withMove, birth]);
+    await new EventStore(pool, ISLAND_GRID).appendBatch([event, withTrace, withMove, birth]);
     const { sql, values } = calls[0]!;
     const columns = sql.match(/insert into events\s*\(([^)]+)\)/)![1]!.split(',').map((s) => s.trim());
     expect(columns).toHaveLength(16); expect(columns.at(-1)).toBe('event_sequence');

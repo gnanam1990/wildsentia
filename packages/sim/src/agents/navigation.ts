@@ -1,5 +1,5 @@
-import { initialPosition, patchAtPosition, patchCentre, positionInPatch, PATCH_METRES, landWalkable,
-  type Agent, type Patch, type SpeciesConfig, type WorldPosition, type MovementTrace, type GoalId } from '@vana/shared';
+import { terrainCostFor, initialPosition, patchAtPosition, patchCentre, positionInPatch, landWalkable,
+  type WorldGrid, type Agent, type Patch, type SpeciesConfig, type WorldPosition, type MovementTrace, type GoalId } from '@vana/shared';
 import { approachContact } from './movement.js';
 import { locateAgent } from './spatial.js';
 import { locomotionFactor } from './needs.js';
@@ -8,16 +8,16 @@ type Piece = { target: WorldPosition; cost: number };
 const distance = (a: WorldPosition, b: WorldPosition): number => Math.hypot(a.x - b.x, a.z - b.z);
 const costOf = (p: Patch, cfg: SpeciesConfig): number => {
   if (!landWalkable(p)) return Infinity;
-  const value = cfg.locomotion.terrainCost[p.habitat];
+  const value = terrainCostFor(cfg, p.habitat, p.flooded === true);
   return Number.isFinite(value) && value > 0 ? value : Infinity;
 };
 
 /** Split each cardinal edge at its real patch boundary, charging the terrain actually crossed. */
-function pieces(from: WorldPosition, fromId: number, toId: number, id: string, patches: Patch[], cfg: SpeciesConfig, endpoint?: WorldPosition): Piece[] {
-  const target = endpoint ?? initialPosition(id, toId);
+function pieces(grid: WorldGrid, from: WorldPosition, fromId: number, toId: number, id: string, patches: Patch[], cfg: SpeciesConfig, endpoint?: WorldPosition): Piece[] {
+  const target = endpoint ?? initialPosition(grid, id, toId);
   if (fromId === toId) return [{ target, cost: costOf(patches[toId]!, cfg) }];
-  const a = patchCentre(fromId); const b = patchCentre(toId);
-  if (Math.abs(a.x - b.x) + Math.abs(a.z - b.z) !== PATCH_METRES) throw new Error('non-cardinal route edge');
+  const a = patchCentre(grid, fromId); const b = patchCentre(grid, toId);
+  if (Math.abs(a.x - b.x) + Math.abs(a.z - b.z) !== grid.patchM) throw new Error('non-cardinal route edge');
   const axis = a.x === b.x ? 'z' : 'x';
   const boundary = (a[axis] + b[axis]) / 2;
   const fraction = (boundary - from[axis]) / (target[axis] - from[axis]);
@@ -29,9 +29,9 @@ function pieces(from: WorldPosition, fromId: number, toId: number, id: string, p
 /** Deterministic least-cost search over the static terrain graph. It knows terrain, not animals.
  * Costs are metres weighted by species terrain cost; actual speeds are applied during travel.
  * No decorative tree/rock collision or shoreline topology is claimed. */
-export function planRoute(agent: Agent, destination: number, patches: Patch[], cfg: SpeciesConfig, endpoint?: WorldPosition): number[] | null {
-  if (endpoint && !positionInPatch(endpoint, destination)) throw new Error('route endpoint outside destination');
-  const start = agent.patchId; const origin = locateAgent(agent);
+export function planRoute(grid: WorldGrid, agent: Agent, destination: number, patches: Patch[], cfg: SpeciesConfig, endpoint?: WorldPosition): number[] | null {
+  if (endpoint && !positionInPatch(grid, endpoint, destination)) throw new Error('route endpoint outside destination');
+  const start = agent.patchId; const origin = locateAgent(grid, agent);
   if (!patches[destination] || !Number.isFinite(costOf(patches[destination]!, cfg))) return null;
   if (start === destination) return [destination];
   const costs = new Map<number, number>([[start, 0]]); const parents = new Map<number, number>();
@@ -46,11 +46,11 @@ export function planRoute(agent: Agent, destination: number, patches: Patch[], c
       while (id !== start) { route.push(id); id = parents.get(id)!; }
       return route.reverse();
     }
-    const point = current.id === start ? origin : initialPosition(agent.id, current.id);
+    const point = current.id === start ? origin : initialPosition(grid, agent.id, current.id);
     for (const next of [...patches[current.id]!.neighbours].sort((a, b) => a - b)) {
       if (!patches[next]) continue;
       let length = 0; let last = point;
-      for (const piece of pieces(point, current.id, next, agent.id, patches, cfg, next === destination ? endpoint : undefined)) {
+      for (const piece of pieces(grid, point, current.id, next, agent.id, patches, cfg, next === destination ? endpoint : undefined)) {
         length += distance(last, piece.target) * piece.cost; last = piece.target;
       }
       const value = current.cost + length;
@@ -63,15 +63,15 @@ export function planRoute(agent: Agent, destination: number, patches: Patch[], c
 
 /** Consume exactly the route distance affordable in this decision's time budget. */
 export function navigate(
-  agent: Agent, cfg: SpeciesConfig, patches: Patch[], destination: number, goal: GoalId,
+  grid: WorldGrid, agent: Agent, cfg: SpeciesConfig, patches: Patch[], destination: number, goal: GoalId,
   startWorldTime: number, secondsAvailable: number, fleeing = false, endpoint?: WorldPosition,
 ): { trace: MovementTrace; distanceM: number; seconds: number; sprintSeconds: number; unreachable: boolean } {
   if (!Number.isFinite(secondsAvailable) || secondsAvailable < 0 || !Number.isFinite(startWorldTime)) throw new Error('invalid navigation budget');
-  if (endpoint && !positionInPatch(endpoint, destination)) throw new Error('route endpoint outside destination');
+  if (endpoint && !positionInPatch(grid, endpoint, destination)) throw new Error('route endpoint outside destination');
   if (cfg.archetype === 'scavenger_flyer') {
-    return navigateFlight(agent, cfg, patches, destination, goal, startWorldTime, secondsAvailable, endpoint);
+    return navigateFlight(grid, agent, cfg, patches, destination, goal, startWorldTime, secondsAvailable, endpoint);
   }
-  const from = { ...locateAgent(agent) };
+  const from = { ...locateAgent(grid, agent) };
   const trace: MovementTrace = { version: 1, actorId: agent.id, startWorldTime, destinationPatchId: destination,
     goal, samples: [{ seconds: 0, position: from }], completed: false };
   const existing = agent.journey;
@@ -81,7 +81,7 @@ export function navigate(
   if (route && (route.length === 0 || route.at(-1) !== destination || route.some((next) => {
     const valid = landWalkable(patches[next]) && (last === next || patches[last]?.neighbours.includes(next)); last = next; return !valid;
   }))) route = null;
-  route ??= planRoute(agent, destination, patches, cfg, endpoint);
+  route ??= planRoute(grid, agent, destination, patches, cfg, endpoint);
   if (!route) { delete agent.journey; return { trace, distanceM: 0, seconds: 0, sprintSeconds: 0, unreachable: true }; }
   const condition = locomotionFactor(agent, cfg) * Math.max(0.15, 1 - agent.drives.fatigue * 0.5);
   const sprintBudget = fleeing ? Math.min(secondsAvailable, cfg.locomotion.sprintStaminaS * (agent.stamina ?? 1)) : 0;
@@ -89,14 +89,14 @@ export function navigate(
   while (route.length && seconds < secondsAvailable) {
     const next = route[0]!;
     let reached = true;
-    for (const piece of pieces(position, patchAtPosition(position), next, agent.id, patches, cfg, next === destination ? endpoint : undefined)) {
+    for (const piece of pieces(grid, position, patchAtPosition(grid, position), next, agent.id, patches, cfg, next === destination ? endpoint : undefined)) {
       if (!Number.isFinite(piece.cost)) { reached = false; break; }
       // Sprint -> trot is a real speed transition, also recorded in the trace.
       while (distance(position, piece.target) > 1e-8 && seconds < secondsAvailable) {
         const sprint = seconds < sprintBudget;
         const budget = Math.min(secondsAvailable - seconds, sprint ? sprintBudget - seconds : Infinity);
         const speed = (fleeing ? sprint ? cfg.locomotion.sprintMs : cfg.locomotion.trotMs : cfg.locomotion.walkMs) * condition / piece.cost;
-        const result = approachContact(position, piece.target, speed, budget, 0);
+        const result = approachContact(grid, position, piece.target, speed, budget, 0);
         seconds += result.seconds; distanceM += result.distanceM; position = result.position;
         trace.samples.push({ seconds, position: { ...position } });
         if (result.arrived) break;
@@ -109,7 +109,7 @@ export function navigate(
     route.shift();
   }
   agent.position = position;
-  const finalPatch = patchAtPosition(position);
+  const finalPatch = patchAtPosition(grid, position);
   if (finalPatch !== agent.patchId) { agent.previousPatchId = agent.patchId; agent.patchId = finalPatch; }
   trace.completed = route.length === 0;
   if (trace.completed) delete agent.journey;
@@ -119,15 +119,15 @@ export function navigate(
 
 /** Vultures travel above the terrain graph, with an explicit climb/cruise/landing trace. */
 function navigateFlight(
-  agent: Agent, cfg: SpeciesConfig, patches: Patch[], destination: number, goal: GoalId,
+  grid: WorldGrid, agent: Agent, cfg: SpeciesConfig, patches: Patch[], destination: number, goal: GoalId,
   startWorldTime: number, secondsAvailable: number, endpoint?: WorldPosition,
 ): { trace: MovementTrace; distanceM: number; seconds: number; sprintSeconds: number; unreachable: boolean } {
   if (!patches[destination] || !landWalkable(patches[destination]!)) {
     return { trace: { version: 1, actorId: agent.id, startWorldTime, destinationPatchId: destination,
-      goal, samples: [{ seconds: 0, position: { ...locateAgent(agent) } }], completed: false },
+      goal, samples: [{ seconds: 0, position: { ...locateAgent(grid, agent) } }], completed: false },
     distanceM: 0, seconds: 0, sprintSeconds: 0, unreachable: true };
   }
-  const from = { ...locateAgent(agent) }, target = endpoint ?? initialPosition(agent.id, destination);
+  const from = { ...locateAgent(grid, agent) }, target = endpoint ?? initialPosition(grid, agent.id, destination);
   const gap = distance(from, target);
   if (gap <= 1e-8) {
     delete agent.altitudeM; delete agent.locomotionMode; delete agent.journey;
@@ -176,7 +176,7 @@ function navigateFlight(
   }
   if (travelSeconds > 0) samples.push({ seconds: travelSeconds, position, altitudeM: altitudeAt(travelSeconds) });
   agent.position = position;
-  const finalPatch = patchAtPosition(position);
+  const finalPatch = patchAtPosition(grid, position);
   if (finalPatch !== agent.patchId) { agent.previousPatchId = agent.patchId; agent.patchId = finalPatch; }
   if (completed) { delete agent.altitudeM; delete agent.locomotionMode; delete agent.journey; }
   else {

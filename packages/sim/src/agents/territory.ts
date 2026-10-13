@@ -1,6 +1,7 @@
-import { GRID_SIZE, PATCH_METRES, landWalkable, type Agent, type Patch, type SpeciesConfig } from '@vana/shared';
+import { ISLAND_GRID, patchIdAt, landWalkable, type Agent, type Patch, type SpeciesConfig } from '@vana/shared';
 
-const PATCH_KM2 = (PATCH_METRES / 1000) ** 2;
+// Every world's patches are 300 m (island and Congo alike); ranges are counted in those patches.
+const PATCH_KM2 = (ISLAND_GRID.patchM / 1000) ** 2;
 
 /**
  * The patch radius whose diamond covers `km2`. A diamond of radius r holds 2r² + 2r + 1 patches.
@@ -65,7 +66,9 @@ export function packRangeLandFraction(config: SpeciesConfig, centre: Patch, patc
       if (Math.abs(dx) + Math.abs(dy) > radius) continue;
       cells++;
       const x = centre.x + dx, y = centre.y + dy;
-      if (x >= 0 && y >= 0 && x < GRID_SIZE && y < GRID_SIZE && landWalkable(patches[y * GRID_SIZE + x])) land++;
+      // Island-only (checked above): the island lattice.
+      const id = patchIdAt(ISLAND_GRID, x, y);
+      if (id !== null && landWalkable(patches[id])) land++;
     }
   }
   return land / cells;

@@ -1,4 +1,4 @@
-import { NUTRIENT_PER_KG_BIOMASS, landWalkable, type HabitatType, type Patch, type Season } from '@vana/shared';
+import { CONGO_HABITATS, HABITAT_ANALOGUE, NUTRIENT_PER_KG_BIOMASS, landWalkable, type CongoHabitat, type HabitatType, type IslandHabitat, type Patch, type Season } from '@vana/shared';
 import { SEASON_GROWTH_FACTOR } from './plants.js';
 
 /**
@@ -17,7 +17,7 @@ import { SEASON_GROWTH_FACTOR } from './plants.js';
  * pig food per hectare of Indian forest was found. They are set so that, with the island's
  * predators, boar settle at a field density rather than at whatever grass allows.
  */
-export const ROOTING_CAPACITY_KG: Record<HabitatType, number> = {
+const ISLAND_ROOTING_KG: Record<IslandHabitat, number> = {
   // Kilograms of digestible rooting and mast food per 300 m patch (9 ha) at capacity.
   shola: 2200,     // evergreen forest: fruit and seed fall, tubers, litter invertebrates
   riparian: 2200,  // moist soil: rhizomes, bulbs, earthworms
@@ -25,6 +25,11 @@ export const ROOTING_CAPACITY_KG: Record<HabitatType, number> = {
   grassland: 1000, // grass rhizomes and bulbs, few fruiting trees
   rock: 200,
   water: 0,
+};
+/** Congo habitats take their analogue's figure until the Congo species are calibrated (sub-project 1B). */
+export const ROOTING_CAPACITY_KG: Record<HabitatType, number> = {
+  ...ISLAND_ROOTING_KG,
+  ...Object.fromEntries(CONGO_HABITATS.map((h) => [h, ISLAND_ROOTING_KG[HABITAT_ANALOGUE[h]]])) as Record<CongoHabitat, number>,
 };
 
 /** Logistic regrowth per hour, before the seasonal and moisture factors (about 3-7 a year). */

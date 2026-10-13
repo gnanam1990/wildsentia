@@ -12,6 +12,7 @@ import { EventStore } from '../src/db/eventStore.js';
 import { SnapshotStore } from '../src/db/snapshotStore.js';
 import { SimHost } from './trackedHost.js';
 import { testDatabaseUrl } from './testDatabase.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const url = testDatabaseUrl(), pool = url ? createPool(url) : null, maybe = url ? describe : describe.skip;
 const options = () => ({ pool: pool!, seed: 1,
@@ -46,7 +47,7 @@ maybe('checkpointed v8 home disaster observation', () => {
     const shelter = generated.find(event => event.type === 'building_shelter_changed')!;
     expect(collapse.causalParents).toContain(flood.id);
     expect(shelter.causalParents).toContain(collapse.id);
-    await new EventStore(pool!).appendBatch(generated);
+    await new EventStore(pool!, ISLAND_GRID).appendBatch(generated);
     await new SnapshotStore(pool!).save(takeSnapshot(seed));
 
     const host = new SimHost(options()); await host.boot();

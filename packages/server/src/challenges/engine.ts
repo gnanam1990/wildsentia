@@ -1,5 +1,5 @@
 import { keccak256, toBytes } from 'viem';
-import type { CommandRecord, EndedLife, HuntOutcome, LiveLayer, WorldPort } from '../live/liveLayer.js';
+import { WorldBusyError, type CommandRecord, type EndedLife, type HuntOutcome, type LiveLayer, type WorldPort } from '../live/liveLayer.js';
 import { goalMet, leastRealMs, progressOf } from './goals.js';
 import { RuleWatch, type RuleView } from './rules.js';
 import type { Attempt, AttemptStatus, Challenge, ChallengeStore, Hex, LogEntry } from './store.js';
@@ -51,6 +51,8 @@ interface Waiter { player: Player; since: number; terms: ChallengeTerms }
 const OUTCOME: Record<Exclude<AttemptStatus, 'running'>, 1 | 2 | 3> = { met: 1, failed: 2, void: 3 };
 
 export class ChallengeEngine {
+  /** Releases a step got in the way of: done at the next tick (Congo 1A.3). */
+  readonly #releaseLater = new Map<string, string>();
   readonly #running = new Map<string, Running>();
   #pending: Array<{ attemptId: string; entry: LogEntry }> = [];
   /** Attempts ended by a live-layer hook, still being written; the next tick waits for them. */
@@ -203,7 +205,7 @@ export class ChallengeEngine {
       attempt = await this.store.startAttempt({ challengeId: c.id, agentId: player.agentId, animalId: animal.id,
         payoutWallet: player.wallet!, startedWorld: this.world.now(), startState });
     } catch (error) {
-      this.live.release(player.agentId, 'The challenge could not start, so your animal went back to the wild.', 'idle');
+      this.#releaseOrLater(player.agentId, 'The challenge could not start, so your animal went back to the wild.');
       throw error;
     }
     // The animal may have been let go while the attempt was being saved (a release in between
@@ -295,6 +297,10 @@ export class ChallengeEngine {
 
   /** Once a second: write logs and progress, check goals and deadlines. */
   async tick(): Promise<void> {
+    if (!this.world.busy?.()) for (const [agentId, why] of [...this.#releaseLater]) {
+      this.#releaseLater.delete(agentId);
+      this.#releaseOrLater(agentId, why);
+    }
     this.observeGoals();
     const ending = this.#ending;
     this.#ending = [];
@@ -338,7 +344,15 @@ export class ChallengeEngine {
   }
 
   /** Starts the next waiting agent's attempt when an animal comes free; drops waits that ran out. */
+  /** Lets an animal go now, or (while the world steps) at the next tick. */
+  #releaseOrLater(agentId: string, why: string): void {
+    try { this.live.release(agentId, why, 'idle'); }
+    catch (error) { if (error instanceof WorldBusyError) this.#releaseLater.set(agentId, why); else throw error; }
+  }
+
   async #serveWaiting(): Promise<void> {
+    // Nothing is taken while the world steps; the line is served at the next tick.
+    if (this.world.busy?.()) return;
     for (const challengeId of [...this.#waiting.keys()]) {
       // The list is read afresh after every await: accept() may add to it meanwhile.
       const queue = () => this.#waiting.get(challengeId) ?? [];
@@ -369,6 +383,8 @@ export class ChallengeEngine {
       let started: AcceptResult;
       try { started = await this.#start(head.player, c, free); }
       catch (error) {
+        // The world began a step before the animal could be taken: the player keeps their place.
+        if (error instanceof WorldBusyError) { this.#waiting.set(challengeId, [head, ...queue()]); continue; }
         console.error('[challenges] starting a waiting attempt failed', (error as Error).message);
         started = { ok: false, status: 500, error: 'could_not_start' };
       }

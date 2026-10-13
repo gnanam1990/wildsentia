@@ -1,5 +1,12 @@
-import { positionInPatch, isWorldPosition, patchAtPosition, patchCentre } from './spatial.js';
-import { PATCH_METRES } from './types/patch.js';
+import { ISLAND_GRID, isWorldPosition as isGridPosition, patchAtPosition as gridPatchAt, patchCentre as gridCentre,
+  positionInPatch as gridPositionInPatch, type WorldPosition } from './grid.js';
+
+// A community exists only on the island profiles, whose lattice is always the island grid.
+const positionInPatch = (value: unknown, patchId: number): value is WorldPosition => gridPositionInPatch(ISLAND_GRID, value, patchId);
+const isWorldPosition = (value: unknown): value is WorldPosition => isGridPosition(ISLAND_GRID, value);
+const patchAtPosition = (value: Parameters<typeof gridPatchAt>[1]): number => gridPatchAt(ISLAND_GRID, value);
+const patchCentre = (id: number): { x: number; z: number } => gridCentre(ISLAND_GRID, id);
+const ISLAND_PATCH_M = ISLAND_GRID.patchM;
 import { HOME_STAGES, HOME_SHELTER_THRESHOLD, type CommunityState } from './types/community.js';
 import { isCommunityMotion } from './communityMotion.js';
 
@@ -113,7 +120,7 @@ export function isCommunityState(value: unknown): value is CommunityState {
         for (const point of j.waypoints) {
           if (!isWorldPosition(point)) return false;
           const next = patchAtPosition(point), a = patchCentre(previous), b = patchCentre(next);
-          if (previous !== next && Math.abs(a.x - b.x) + Math.abs(a.z - b.z) !== PATCH_METRES) return false;
+          if (previous !== next && Math.abs(a.x - b.x) + Math.abs(a.z - b.z) !== ISLAND_PATCH_M) return false;
           previous = next;
         }
         const last = j.waypoints.at(-1);

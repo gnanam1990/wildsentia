@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="en" class="experiences-root">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Wildsentia — Forest experiences</title>
+    <script src="/theme-init.js"></script>
+    <link rel="stylesheet" href="/src/style.css" />
+    <link rel="stylesheet" href="/src/experiences.css" />
+  </head>
+  <body class="experience-page">
+    <a class="skip" href="#experience-main">Skip to experiences</a>
+    <header class="experience-header">
+      <a href="/" class="experience-brand"
+        >Wildsentia<span>The living wild</span></a
+      >
+      <nav aria-label="Main navigation">
+        <a href="/">Forest</a
+        ><a href="/experiences.html" aria-current="page">Experiences</a
+        ><a href="/challenges.html">Challenges</a><a href="/play.html">Play</a>
+      </nav>
+      <button id="experience-theme" type="button" class="quiet">Theme</button>
+    </header>
+    <main id="experience-main">
+      <section class="experience-hero">
+        <p class="eyebrow">One island. A thousand stories.</p>
+        <h1>Come closer to the wild.</h1>
+        <p>
+          Play a short survival match, follow a life, or ask your guide what is
+          happening in the forest.
+        </p>
+        <div class="hero-badges">
+          <span>Free local matches</span><span>Stories from saved records</span
+          ><span>Your own experiments</span>
+        </div>
+      </section>
+      <nav class="experience-tabs" aria-label="Choose an experience">
+        <a href="#league" data-tab="league" aria-current="page"
+          >Survival League</a
+        ><a href="#moments" data-tab="moments">Forest moments</a>
+        <a href="#safari" data-tab="safari">Safari guide</a
+        ><a href="#lives" data-tab="lives">Follow a life</a
+        ><a href="#lab" data-tab="lab">What-if Lab</a>
+      </nav>
+      <p
+        id="experience-status"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      ></p>
+      <section data-pane="league" aria-labelledby="league-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">A short adventure</p>
+            <h2 id="league-title">Who finds their way?</h2>
+            <p>
+              Two separate arenas. Identical starting conditions. Eight command
+              turns each.
+            </p>
+          </div>
+          <span class="pill">Points league</span>
+        </div>
+        <form id="league-form" class="experience-card setup-grid">
+          <label
+            >Mission<select name="mission">
+              <option value="water">Find water and drink</option>
+              <option value="survive">Stay alive</option>
+              <option value="hunt">Complete a hunt</option>
+            </select></label
+          >
+          <label
+            >Animal<select name="species">
+              <option value="tiger">Tiger</option>
+              <option value="leopard">Leopard</option>
+              <option value="chital">Chital</option>
+              <option value="hare">Hare</option>
+            </select></label
+          >
+          <label
+            >First player<select name="first" id="league-first"></select></label
+          ><label
+            >Second player<select name="second" id="league-second"></select
+          ></label>
+          <label
+            >Length<select name="duration">
+              <option value="180">3 minutes</option>
+              <option value="300">5 minutes</option>
+            </select></label
+          >
+          <label
+            >Island seed<input
+              name="seed"
+              type="number"
+              min="0"
+              max="1000000"
+              value="42"
+              required
+          /></label>
+          <div class="setup-actions">
+            <button type="submit">Start a match</button
+            ><button id="league-cancel" type="button" class="quiet" hidden>
+              End match
+            </button>
+          </div>
+          <p class="small full-row">
+            Forager and Careful use local strategies. Model players appear when
+            available on this server. No entry fee or wallet required.
+          </p>
+        </form>
+        <div id="league-match" class="experience-card" hidden>
+          <div class="match-heading">
+            <h3 id="league-match-title">Match</h3>
+            <output id="league-progress" aria-live="polite"></output>
+          </div>
+          <progress
+            id="league-meter"
+            max="100"
+            value="0"
+            aria-label="Match progress"
+          ></progress>
+          <div id="league-arenas" class="arena-grid"></div>
+          <div id="league-human" class="human-controls" hidden>
+            <p>
+              Tap your arena to move. Focus it and use arrow keys to move, H to
+              hunt, Escape to stop.
+            </p>
+            <div class="actions">
+              <button type="button" id="league-hunt">Hunt nearest prey</button>
+              <button type="button" data-action="drink">Drink</button
+              ><button type="button" data-action="graze">Graze</button
+              ><button type="button" data-action="rest">Rest</button
+              ><button type="button" data-action="feed">Feed</button
+              ><button type="button" data-action="stop">Stop</button>
+            </div>
+          </div>
+          <div class="replay-controls" id="league-replay" hidden>
+            <label
+              >Recorded match position<input
+                id="league-seek"
+                type="range"
+                min="0"
+                max="300"
+                value="0" /></label
+            ><button id="league-replay-play" type="button">Play replay</button
+            ><button id="league-export" type="button" class="quiet">
+              Download match record
+            </button>
+          </div>
+        </div>
+        <div class="section-heading">
+          <h3>Recent league results</h3>
+          <button id="leaderboard-refresh" type="button" class="quiet">
+            Refresh
+          </button>
+        </div>
+        <div id="leaderboard" class="experience-card empty-state">
+          No results loaded yet.
+        </div>
+      </section>
+      <section data-pane="moments" aria-labelledby="moments-title" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">The forest has a story</p>
+            <h2 id="moments-title">Moments worth keeping.</h2>
+            <p>
+              Hunts, arrivals, new lives and journeys, selected from saved
+              events.
+            </p>
+          </div>
+          <button id="moments-refresh" type="button" class="quiet">
+            Refresh moments
+          </button>
+        </div>
+        <div id="moment-cards" class="moment-grid"></div>
+        <section id="moment-preview" class="experience-card" hidden>
+          <h3 id="moment-title"></h3>
+          <p id="moment-detail"></p>
+          <div class="forest-window">
+            <iframe
+              id="moment-forest"
+              title="Forest moment preview"
+              loading="lazy"
+            ></iframe>
+          </div>
+          <p id="moment-source" class="small"></p>
+          <div class="actions">
+            <button id="moment-record" type="button" disabled>
+              Make a 20-second clip</button
+            ><button id="moment-stop" type="button" class="quiet" hidden>
+              Cancel recording</button
+            ><button id="moment-share" type="button" class="quiet">
+              Copy story link</button
+            ><a id="moment-download" class="button" hidden>Download clip</a>
+          </div>
+          <p id="moment-feedback" role="status" aria-live="polite"></p>
+        </section>
+      </section>
+      <section data-pane="safari" aria-labelledby="safari-title" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">A guide beside you</p>
+            <h2 id="safari-title">Ask the forest.</h2>
+            <p>Learn about an animal's needs, family and retained story.</p>
+          </div>
+        </div>
+        <div class="safari-grid">
+          <div class="forest-window">
+            <iframe
+              id="safari-forest"
+              title="Live forest safari"
+              loading="lazy"
+            ></iframe>
+          </div>
+          <section class="experience-card safari-chat">
+            <p class="pill">Answers from the saved forest</p>
+            <div id="safari-transcript" role="log" aria-live="polite"></div>
+            <div class="prompt-chips">
+              <button type="button" data-question="Show me a tiger">
+                Show me a tiger</button
+              ><button type="button" data-question="What is happening?">
+                What's happening?</button
+              ><button type="button" data-question="Tell me about an elephant">
+                Meet an elephant
+              </button>
+            </div>
+            <form id="safari-form">
+              <label for="safari-question">Your question</label>
+              <div class="question-row">
+                <input
+                  id="safari-question"
+                  maxlength="280"
+                  required
+                  placeholder="Why is that tiger resting?"
+                /><button type="submit">Ask</button>
+              </div>
+            </form>
+            <div class="actions">
+              <button id="safari-mic" type="button" class="quiet">
+                Use microphone</button
+              ><button id="safari-live" type="button" hidden>
+                Start live voice</button
+              ><button id="safari-stop" type="button" class="quiet" hidden>
+                Stop voice
+              </button>
+            </div>
+            <label class="check-label"
+              ><input type="checkbox" id="safari-speak" /> Read answers
+              aloud</label
+            >
+            <p id="safari-voice-status" class="small" role="status"></p>
+          </section>
+        </div>
+      </section>
+      <section data-pane="lives" aria-labelledby="lives-title" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Keep a place in your day</p>
+            <h2 id="lives-title">Follow a life.</h2>
+            <p>
+              Choose an animal. Come back for its family and the moments you
+              missed.
+            </p>
+          </div>
+        </div>
+        <form id="life-form" class="experience-card setup-grid">
+          <label
+            >Animal<select
+              id="life-animal"
+              name="animal"
+              required
+            ></select></label
+          ><label
+            >Your nickname<input
+              name="nickname"
+              maxlength="64"
+              placeholder="A name just for your list" /></label
+          ><button type="submit">Follow this life</button>
+          <p class="small full-row">
+            Your nickname belongs to your list. Your follows are saved with this
+            browser's profile.
+          </p>
+        </form>
+        <div class="actions">
+          <button id="lives-refresh" type="button" class="quiet">
+            Refresh lives</button
+          ><button id="lives-seen" type="button" class="quiet">
+            Mark recent moments seen</button
+          ><button
+            id="lives-notify"
+            type="button"
+            class="quiet"
+            aria-pressed="false"
+          >
+            Notify while this page is open
+          </button>
+        </div>
+        <p id="lives-notice" class="small" role="status"></p>
+        <div id="life-cards" class="moment-grid"></div>
+      </section>
+      <section data-pane="lab" aria-labelledby="lab-title" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">A question becomes an experiment</p>
+            <h2 id="lab-title">What if the island changed?</h2>
+            <p>
+              Compare two copies of the same saved world. Watch the differences
+              emerge.
+            </p>
+          </div>
+          <span class="pill">Simulation experiment</span>
+        </div>
+        <form id="lab-form" class="experience-card setup-grid">
+          <label
+            >Change one thing<select name="scenario">
+              <option value="no_rain">Stop the rain</option>
+              <option value="fewer_predators">Remove half the predators</option>
+            </select></label
+          >
+          <label
+            >Experiment length<select name="days">
+              <option value="3">3 world days</option>
+              <option value="7" selected>7 world days</option>
+              <option value="30">30 world days</option>
+            </select></label
+          >
+          <div class="setup-actions">
+            <button type="submit">Run comparison</button
+            ><button id="lab-cancel" type="button" class="quiet" hidden>
+              Cancel experiment
+            </button>
+          </div>
+        </form>
+        <section id="lab-output" class="experience-card" hidden>
+          <div class="match-heading">
+            <h3>Two possible futures</h3>
+            <output id="lab-progress" role="status"></output>
+          </div>
+          <progress
+            id="lab-meter"
+            max="100"
+            value="0"
+            aria-label="Experiment progress"
+          ></progress>
+          <div class="chart-legend">
+            <span class="baseline-key">Baseline</span
+            ><span class="experiment-key">Changed island</span>
+          </div>
+          <div id="lab-charts" class="chart-grid"></div>
+          <div id="lab-table" class="table-scroll"></div>
+          <ul id="lab-assumptions" class="small"></ul>
+          <button id="lab-export" type="button" class="quiet" hidden>
+            Download experiment
+          </button>
+        </section>
+      </section>
+      <section class="saved-jobs">
+        <h3>Your recent sessions</h3>
+        <div id="experience-jobs"></div>
+      </section>
+    </main>
+    <footer class="experience-footer">
+      The island continues its own story. <a href="/">Return to the forest</a>
+    </footer>
+    <script type="module" src="/src/experiences.ts"></script>
+  </body>
+</html>

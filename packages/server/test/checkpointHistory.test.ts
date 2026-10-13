@@ -8,6 +8,7 @@ import { SimHost } from './trackedHost.js';
 import { buildApi } from '../src/api.js';
 import { Narrator } from '../src/narration/narrator.js';
 import { testDatabaseUrl } from './testDatabase.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const url = testDatabaseUrl(), pool = url ? createPool(url) : null;
 const maybe = url ? describe : describe.skip;
@@ -105,7 +106,7 @@ maybe('checkpoint-consistent observer history', () => {
   it('requires a committed departure for an archived fallback exactly at the checkpoint boundary', async () => {
     const host = new SimHost(options()); await host.boot();
     const archived = { ...structuredClone(host.world.agents[0]!), id: 'archived-boundary', alive: false, departedAt: 0 };
-    await new LifeStore(pool!).archive([archived]);
+    await new LifeStore(pool!, ISLAND_GRID).archive([archived]);
     host.world.log.append({ type: 'died', worldTime: 0, simVersion: '', patchId: archived.patchId,
       actors: [archived.id], conditions: { cause: 'natural' }, effects: {}, outcome: 'success', causalParents: [], confidence: 'authoritative' });
     await host.flush(); const api = buildApi({ host, pool: pool! });

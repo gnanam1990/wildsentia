@@ -11,12 +11,13 @@ import { buildGrid } from '../src/grid.js';
 import { restoreSnapshot, takeSnapshot } from '../src/snapshot.js';
 import { createWorld } from '../src/world.js';
 import { makeAgent, makeServices, makeView, SPECIES_DIR, speciesOf } from './helpers.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const tiger = speciesOf('tiger');
 const patchId = 210;
 
 function family(ageDays = 70, motherAlive = true) {
-  const patches = buildGrid(1), centre = patchCentre(patchId);
+  const patches = buildGrid(1), centre = patchCentre(ISLAND_GRID, patchId);
   const mother = makeAgent('tiger', { id: 'tiger_mother', sex: 'female', alive: motherAlive,
     patchId, position: { ...centre } });
   const child = makeAgent('tiger', { id: 'tiger_cub', ageDays,
@@ -142,7 +143,7 @@ describe('tiger cub finite maternal-carcass gate', () => {
       initialAgents: { tiger: 2 }, minPopulation: {} };
     const world = createWorld(options), [mother, child] = world.agents;
     const patch = world.patches.find(candidate => candidate.habitat === 'grassland')!;
-    const centre = patchCentre(patch.id);
+    const centre = patchCentre(ISLAND_GRID, patch.id);
     mother!.sex = 'female'; mother!.patchId = patch.id; mother!.position = { ...centre };
     mother!.lastEncounterAt = world.now();
     mother!.offspringIds = [child!.id];

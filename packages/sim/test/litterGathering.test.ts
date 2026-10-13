@@ -12,6 +12,7 @@ import { createWorld } from '../src/world.js';
 import { restoreSnapshot, takeSnapshot, upgradeV35Snapshot } from '../src/snapshot.js';
 import { SIM_VERSION } from '../src/world.js';
 import { makeAgent, SPECIES_DIR, speciesOf } from './helpers.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 /**
  * sim_0.36.0: a litter gathers to its parent's care point. Island traces found piglets and pups
@@ -23,7 +24,7 @@ function litterWorld(speciesId: 'boar' | 'jackal', ageDays: number) {
   const world = createWorld({ seed: 2, speciesDir: SPECIES_DIR, initialAgents: { [speciesId]: 3 }, minPopulation: {} });
   const [mother, target, sibling] = world.agents as [Agent, Agent, Agent];
   mother.sex = 'female'; mother.drives = { hunger: 0.2, thirst: 0.1, fatigue: 0, fear: 0 };
-  const base = { ...waterAccessPosition(target.patchId), x: waterAccessPosition(target.patchId).x + 60 };
+  const base = { ...waterAccessPosition(ISLAND_GRID, target.patchId), x: waterAccessPosition(ISLAND_GRID, target.patchId).x + 60 };
   for (const child of [target, sibling]) {
     Object.assign(child, makeAgent(speciesId, { id: child.id, ageDays, lifeStage: 'newborn', motherId: mother.id,
       dependentOn: mother.id, massKg: cfg.body.adultMassKg * 0.12, patchId: target.patchId, groupId: mother.groupId,
@@ -83,7 +84,7 @@ describe('a denned pup that cannot yet walk does not run from an attack (sim_0.3
   const escapes = (ageDays: number): number[] => {
     const moved: number[] = [];
     for (let seed = 1; seed <= 80; seed++) {
-      const patches = buildGrid(11), centre = patchCentre(210);
+      const patches = buildGrid(11), centre = patchCentre(ISLAND_GRID, 210);
       const hunter = makeAgent('dhole', { id: 'hunter', patchId: 210, position: { x: centre.x - 40, z: centre.z, heading: 0 },
         drives: { hunger: 0.9, thirst: 0, fatigue: 0, fear: 0 } });
       const pup = makeAgent('jackal', { id: 'pup', ageDays, lifeStage: 'newborn', massKg: 9 * 0.12, patchId: 210,
@@ -108,7 +109,7 @@ describe('a denned pup that cannot yet walk does not run from an attack (sim_0.3
 
 describe('a young that can follow moves off from a predator at its flight distance (sim_0.36.0)', () => {
   it('a three-month fawn steps away from a tiger resting 30 m off; a ten-day hider lies still', () => {
-    const patches = buildGrid(11), centre = patchCentre(210), chital = speciesOf('chital');
+    const patches = buildGrid(11), centre = patchCentre(ISLAND_GRID, 210), chital = speciesOf('chital');
     const tiger = makeAgent('tiger', { id: 'tiger', patchId: 210, state: 'resting', currentGoal: 'rest',
       position: { x: centre.x + 30, z: centre.z, heading: 0 } });
     const goalAt = (ageDays: number) => {
@@ -130,7 +131,7 @@ describe('a once-daily nursing feed is taken to repletion (sim_0.36.0)', () => {
     const doe = makeAgent('hare', { id: 'doe', patchId: 5, drives: { hunger: 0.1, thirst: 0.05, fatigue: 0, fear: 0 } });
     const leveret = makeAgent('hare', { id: 'lev', ageDays: 3, lifeStage: 'newborn', dependentOn: 'doe', motherId: 'doe',
       massKg: 2.5 * 0.12, patchId: 5, drives: { hunger: 0.3, thirst: 0.8, fatigue: 0, fear: 0 } });
-    doe.position = { ...waterAccessPosition(5) }; leveret.position = { ...doe.position };
+    doe.position = { ...waterAccessPosition(ISLAND_GRID, 5) }; leveret.position = { ...doe.position };
     doe.offspringIds = [leveret.id]; doe.currentGoal = 'care_for_young';
     const nineteen = 19 * 3600;
     const starts = new Map<string, FamilyLocation>([[leveret.id, { patchId: 5, position: { ...leveret.position } }]]);

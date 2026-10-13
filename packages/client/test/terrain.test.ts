@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { waterAccessPosition, waterContactPosition } from '@vana/shared';
 import { buildTerrain, countDrawCalls, hideFarFieldNear, makeHeightSampler, poolMatrix, type PatchView } from '../src/terrain.js';
 import { insidePool, islandPool } from '../src/pools.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const patches: PatchView[] = Array.from({ length: 400 }, (_, id) => ({
   id, x: id % 20, y: Math.floor(id / 20),
@@ -50,11 +51,11 @@ describe('buildTerrain', () => {
     const water = terrain.getObjectByName('water')!;
     expect(water.userData.pools).toBe(1);
     for (const part of ['water-surface', 'water-bank', 'water-reeds']) expect(water.getObjectByName(part)).toBeTruthy();
-    const pool = islandPool(wet)!, access = waterAccessPosition(wet.id);
+    const pool = islandPool(wet)!, access = waterAccessPosition(ISLAND_GRID, wet.id);
     expect(pool.x).toBeCloseTo(access.x); expect(pool.z).toBeCloseTo(access.z); expect(pool.radius).toBeCloseTo(2);
     // Every animal's drinking spot is in the water, even at the smallest (2 m) pool.
     for (const species of ['elephant_1', 'chital_7', 'tiger_3', 'hare_99']) {
-      const contact = waterContactPosition(species, wet.id);
+      const contact = waterContactPosition(ISLAND_GRID, species, wet.id);
       expect(insidePool(pool, contact.x, contact.z)).toBe(true);
     }
   });

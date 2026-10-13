@@ -3,6 +3,7 @@ import { NUTRIENT_PER_KG_BIOMASS, landWalkable, positionInPatch, type WorldEvent
 import { createWorld, type World } from '../src/world.js';
 import { restoreSnapshot, takeSnapshot, upgradeV32Snapshot } from '../src/snapshot.js';
 import { SPECIES_DIR } from './helpers.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const island = (initialAgents: Record<string, number>, seed = 3) => ({ seed, speciesDir: SPECIES_DIR, initialAgents,
   minPopulation: {}, terrainProfile: 'island_v1' as const, retainEvents: 'all' as const });
@@ -30,7 +31,7 @@ describe('rare recorded island arrivals (sim_0.33.0)', () => {
     const patch = world.patches[event!.patchId]!;
     expect(landWalkable(patch)).toBe(true);
     expect(patch.neighbours.some(id => ['ocean', 'coast'].includes(String(world.patches[id]!.surface)))).toBe(true);
-    expect(positionInPatch(event!.position, event!.patchId)).toBe(true);
+    expect(positionInPatch(ISLAND_GRID, event!.position, event!.patchId)).toBe(true);
     expect(event!.effects.massKg).toBe(arrived.massKg);
     // Conserving: the arrival's body is recorded as imported, so the ledger total is unchanged.
     expect(world.ledger.imported).toBeCloseTo(arrived.massKg * NUTRIENT_PER_KG_BIOMASS, 9);
@@ -125,7 +126,7 @@ describe('rare recorded leopard arrivals (sim_0.37.0)', () => {
       const arrived = world.agents.find(a => a.id === event!.actors[0])!;
       expect(arrived.sex).toBe(sex === 'female' ? 'male' : 'female');
       expect(arrived.massKg).toBe(world.species.get('leopard')!.body.massBySexKg![arrived.sex]);
-      expect(positionInPatch(event!.position, event!.patchId)).toBe(true);
+      expect(positionInPatch(ISLAND_GRID, event!.position, event!.patchId)).toBe(true);
       expect(world.ledger.imported).toBeCloseTo(arrived.massKg * NUTRIENT_PER_KG_BIOMASS, 9);
       expect(world.totalNutrients()).toBeCloseTo(nutrients, 6);
       // Two leopards now live: no further crossing, however certain the draw.

@@ -1,6 +1,6 @@
 import {
-  NUTRIENT_PER_KG_BIOMASS, PATCH_COUNT, WORLD_SECONDS_PER_DAY, WORLD_SECONDS_PER_HOUR,
-  createRng, isIslandProfile, seasonAt, carcassMass, edibleMass, landWalkable, spatialHash, treeAnchorForPatch, patchAtPosition, positionInPatch, type TerrainProfile,
+  NUTRIENT_PER_KG_BIOMASS, gridForProfile, patchCentre, patchCount, type WorldGrid, WORLD_SECONDS_PER_DAY, WORLD_SECONDS_PER_HOUR,
+  createRng, isClosedProfile, isCongoProfile, isFlooded, isIslandProfile, seasonAt, carcassMass, edibleMass, landWalkable, spatialHash, treeAnchorForPatch, patchAtPosition, positionInPatch, isWorldPosition, type TerrainProfile,
   type WorldPosition, type MovementTrace,
   type Agent, type Carcass, type DeathCause, type Patch, type Rng, type SkillId,
   type RngState, type SpeciesConfig, type WorldTime, type WaterBudget, type MicroEcologyState, type CommunityState, type CommunityProfile,
@@ -17,7 +17,7 @@ import { establishFloweringGuild, stepFloweringGuild } from './fields/floweringG
 import { EventLog } from './events/log.js';
 import { foundCommunity, stepCommunity } from './community.js';
 import { updateDrives } from './agents/drives.js';
-import { HUNGER_DESPERATION, perceive, perceptionRadius, type WorldView } from './agents/perception.js';
+import { HUNGER_DESPERATION, canHunt, perceive, perceptionRadius, type WorldView } from './agents/perception.js';
 import { activityAt, selectGoal } from './agents/goals.js';
 import { controlledAction, controlledFeed, descendPerchedAnimal, executeGoal, type ControlledAction, type WorldServices } from './agents/behaviours.js';
 import { foundingTraits } from './agents/genetics.js';
@@ -33,7 +33,8 @@ import { decaySkills, experiencedSkills, recordOutcome, teach } from './agents/l
 import { canHuntIndependently } from './agents/needs.js';
 import { advanceIllness } from './agents/illness.js';
 import { advanceWound } from './agents/wound.js';
-import { EDGE_PATCHES, EDGE_PATCH_IDS, expectedExchange } from './landscape.js';
+import { edgePatchIds, expectedExchange } from './landscape.js';
+import { surface } from './agents/aquatic.js';
 import { locateAgent, locateCarcass, placeBeside } from './agents/spatial.js';
 import { approachMate, finishCourtship, type CourtshipVisit } from './agents/courtship.js';
 import {
@@ -49,6 +50,8 @@ const DEPENDENT_URGENT_THIRST = 0.5;
 const DEPENDENT_URGENT_HUNGER = 0.65;
 
 export interface WorldOptions {
+  /** Isolated experiments only; ordinary worlds keep the exact existing rainfall policy. */
+  rainfallScale?: number;
   communityProfile?: CommunityProfile;
   /** New worlds only. Restored households retain their saved rules version. */
   initialCommunityRulesVersion?: 2 | 3 | 4 | 5 | 6 | 7 | 8;
@@ -69,7 +72,17 @@ export interface WorldOptions {
 export class World {
   community: CommunityState | null = null;
   readonly terrainProfile: TerrainProfile;
+  /** The world's patch lattice, fixed by its terrain profile. */
+  readonly grid: WorldGrid;
   readonly patches: Patch[];
+  readonly #edgeIds: readonly number[];
+  readonly #edges: ReadonlySet<number>;
+  #landCache: Patch[] | null = null;
+  #dryLandCache: Patch[] | null = null;
+  #waterMarginCache: Patch[] | null = null;
+  /** Congo 1B: single-member pair groups waiting for a mate, by `species:sex`, oldest first. Filled only by
+   * founding (#spawn); not restored from checkpoints, which is safe because Congo is closed (no later founders). */
+  readonly #openPairs = new Map<string, string[]>();
   /** Living animals only. The dead move to `deceased` so they leave every per-tick loop. */
   readonly agents: Agent[] = [];
   /** Permanent record. A death removes an animal from the world, never from its history. */
@@ -111,24 +124,29 @@ export class World {
   readonly #carcassesByPatch = new Map<number, Carcass[]>();
 
   constructor(options: WorldOptions) {
+    if (options.rainfallScale !== undefined && (!Number.isFinite(options.rainfallScale) || options.rainfallScale < 0 || options.rainfallScale > 1))
+      throw new Error('rainfall scale must be between zero and one');
     if (options.communityProfile !== undefined && !['none', 'household_v1'].includes(options.communityProfile))
       throw new Error('unknown community profile');
     if (options.initialCommunityRulesVersion !== undefined && ![2, 3, 4, 5, 6, 7, 8].includes(options.initialCommunityRulesVersion))
       throw new Error('unsupported initial community rules');
     this.terrainProfile = options.terrainProfile ?? 'mainland';
-    if (this.terrainProfile !== 'mainland' && !isIslandProfile(this.terrainProfile)) throw new Error('unknown terrain profile');
-    if (isIslandProfile(this.terrainProfile) && !Number.isSafeInteger(options.seed)) throw new Error('island seed must be a safe integer');
-    if (isIslandProfile(this.terrainProfile) && (options.landscape || Object.values(options.minPopulation).some(n => n !== 0)))
-      throw new Error('island worlds require closed population policy: no floors or mainland exchange');
+    if (this.terrainProfile !== 'mainland' && !isClosedProfile(this.terrainProfile)) throw new Error('unknown terrain profile');
+    if (isClosedProfile(this.terrainProfile) && !Number.isSafeInteger(options.seed)) throw new Error('closed world seed must be a safe integer');
+    if (isClosedProfile(this.terrainProfile) && (options.landscape || Object.values(options.minPopulation).some(n => n !== 0)))
+      throw new Error('closed worlds require closed population policy: no floors or mainland exchange');
     this.#options = options;
     this.#rng = createRng(options.seed, 'world');
-    this.patches = buildGrid(options.seed, this.terrainProfile);
+    this.grid = gridForProfile(this.terrainProfile);
+    this.#edgeIds = edgePatchIds(this.grid);
+    this.#edges = new Set(this.#edgeIds);
+    this.patches = buildGrid(options.seed, this.terrainProfile, this.grid);
     this.microEcology = seedMicroEcology(this.patches, 0);
     establishFloweringGuild(this.patches, 0);
     establishRooting(this.patches);
     this.waterBudget = newWaterBudget(this.patches, 0);
     this.species = loadSpeciesDir(options.speciesDir);
-    this.log = new EventLog(options.seed, SIM_VERSION, { retain: options.retainEvents ?? 'all' });
+    this.log = new EventLog(options.seed, SIM_VERSION, { retain: options.retainEvents ?? 'all', grid: this.grid });
 
     for (const [speciesId, count] of Object.entries(options.initialAgents)) {
       const founders: Agent[] = [];
@@ -140,7 +158,10 @@ export class World {
       // male, whose range spans several females' (tiger 60 against 20 km², leopard 48 against
       // 11 km²), and the rest females.
       const cfg = this.species.get(speciesId);
-      if (this.terrainProfile === 'island_v2' && cfg?.social.structure === 'solitary' && cfg.hunting !== undefined) {
+      // Congo 1B: solitary hunters are founded as their ranges hold them, one male to two females.
+      if (isCongoProfile(this.terrainProfile) && cfg?.social.structure === 'solitary' && cfg.hunting !== undefined) {
+        founders.forEach((agent, i) => { agent.sex = i % 3 === 0 ? 'male' : 'female'; agent.massKg = adultMassFor(agent, cfg); });
+      } else if (this.terrainProfile === 'island_v2' && cfg?.social.structure === 'solitary' && cfg.hunting !== undefined) {
         founders.forEach((agent, i) => { agent.sex = i === 0 ? 'male' : 'female'; agent.massKg = adultMassFor(agent, cfg); });
       } else if (isIslandProfile(this.terrainProfile) && this.species.get(speciesId)?.social.structure === 'solitary'
         && this.species.get(speciesId)?.hunting !== undefined
@@ -217,7 +238,7 @@ export class World {
     this.#agentsById.clear();
     this.#livingBySpecies.clear();
     for (const agent of this.agents) {
-      locateAgent(agent);
+      locateAgent(this.grid, agent);
       this.#agentsById.set(agent.id, agent);
       if (agent.alive) {
         this.#livingBySpecies.set(
@@ -225,8 +246,8 @@ export class World {
         );
       }
     }
-    for (const agent of this.deceased) { locateAgent(agent); this.#agentsById.set(agent.id, agent); }
-    for (const carcass of this.carcasses) locateCarcass(carcass);
+    for (const agent of this.deceased) { locateAgent(this.grid, agent); this.#agentsById.set(agent.id, agent); }
+    for (const carcass of this.carcasses) locateCarcass(this.grid, carcass);
   }
 
   /** Files a living animal that has moved (or was born) since it was filed, under its patch now. */
@@ -256,6 +277,8 @@ export class World {
     // A view is taken between moves: anything that moved since the index was built is re-filed first.
     this.#indexStale = true;
     return {
+      grid: this.grid,
+      season: seasonAt(this.#time, this.terrainProfile),
       patches: this.patches,
       agentsInPatch: (patchId) => {
         if (this.#indexStale) { this.#indexStale = false; for (const agent of this.agents) this.#refileOne(agent); }
@@ -352,12 +375,12 @@ export class World {
   #carryYoung(mother: Agent, from: { patchId: number; position: WorldPosition }, trace: MovementTrace, causalParent: string): void {
     const cfg = this.species.get(mother.speciesId)!;
     if (cfg.lifecycle.carriedUntilDays === undefined || (mother.altitudeM ?? 0) > 0) return;
-    const end = locateAgent(mother);
+    const end = locateAgent(this.grid, mother);
     for (const id of mother.offspringIds) {
       const child = this.#agentsById.get(id);
       if (!child?.alive || child.dependentOn !== mother.id || !isCarried(child, cfg) || child.controller
         || (child.altitudeM ?? 0) > 0 || child.patchId !== from.patchId) continue;
-      const at = locateAgent(child);
+      const at = locateAgent(this.grid, child);
       if (Math.hypot(at.x - from.position.x, at.z - from.position.z) > careRadius(cfg) + 1e-8) continue;
       if (child.patchId !== mother.patchId) child.previousPatchId = child.patchId;
       child.patchId = mother.patchId;
@@ -400,12 +423,12 @@ export class World {
   #packRendezvous(hunter: Agent, cfg: SpeciesConfig): number | null {
     const group = hunter.groupId == null ? undefined : this.#groups.get(hunter.groupId);
     if (cfg.hunting?.packHuntRadiusM === undefined || !group) return null;
-    const at = locateAgent(hunter);
+    const at = locateAgent(this.grid, hunter);
     let best: Agent | null = null, bestM = Infinity;
     for (const id of group.memberIds) {
       const mate = this.#agentsById.get(id);
       if (!this.#packAvailable(mate, hunter, cfg) || !canHuntIndependently(mate, cfg)) continue;
-      const there = locateAgent(mate), m = Math.hypot(there.x - at.x, there.z - at.z);
+      const there = locateAgent(this.grid, mate), m = Math.hypot(there.x - at.x, there.z - at.z);
       if (m < bestM || m === bestM && best !== null && mate.id < best.id) { best = mate; bestM = m; }
     }
     return best ? best.patchId : null;
@@ -416,14 +439,14 @@ export class World {
     const radius = cfg.hunting?.packHuntRadiusM;
     const group = hunter.groupId == null ? undefined : this.#groups.get(hunter.groupId);
     if (radius === undefined || !group) return [];
-    const at = locateAgent(hunter), found: Array<{ mate: Agent; follower: boolean }> = [];
+    const at = locateAgent(this.grid, hunter), found: Array<{ mate: Agent; follower: boolean }> = [];
     for (const id of [...group.memberIds].sort()) {
       const mate = this.#agentsById.get(id);
       if (!this.#packAvailable(mate, hunter, cfg)) continue;
       // Weaned young that can keep up follow the hunt and feed at the kill; only adults hunt.
       const follower = !canHuntIndependently(mate, cfg);
       if (follower && !canFollowParent(mate, cfg)) continue;
-      const there = locateAgent(mate);
+      const there = locateAgent(this.grid, mate);
       if (Math.hypot(there.x - at.x, there.z - at.z) > radius) continue;
       found.push({ mate, follower });
     }
@@ -442,7 +465,7 @@ export class World {
     for (const childId of agent.offspringIds) {
       const child = this.#agentsById.get(childId);
       if (child === undefined || !child.alive || child.dependentOn !== agent.id) continue;
-      const parentPosition = locateAgent(agent), childPosition = locateAgent(child);
+      const parentPosition = locateAgent(this.grid, agent), childPosition = locateAgent(this.grid, child);
       // A family ID is not evidence of observation. This is a bounded line-of-sight proxy;
       // obstacle occlusion and full action-window overlap remain separate work.
       const observationRadius = Math.min(20, cfg.senses.sightRangeM);
@@ -494,12 +517,14 @@ export class World {
   #assignGroup(agent: Agent, cfg: SpeciesConfig): void {
     const structure = cfg.social.structure;
     if (structure === 'solitary') return;
+    if (cfg.social.pairBond) { this.#assignPair(agent); return; }
 
     const [, max] = cfg.social.groupSize;
     for (const [groupId, group] of this.#groups) {
       if (group.speciesId !== agent.speciesId) continue;
       const living = group.memberIds.filter((id) => this.#agentsById.get(id)?.alive === true).length;
       if (living >= max) continue;
+
       group.memberIds.push(agent.id);
       agent.groupId = groupId;
       // Join the group where it stands, rather than appearing somewhere it is not.
@@ -511,6 +536,59 @@ export class World {
     const groupId = `${agent.speciesId}_grp_${(this.#groupSeq++).toString(16)}`;
     this.#groups.set(groupId, { speciesId: agent.speciesId, memberIds: [agent.id] });
     agent.groupId = groupId;
+  }
+
+  /**
+   * Congo 1B: a bonded pair species pairs each newcomer with the longest-waiting unpaired animal
+   * of the other sex that is not its kin (an index of open pairs, so founding stays linear).
+   */
+  #assignPair(agent: Agent): void {
+    const other = agent.sex === 'female' ? 'male' : 'female';
+    const waiting = this.#openPairs.get(`${agent.speciesId}:${other}`) ?? [];
+    for (let i = 0; i < waiting.length; i++) {
+      const groupId = waiting[i]!, group = this.#groups.get(groupId);
+      const member = group?.memberIds.length === 1 ? this.#agentsById.get(group.memberIds[0]!) : undefined;
+      if (!member?.alive) { waiting.splice(i--, 1); continue; }
+      if (assessMate(agent, member, this.pedigree) === null) continue;
+      waiting.splice(i, 1);
+      group!.memberIds.push(agent.id);
+      agent.groupId = groupId;
+      agent.patchId = member.patchId;
+      return;
+    }
+    const groupId = `${agent.speciesId}_grp_${(this.#groupSeq++).toString(16)}`;
+    this.#groups.set(groupId, { speciesId: agent.speciesId, memberIds: [agent.id] });
+    agent.groupId = groupId;
+    const key = `${agent.speciesId}:${agent.sex}`, open = this.#openPairs.get(key);
+    if (open) open.push(groupId); else this.#openPairs.set(key, [groupId]);
+  }
+
+  /** Leaves its group (a group left empty is gone). */
+  #leaveGroup(agent: Agent): void {
+    if (agent.groupId == null) return;
+    const group = this.#groups.get(agent.groupId);
+    if (group) {
+      group.memberIds = group.memberIds.filter((id) => id !== agent.id);
+      if (!group.memberIds.length) this.#groups.delete(agent.groupId);
+    }
+    agent.groupId = null;
+  }
+
+  /** Congo 1B: a female and male who conceived together and have no pair-mate of their own become a pair. */
+  #bond(female: Agent, male: Agent, cfg: SpeciesConfig): void {
+    if (!male.alive || female.id === male.id) return;
+    const members = (a: Agent) => (a.groupId == null ? [] : this.#groups.get(a.groupId)?.memberIds ?? [])
+      .map((id) => this.#agentsById.get(id)).filter((x): x is Agent => x !== undefined);
+    const kin = (a: Agent, b: Agent) => assessMate(a, b, this.pedigree) === null;
+    if (pairMateFor(female, cfg, members(female), kin) || pairMateFor(male, cfg, members(male), kin)) return;
+    this.#leaveGroup(male);
+    if (female.groupId == null) {
+      const groupId = `${female.speciesId}_grp_${(this.#groupSeq++).toString(16)}`;
+      this.#groups.set(groupId, { speciesId: female.speciesId, memberIds: [female.id] });
+      female.groupId = groupId;
+    }
+    this.#groups.get(female.groupId)!.memberIds.push(male.id);
+    male.groupId = female.groupId;
   }
 
   #reindex(): void {
@@ -532,16 +610,26 @@ export class World {
     }
   }
 
+  get #landPatches(): Patch[] { return this.#landCache ??= this.patches.filter(landWalkable); }
+  get #dryLandPatches(): Patch[] { return this.#dryLandCache ??= this.patches.filter((p) => landWalkable(p) && p.habitat !== 'water'); }
+  /** Congo 1B: where a swimmer lives, rarely 250 m from water: flooded forest, and dry ground beside a river. */
+  get #waterMarginPatches(): Patch[] {
+    return this.#waterMarginCache ??= this.#dryLandPatches.filter((p) => p.habitat === 'flooded_forest'
+      || p.neighbours.some((n) => this.patches[n]!.habitat === 'water'));
+  }
+
   #spawn(speciesId: string, immigrant: boolean, atEdge = false,
-    arrival?: { patchId: number; at: WorldTime; conditions: Record<string, string | number> }, sexOverride?: 'female' | 'male'): Agent {
+    arrival?: { patchId: number; at: WorldTime; conditions: Record<string, string | number> }, sexOverride?: 'female' | 'male', silent = false): Agent {
     const cfg = this.species.get(speciesId);
     if (!cfg) throw new Error(`unknown species: ${speciesId}`);
 
-    const eligibleLand = isIslandProfile(this.terrainProfile) && !arrival ? this.patches.filter(landWalkable) : null;
+    // Island founders keep their recorded draw over all walkable patches; Congo founders stand on dry ground.
+    const eligibleLand = arrival ? null : isIslandProfile(this.terrainProfile) ? this.#landPatches
+      : isCongoProfile(this.terrainProfile) ? (cfg.locomotion.swims ? this.#waterMarginPatches : this.#dryLandPatches) : null;
     if (eligibleLand && !eligibleLand.length) throw new Error('island has no founding habitat');
     const patchId = arrival ? arrival.patchId : eligibleLand ? eligibleLand[this.#rng.int(eligibleLand.length)]!.id : atEdge
-      ? EDGE_PATCH_IDS[this.#rng.int(EDGE_PATCH_IDS.length)]!
-      : this.#rng.int(PATCH_COUNT);
+      ? this.#edgeIds[this.#rng.int(this.#edgeIds.length)]!
+      : this.#rng.int(patchCount(this.grid));
     // Founders and immigrants arrive as adults of a spread of ages, so a population does not
     // reach sexual maturity in lockstep.
     const ageDays = cfg.lifecycle.sexualMaturityDays
@@ -574,8 +662,9 @@ export class World {
     // A swimmer comes ashore where it lands; it joins its kind's group by walking, not by a jump.
     // sim_0.38.0: so does an immigrant from the surrounding landscape, at the edge it crossed.
     if (arrival || atEdge) agent.patchId = patchId;
-    locateAgent(agent);
+    locateAgent(this.grid, agent);
     if (immigrant) this.ledger.imported += agent.massKg * NUTRIENT_PER_KG_BIOMASS;
+    if (silent) return agent;
 
     this.log.append({
       type: immigrant ? 'immigration' : 'agent_spawned',
@@ -584,7 +673,7 @@ export class World {
       actors: [agent.id], conditions: { species: speciesId, ...arrival?.conditions },
       outcome: 'success', effects: { massKg: agent.massKg },
       causalParents: [], confidence: 'authoritative',
-      ...(arrival ? { position: { ...locateAgent(agent) } } : {}),
+      ...(arrival ? { position: { ...locateAgent(this.grid, agent) } } : {}),
     });
     return agent;
   }
@@ -600,7 +689,7 @@ export class World {
    */
   #unfinishedKill(agent: Agent, cfg: SpeciesConfig): { carcass: Carcass; patchId: number } | null {
     if (!cfg.hunting || !cfg.diet.canScavenge || needsProvisioning(agent, cfg)) return null;
-    const here = this.patches[agent.patchId]!, reach = perceptionRadius(cfg);
+    const here = this.patches[agent.patchId]!, reach = perceptionRadius(this.grid, cfg);
     let best: Carcass | null = null;
     for (const carcass of this.carcasses) {
       const there = this.patches[carcass.patchId]!;
@@ -679,9 +768,11 @@ export class World {
     }
     // sim_0.38.0: likewise a bird that dies on the wing; its carcass is on the ground.
     if (agent.locomotionMode === 'flight') { delete agent.altitudeM; delete agent.locomotionMode; delete agent.journey; }
+    if (agent.locomotionMode === 'submerged') surface(agent);
     agent.alive = false;
     agent.state = 'dead';
     agent.departedAt = at;
+    if (agent.assetId !== undefined) agent.ownedDeath = { cause, killerId, at };
     this.#livingBySpecies.set(
       agent.speciesId, Math.max(0, (this.#livingBySpecies.get(agent.speciesId) ?? 1) - 1),
     );
@@ -692,7 +783,7 @@ export class World {
       cause, cause === 'predation' ? 'authoritative' : 'high',
       agent.massKg,
     );
-    carcass.position = { ...locateAgent(agent) };
+    carcass.position = { ...locateAgent(this.grid, agent) };
     const carried = agent.packFood;
     if (carried) {
       carcass.biomass.ingesta = carried.kg;
@@ -738,10 +829,17 @@ export class World {
     // Coarse perception policy: same/adjacent patches AND within a configured sensory range.
     // Use the recorded start location, never a mate's future end-of-decision position.
     let best: ReturnType<typeof assessMate> = null;
-    const here = locateAgent(agent), senseRange = Math.max(cfg.senses.sightRangeM, cfg.senses.hearingRangeM, cfg.senses.smellRangeM);
+    const pairMate = pairMateFor(agent, cfg, (agent.groupId == null ? [] : this.#groups.get(agent.groupId)?.memberIds ?? [])
+      .map((id) => this.#agentsById.get(id)).filter((a): a is Agent => a !== undefined),
+      (a, b) => assessMate(a, b, this.pedigree) === null);
+    const here = locateAgent(this.grid, agent), senseRange = Math.max(cfg.senses.sightRangeM, cfg.senses.hearingRangeM, cfg.senses.smellRangeM);
     for (const patchId of [agent.patchId, ...this.patches[agent.patchId]!.neighbours]) {
       for (const other of view.agentsInPatch(patchId)) {
         if (!other.alive || other.speciesId !== agent.speciesId || (other.altitudeM ?? 0) > 0) continue;
+        // Congo 1B: nothing courts an animal under water.
+        if (other.locomotionMode === 'submerged') continue;
+        // Congo 1B: a paired animal courts only its pair-mate while that mate lives.
+        if (pairMate && other.id !== pairMate.id) continue;
         // An agent-steered animal is not led off by a wild suitor's plan.
         if (other.controller) continue;
         if (!isReceptive(other, cfg, this.#time)) continue;
@@ -752,8 +850,8 @@ export class World {
         // A stationary resting male is still available; a moving/feeding male is not.
         if (processed.has(other.id) && (other.currentGoal !== 'rest'
           || other.patchId !== target.patchId
-          || Math.hypot(locateAgent(other).x - target.position.x,
-            locateAgent(other).z - target.position.z) > 1e-6)) continue;
+          || Math.hypot(locateAgent(this.grid, other).x - target.position.x,
+            locateAgent(this.grid, other).z - target.position.z) > 1e-6)) continue;
         const assessment = assessMate(agent, other, this.pedigree);
         if (assessment !== null && (best === null || assessment.score > best.score)) {
           best = assessment;
@@ -781,7 +879,7 @@ export class World {
       if (nearest) best = assessMate(agent, nearest, this.pedigree);
     }
     if (best === null) return false;
-    const visit = approachMate(agent, best.candidate, starts.get(best.candidate.id)!, cfg, this.patches,
+    const visit = approachMate(this.grid, agent, best.candidate, starts.get(best.candidate.id)!, cfg, this.patches,
       this.#time, hours, best.relatedness, this.log);
     visits.push(visit);
     const prior = maleVisits.get(best.candidate.id);
@@ -815,14 +913,14 @@ export class World {
       // Spawn one compact litter within nursing reach. The former minimum one-metre ring
       // spread tiny leverets/pups beyond contact, forcing mutually exclusive all-hour visits.
       // This is an initial birth anchor, never a recurring dependent-position correction.
-      placeBeside(child, locateAgent(mother), careRadius(cfg) * 0.25);
+      placeBeside(this.grid, child, locateAgent(this.grid, mother), careRadius(cfg) * 0.25);
       if (cfg.lifecycle.nursing) child.nursingSite = { patchId: mother.patchId,
-        position: { ...locateAgent(mother) }, establishedAt: this.#time, origin: 'birth' };
+        position: { ...locateAgent(this.grid, mother) }, establishedAt: this.#time, origin: 'birth' };
       // sim_0.36.0: young on a once-daily schedule suckle at birth, from the mother's own
       // reserves, before she leaves them (leverets are nursed post partum, then once a day at
       // dusk: Broekhuizen & Maaskamp 1980). Born after dusk, a litter otherwise waited up to a
       // day for its first milk and died if the doe missed the next evening.
-      const firstFeed = cfg.lifecycle.nursing && provisionYoung(mother, child, cfg,
+      const firstFeed = cfg.lifecycle.nursing && provisionYoung(this.grid, mother, child, cfg,
         cfg.lifecycle.nursing.dailyContactSeconds / 3600, undefined, this.#time);
       this.agents.push(child);
       this.#agentsById.set(child.id, child);
@@ -837,7 +935,7 @@ export class World {
       this.births++;
       this.log.append({
         type: 'born', worldTime: this.#time, simVersion: SIM_VERSION, patchId: child.patchId,
-        position: { ...locateAgent(child) },
+        position: { ...locateAgent(this.grid, child) },
         actors: [child.id, mother.id, ...(father === null ? [] : [father.id])],
         conditions: {
           species: child.speciesId, sex: child.sex, generation: child.generation,
@@ -882,7 +980,7 @@ export class World {
       return child !== undefined && child.alive && child.dependentOn === agent.id;
     });
     const leavers = this.agents.filter((agent) =>
-      agent.alive && agent.speciesId === speciesId && EDGE_PATCHES.has(agent.patchId)
+      agent.alive && agent.speciesId === speciesId && this.#edges.has(agent.patchId)
       && agent.dependentOn === null && agent.pregnantSince === null && !raisingYoung(agent)
       && (agent.altitudeM ?? 0) === 0);
     if (leavers.length === 0) return false;
@@ -930,10 +1028,48 @@ export class World {
   /** A living or recently departed animal by id: the record itself, for read-only adapters. */
   animal(id: string): Agent | undefined { return this.#agentsById.get(id); }
 
-  /** Why this animal cannot be taken over now, or null if it can. */
-  possessionBlock(id: string): string | null {
+  /** Why this animal cannot be taken over now, or null if it can. `owner`: its owner's side is asking. */
+  possessionBlock(id: string, opts: { owner?: boolean; ignoreController?: boolean } = {}): string | null {
     const agent = this.#agentsById.get(id);
-    return agent ? this.#blockFor(agent, this.#possessionFacts()) : 'not_alive';
+    return agent ? this.#blockFor(agent, this.#possessionFacts(), opts.owner === true, opts.ignoreController === true) : 'not_alive';
+  }
+
+  /**
+   * Congo 1C: patches where an owned animal of this species may be placed: ground its kind founds
+   * on (dry land, or the water margin for a swimmer), with no living animal that hunts it within
+   * `minPredatorDistanceM` of the patch centre.
+   */
+  safeSpawnPatches(speciesId: string, minPredatorDistanceM: number): number[] {
+    const cfg = this.species.get(speciesId);
+    if (!cfg || !isCongoProfile(this.terrainProfile)) return [];
+    const prey = { massKg: cfg.body.adultMassKg, lifeStage: 'adult' as const, altitudeM: 0, locomotionMode: 'ground' as const };
+    const hunters = this.agents.filter((a) => a.alive && a.position && canHunt(this.species.get(a.speciesId)!, cfg, prey))
+      .map((a) => a.position!);
+    const eligible = cfg.locomotion.swims ? this.#waterMarginPatches : this.#dryLandPatches;
+    // An animal is placed up to 0.4 of a patch from its centre on each axis: keep the distance from there too.
+    const reach = minPredatorDistanceM + this.grid.patchM * 0.4 * Math.SQRT2;
+    return eligible.filter((p) => {
+      const c = patchCentre(this.grid, p.id);
+      return hunters.every((h) => Math.hypot(h.x - c.x, h.z - c.z) > reach);
+    }).map((p) => p.id);
+  }
+
+  /**
+   * Congo 1C: a new life of an owned asset, an adult placed in `patchId` (ground its kind may
+   * found on), logged as spawned with `owned: 1`. It then lives as any animal of its kind.
+   */
+  spawnOwned(speciesId: string, patchId: number, assetId: string): Agent {
+    if (!isCongoProfile(this.terrainProfile)) throw new Error('owned animals live only in the Congo world');
+    const cfg = this.species.get(speciesId);
+    if (!cfg) throw new Error(`unknown species: ${speciesId}`);
+    if (!assetId) throw new Error('asset id required');
+    const eligible = cfg.locomotion.swims ? this.#waterMarginPatches : this.#dryLandPatches;
+    if (!eligible.some((p) => p.id === patchId)) throw new Error(`${speciesId} cannot be placed on patch ${patchId}`);
+    // Not logged: after founding, any spawn in the public log would mark an owned animal (Congo 1D).
+    // Its life is recorded by the server (animal_lives), which no public route shows.
+    const agent = this.#spawn(speciesId, false, false, { patchId, at: this.#time, conditions: {} }, undefined, true);
+    agent.assetId = assetId;
+    return agent;
   }
 
   /** Up to `limit` animals an agent could take now, in one pass over the population. */
@@ -956,16 +1092,20 @@ export class World {
     return { parents, held };
   }
 
-  #blockFor(agent: Agent, facts: { parents: Set<string>; held: Map<string, number> }): string | null {
+  #blockFor(agent: Agent, facts: { parents: Set<string>; held: Map<string, number> }, owner = false, ignoreController = false): string | null {
     if (!agent.alive) return 'not_alive';
-    if (agent.controller) return 'already_controlled';
+    if (agent.assetId !== undefined && !owner) return 'owned';
+    if (agent.controller && !ignoreController) return 'already_controlled';
     const cfg = this.species.get(agent.speciesId)!;
     if (agent.lifeStage !== 'adult' && agent.lifeStage !== 'elder') return 'not_adult';
     if (agent.dependentOn !== null) return 'dependent';
     if (facts.parents.has(agent.id)) return 'raising_young';
     if ((agent.altitudeM ?? 0) > 0) return 'off_the_ground';
+    if (agent.locomotionMode === 'submerged') return 'under_water';
     // Most of every species stays wild: a fifth at most, and one once there are two (so of
     // the island's two tigers one may be steered and one always stays wild).
+    // An owner steering their own animal is not taking one of the wild.
+    if (owner) return null;
     const living = this.livingCount(agent.speciesId);
     const cap = living >= 2 ? Math.max(1, Math.floor(living * 0.2)) : 0;
     if ((facts.held.get(agent.speciesId) ?? 0) >= cap) return 'species_cap';
@@ -973,16 +1113,22 @@ export class World {
   }
 
   /** Hands the animal to an outside agent. Its body stays in the ecology; its choices do not. */
-  possess(id: string, controller: string): string | null {
+  possess(id: string, controller: string, opts: { owner?: boolean } = {}): string | null {
     if (!controller) throw new Error('controller required');
-    const block = this.possessionBlock(id);
+    const block = this.possessionBlock(id, opts);
     if (block) return block;
     const agent = this.#agentsById.get(id)!;
     agent.controller = controller;
     agent.currentGoal = 'rest'; agent.alternativeGoal = null; agent.goalScore = 1;
     agent.targetId = null; agent.state = 'resting'; delete agent.journey;
-    locateAgent(agent);
+    locateAgent(this.grid, agent);
     return null;
+  }
+
+  /** Congo 1C: an owned animal whose life has ended elsewhere (a restart's rollback) lives on as wild. */
+  disown(id: string): void {
+    const agent = this.#agentsById.get(id);
+    if (agent) { delete agent.assetId; delete agent.controller; }
   }
 
   /** Returns the animal to the wild where it stands. */
@@ -998,9 +1144,9 @@ export class World {
   placeControlled(id: string, position: WorldPosition): boolean {
     const agent = this.#agentsById.get(id);
     if (!agent?.alive || !agent.controller) return false;
-    if (![position.x, position.z, position.heading].every(Number.isFinite)) return false;
-    const patchId = patchAtPosition(position);
-    if (patchId < 0 || !landWalkable(this.patches[patchId]) || !positionInPatch(position, patchId)) return false;
+    if (!isWorldPosition(this.grid, position)) return false;
+    const patchId = patchAtPosition(this.grid, position);
+    if (patchId < 0 || !landWalkable(this.patches[patchId]) || !positionInPatch(this.grid, position, patchId)) return false;
     agent.position = { x: position.x, z: position.z, heading: position.heading };
     agent.patchId = patchId;
     return true;
@@ -1034,10 +1180,11 @@ export class World {
   resolveLiveHunt(predatorId: string, preyId: string, position: WorldPosition, at: number, killed: boolean): Carcass | null {
     const predator = this.#agentsById.get(predatorId), prey = this.#agentsById.get(preyId);
     if (!predator?.alive || !prey?.alive || predator.id === prey.id) return null;
-    const cfg = this.species.get(predator.speciesId)!;
-    if (!(cfg.hunting?.preferredPrey ?? []).includes(prey.speciesId)) return null;
-    const patchId = patchAtPosition(position);
-    if (!landWalkable(this.patches[patchId]) || !positionInPatch(position, patchId)) return null;
+    const cfg = this.species.get(predator.speciesId)!, preyCfg = this.species.get(prey.speciesId);
+    // The authority for a live kill: the same rule every hunt follows (Congo 1B).
+    if (!preyCfg || !canHunt(cfg, preyCfg, prey)) return null;
+    const patchId = patchAtPosition(this.grid, position);
+    if (!landWalkable(this.patches[patchId]) || !positionInPatch(this.grid, position, patchId)) return null;
     const when = Math.min(this.#time, Math.max(0, Math.floor(at)));
     prey.position = { ...position }; prey.patchId = patchId;
     predator.stamina = Math.max(0, (predator.stamina ?? 1) - 0.3);
@@ -1058,9 +1205,9 @@ export class World {
   placeWild(id: string, position: WorldPosition): boolean {
     const agent = this.#agentsById.get(id);
     if (!agent?.alive || agent.controller) return false;
-    if (![position.x, position.z, position.heading].every(Number.isFinite)) return false;
-    const patchId = patchAtPosition(position);
-    if (patchId < 0 || !landWalkable(this.patches[patchId]) || !positionInPatch(position, patchId)) return false;
+    if (!isWorldPosition(this.grid, position)) return false;
+    const patchId = patchAtPosition(this.grid, position);
+    if (patchId < 0 || !landWalkable(this.patches[patchId]) || !positionInPatch(this.grid, position, patchId)) return false;
     agent.position = { x: position.x, z: position.z, heading: position.heading };
     agent.patchId = patchId; delete agent.journey;
     return true;
@@ -1075,7 +1222,7 @@ export class World {
     if (!agent?.alive || !agent.controller || !(seconds > 0) || seconds > 3600) return false;
     const cfg = this.species.get(agent.speciesId)!;
     if (!cfg.diet.eats.some((e) => e.target === 'meat')) return false;
-    const here = locateAgent(agent);
+    const here = locateAgent(this.grid, agent);
     const carcass = this.carcasses.find((c) => c.position && Math.hypot(c.position.x - here.x, c.position.z - here.z) <= 3);
     if (!carcass) return false;
     const view = this.#view();
@@ -1111,6 +1258,15 @@ export class World {
   }
 
   step(hours: number): void {
+    for (const _ of this.stepSlices(hours)) { /* run the whole step at once */ }
+  }
+
+  /**
+   * The step, in slices: it yields between phases and between animals, so a host can let other
+   * work run during a long hour. Nothing outside the world may change it between slices (the
+   * host holds commands while a step is in progress); drained at once, it is exactly `step`.
+   */
+  *stepSlices(hours: number): Generator<void> {
     if (!Number.isFinite(hours) || hours <= 0) throw new Error('step hours must be finite and positive');
     // sim_0.38.0: the clock moves in whole seconds, as every recorded trace starts on one. A
     // part-hour step such as 0.1 + 0.2 h (1080.0000000000002 s) left it between seconds, and a
@@ -1122,17 +1278,24 @@ export class World {
     // calls cannot skip a fish or contact gate or count an hour twice.
     if (hours > 1) {
       let remaining = seconds;
-      while (remaining > WORLD_SECONDS_PER_HOUR) { this.step(1); remaining -= WORLD_SECONDS_PER_HOUR; }
-      if (remaining > 0) this.step(remaining / WORLD_SECONDS_PER_HOUR);
+      while (remaining > WORLD_SECONDS_PER_HOUR) { yield* this.stepSlices(1); remaining -= WORLD_SECONDS_PER_HOUR; }
+      if (remaining > 0) yield* this.stepSlices(remaining / WORLD_SECONDS_PER_HOUR);
       return;
     }
-    for (const agent of this.agents) locateAgent(agent);
-    const season = seasonAt(this.#time);
+    for (const agent of this.agents) locateAgent(this.grid, agent);
+    const season = seasonAt(this.#time, this.terrainProfile);
+    // Congo 1B: the flooded forest floods in the rains and drains in the drier spells.
+    if (isCongoProfile(this.terrainProfile)) for (const patch of this.patches)
+      if (patch.habitat === 'flooded_forest') patch.flooded = isFlooded(patch, season);
+    yield;
 
-    updateDrainage(this.patches, hours, season, this.waterBudget);
-    for (const patch of this.patches) {
+    updateDrainage(this.grid, this.patches, hours, season, this.waterBudget, this.#options.rainfallScale ?? 1);
+    yield;
+    for (let i = 0; i < this.patches.length; i++) {
+      const patch = this.patches[i]!;
       growPlants(patch, hours, season);
       growRooting(patch, hours, season);
+      if ((i & 4095) === 4095) yield;
     }
 
     for (const carcass of [...this.carcasses]) {
@@ -1149,9 +1312,12 @@ export class World {
       if (isSpent(carcass)) this.#retireCarcass(carcass);
     }
 
+    yield;
     const fishTransitions = stepMicroEcology(this.microEcology, this.patches, this.carcasses, hours, season, this.#time);
+    yield;
     const floweringTransitions = stepFloweringGuild(this.patches, this.microEcology,
       hours, this.#time + hours * WORLD_SECONDS_PER_HOUR);
+    yield;
 
     // Move the tick's dead into the permanent record and out of every loop that follows.
     if (this.agents.some((a) => !a.alive)) {
@@ -1163,11 +1329,12 @@ export class World {
       }
     }
 
+    yield;
     this.#reindex();
     const view = this.#view();
     const services = this.#services();
     const familyStarts = new Map<string, FamilyLocation>(this.agents.map((a) =>
-      [a.id, { patchId: a.patchId, position: { ...locateAgent(a) } }]));
+      [a.id, { patchId: a.patchId, position: { ...locateAgent(this.grid, a) } }]));
     const childrenByParent = new Map<string, Agent[]>();
     for (const child of this.agents) {
       if (!child.dependentOn) continue;
@@ -1179,7 +1346,7 @@ export class World {
       const parent = this.#agentsById.get(id);
       if (!parent) continue;
       const cfg = this.species.get(parent.speciesId)!;
-      establishNursingSites(parent, children, cfg, this.#time, this.log);
+      establishNursingSites(this.grid, parent, children, cfg, this.#time, this.log);
       const target = chooseCareTarget(parent, children, cfg, this.#time, hours);
       if (target) careTargets.set(id, target);
     }
@@ -1201,7 +1368,7 @@ export class World {
       const recipient = choosePackRecipient(donor, this.agents, cfg, nursingParents);
       if (!recipient) continue;
       packTargets.set(donor.id, recipient);
-      if (canWaitForPackFood(donor, familyStarts.get(recipient.id)!, cfg, this.patches, this.#time, hours)) packWaiters.add(recipient.id);
+      if (canWaitForPackFood(this.grid, donor, familyStarts.get(recipient.id)!, cfg, this.patches, this.#time, hours)) packWaiters.add(recipient.id);
     }
 
     // Rivals for range, gathered once a tick for the species that hold territories.
@@ -1236,6 +1403,7 @@ export class World {
     const packIndex = new Map<string, number>();
     let previous: Agent | null = null, logMark = this.log.size();
     for (let turn = 0; turn < this.agents.length; turn++) {
+      if (turn > 0 && (turn & 63) === 0) yield;
       const original = this.agents[turn]!;
       const members = original.groupId ? packOrder.get(original.groupId) : undefined;
       const index = packIndex.get(original.groupId ?? '') ?? 0;
@@ -1295,6 +1463,8 @@ export class World {
           });
         } else if (agent.ageDays >= cfg.lifecycle.dispersalDays) {
           agent.dependentOn = null;
+          // Congo 1B: a bonded pair's young leaves its parents' group, free to find its own mate.
+          if (cfg.social.pairBond) this.#leaveGroup(agent);
           this.log.append({
             type: 'dispersed', worldTime: this.#time, simVersion: SIM_VERSION,
             patchId: agent.patchId, actors: [agent.id, mother.id],
@@ -1328,17 +1498,23 @@ export class World {
         continue;
       }
 
+      // Congo 1B: a diver stays under until its dive ends, then surfaces and decides as usual.
+      if (agent.locomotionMode === 'submerged') {
+        if ((agent.submergedUntil ?? 0) > this.#time) { agent.state = 'resting'; continue; }
+        surface(agent, this.grid, this.patches);
+      }
+
       // A perched animal cannot take a ground-only action. Stay at the fixed trunk while
       // a local threat remains, then spend real time descending; depleted canopy keeps a
       // stable remnant for that descent. Urgent needs compel descent despite the threat.
       if ((agent.altitudeM ?? 0) > 0 && agent.locomotionMode === 'climb') {
         const patch = this.patches[agent.patchId]!;
-        const canopyLost = treeAnchorForPatch(patch) === null;
+        const canopyLost = treeAnchorForPatch(this.grid, patch) === null;
         // Stays up while the threat frightens it (sim_0.34.0: a predator merely in sight no longer holds it there).
         const threatened = (perceive(agent, cfg, view).threat?.fear ?? 0) >= 0.5;
         const urgentNeed = agent.drives.thirst >= 0.72 || agent.drives.hunger >= 0.8;
         if (canopyLost || !threatened || urgentNeed) {
-          descendPerchedAnimal(agent, patch, this.#time, hours,
+          descendPerchedAnimal(this.grid, agent, patch, this.#time, hours,
             canopyLost ? 'canopy_lost' : !threatened ? 'threat_gone' : 'urgent_need', this.log, cfg.locomotion.climbsTrees === true);
         } else {
           agent.currentGoal = 'rest'; agent.alternativeGoal = null; agent.goalScore = 1;
@@ -1373,7 +1549,7 @@ export class World {
           simVersion: SIM_VERSION, patchId: agent.patchId, actors: [agent.id, mateVisit.female.id],
           conditions: { reason: 'await_mate', species: agent.speciesId }, outcome: 'success',
           effects: { durationHours: hours }, causalParents: mateVisit.routeId ? [mateVisit.routeId] : [],
-          confidence: 'authoritative', position: { ...locateAgent(agent) } });
+          confidence: 'authoritative', position: { ...locateAgent(this.grid, agent) } });
         continue;
       }
       if (!careTargets.has(agent.id) && !packTargets.has(agent.id) && !packWaiters.has(agent.id)
@@ -1410,7 +1586,7 @@ export class World {
       // Hold only for an already loaded, route-reachable pack member, not for an empty promise.
       // A local mother may keep caring; a remote mother cannot walk away and receive at her old point.
       if (packWaiters.has(agent.id) && calm && agent.drives.thirst < 0.8
-        && !(careTarget && availableForCare(agent, careTarget) && inCareContact(agent, careTarget, cfg))) {
+        && !(careTarget && availableForCare(agent, careTarget) && inCareContact(this.grid, agent, careTarget, cfg))) {
         agent.currentGoal = 'wait_for_pack_food'; agent.state = 'resting'; agent.alternativeGoal = null;
         agent.goalScore = 1; agent.targetId = null; delete agent.journey; continue;
       }
@@ -1420,17 +1596,17 @@ export class World {
       // the island's patches, chital and squirrel mothers were blocked from 31-36 hours in 48
       // and their young died of thirst a day short of weaning.
       if (careStart && careTarget?.alive && availableForCare(agent, careTarget)) {
-        careVisits.push(travelToFamily(agent, cfg, this.patches, careStart, 'care_for_young', this.#time, hours, this.log));
+        careVisits.push(travelToFamily(this.grid, agent, cfg, this.patches, careStart, 'care_for_young', this.#time, hours, this.log));
         continue;
       }
       const packRecipient = packTargets.get(agent.id);
       if (packRecipient?.alive && calm && packDonorEligible(agent, cfg, nursingParents)) {
         if (agent.packFood) {
-          const delivery = beginPackDelivery(agent, packRecipient, familyStarts.get(packRecipient.id)!, cfg,
+          const delivery = beginPackDelivery(this.grid, agent, packRecipient, familyStarts.get(packRecipient.id)!, cfg,
             this.patches, this.#time, hours, this.log);
           if (delivery) { packDeliveries.push(delivery); continue; }
         } else if (percept.carrion) {
-          const collection = beginPackCollection(agent, packRecipient, percept.carrion.carcass, cfg,
+          const collection = beginPackCollection(this.grid, agent, packRecipient, percept.carrion.carcass, cfg,
             this.patches, this.#time, hours, this.log);
           if (collection) { packCollections.push(collection); continue; }
         } else if (percept.prey.length && (activityAt(cfg, this.#time) >= 0.5 || agent.drives.hunger >= HUNGER_DESPERATION)) {
@@ -1485,7 +1661,7 @@ export class World {
               continue;
             }
           } else if (gap <= sensoryReach) {
-            nursingArrivals.set(agent.id, travelToFamily(agent, cfg, this.patches, rendezvous,
+            nursingArrivals.set(agent.id, travelToFamily(this.grid, agent, cfg, this.patches, rendezvous,
               'follow_parent', this.#time, hours, this.log));
             continue;
           }
@@ -1494,7 +1670,7 @@ export class World {
       if (parent?.alive && cfg.lifecycle.nursing && needsProvisioning(agent, cfg) && agent.nursingSite
         && agent.ageDays >= cfg.lifecycle.nursing.locomotionFromDays && calm
         && nursingEligible(agent, cfg, this.#time, this.#time + hours * 3600)) {
-        nursingArrivals.set(agent.id, travelToFamily(agent, cfg, this.patches, agent.nursingSite,
+        nursingArrivals.set(agent.id, travelToFamily(this.grid, agent, cfg, this.patches, agent.nursingSite,
           'seek_nursing', this.#time, hours, this.log));
         continue;
       }
@@ -1503,7 +1679,7 @@ export class World {
         && (needsProvisioning(agent, cfg) || agent.drives.fatigue < 0.6)
         && Math.hypot(agent.position!.x - parentStart.position.x, agent.position!.z - parentStart.position.z)
           <= Math.max(cfg.senses.sightRangeM, cfg.senses.hearingRangeM)) {
-        travelToFamily(agent, cfg, this.patches, parentStart, 'follow_parent', this.#time, hours, this.log);
+        travelToFamily(this.grid, agent, cfg, this.patches, parentStart, 'follow_parent', this.#time, hours, this.log);
         continue;
       }
       // sim_0.37.0: a den mother stays at the den. For the first two months a dhole mother stays
@@ -1515,9 +1691,9 @@ export class World {
       const den = calm && agent.drives.hunger < HUNGER_DESPERATION && ['hunt', 'wander', 'scavenge', 'rest'].includes(choice.goal)
         ? this.#denSite(agent, cfg, childrenByParent.get(agent.id) ?? [], familyStarts) : null;
       if (den) {
-        const here = locateAgent(agent);
+        const here = locateAgent(this.grid, agent);
         if (den.patchId !== agent.patchId || Math.hypot(here.x - den.position.x, here.z - den.position.z) > careRadius(cfg)) {
-          travelToFamily(agent, cfg, this.patches, den, 'care_for_young', this.#time, hours, this.log);
+          travelToFamily(this.grid, agent, cfg, this.patches, den, 'care_for_young', this.#time, hours, this.log);
         } else {
           executeGoal({ agent, species: cfg, patches: this.patches, view, percept,
             choice: { goal: 'rest', score: choice.score, alternative: choice.goal }, hours, worldTime: this.#time,
@@ -1527,9 +1703,9 @@ export class World {
       }
       // A parent of young that cannot follow wanders only within reach of them (sim_0.32.0).
       const tether = choice.goal === 'wander' && calm
-        ? idleRangeAnchor(agent, cfg, childrenByParent.get(agent.id) ?? [], familyStarts, this.patches) : null;
+        ? idleRangeAnchor(this.grid, agent, cfg, childrenByParent.get(agent.id) ?? [], familyStarts, this.patches) : null;
       if (tether) {
-        travelToFamily(agent, cfg, this.patches, tether, 'care_for_young', this.#time, hours, this.log);
+        travelToFamily(this.grid, agent, cfg, this.patches, tether, 'care_for_young', this.#time, hours, this.log);
         continue;
       }
       // A hunter stays with an unfinished kill instead of wandering off from it (sim_0.33.0).
@@ -1549,6 +1725,7 @@ export class World {
       });
     }
 
+    yield;
     const servedYoung = new Set<string>();
     for (const visit of careVisits) for (const childId of finishCare(visit,
       childrenByParent.get(visit.parent.id) ?? [], familyStarts,
@@ -1563,11 +1740,11 @@ export class World {
         log: this.log, rng: this.#rng, services });
     }
     const stillNursing = activeNursingParents();
-    for (const collection of packCollections) finishPackCollection(collection, this.species.get(collection.visit.parent.speciesId)!,
+    for (const collection of packCollections) finishPackCollection(this.grid, collection, this.species.get(collection.visit.parent.speciesId)!,
       this.carcasses, stillNursing, this.log);
     // Delivery is after maternal provisioning: reserves received at this hour's end cannot
     // retroactively fund milk earlier in the same decision. They are available next decision.
-    for (const delivery of packDeliveries) finishPackDelivery(delivery, this.species.get(delivery.visit.parent.speciesId)!,
+    for (const delivery of packDeliveries) finishPackDelivery(this.grid, delivery, this.species.get(delivery.visit.parent.speciesId)!,
       this.patches, stillNursing, this.log);
     for (const agent of this.agents) {
       if (!agent.alive || !needsProvisioning(agent, this.species.get(agent.speciesId)!)) continue;
@@ -1588,9 +1765,13 @@ export class World {
       const density = local.reduce((sum, id) => sum + (counts?.get(id) ?? 0), 0);
       const cfg = this.species.get(visit.female.speciesId)!;
       // Earlier completed visits may have conceived during this same tick. Recheck admission.
-      finishCourtship(visit, cfg, this.#time, this.#time + hours * 3600, density, this.#rng, this.log,
+      const wasPregnant = visit.female.pregnantSince !== null;
+      finishCourtship(this.grid, visit, cfg, this.#time, this.#time + hours * 3600, density, this.#rng, this.log,
         this.#packAllowsBreeding(visit.female, cfg));
+      // Congo 1B: a bonded pair forms when an unpaired female conceives with an unpaired male.
+      if (cfg.social.pairBond && !wasPregnant && visit.female.pregnantSince !== null) this.#bond(visit.female, visit.male, cfg);
     }
+    yield;
     this.#exchangeWithLandscape(hours);
 
     for (const [speciesId, floor] of Object.entries(this.#options.minPopulation)) {
@@ -1617,6 +1798,7 @@ export class World {
     // Settle illness only after every animal and community action in this decision. A meal
     // acquired at the end cannot incubate retroactively, and a human/predator kill wins over a
     // later disease hazard instead of creating a second death or carcass.
+    yield;
     const decisionEnd = this.#time + hours * WORLD_SECONDS_PER_HOUR;
     for (const agent of this.agents) {
       if (!agent.alive || !agent.illness) continue;
@@ -1652,6 +1834,17 @@ export class World {
     this.#pruneGroups();
     this.#time += seconds;
   }
+}
+
+/**
+ * Congo 1B: a pair species' living, grown pair-mate (the other sex in its group), or null: a
+ * paired animal courts only it; a widow, or one never paired, may court any.
+ */
+export function pairMateFor(agent: Agent, cfg: SpeciesConfig, members: readonly Agent[],
+  kin: (a: Agent, b: Agent) => boolean = () => false): Agent | null {
+  if (!cfg.social.pairBond || agent.groupId == null) return null;
+  return members.find((a) => a.alive && a.groupId === agent.groupId && a.id !== agent.id && a.sex !== agent.sex
+    && a.lifeStage !== 'newborn' && a.lifeStage !== 'juvenile' && !kin(agent, a)) ?? null;
 }
 
 export function createWorld(options: WorldOptions): World {

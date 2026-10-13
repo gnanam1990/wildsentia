@@ -3,6 +3,8 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { canopyField, TreePlacementCache, NearVegetation, planVegetation } from '../src/vegetation.js';
 import { makeHeightSampler, type PatchView } from '../src/terrain.js';
+import { CONGO_GRID, ISLAND_GRID } from '@vana/shared';
+import { setWorldGrid } from '../src/worldGrid.js';
 
 // No browser automation/GPU claim. Keep real instancing and update logic; replace only atlas rendering.
 vi.mock('../src/treeLod.js', async () => ({
@@ -96,5 +98,15 @@ describe('world tree placement cache', () => {
     layer.update(focus); expect(restored.visible).toBe(true);
     expect(restored.instanceMatrix.version).toBe(restoredVersion);
     layer.dispose(); expect(layer.root.children).toHaveLength(0);
+  });
+  it('places the trees of a Congo patch far from the island lattice (1A.4)', () => {
+    setWorldGrid(CONGO_GRID);
+    try {
+      // r4_4: some 27 km from the island's centre, where the island's 4.5 km reach never went.
+      const congo: PatchView[] = [{ id: 86 * 160 + 97, x: 97, y: 86, habitat: 'terra_firme', grass: 400, browse: 4000,
+        water: 300, canopyCover: 0.9, elevation: 0.5, congoSeed: 7, surface: 'land' }];
+      const trees = [...new TreePlacementCache().get(congo, () => 0).values()].reduce((n, list) => n + list.length, 0);
+      expect(trees).toBeGreaterThan(0);
+    } finally { setWorldGrid(ISLAND_GRID); }
   });
 });

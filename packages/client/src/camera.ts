@@ -1,5 +1,7 @@
+import { worldExtentM } from '@vana/shared';
+import { worldGrid } from './worldGrid.js';
 import * as THREE from 'three';
-import { GRID_SIZE, PATCH_METRES } from '@vana/shared';
+
 
 /** Observer framing only. The elephant needs a closer adult-body view than the generic
  * small-animal rule; this never changes its authoritative position or movement. */
@@ -16,15 +18,24 @@ export const MIN_DISTANCE = 1;
 /** Far enough to take in the whole island from above. */
 export const MAX_DISTANCE = 5000;
 
-/** The island's ground, from the first patch's west edge to the last patch's east edge. */
-const WORLD_MIN = -PATCH_METRES / 2;
-const WORLD_MAX = GRID_SIZE * PATCH_METRES - PATCH_METRES / 2;
-
 /** Keeps an explored point over the island, with a margin so its coast stays in view. */
-export function clampToIsland(target: THREE.Vector3, margin = PATCH_METRES): THREE.Vector3 {
-  target.x = Math.min(WORLD_MAX + margin, Math.max(WORLD_MIN - margin, target.x));
-  target.z = Math.min(WORLD_MAX + margin, Math.max(WORLD_MIN - margin, target.z));
+export function clampToIsland(target: THREE.Vector3, margin = worldGrid().patchM): THREE.Vector3 {
+  // The world's ground, from the first patch's west edge to the last patch's east edge.
+  const e = worldExtentM(worldGrid());
+  target.x = Math.min(e.maxX + margin, Math.max(e.min - margin, target.x));
+  target.z = Math.min(e.maxZ + margin, Math.max(e.min - margin, target.z));
   return target;
+}
+
+/**
+ * Where the viewer looks, for the server's region and agent streaming: the followed animal when
+ * there is one (Congo 1A.4: the camera may still be gliding toward it from far away), else the
+ * camera's ground point. The radius grows with zoom, from 300 m to 1.5 km.
+ */
+export function viewMessage(target: { x: number; z: number }, distance: number, followed: { x: number; z: number } | null):
+  { x: number; z: number; radius: number } {
+  const at = followed ?? target;
+  return { x: Math.round(at.x), z: Math.round(at.z), radius: Math.round(Math.min(1500, Math.max(300, distance * 2.5 + 200))) };
 }
 
 /**

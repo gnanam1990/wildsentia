@@ -11,6 +11,7 @@ import { Hud, type HudElements } from '../../client/src/hud.js';
 import { WorldStore } from '../../client/src/protocol.js';
 import { HistoryPager } from '../../client/src/history.js';
 import { loadLifeHistory } from '../../client/src/lifeHistory.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 describe('history cursor integrity', () => {
   it('binds the actor, route, checkpoint and API lifetime without accepting tampered bounds', () => {
@@ -127,7 +128,7 @@ maybe('checkpoint-pinned history pagination', () => {
   });
   it('retains deterministic traversal for legacy null-sequence IDs', async () => {
     const { host, id } = await start(); await host.advance(1);
-    const store = new EventStore(pool!);
+    const store = new EventStore(pool!, ISLAND_GRID);
     const fixture = { worldTime: 1, simVersion: 'test', patchId: 0, actors: [id], conditions: {}, outcome: 'success' as const,
       effects: {}, causalParents: [], confidence: 'authoritative' as const };
     await store.appendBatch(['legacy_Z', 'legacy_a', 'legacy_B'].map(id => ({ ...fixture, id, type: 'born' as const })));

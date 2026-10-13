@@ -3,12 +3,12 @@ import { movementAt, paceMovement, recordedSecondAt, type Pacing } from '@vana/s
 import { randomUUID } from 'node:crypto';
 import { collectLiveEncounters, indexLiveMovements, selectLiveMovements, encounterAppearance } from './liveEncounters.js';
 import {
-  FOREST_FLOOR, FOREST_LANDSCAPE, FOREST_POPULATION, SIM_VERSION, islandPopulation,
+  CONGO_POPULATION, FOREST_FLOOR, FOREST_LANDSCAPE, FOREST_POPULATION, SIM_VERSION, islandPopulation,
   upgradeV16Snapshot, upgradeV17Snapshot, upgradeV18Snapshot, upgradeV19Snapshot, upgradeV20Snapshot, upgradeV21Snapshot, upgradeV22Snapshot, upgradeV23Snapshot, upgradeV24Snapshot, upgradeV25Snapshot, upgradeV26Snapshot, upgradeV27Snapshot, upgradeV28Snapshot, upgradeV29Snapshot, upgradeV30Snapshot, upgradeV31Snapshot, upgradeV32Snapshot, upgradeV33Snapshot, upgradeV34Snapshot, upgradeV35Snapshot, upgradeV36Snapshot, upgradeV37Snapshot,
-  createWorld, restoreSnapshot, takeSnapshot, totalNutrients, upgradeV5Snapshot, upgradeV6Snapshot, upgradeV7Snapshot, upgradeV8Snapshot, upgradeV9Snapshot, upgradeV10Snapshot, upgradeV11Snapshot, upgradeV12Snapshot, upgradeV13Snapshot, upgradeV14Snapshot, upgradeV15Snapshot, type Snapshot, type World, type WorldOptions,
+  createWorld, restoreSnapshot, snapshotJson, takeSnapshot, takeSnapshotSlices, totalNutrients, upgradeV5Snapshot, upgradeV6Snapshot, upgradeV7Snapshot, upgradeV8Snapshot, upgradeV9Snapshot, upgradeV10Snapshot, upgradeV11Snapshot, upgradeV12Snapshot, upgradeV13Snapshot, upgradeV14Snapshot, upgradeV15Snapshot, type Snapshot, type World, type WorldOptions,
 } from '@vana/sim';
 import type { Pool } from './db/pool.js';
-import { isIslandProfile } from '@vana/shared';
+import { gridForProfile, isClosedProfile, isIslandProfile, regionIds, regionOfPatch, type WorldGrid } from '@vana/shared';
 import { EventStore } from './db/eventStore.js';
 import { SnapshotStore } from './db/snapshotStore.js';
 import { LifeStore } from './db/lifeStore.js';
@@ -93,6 +93,11 @@ export interface SimHostOptions {
   worldHoursPerRealHour?: number;
   /** How long boot waits for another writer to let go of the world (0: refuse at once). */
   writerWaitMs?: number;
+  /**
+   * Congo 1A.3: the longest the world steps before letting other work run (default 25 ms). While
+   * it steps the host is `busy`, and nothing may change the world.
+   */
+  sliceMs?: number;
   snapshotEveryWorldHours?: number;
   /** How often every animal's position and drives are sampled for life replay. */
   trackEveryWorldHours?: number;
@@ -130,10 +135,23 @@ export interface CheckpointObservation {
   waterBudget(): WaterBudget | null;
   microEcology(): MicroEcologyState;
   summary(): { population: Record<string, number>; patches: number; totalNutrients: number };
+  /** Congo 1A.3: the world's regions, and detached copies of one region's part of this checkpoint. */
+  regionIds(): string[];
+  regionPatches(id: string): Patch[];
+  regionAnimals(id: string): Agent[];
+  regionCarcasses(id: string): Carcass[];
+  regionMicroEcology(id: string): MicroEcologyState;
 }
+
+interface RegionSlice { patches: Patch[]; living: Agent[]; carcasses: Carcass[]; micro: MicroEcologyState['patches'] }
 
 export class SimHost {
   world!: World;
+  /** The world's patch lattice, fixed by its terrain profile; known before the world starts. */
+  readonly grid: WorldGrid;
+  #busy = false;
+  /** True while the world is stepping: commands wait, and the live tick holds still. */
+  get busy(): boolean { return this.#busy; }
 
   readonly #events: EventStore;
   readonly #snapshots: SnapshotStore;
@@ -165,6 +183,7 @@ export class SimHost {
   #worldId: string | null = null;
   #checkpointAnimals = new Map<string, Agent>();
   #checkpointEnvironment: Pick<Snapshot, 'patches' | 'carcasses'> = { patches: [], carcasses: [] };
+  #checkpointRegions = new Map<string, RegionSlice>();
   #checkpointSummary = { population: {} as Record<string, number>, patches: 0, totalNutrients: 0 };
   #checkpointLiving: Agent[] = [];
   #checkpointWaterBudget: WaterBudget | null = null;
@@ -204,6 +223,7 @@ export class SimHost {
     const waterBudget = this.#checkpointWaterBudget;
     const community = this.#checkpointCommunity;
     const microEcology = this.#checkpointMicroEcology;
+    const regions = this.#checkpointRegions;
     return { id: `${this.#streamId}:${this.#checkpointRevision}`, worldTime: this.#checkpointTime, nextSequence: this.#checkpointEventSequence,
       livingAnimals: () => structuredClone(living),
       patches: () => structuredClone(environment.patches),
@@ -212,6 +232,11 @@ export class SimHost {
       community: () => structuredClone(community),
       microEcology: () => structuredClone(microEcology),
       summary: () => structuredClone(summary),
+      regionIds: () => [...regions.keys()],
+      regionPatches: (id) => structuredClone(regions.get(id)?.patches ?? []),
+      regionAnimals: (id) => structuredClone(regions.get(id)?.living ?? []),
+      regionCarcasses: (id) => structuredClone(regions.get(id)?.carcasses ?? []),
+      regionMicroEcology: (id) => ({ updatedAt: microEcology.updatedAt, patches: structuredClone(regions.get(id)?.micro ?? []) }),
       animal(id) { const a = animals.get(id); return a === undefined ? undefined : structuredClone(a); } };
   }
 
@@ -252,6 +277,7 @@ export class SimHost {
     this.#checkpointAnimals = new Map([...snapshot.deceased, ...snapshot.agents].map((a) => [a.id, a]));
     this.#checkpointLiving = snapshot.agents.filter((a) => a.alive);
     this.#checkpointEnvironment = { patches: snapshot.patches, carcasses: snapshot.carcasses };
+    this.#checkpointRegions = this.#regionSlices(snapshot);
     this.#checkpointWaterBudget = snapshot.waterBudget ? structuredClone(snapshot.waterBudget) : null;
     this.#checkpointCommunity = snapshot.community ? structuredClone(snapshot.community) : null;
     this.#checkpointMicroEcology = structuredClone(snapshot.microEcology ?? { updatedAt: snapshot.worldTime, patches: [] });
@@ -262,6 +288,17 @@ export class SimHost {
     this.#rewardSubjects = new Map(snapshot.agents.filter((a) => a.alive)
       .map((a) => [a.id, { alive: true, carcass: false }]));
     for (const c of snapshot.carcasses) this.#rewardSubjects.set(c.originId, { alive: false, carcass: true });
+  }
+
+  /** The checkpoint's observer copy, filed by region (references, not copies). */
+  #regionSlices(snapshot: Snapshot): Map<string, RegionSlice> {
+    const slices = new Map<string, RegionSlice>(regionIds(this.grid).map((id) => [id, { patches: [], living: [], carcasses: [], micro: [] }]));
+    const of = (patchId: number): RegionSlice | undefined => slices.get(regionOfPatch(this.grid, patchId));
+    for (const p of snapshot.patches) of(p.id)?.patches.push(p);
+    for (const a of snapshot.agents) if (a.alive) of(a.patchId)?.living.push(a);
+    for (const c of snapshot.carcasses) of(c.patchId)?.carcasses.push(c);
+    for (const m of snapshot.microEcology?.patches ?? []) of(m.patchId)?.micro.push(m);
+    return slices;
   }
 
   #serial<T>(operation: () => Promise<T>): Promise<T> {
@@ -310,14 +347,17 @@ export class SimHost {
       allowV13Upgrade: false,
       worldHoursPerRealHour: 12,
       writerWaitMs: 0,
+      sliceMs: 25,
       snapshotEveryWorldHours: 1,
       trackEveryWorldHours: 6,
       housekeepingEveryWorldHours: 24,
       routineRetentionWorldDays: 3,
       archiveAfterWorldDays: 730,
-      initialAgents: isIslandProfile(options.terrainProfile) ? islandPopulation(options.terrainProfile as 'island_v1' | 'island_v2') : FOREST_POPULATION,
-      minPopulation: isIslandProfile(options.terrainProfile) ? {} : FOREST_FLOOR,
-      landscape: isIslandProfile(options.terrainProfile) ? null : FOREST_LANDSCAPE,
+      initialAgents: options.terrainProfile === 'congo_v1' ? CONGO_POPULATION
+        : isIslandProfile(options.terrainProfile) ? islandPopulation(options.terrainProfile as 'island_v1' | 'island_v2') : FOREST_POPULATION,
+      // Closed worlds (the islands and Congo) take no floors and no exchange with a landscape.
+      minPopulation: isClosedProfile(options.terrainProfile) ? {} : FOREST_FLOOR,
+      landscape: isClosedProfile(options.terrainProfile) ? null : FOREST_LANDSCAPE,
       ...options,
     };
     this.#writer = new WorldWriter(options.pool, () => {
@@ -325,9 +365,10 @@ export class SimHost {
       if (this.#timer !== null) clearInterval(this.#timer);
       this.#timer = null;
     });
-    this.#events = new EventStore(this.#writer);
+    this.grid = gridForProfile(options.terrainProfile ?? 'mainland');
+    this.#events = new EventStore(this.#writer, this.grid);
     this.#snapshots = new SnapshotStore(this.#writer);
-    this.#life = new LifeStore(this.#writer);
+    this.#life = new LifeStore(this.#writer, this.grid);
     this.#humanMotion = new HumanMotionStore(this.#writer);
   }
 
@@ -375,11 +416,25 @@ export class SimHost {
     return agent?.alive && agent.position ? { ...agent.position } : null;
   }
 
-  liveEncounterFrame(priorityActorId: string | null = null): LiveEncounterFrame | null {
+  /** Whether `id` moved in the hour being played (so following it could change a frame's selection). */
+  hasLiveMovement(id: string): boolean { return this.#movementIndex.has(id); }
+
+  /**
+   * Congo 1A.4: given `regions`, the frame holds only the encounters and movements that end in
+   * those regions, chosen under the same caps from every movement of the hour, so a viewer of one
+   * corner of the forest is not sent (or starved by) the rest of it.
+   */
+  liveEncounterFrame(priorityActorId: string | null = null, regions?: ReadonlySet<string>): LiveEncounterFrame | null {
     const frame = this.#encounterFrame;
     if (!this.isWriterActive || this.lastError || !frame) return null;
     const elapsedWorldSeconds = (performance.now() - this.#encounterPublishedAt) * frame.rate / 1000;
     if (elapsedWorldSeconds >= frame.endWorldTime - frame.startWorldTime) return null;
+    if (regions) {
+      const grid = this.world.grid, inView = (patchId: number) => regions.has(regionOfPatch(grid, patchId));
+      return { ...frame, elapsedWorldSeconds,
+        encounters: frame.encounters.filter((e) => inView(e.trace.patchId)),
+        movements: selectLiveMovements(this.#movementIndex, priorityActorId, (m) => inView(m.trace.destinationPatchId)) };
+    }
     const prioritize = priorityActorId !== null && this.#movementIndex.has(priorityActorId)
       && !frame.movements?.some((m) => m.actor.id === priorityActorId);
     return { ...frame, elapsedWorldSeconds,
@@ -592,11 +647,11 @@ export class SimHost {
 
   async #snapshotNow(): Promise<void> {
     await this.#flush();
-    const checkpoint = takeSnapshot(this.world);
+    const checkpoint = await this.#takeSnapshotInSlices();
     // Persist every completed hour, not just `checkpoint.community.motion` (the final hour).
     // These inserts may be retried; only the subsequent durable snapshot publishes them.
     await this.#humanMotion.append(this.#pendingHumanMotion);
-    await this.#snapshots.save(checkpoint);
+    await this.#snapshots.saveJson(checkpoint, await this.#snapshotJsonInSlices(checkpoint));
     await this.#snapshots.prune(48);
     this.#publishCheckpoint(checkpoint);
     this.#pendingHumanMotion = [];
@@ -616,6 +671,14 @@ export class SimHost {
     return this.#serial(() => this.#advance(worldHours));
   }
 
+  /**
+   * Runs work that changes the world outside a step (restoring possessions at start-up), in turn
+   * with steps and checkpoints: never between the slices of one.
+   */
+  exclusive<T>(work: () => Promise<T>): Promise<T> {
+    return this.#serial(work);
+  }
+
   async #advance(worldHours: number): Promise<void> {
     this.#writer.assertActive();
     if (!Number.isSafeInteger(worldHours) || worldHours < 0) throw new Error('invalid world hours');
@@ -628,14 +691,14 @@ export class SimHost {
         encounterAppearance(a, this.world.species.get(a.speciesId)!.body.adultMassKg)]));
       const startPositions = new Map(this.world.agents.filter((a) => a.alive && a.position)
         .map((a) => [a.id, { ...a.position! }]));
-      this.world.step(1);
+      await this.#stepInSlices();
       const community = this.world.community;
       if (community?.motion) this.#pendingHumanMotion.push({ community: structuredClone(community), motion: structuredClone(community.motion) });
-      this.#pendingMovementIndex = indexLiveMovements(this.world.log.all(), appearances, start, this.world.agents, startPositions);
+      this.#pendingMovementIndex = indexLiveMovements(this.world.grid, this.world.log.all(), appearances, start, this.world.agents, startPositions);
       this.#pendingEncounterFrame = {
         id: `${this.#streamId}:${this.world.now()}`, startWorldTime: start, endWorldTime: this.world.now(),
         rate: this.worldHoursPerRealHour, elapsedWorldSeconds: 0,
-        encounters: collectLiveEncounters(this.world.log.all(), appearances, start),
+        encounters: collectLiveEncounters(this.world.grid, this.world.log.all(), appearances, start),
         movements: selectLiveMovements(this.#pendingMovementIndex),
       };
       this.#worldHoursSinceSnapshot++;
@@ -644,6 +707,53 @@ export class SimHost {
       await this.#settlePeriodicWork();
     }
     await this.#flush();
+  }
+
+  /** A checkpoint copied in slices: the world is held (busy) until the copy is complete. */
+  async #takeSnapshotInSlices(): Promise<Snapshot> {
+    this.#busy = true;
+    try {
+      const slices = takeSnapshotSlices(this.world);
+      let started = performance.now();
+      for (;;) {
+        const next = slices.next();
+        if (next.done) return next.value;
+        if (performance.now() - started < this.#options.sliceMs) continue;
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        started = performance.now();
+      }
+    } finally {
+      this.#busy = false;
+    }
+  }
+
+  /** The copy is the host's own, so it is serialized in slices without holding the world. */
+  async #snapshotJsonInSlices(snapshot: Snapshot): Promise<string> {
+    const parts: string[] = [];
+    let started = performance.now();
+    for (const part of snapshotJson(snapshot)) {
+      parts.push(part);
+      if (performance.now() - started < this.#options.sliceMs) continue;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      started = performance.now();
+    }
+    return parts.join('');
+  }
+
+  /** One world hour, letting other work run every `sliceMs`; nothing changes the world meanwhile. */
+  async #stepInSlices(): Promise<void> {
+    const sliceMs = this.#options.sliceMs;
+    this.#busy = true;
+    try {
+      let started = performance.now();
+      for (const _ of this.world.stepSlices(1)) {
+        if (performance.now() - started < sliceMs) continue;
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        started = performance.now();
+      }
+    } finally {
+      this.#busy = false;
+    }
   }
 
   /** A failed track/archive/checkpoint is retried at the same world time, before another step. */

@@ -1,3 +1,4 @@
+import { worldGrid } from './worldGrid.js';
 import { waterAccessPosition, type WaterGround } from '@vana/shared';
 import type { PatchView } from './terrain.js';
 
@@ -10,7 +11,7 @@ import type { PatchView } from './terrain.js';
 export function islandPool(patch: PatchView, ground?: WaterGround): Pool | null {
   if (patch.islandSeed === undefined || (patch.surface !== undefined && patch.surface !== 'land')) return null;
   if (!Number.isFinite(patch.water) || patch.water <= 0) return null;
-  const { x, z } = waterAccessPosition(patch.id, ground);
+  const { x, z } = waterAccessPosition(worldGrid(), patch.id, ground);
   return { x, z, radius: Math.max(2, Math.min(40, Math.sqrt(patch.water / 1000 / Math.PI))), seed: patch.id };
 }
 

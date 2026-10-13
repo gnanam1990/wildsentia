@@ -10,11 +10,12 @@ import { waterBudgetResidual } from '../src/fields/drainage.js';
 import { buildGrid } from '../src/grid.js';
 import { createWorld } from '../src/world.js';
 import { makeAgent, makeServices, makeView, SPECIES_DIR, speciesOf } from './helpers.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const tiger = speciesOf('tiger');
 
 function cub(ageDays: number) {
-  const access = waterAccessPosition(0);
+  const access = waterAccessPosition(ISLAND_GRID, 0);
   return makeAgent('tiger', { id: 'tiger_cub', ageDays,
     lifeStage: ageDays < 90 ? 'newborn' : 'juvenile',
     massKg: tiger.body.adultMassKg * 0.12, dependentOn: 'tiger_mother',
@@ -108,7 +109,7 @@ describe('tiger mobile-cub water gate', () => {
     const patches = buildGrid(1), child = cub(70);
     for (const patch of patches) patch.waterVolume = 0;
     patches[0]!.waterVolume = 0.02;
-    child.position = { ...waterAccessPosition(0) };
+    child.position = { ...waterAccessPosition(ISLAND_GRID, 0) };
     const view = makeView(patches, [child]), log = new EventLog(1, 'test');
     const services = makeServices([]);
     let consumed = 0;

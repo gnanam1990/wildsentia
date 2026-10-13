@@ -1,7 +1,7 @@
 import './pageChrome.js';
 import { api, loadAccountState, mountAccountBox } from './account.js';
 import { COMMAND_ERRORS, attemptEnded, challengePanel, keyCommand, driveBars, gaitsAllowed, pickTarget, possessMessage, projection, shouldPing, stateMessage,
-  type PlayObservation } from './playModel.js';
+  retryWhenBusy, type PlayObservation } from './playModel.js';
 
 /** A signed-in person steering an animal, from a phone or a desktop (spec §8, §14). */
 const $ = <T extends HTMLElement>(id: string) => document.querySelector<T>(`#${id}`)!;
@@ -23,7 +23,10 @@ function feedback(text: string): void {
 }
 
 async function command<T = unknown>(path: string, body?: unknown): Promise<T | null> {
-  try { const r = await api<T>(`/play/${path}`, { method: 'POST', body }); lastCommand = Date.now(); return r; }
+  try {
+    const r = await retryWhenBusy(() => api<T>(`/play/${path}`, { method: 'POST', body }), (ms) => new Promise((done) => setTimeout(done, ms)));
+    lastCommand = Date.now(); return r;
+  }
   catch (e) { feedback(COMMAND_ERRORS[(e as Error).message] ?? `That did not work (${(e as Error).message}).`); return null; }
 }
 

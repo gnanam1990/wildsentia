@@ -1,3 +1,4 @@
+import { worldGrid } from './worldGrid.js';
 import * as THREE from 'three';
 import { treeAnchorRemnantForPatch } from '@vana/shared';
 import { buildTerrain, makeHeightSampler, patchHeight, terrainHeightKey, TERRAIN_LAYERS, type HeightSampler, type PatchView, type TerrainLayer } from './terrain.js';
@@ -11,10 +12,12 @@ export function terrainKeys(patches: readonly PatchView[]): Record<TerrainLayer 
   const land = (p: PatchView) => p.surface === undefined || p.surface === 'land';
   const grass = patches.filter((p) => land(p) && p.grass > 100 && p.habitat !== 'water' && p.water <= 20_000);
   // The same patches terrain.ts draws water for: every positive stock on the island is a pool.
+  // Congo: the rivers, and the flooded forest while it is flooded (terrain.ts draws the same).
   const water = patches.filter((p) => land(p) && (seed !== undefined
-    ? Number.isFinite(p.water) && p.water > 0 : p.habitat === 'water' || p.water > 20_000));
+    ? Number.isFinite(p.water) && p.water > 0
+    : p.congoSeed !== undefined ? p.habitat === 'water' || p.flooded === true : p.habitat === 'water' || p.water > 20_000));
   const trees = JSON.stringify([height, patches.filter((p) => land(p) && ((p.canopyCover ?? 0) >= .3
-    || treeAnchorRemnantForPatch(p) !== null)).map((p) => [p.id, treeAnchorRemnantForPatch(p) ? 'remnant' : 'live'])]);
+    || treeAnchorRemnantForPatch(worldGrid(), p) !== null)).map((p) => [p.id, treeAnchorRemnantForPatch(worldGrid(), p) ? 'remnant' : 'live'])]);
   return {
     height,
     ground: JSON.stringify([height, patches.map((p) => [p.id, p.habitat])]),

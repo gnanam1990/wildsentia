@@ -1,8 +1,9 @@
-import { GRID_SIZE, PATCH_METRES, positionInPatch,
+import { positionInPatch, worldExtentM, type WorldGrid,
   type EncounterPhase, type EncounterTrace, type Rng, type WorldPosition } from '@vana/shared';
 import { resolveHunt, type HuntInput, type HuntStage } from './predation.js';
 
 export interface SpatialHuntInput {
+  grid: WorldGrid;
   predatorId: string; preyId: string; patchId: number; worldTime: number;
   predator: WorldPosition; prey: WorldPosition;
   predatorWalkMs: number; predatorSprintMs: number; preySprintMs: number;
@@ -41,7 +42,7 @@ const distance = (a: WorldPosition, b: WorldPosition): number => Math.hypot(a.x 
  * obstacle claims are made.
  */
 export function resolveSpatialHunt(input: SpatialHuntInput, rng: Rng): SpatialHuntResult {
-  if (!positionInPatch(input.predator, input.patchId) || !positionInPatch(input.prey, input.patchId)) {
+  if (!positionInPatch(input.grid, input.predator, input.patchId) || !positionInPatch(input.grid, input.prey, input.patchId)) {
     throw new Error('encounter actors must have valid positions in the same patch');
   }
   const positive = [input.contactRadiusM, input.predatorWalkMs, input.predatorSprintMs,
@@ -89,12 +90,12 @@ export function resolveSpatialHunt(input: SpatialHuntInput, rng: Rng): SpatialHu
   const away = Math.atan2(prey.x - predator.x, prey.z - predator.z);
   prey.heading = away; predator.heading = away;
   const vx = Math.sin(away); const vz = Math.cos(away);
-  const min = -PATCH_METRES / 2 + 0.001;
-  const max = (GRID_SIZE - 0.5) * PATCH_METRES - 0.001;
+  const extent = worldExtentM(input.grid);
+  const min = extent.min + 0.001;
   const boundaryTime = (p: WorldPosition, speed: number): number => {
     if (speed <= 0) return Infinity;
-    const tx = Math.abs(vx) < 1e-12 ? Infinity : ((vx > 0 ? max : min) - p.x) / (vx * speed);
-    const tz = Math.abs(vz) < 1e-12 ? Infinity : ((vz > 0 ? max : min) - p.z) / (vz * speed);
+    const tx = Math.abs(vx) < 1e-12 ? Infinity : ((vx > 0 ? extent.maxX - 0.001 : min) - p.x) / (vx * speed);
+    const tz = Math.abs(vz) < 1e-12 ? Infinity : ((vz > 0 ? extent.maxZ - 0.001 : min) - p.z) / (vz * speed);
     return Math.max(0, Math.min(tx, tz, (input.landBoundaryM?.(p, away) ?? Infinity) / speed));
   };
   const advance = (p: WorldPosition, speed: number, seconds: number): void => {

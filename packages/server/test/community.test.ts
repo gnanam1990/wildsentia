@@ -12,6 +12,7 @@ import { SIM_VERSION, takeSnapshot } from '@vana/sim';
 import { SnapshotStore } from '../src/db/snapshotStore.js';
 import { EventStore } from '../src/db/eventStore.js';
 import { asLegacySnapshot } from '../../sim/test/legacySnapshot.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const url = testDatabaseUrl(), pool = url ? createPool(url) : null, maybe = url ? describe : describe.skip;
 const options = () => ({ pool: pool!, seed: 1, speciesDir: fileURLToPath(new URL('../../../config/species', import.meta.url)),
@@ -29,11 +30,11 @@ maybe('durable community observer path', () => {
     const second = new SimHost({ ...options(), allowV16Upgrade: true }); await second.boot();
     expect(second.world.community).toEqual(saved.community);
     expect((await new SnapshotStore(pool!).loadLatest())!.simVersion).toBe(SIM_VERSION);
-    const events = await new EventStore(pool!).recent(100);
+    const events = await new EventStore(pool!, ISLAND_GRID).recent(100);
     expect(events.filter(e => e.conditions.reason === 'explicit_rules_upgrade')).toHaveLength(1);
     await second.abort(); const third = new SimHost(options()); await third.boot();
     expect(third.world.community).toEqual(saved.community);
-    expect((await new EventStore(pool!).recent(100)).filter(e => e.conditions.reason === 'explicit_rules_upgrade')).toHaveLength(1);
+    expect((await new EventStore(pool!, ISLAND_GRID).recent(100)).filter(e => e.conditions.reason === 'explicit_rules_upgrade')).toHaveLength(1);
   });
   it('pins household and event history to one saved checkpoint, serves no mutation route, and validates real scene data', async () => {
     const host = new SimHost(options()); await host.boot(); const view = host.observation()!, initial = view.community();
@@ -105,7 +106,7 @@ maybe('durable community observer path', () => {
     expect(saved.stores.rawFishKg! + saved.people.reduce((n, p) => n + p.inventory.rawFishKg!, 0)).toBeGreaterThan(0);
     await first.abort();
     const second = new SimHost(options()); await second.boot(); expect(second.world.community).toEqual(saved);
-    const events = new EventStore(pool!);
+    const events = new EventStore(pool!, ISLAND_GRID);
     for (let hour = 0; hour < 48; hour++) {
       await second.advance(1);
       const cooked = (await events.recent(100)).some(e => e.worldTime > saved.updatedAt

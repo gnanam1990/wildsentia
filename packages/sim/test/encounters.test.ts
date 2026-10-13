@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { createRng, isWorldPosition, patchAtPosition } from '@vana/shared';
 import { resolveSpatialHunt, type SpatialHuntInput } from '../src/agents/encounters.js';
+import { ISLAND_GRID } from '@vana/shared';
 
-const input: SpatialHuntInput = {
+const input: SpatialHuntInput = { grid: ISLAND_GRID,
   predatorId: 'tiger_a', preyId: 'sambar_a', patchId: 0, worldTime: 3600,
   predator: { x: 0, z: 0, heading: 0 }, prey: { x: 20, z: 0, heading: 0 },
   predatorWalkMs: 1, predatorSprintMs: 10, preySprintMs: 1, preyTrotMs: 0.5,
@@ -12,7 +13,7 @@ const input: SpatialHuntInput = {
     predatorCondition: 1, preyEvasiveness: 0, preyCondition: 1, preyAlert: false,
     herdSize: 1, commitDistanceM: 10 },
 };
-const run = (changes: Partial<SpatialHuntInput> = {}) => resolveSpatialHunt({ ...input, ...changes }, createRng(3, 'encounter'));
+const run = (changes: Partial<SpatialHuntInput> = {}) => resolveSpatialHunt({ grid: ISLAND_GRID, ...input, ...changes }, createRng(3, 'encounter'));
 describe('authoritative spatial hunt', () => {
   it('records approach, chase and actual contact before permitting a kill, without mutating inputs', () => {
     const before = structuredClone(input); const result = run();
@@ -41,13 +42,13 @@ describe('authoritative spatial hunt', () => {
   it('crosses administrative patch boundaries without inventing a wall or an escape', () => {
     const result = run({ predator: { x: 130, z: 0, heading: 0 }, prey: { x: 149, z: 0, heading: 0 } });
     expect(result.killed).toBe(true);
-    expect(patchAtPosition(result.trace.samples.at(-1)!.prey)).toBe(1);
+    expect(patchAtPosition(ISLAND_GRID, result.trace.samples.at(-1)!.prey)).toBe(1);
   });
   it('does not turn the world boundary into a wall trapping prey', () => {
     const result = run({ patchId: 19, predator: { x: 5830, z: 0, heading: 0 }, prey: { x: 5849, z: 0, heading: 0 } });
     expect(result.stage).toBe('boundary_escape'); expect(result.killed).toBe(false);
     for (const sample of result.trace.samples) {
-      expect(isWorldPosition(sample.predator)).toBe(true); expect(isWorldPosition(sample.prey)).toBe(true);
+      expect(isWorldPosition(ISLAND_GRID, sample.predator)).toBe(true); expect(isWorldPosition(ISLAND_GRID, sample.prey)).toBe(true);
     }
   });
   it('lets an alerted prey flee without marking the stationary predator as chasing', () => {

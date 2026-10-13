@@ -11,6 +11,7 @@ import { Pedigree } from '../src/agents/pedigree.js';
 import { EventLog } from '../src/events/log.js';
 import { restoreSnapshot, takeSnapshot } from '../src/snapshot.js';
 import { makeAgent, makeServices, makeView, SPECIES_DIR, speciesOf } from './helpers.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const boar = speciesOf('boar');
 const stock = (p: Patch) => p.soilNutrients + (p.plant.grass + p.plant.browse + (p.rooting?.kg ?? 0)) * NUTRIENT_PER_KG_BIOMASS;
@@ -142,7 +143,7 @@ describe('wild boar rooting and mast food (sim_0.37.0)', () => {
     for (const p of world.patches) { p.waterVolume = 0; p.plant.grass = 0; p.plant.browse = 0; if (p.rooting) p.rooting.kg = 0; delete p.floweringGuild; }
     pasture.plant.grass = 5000; pool.waterVolume = 5000;
     const at = (agent: Agent, extra: Partial<Agent>) => {
-      Object.assign(agent, { patchId: home.id, position: { ...patchCentre(home.id), heading: 0 }, ...extra });
+      Object.assign(agent, { patchId: home.id, position: { ...patchCentre(ISLAND_GRID, home.id), heading: 0 }, ...extra });
     };
     at(sow, { sex: 'female', drives: { hunger: 0.6, thirst: 0.7, fatigue: 0, fear: 0 }, offspringIds: [piglet.id] });
     at(piglet, { dependentOn: sow.id, motherId: sow.id, ageDays: 5, lifeStage: 'newborn', massKg: 1.5 });

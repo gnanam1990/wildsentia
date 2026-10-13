@@ -1,6 +1,7 @@
+import { worldGrid } from './worldGrid.js';
 import * as THREE from 'three';
 import { microCounts, spatialHash, waterAccessPosition, type MicroEcologyState, type WaterGround } from '@vana/shared';
-import { PATCH_METRES, patchCentre } from './space.js';
+import { patchCentre } from './space.js';
 import type { HeightSampler, PatchView } from './terrain.js';
 
 const ROLES = [
@@ -18,10 +19,10 @@ const ROLES = [
  */
 export function microMarkerPosition(role: string, patchId: number, island: boolean, ground?: WaterGround): { x: number; z: number } {
   if (role === 'fish') {
-    const pool = island ? waterAccessPosition(patchId, ground) : patchCentre(patchId);
+    const pool = island ? waterAccessPosition(worldGrid(), patchId, ground) : patchCentre(worldGrid(), patchId);
     return { x: pool.x + 0.6, z: pool.z };
   }
-  const centre = patchCentre(patchId), h = spatialHash(`micro:${role}:${patchId}`), reach = PATCH_METRES * 0.37;
+  const centre = patchCentre(worldGrid(), patchId), h = spatialHash(`micro:${role}:${patchId}`), reach = worldGrid().patchM * 0.37;
   return { x: centre.x + ((h & 0xffff) / 0xffff * 2 - 1) * reach, z: centre.z + ((h >>> 16) / 0xffff * 2 - 1) * reach };
 }
 

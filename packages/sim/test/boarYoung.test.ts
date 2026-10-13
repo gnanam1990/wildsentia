@@ -10,6 +10,7 @@ import { buildGrid } from '../src/grid.js';
 import { createWorld } from '../src/world.js';
 import { restoreSnapshot, takeSnapshot } from '../src/snapshot.js';
 import { makeAgent, makeServices, makeView, SPECIES_DIR, speciesOf } from './helpers.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const cfg = speciesOf('boar');
 const worldOptions = { seed: 1, speciesDir: SPECIES_DIR, initialAgents: { boar: 2 }, minPopulation: {} };
@@ -17,7 +18,7 @@ const worldOptions = { seed: 1, speciesDir: SPECIES_DIR, initialAgents: { boar: 
 function young(ageDays: number, dependentOn: string | null = null) {
   return makeAgent('boar', { id: 'piglet', ageDays, lifeStage: ageDays < 45 ? 'newborn' : 'juvenile',
     massKg: cfg.body.adultMassKg * (ageDays < 45 ? 0.12 : 0.35), dependentOn,
-    position: { ...waterAccessPosition(0), x: waterAccessPosition(0).x + 100 },
+    position: { ...waterAccessPosition(ISLAND_GRID, 0), x: waterAccessPosition(ISLAND_GRID, 0).x + 100 },
     drives: { hunger: 0.1, thirst: 0.9, fatigue: 0, fear: 0 } });
 }
 
@@ -189,8 +190,8 @@ describe('boar pre-weaning water and solid-food transitions', () => {
   it('keeps a hydrated day-sixteen child at its known care site beyond sensory range instead of looping water trips', () => {
     const { world, mother, child } = familyWorld(16);
     child.drives = { hunger: 0.95, thirst: 0.016, fatigue: 0, fear: 0 };
-    child.position = { ...waterAccessPosition(0) };
-    mother.position = { ...waterAccessPosition(3) };
+    child.position = { ...waterAccessPosition(ISLAND_GRID, 0) };
+    mother.position = { ...waterAccessPosition(ISLAND_GRID, 3) };
     mother.patchId = 3;
     expect(Math.hypot(child.position.x - mother.position.x, child.position.z - mother.position.z))
       .toBeGreaterThan(cfg.senses.smellRangeM);

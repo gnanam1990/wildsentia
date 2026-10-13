@@ -12,6 +12,8 @@ COPY packages/runner/package.json packages/runner/package.json
 RUN npm ci --no-audit --no-fund
 
 COPY config/species config/species
+COPY config/species-congo config/species-congo
+COPY config/ownership-congo.json config/ownership-congo.json
 COPY packages/shared/src packages/shared/src
 COPY packages/sim/src packages/sim/src
 COPY packages/server/src packages/server/src

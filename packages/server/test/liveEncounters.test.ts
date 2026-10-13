@@ -6,6 +6,7 @@ import { createWorld } from '../../sim/src/world.js';
 import { makeAgent } from '../../sim/test/helpers.js';
 import { isLiveEncounterFrame, LiveEncounterPlayer } from '../../client/src/liveEncounters.js';
 import { displaySecondAt, paceMovement } from '@vana/shared';
+import { ISLAND_GRID } from '@vana/shared';
 
 const p = (x: number) => ({ x, z: 0, heading: 0 });
 const actors = new Map<string, EncounterAppearance>([
@@ -27,7 +28,7 @@ describe('bounded live encounter collection', () => {
   it('admits an actual v0.25 simulated tree decision with one composite trace', () => {
     const world = createWorld({ seed: 17, speciesDir: fileURLToPath(new URL('../../../config/species', import.meta.url)),
       initialAgents: { langur: 1, tiger: 1 }, minPopulation: {}, retainEvents: 'all' });
-    const patch = world.patches.find(p => treeAnchorForPatch(p))!, anchor = treeAnchorForPatch(patch)!;
+    const patch = world.patches.find(p => treeAnchorForPatch(ISLAND_GRID, p))!, anchor = treeAnchorForPatch(ISLAND_GRID, patch)!;
     const langur = world.agents.find(a => a.speciesId === 'langur')!, tiger = world.agents.find(a => a.speciesId === 'tiger')!;
     Object.assign(langur, { patchId: patch.id, position: { x: anchor.x + 12, z: anchor.z + 5, heading: 0 },
       sex: 'male', dependentOn: null, pregnantSince: null, offspringIds: [],
@@ -37,14 +38,14 @@ describe('bounded live encounter collection', () => {
     const appearances = new Map([[langur.id, { id: langur.id, speciesId: 'langur', sizeRatio: 1, coatVariant: 0 }]]);
     world.log.take(); world.step(1);
     const events = world.log.byActor(langur.id), climb = events.find(e => e.type === 'tree_climbed')!;
-    expect(climb).toBeDefined(); expect(isRecordedTreeClimb(climb)).toBe(true);
-    const movements = collectLiveMovements(events, appearances, 0, world.agents);
+    expect(climb).toBeDefined(); expect(isRecordedTreeClimb(ISLAND_GRID, climb)).toBe(true);
+    const movements = collectLiveMovements(ISLAND_GRID, events, appearances, 0, world.agents);
     expect(movements).toHaveLength(1);
     expect(movements[0]!.eventId).toBe(climb.id);
     expect(movements[0]!.trace.samples.at(-1)!.altitudeM).toBe(6);
   });
   const climb = (direction: 'ascend' | 'descend' = 'ascend'): WorldEvent => {
-    const anchor = treeAnchorGeometry(210)!;
+    const anchor = treeAnchorGeometry(ISLAND_GRID, 210)!;
     const from = { x: anchor.x - 2, z: anchor.z, heading: 0 }, trunk = { x: anchor.x, z: anchor.z, heading: 0 };
     return { id: 'tree_1', type: 'tree_climbed', worldTime: 34, simVersion: 'sim_0.25.0', patchId: 210,
       actors: ['langur_1'], goal: direction === 'ascend' ? 'flee' : 'rest',
@@ -58,12 +59,12 @@ describe('bounded live encounter collection', () => {
           : [{ seconds: 0, position: trunk, altitudeM: 6 }, { seconds: 24, position: trunk, altitudeM: 0 }] } };
   };
   it('admits one saved ground-to-trunk-to-height route and follows its recorded altitude', () => {
-    const e = climb(), anchor = treeAnchorGeometry(210)!;
-    expect(isRecordedTreeClimb(e)).toBe(true);
+    const e = climb(), anchor = treeAnchorGeometry(ISLAND_GRID, 210)!;
+    expect(isRecordedTreeClimb(ISLAND_GRID, e)).toBe(true);
     const appearance = new Map([['langur_1', { id: 'langur_1', speciesId: 'langur', sizeRatio: 1, coatVariant: 0 }]]);
     const end = makeAgent('langur', { id: 'langur_1', patchId: 210,
       position: { x: anchor.x, z: anchor.z, heading: 0 }, altitudeM: 6 });
-    const routes = collectLiveMovements([e], appearance, 0, [end]);
+    const routes = collectLiveMovements(ISLAND_GRID, [e], appearance, 0, [end]);
     expect(routes).toHaveLength(1);
     const frame = { id: 'tree-hour', startWorldTime: 0, endWorldTime: 3600, rate: 1,
       elapsedWorldSeconds: 22, encounters: [], movements: routes };
@@ -71,30 +72,30 @@ describe('bounded live encounter collection', () => {
     const player = new LiveEncounterPlayer(); expect(player.apply(frame, 100)).toBe(true);
     expect(player.poses(100).get('langur_1')).toMatchObject({ position: { x: anchor.x, z: anchor.z, altitudeM: 3 },
       climbVisualPhase: 'ascending', phase: 'recorded tree ascent' });
-    expect(collectLiveMovements([e, { ...e, id: 'tree_2' }], appearance, 0, [end])).toEqual([]);
-    expect(collectLiveMovements([e], appearance, 0, [{ ...end, altitudeM: 0 }])).toEqual([]);
+    expect(collectLiveMovements(ISLAND_GRID, [e, { ...e, id: 'tree_2' }], appearance, 0, [end])).toEqual([]);
+    expect(collectLiveMovements(ISLAND_GRID, [e], appearance, 0, [{ ...end, altitudeM: 0 }])).toEqual([]);
   });
   it('preserves a descent and an interrupted ground-only approach without claiming ascent', () => {
-    const descent = climb('descend'), anchor = treeAnchorGeometry(210)!;
-    expect(isRecordedTreeClimb(descent)).toBe(true);
+    const descent = climb('descend'), anchor = treeAnchorGeometry(ISLAND_GRID, 210)!;
+    expect(isRecordedTreeClimb(ISLAND_GRID, descent)).toBe(true);
     const approach = climb(); approach.outcome = 'interrupted'; approach.effects.verticalDistanceM = 0;
     approach.movement!.completed = false; approach.movement!.samples = approach.movement!.samples.slice(0, 2).map(s => ({ seconds: s.seconds, position: s.position }));
-    expect(isRecordedTreeClimb(approach)).toBe(true);
+    expect(isRecordedTreeClimb(ISLAND_GRID, approach)).toBe(true);
     const appearance = new Map([['langur_1', { id: 'langur_1', speciesId: 'langur', sizeRatio: 1, coatVariant: 0 }]]);
     const end = makeAgent('langur', { id: 'langur_1', patchId: 210,
       position: { x: anchor.x, z: anchor.z, heading: 0 } });
-    expect(collectLiveMovements([descent], appearance, 0, [end])).toHaveLength(1);
-    expect(collectLiveMovements([approach], appearance, 0, [end])).toHaveLength(1);
+    expect(collectLiveMovements(ISLAND_GRID, [descent], appearance, 0, [end])).toHaveLength(1);
+    expect(collectLiveMovements(ISLAND_GRID, [approach], appearance, 0, [end])).toHaveLength(1);
     for (const edit of [(e: WorldEvent) => { e.effects.verticalDistanceM = 0; },
       (e: WorldEvent) => { e.conditions.treeAnchorId = 'wrong'; },
       (e: WorldEvent) => { e.movement!.samples[2]!.position.x++; },
       (e: WorldEvent) => { e.conditions.direction = 'descend'; }]) {
-      const invalid = climb(); edit(invalid); expect(isRecordedTreeClimb(invalid)).toBe(false);
-      expect(collectLiveMovements([invalid], appearance, 0, [end])).toEqual([]);
+      const invalid = climb(); edit(invalid); expect(isRecordedTreeClimb(ISLAND_GRID, invalid)).toBe(false);
+      expect(collectLiveMovements(ISLAND_GRID, [invalid], appearance, 0, [end])).toEqual([]);
     }
   });
   // Water contact is recorded around the patch's access point, which sim_0.30.0 moved off the centre.
-  const source = waterAccessPosition(0);
+  const source = waterAccessPosition(ISLAND_GRID, 0);
   const w = (dx: number) => ({ x: source.x + dx, z: source.z, heading: Math.PI / 2 });
   const drinking = () => {
     const { encounter: _encounter, ...base } = event;
@@ -109,7 +110,7 @@ describe('bounded live encounter collection', () => {
   };
   it('links only recorded water contact to its approach and detaches the activity', () => {
     const { moved, drank, end } = drinking();
-    const routes = collectLiveMovements([moved, drank], actors, 0, [end]);
+    const routes = collectLiveMovements(ISLAND_GRID, [moved, drank], actors, 0, [end]);
     expect(routes[0]!.activity).toMatchObject({ eventId: 'drink', startSeconds: 30, endSeconds: 3600, litres: 2 });
     expect(isLiveEncounterFrame({ id: 'water', startWorldTime: 0, endWorldTime: 3600, rate: 12,
       elapsedWorldSeconds: 0, encounters: [], movements: routes })).toBe(true);
@@ -120,16 +121,16 @@ describe('bounded live encounter collection', () => {
     const { moved, drank, end } = drinking();
     drank.conditions.arrivalWorldTime = 0; drank.conditions.drinkingSeconds = 3600; drank.causalParents = [];
     const initial = w(1.5), starts = new Map([['s', initial]]);
-    const index = indexLiveMovements([drank], actors, 0, [end], starts);
+    const index = indexLiveMovements(ISLAND_GRID, [drank], actors, 0, [end], starts);
     expect(index.get('s')).toMatchObject({ eventId: 'drink', stationary: true,
       trace: { samples: [{ seconds: 0, position: initial }] }, activity: { startSeconds: 0 } });
     initial.x = 20;
     expect(index.get('s')!.trace.samples[0]!.position.x).toBe(source.x + 1.5);
-    expect(indexLiveMovements([drank], actors, 0, [end]).size).toBe(0);
-    expect(indexLiveMovements([drank], actors, 0, [end], starts).size).toBe(0);
-    expect(indexLiveMovements([moved, drank], actors, 0, [end], new Map([['s', w(1.5)]]))
+    expect(indexLiveMovements(ISLAND_GRID, [drank], actors, 0, [end]).size).toBe(0);
+    expect(indexLiveMovements(ISLAND_GRID, [drank], actors, 0, [end], starts).size).toBe(0);
+    expect(indexLiveMovements(ISLAND_GRID, [moved, drank], actors, 0, [end], new Map([['s', w(1.5)]]))
       .get('s')!.activity).toBeUndefined();
-    expect(indexLiveMovements([drank], actors, 3600, [end], new Map([['s', w(1.5)]])).size).toBe(0);
+    expect(indexLiveMovements(ISLAND_GRID, [drank], actors, 3600, [end], new Map([['s', w(1.5)]])).size).toBe(0);
   });
   it('omits ambiguous, unlinked, malformed or displaced drinking without inventing an action', () => {
     const edits: Array<(e: WorldEvent) => void> = [
@@ -142,22 +143,22 @@ describe('bounded live encounter collection', () => {
     ];
     for (const edit of edits) {
       const { moved, drank, end } = drinking(); edit(drank);
-      expect(collectLiveMovements([moved, drank], actors, 0, [end])[0]!.activity).toBeUndefined();
+      expect(collectLiveMovements(ISLAND_GRID, [moved, drank], actors, 0, [end])[0]!.activity).toBeUndefined();
     }
     const { moved, drank, end } = drinking();
-    expect(collectLiveMovements([moved, drank, { ...drank, id: 'drink2' }], actors, 0, [end])[0]!.activity).toBeUndefined();
-    expect(collectLiveMovements([moved, drank, event], actors, 0, [end])).toEqual([]);
-    expect(collectLiveMovements([moved, drank], actors, 0, [{ ...end, alive: false }])).toEqual([]);
-    expect(collectLiveMovements([moved, drank], actors, 0, [{ ...end, position: w(30) }])).toEqual([]);
+    expect(collectLiveMovements(ISLAND_GRID, [moved, drank, { ...drank, id: 'drink2' }], actors, 0, [end])[0]!.activity).toBeUndefined();
+    expect(collectLiveMovements(ISLAND_GRID, [moved, drank, event], actors, 0, [end])).toEqual([]);
+    expect(collectLiveMovements(ISLAND_GRID, [moved, drank], actors, 0, [{ ...end, alive: false }])).toEqual([]);
+    expect(collectLiveMovements(ISLAND_GRID, [moved, drank], actors, 0, [{ ...end, position: w(30) }])).toEqual([]);
   });
   it('tolerates sub-microsecond hour-boundary rounding, not out-of-hour drinking', () => {
     const { moved, drank, end } = drinking();
     drank.conditions.drinkingSeconds = 3570 + 1e-9;
-    expect(collectLiveMovements([moved, drank], actors, 0, [end])[0]!.activity!.endSeconds).toBe(3600);
+    expect(collectLiveMovements(ISLAND_GRID, [moved, drank], actors, 0, [end])[0]!.activity!.endSeconds).toBe(3600);
     drank.conditions.drinkingSeconds = 3570 - 1e-9;
-    expect(collectLiveMovements([moved, drank], actors, 0, [end])[0]!.activity).toBeDefined();
+    expect(collectLiveMovements(ISLAND_GRID, [moved, drank], actors, 0, [end])[0]!.activity).toBeDefined();
     drank.conditions.drinkingSeconds = 3570.01;
-    expect(collectLiveMovements([moved, drank], actors, 0, [end])[0]!.activity).toBeUndefined();
+    expect(collectLiveMovements(ISLAND_GRID, [moved, drank], actors, 0, [end])[0]!.activity).toBeUndefined();
   });
   it('publishes one owned route through the wire/player without fabricating a straight shortcut', () => {
     const { encounter: _encounter, ...base } = event;
@@ -166,7 +167,7 @@ describe('bounded live encounter collection', () => {
         samples: [{ seconds: 0, position: p(0) }, { seconds: 10, position: p(100) },
           { seconds: 30, position: { x: 100, z: 100, heading: 0 } }] } };
     const end = makeAgent('sambar', { id: 's', position: { x: 100, z: 100, heading: 0 } });
-    const movements = collectLiveMovements([moved], actors, 0, [end]);
+    const movements = collectLiveMovements(ISLAND_GRID, [moved], actors, 0, [end]);
     expect(movements).toHaveLength(1);
     // Playback is paced for the viewer (pacing.ts): join where recorded second 20 is shown.
     const pacing = paceMovement(movements[0]!.trace, 'sambar', 12);
@@ -181,30 +182,30 @@ describe('bounded live encounter collection', () => {
     expect(early.poses(100).get('s')!.position.z).toBeCloseTo(0);
     moved.movement!.samples[0]!.position.x = 77;
     expect(movements[0]!.trace.samples[0]!.position.x).toBe(0);
-    expect(collectLiveMovements([moved, event], actors, 0, [end])).toEqual([]);
-    expect(collectLiveMovements([moved, { ...moved, id: 'move_2' }], actors, 0, [end])).toEqual([]);
-    expect(collectLiveMovements([moved], actors, 0, [{ ...end, alive: false }])).toEqual([]);
-    expect(collectLiveMovements([moved], actors, 0, [{ ...end, position: p(10) }])).toEqual([]);
-    expect(collectLiveMovements([moved], actors, 3600, [end])).toEqual([]);
-    expect(collectLiveMovements([moved], new Map(), 0, [end])).toEqual([]);
+    expect(collectLiveMovements(ISLAND_GRID, [moved, event], actors, 0, [end])).toEqual([]);
+    expect(collectLiveMovements(ISLAND_GRID, [moved, { ...moved, id: 'move_2' }], actors, 0, [end])).toEqual([]);
+    expect(collectLiveMovements(ISLAND_GRID, [moved], actors, 0, [{ ...end, alive: false }])).toEqual([]);
+    expect(collectLiveMovements(ISLAND_GRID, [moved], actors, 0, [{ ...end, position: p(10) }])).toEqual([]);
+    expect(collectLiveMovements(ISLAND_GRID, [moved], actors, 3600, [end])).toEqual([]);
+    expect(collectLiveMovements(ISLAND_GRID, [moved], new Map(), 0, [end])).toEqual([]);
   });
   it('uses pre-tick appearance for a killed prey and detaches traces from mutable world data', () => {
     const copy = structuredClone(event);
-    const records = collectLiveEncounters([copy], actors, 0);
+    const records = collectLiveEncounters(ISLAND_GRID, [copy], actors, 0);
     expect(records[0]).toMatchObject({ eventId: 'hunt_1', preySpecies: 'sambar', prey: { sizeRatio: 0.2 } });
     copy.encounter!.samples[0]!.prey.x = 99;
     expect(records[0]!.trace.samples[0]!.prey.x).toBe(5);
   });
   it('omits all ambiguous actor ownership instead of drawing one actor in two places', () => {
-    expect(collectLiveEncounters([event, { ...event, id: 'hunt_2' }], actors, 0)).toEqual([]);
-    expect(collectLiveEncounters([event], new Map(), 0)).toEqual([]);
-    expect(collectLiveEncounters([event], actors, 3600)).toEqual([]);
+    expect(collectLiveEncounters(ISLAND_GRID, [event, { ...event, id: 'hunt_2' }], actors, 0)).toEqual([]);
+    expect(collectLiveEncounters(ISLAND_GRID, [event], new Map(), 0)).toEqual([]);
+    expect(collectLiveEncounters(ISLAND_GRID, [event], actors, 3600)).toEqual([]);
   });
   it('bounds duration and sample payloads', () => {
     const long = structuredClone(event); long.encounter!.samples[1]!.seconds = 3601;
-    expect(collectLiveEncounters([long], actors, 0)).toEqual([]);
+    expect(collectLiveEncounters(ISLAND_GRID, [long], actors, 0)).toEqual([]);
     const large = structuredClone(event); large.encounter!.samples = Array(10_001).fill(event.encounter!.samples[0]);
-    expect(collectLiveEncounters([large], actors, 0)).toEqual([]);
+    expect(collectLiveEncounters(ISLAND_GRID, [large], actors, 0)).toEqual([]);
   });
   it('bounds ordinary route actor counts and aggregate samples before transmission', () => {
     const { encounter: _encounter, ...base } = event;
@@ -218,8 +219,8 @@ describe('bounded live encounter collection', () => {
     });
     const appearances = new Map(entries.map((e) => [e.actor.id, e.actor]));
     const end = entries.map((e) => e.end);
-    expect(collectLiveMovements(entries.map((e) => e.event), appearances, 0, end)).toHaveLength(2048);
-    const index = indexLiveMovements(entries.map((e) => e.event), appearances, 0, end);
+    expect(collectLiveMovements(ISLAND_GRID, entries.map((e) => e.event), appearances, 0, end)).toHaveLength(2048);
+    const index = indexLiveMovements(ISLAND_GRID, entries.map((e) => e.event), appearances, 0, end);
     expect(index.size).toBe(2049);
     const defaultSelection = selectLiveMovements(index);
     expect(defaultSelection.some((m) => m.actor.id === 's2048')).toBe(false);
@@ -231,8 +232,8 @@ describe('bounded live encounter collection', () => {
     expect(selectLiveMovements(index)).toEqual(defaultSelection); // No index reorder or mutation.
     for (const e of entries.slice(0, 17))
       e.event.movement!.samples = Array.from({ length: 2048 }, (_, seconds) => ({ seconds, position: p(0) }));
-    expect(collectLiveMovements(entries.slice(0, 17).map((e) => e.event), appearances, 0, end)).toHaveLength(16);
-    const large = indexLiveMovements(entries.slice(0, 17).map((e) => e.event), appearances, 0, end);
+    expect(collectLiveMovements(ISLAND_GRID, entries.slice(0, 17).map((e) => e.event), appearances, 0, end)).toHaveLength(16);
+    const large = indexLiveMovements(ISLAND_GRID, entries.slice(0, 17).map((e) => e.event), appearances, 0, end);
     const prioritizedLarge = selectLiveMovements(large, 's16');
     expect(prioritizedLarge).toHaveLength(16); expect(prioritizedLarge[0]!.actor.id).toBe('s16');
     expect(prioritizedLarge.reduce((n, m) => n + m.trace.samples.length, 0)).toBe(32_768);

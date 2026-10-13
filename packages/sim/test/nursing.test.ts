@@ -11,6 +11,7 @@ import { createWorld, SIM_VERSION } from '../src/world.js';
 import { takeSnapshot, restoreSnapshot, upgradeV11Snapshot } from '../src/snapshot.js';
 import { makeAgent, SPECIES_DIR, speciesOf } from './helpers.js';
 import { asLegacySnapshot } from './legacySnapshot.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const hour = 3600, start = 19 * hour;
 function fixture() {
@@ -25,8 +26,8 @@ function fixture() {
   parent.offspringIds = [child.id];
   const starts = new Map([[child.id, { patchId: child.patchId, position: { ...child.position! } }]]);
   const log = new EventLog(1, SIM_VERSION);
-  const parentVisit = travelToFamily(parent, cfg, patches, child.nursingSite!, 'care_for_young', start, 1, log);
-  const childVisit = travelToFamily(child, cfg, patches, child.nursingSite!, 'seek_nursing', start, 1, log);
+  const parentVisit = travelToFamily(ISLAND_GRID, parent, cfg, patches, child.nursingSite!, 'care_for_young', start, 1, log);
+  const childVisit = travelToFamily(ISLAND_GRID, child, cfg, patches, child.nursingSite!, 'seek_nursing', start, 1, log);
   const arrivals = new Map([[child.id, childVisit]]);
   const finish = (end = start + hour) => finishCare(parentVisit, [child], starts, cfg, start, end, log, arrivals);
   return { cfg, parent, child, log, parentVisit, childVisit, finish, starts, arrivals };
@@ -122,18 +123,18 @@ describe('daily nursing policy', () => {
     const s = fixture(); delete s.child.nursingSite;
     const sibling = structuredClone(s.child); sibling.id = 'a'; sibling.position!.x = 20;
     const positions = [structuredClone(s.child.position), structuredClone(sibling.position)];
-    establishNursingSites(s.parent, [s.child, sibling], s.cfg, start, s.log);
+    establishNursingSites(ISLAND_GRID, s.parent, [s.child, sibling], s.cfg, start, s.log);
     expect(s.child.nursingSite).toEqual({ patchId: 0, position: positions[1], establishedAt: start, origin: 'established' });
     expect(sibling.nursingSite).toEqual(s.child.nursingSite);
     expect(sibling.nursingSite).not.toBe(s.child.nursingSite);
     expect([s.child.position, sibling.position]).toEqual(positions);
-    establishNursingSites(s.parent, [sibling, s.child], s.cfg, start + hour, s.log);
+    establishNursingSites(ISLAND_GRID, s.parent, [sibling, s.child], s.cfg, start + hour, s.log);
     expect(s.log.all().filter(e => e.type === 'nursing_site_established')).toHaveLength(1);
     expect(s.child.nursingSite!.establishedAt).toBe(start);
   });
   it('preserves a known birth site when another child lacks one', () => {
     const s = fixture(), sibling = structuredClone(s.child); sibling.id = 'a'; delete sibling.nursingSite;
-    establishNursingSites(s.parent, [sibling, s.child], s.cfg, start, s.log);
+    establishNursingSites(ISLAND_GRID, s.parent, [sibling, s.child], s.cfg, start, s.log);
     expect(sibling.nursingSite).toEqual(s.child.nursingSite);
     expect(sibling.nursingSite!.origin).toBe('birth');
   });
@@ -162,7 +163,7 @@ describe('world nursing rendezvous', () => {
     for (const feed of feeds) {
       expect(feed.causalParents).toHaveLength(2);
       const routes = feed.causalParents.map(id => s.world.log.all().find(e => e.id === id)!);
-      expect(routes.every(e => isMovementTrace(e.movement))).toBe(true);
+      expect(routes.every(e => isMovementTrace(ISLAND_GRID, e.movement))).toBe(true);
       expect(Number(feed.conditions.arrivalWorldTime)).toBeGreaterThan(start);
       expect(Number(feed.conditions.provisioningSeconds)).toBeLessThanOrEqual(300);
       expect(feed.worldTime).toBeLessThan(start + hour);

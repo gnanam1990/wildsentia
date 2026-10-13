@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { GRID_SIZE, createRng, isMovementTrace, patchCentre, type Agent } from '@vana/shared';
+import { createRng, isMovementTrace, patchCentre, type Agent } from '@vana/shared';
 import { createWorld } from '../src/world.js';
 import { perceive } from '../src/agents/perception.js';
 import { selectGoal } from '../src/agents/goals.js';
 import { isCarried } from '../src/agents/needs.js';
 import { makeAgent, SPECIES_DIR, speciesOf } from './helpers.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const langur = speciesOf('langur');
-const P = 10 * GRID_SIZE + 10, Q = P + 1;
+const P = 10 * ISLAND_GRID.cols + 10, Q = P + 1;
 
 /** A langur mother with a clinging infant, and a hunting tiger across the patch edge. */
 function scene(seed: number, infantDays: number) {
@@ -15,7 +16,7 @@ function scene(seed: number, infantDays: number) {
   for (const patch of world.patches) { patch.waterVolume = 0; patch.canopyCover = 0.1; }
   const [mother, infant] = world.agents.filter(a => a.speciesId === 'langur') as [Agent, Agent];
   const tiger = world.agents.find(a => a.speciesId === 'tiger')!;
-  const c = patchCentre(P), q = patchCentre(Q);
+  const c = patchCentre(ISLAND_GRID, P), q = patchCentre(ISLAND_GRID, Q);
   Object.assign(mother, { sex: 'female', patchId: P, position: { x: c.x + 120, z: c.z, heading: 0 },
     drives: { hunger: 0.1, thirst: 0.1, fatigue: 0, fear: 0 }, offspringIds: [infant.id] });
   Object.assign(infant, makeAgent('langur', { id: infant.id, ageDays: infantDays, lifeStage: 'newborn', dependentOn: mother.id,
@@ -53,7 +54,7 @@ describe('a langur infant clings to its mother and is carried (sim_0.37.0)', () 
       const ride = world.log.all().find(e => e.type === 'moved' && e.actors[0] === infant.id && e.conditions.reason === 'carried')!;
       expect(ride.actors).toEqual([infant.id, mother.id]);
       expect(ride.causalParents).toEqual([fled.id]);
-      expect(isMovementTrace(ride.movement)).toBe(true);
+      expect(isMovementTrace(ISLAND_GRID, ride.movement)).toBe(true);
       expect(ride.movement!.samples.map(s => s.position)).toEqual(fled.movement!.samples.map(s => s.position));
       expect(infant.patchId).toBe(mother.patchId);
       expect(Math.hypot(infant.position!.x - mother.position!.x, infant.position!.z - mother.position!.z)).toBeLessThan(1);
@@ -77,7 +78,7 @@ describe('a carried infant stays with its carrier for the rest of the hour', () 
       const world = createWorld({ seed, speciesDir: SPECIES_DIR, initialAgents: { langur: 2 }, minPopulation: {} });
       for (const patch of world.patches) { patch.waterVolume = patch.id === Q ? 5e5 : 0; patch.canopyCover = 0.1; }
       const [mother, infant] = world.agents.filter(a => a.speciesId === 'langur') as [Agent, Agent];
-      const c = patchCentre(P);
+      const c = patchCentre(ISLAND_GRID, P);
       Object.assign(mother, { sex: 'female', patchId: P, position: { x: c.x + 120, z: c.z, heading: 0 },
         drives: { hunger: 0.1, thirst: 0.8, fatigue: 0, fear: 0 }, offspringIds: [infant.id] });
       Object.assign(infant, makeAgent('langur', { id: infant.id, ageDays: 6, lifeStage: 'newborn', dependentOn: mother.id,

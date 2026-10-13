@@ -29,6 +29,7 @@ import { installSocialOutbox } from '../src/socialOutbox.js';
 import type { XPublisher } from '../src/xPublisher.js';
 import { ANVIL_KEYS, CHAIN_ID, anvilAvailable, startLocalChain, usdcBalance, type LocalChain } from './anvil.js';
 import { testDatabaseUrl } from './testDatabase.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 /**
  * Plan 4's rehearsal on a local chain: every step a person takes on the site, through the real
@@ -166,7 +167,7 @@ maybe('rehearsal: the testnet journeys on a local chain, through the site\'s own
     expect(observed.challenge).toMatchObject({ challengeId: 1, briefing: 'Stalk from the grass.', progress: { unit: 'kills' } });
     expect(observed.guide).toMatchObject({ id: 'tiger' });
     const open = world.patches.find((p) => landWalkable(p) && p.neighbours.every((n) => landWalkable(world.patches[n])))!;
-    const c = patchCentre(open.id), me = live.avatars.get(observed.you.agentId)!;
+    const c = patchCentre(ISLAND_GRID, open.id), me = live.avatars.get(observed.you.agentId)!;
     const tiger = world.animal(accepted.animalId)!, prey = world.agents.find((a) => a.alive && a.speciesId === 'chital' && a.lifeStage === 'adult')!;
     tiger.patchId = open.id; tiger.position = { x: c.x, z: c.z, heading: 0 }; me.x = c.x; me.z = c.z;
     prey.patchId = open.id; prey.position = { x: c.x + 30, z: c.z, heading: 0 };

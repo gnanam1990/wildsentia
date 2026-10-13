@@ -1,3 +1,4 @@
+import { worldGrid } from './worldGrid.js';
 import { positionInPatch, type WorldPosition } from '@vana/shared';
 
 export interface Drives {
@@ -10,7 +11,7 @@ export interface AnimalState {
   patchId: number;
   position?: WorldPosition | undefined;
   altitudeM?: number | undefined;
-  locomotionMode?: 'ground' | 'flight' | 'climb' | undefined;
+  locomotionMode?: 'ground' | 'flight' | 'climb' | 'submerged' | undefined;
   state: string;
   currentGoal: string;
   /** Only an active authoritative episode is observer-visible; incubation is not displayed. */
@@ -107,11 +108,11 @@ export class WorldStore {
             id: raw.id,
             speciesId: String(raw.speciesId ?? 'unknown'),
             patchId: Number(raw.patchId ?? 0),
-            position: positionInPatch(raw.position, Number(raw.patchId)) ? { ...raw.position } : undefined,
+            position: positionInPatch(worldGrid(), raw.position, Number(raw.patchId)) ? { ...raw.position } : undefined,
             altitudeM: typeof raw.altitudeM === 'number' && Number.isFinite(raw.altitudeM)
               && raw.altitudeM >= 0 && raw.altitudeM <= 2_000 ? raw.altitudeM : undefined,
             locomotionMode: raw.locomotionMode === 'flight' || raw.locomotionMode === 'climb'
-              || raw.locomotionMode === 'ground' ? raw.locomotionMode : undefined,
+              || raw.locomotionMode === 'ground' || raw.locomotionMode === 'submerged' ? raw.locomotionMode : undefined,
             state: String(raw.state ?? 'resting'),
             currentGoal: String(raw.currentGoal ?? 'wander'),
             illnessStatus: raw.illnessStatus === 'symptomatic' ? 'symptomatic' : undefined,

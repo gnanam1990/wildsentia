@@ -9,6 +9,7 @@ import { createWorld, SIM_VERSION } from '../src/world.js';
 import { takeSnapshot, restoreSnapshot, upgradeV9Snapshot } from '../src/snapshot.js';
 import { makeAgent, makeServices, makeView, speciesOf, SPECIES_DIR } from './helpers.js';
 import { asLegacySnapshot } from './legacySnapshot.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 function fixture(seconds: number, patchId = 0) {
   const patches = buildGrid(1);
@@ -16,7 +17,7 @@ function fixture(seconds: number, patchId = 0) {
   const species = structuredClone(speciesOf('sambar'));
   species.locomotion.walkMs = 1; species.locomotion.terrainCost.grassland = 1;
   const agent = makeAgent('sambar', { id: 'drinker', patchId,
-    position: { ...waterAccessPosition(patchId), x: waterAccessPosition(patchId).x + 100 },
+    position: { ...waterAccessPosition(ISLAND_GRID, patchId), x: waterAccessPosition(ISLAND_GRID, patchId).x + 100 },
     drives: { hunger: 0, thirst: 0.9, fatigue: 0, fear: 0 } });
   const view = makeView(patches, [agent]), log = new EventLog(1, SIM_VERSION);
   const ctx = { agent, species, patches, view, log, rng: createRng(1, 'contact'), services: makeServices([]),
@@ -29,12 +30,12 @@ const drank = (events: readonly WorldEvent[]) => events.find((e) => e.type === '
 describe('local water access contact', () => {
   it('defines stable in-bounds sources and approach slots without an actor-specific water supply', () => {
     for (let id = 0; id < 400; id++) {
-      const source = waterAccessPosition(id), slot = waterContactPosition('sambar', id);
-      expect(positionInPatch(source, id)).toBe(true); expect(positionInPatch(slot, id)).toBe(true);
-      expect(atWaterAccess(slot, id)).toBe(true); expect(waterContactPosition('sambar', id)).toEqual(slot);
-      expect(waterContactPosition('gaur', id)).not.toEqual(slot);
+      const source = waterAccessPosition(ISLAND_GRID, id), slot = waterContactPosition(ISLAND_GRID, 'sambar', id);
+      expect(positionInPatch(ISLAND_GRID, source, id)).toBe(true); expect(positionInPatch(ISLAND_GRID, slot, id)).toBe(true);
+      expect(atWaterAccess(ISLAND_GRID, slot, id)).toBe(true); expect(waterContactPosition(ISLAND_GRID, 'sambar', id)).toEqual(slot);
+      expect(waterContactPosition(ISLAND_GRID, 'gaur', id)).not.toEqual(slot);
     }
-    for (const bad of [-1, 400, NaN, 1.5]) expect(() => waterAccessPosition(bad)).toThrow();
+    for (const bad of [-1, 400, NaN, 1.5]) expect(() => waterAccessPosition(ISLAND_GRID, bad)).toThrow();
   });
 
   it('cannot drink remotely from its own patch; moves only the affordable distance', () => {
@@ -44,7 +45,7 @@ describe('local water access contact', () => {
     expect(s.agent.drives.thirst).toBe(0.9); expect(s.agent.state).toBe('travelling');
     expect(Math.hypot(s.agent.position!.x - before.x, s.agent.position!.z - before.z)).toBeCloseTo(10);
     const event = s.log.all().find((e) => e.type === 'moved')!;
-    expect(isMovementTrace(event.movement)).toBe(true); expect(event.movement!.completed).toBe(false);
+    expect(isMovementTrace(ISLAND_GRID, event.movement)).toBe(true); expect(event.movement!.completed).toBe(false);
   });
 
   it('requires remaining drinking time, caps the amount and records contact plus causal approach', () => {
@@ -53,7 +54,7 @@ describe('local water access contact', () => {
     const exact = fixture(arrival); executeGoal(exact.ctx); expect(drank(exact.log.all())).toBeUndefined();
     const brief = fixture(arrival + 1); executeGoal(brief.ctx);
     const event = drank(brief.log.all())!;
-    expect(event).toBeDefined(); expect(atWaterAccess(event.position!, event.patchId)).toBe(true);
+    expect(event).toBeDefined(); expect(atWaterAccess(ISLAND_GRID, event.position!, event.patchId)).toBe(true);
     expect(event.effects.litres).toBeCloseTo(brief.species.diet.waterNeedLPerDay * 4 / 3600);
     expect(1000 - brief.patches[0]!.waterVolume).toBeCloseTo(event.effects.litres!);
     expect(event.causalParents).toEqual([brief.log.all().find((e) => e.type === 'moved')!.id]);
@@ -65,7 +66,7 @@ describe('local water access contact', () => {
   });
 
   it('does not draw RNG, move a drinker already in contact, or consume at zero time/dry sources', () => {
-    const s = fixture(60); s.agent.position = waterContactPosition(s.agent.id, 0);
+    const s = fixture(60); s.agent.position = waterContactPosition(ISLAND_GRID, s.agent.id, 0);
     const before = { ...s.agent.position! }, state = s.ctx.rng.exportState(); executeGoal(s.ctx);
     expect(s.ctx.rng.exportState()).toEqual(state); expect(s.agent.position!.x).toBe(before.x);
     expect(s.agent.position!.z).toBe(before.z); expect(s.log.all().some((e) => e.type === 'moved')).toBe(false);
@@ -80,8 +81,8 @@ describe('local water access contact', () => {
     const s = fixture(3600); s.patches[0]!.waterVolume = 0; s.ctx.percept.bestWater = { patchId: 2, litres: 1000 };
     executeGoal(s.ctx);
     const event = drank(s.log.all())!, move = s.log.all().find((e) => e.type === 'moved')!;
-    expect(event.patchId).toBe(2); expect(atWaterAccess(event.position!, 2)).toBe(true);
-    expect(move.movement!.samples.at(-1)!.position.x).toBeCloseTo(waterContactPosition(s.agent.id, 2).x);
+    expect(event.patchId).toBe(2); expect(atWaterAccess(ISLAND_GRID, event.position!, 2)).toBe(true);
+    expect(move.movement!.samples.at(-1)!.position.x).toBeCloseTo(waterContactPosition(ISLAND_GRID, s.agent.id, 2).x);
     expect(Number(event.conditions.drinkingSeconds) + move.effects.durationSeconds!).toBeCloseTo(3600);
     expect(s.log.all().filter((e) => e.type === 'moved')).toHaveLength(1);
   });
@@ -94,7 +95,7 @@ describe('local water access contact', () => {
     executeGoal(s.ctx);
     const event = drank(s.log.all())!;
     expect(event.patchId).toBe(21);
-    expect(atWaterAccess(event.position!, 21, s.patches)).toBe(true);
+    expect(atWaterAccess(ISLAND_GRID, event.position!, 21, s.patches)).toBe(true);
     // The dry sides are east (patch 22) and south (patch 41): the drinker stands at one of them.
     const east = 300 + 150 - event.position!.x, south = 300 + 150 - event.position!.z;
     expect(Math.min(east, south)).toBeLessThan(5);

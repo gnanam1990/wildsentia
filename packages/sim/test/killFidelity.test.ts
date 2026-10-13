@@ -3,15 +3,16 @@ import { edibleMass, patchCentre } from '@vana/shared';
 import { createWorld } from '../src/world.js';
 import { makeCarcass } from '../src/fields/decomposition.js';
 import { SPECIES_DIR } from './helpers.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 /** A fed tiger beside a 120 kg kill. `fedFrom` says whether it has already eaten from it. */
 function tigerAtKill(fedFrom: boolean, cause: 'predation' | 'natural' = 'predation') {
   const world = createWorld({ seed: 4, speciesDir: SPECIES_DIR, initialAgents: { tiger: 1 }, minPopulation: {} });
   const tiger = world.agents[0]!;
-  Object.assign(tiger, { patchId: 210, position: { ...patchCentre(210), heading: 0 },
+  Object.assign(tiger, { patchId: 210, position: { ...patchCentre(ISLAND_GRID, 210), heading: 0 },
     drives: { hunger: 0.02, thirst: 0, fatigue: 0, fear: 0 } });
   const carcass = makeCarcass('carc_kill', 'sambar_x', 'sambar', 210, 0, cause, 'authoritative', 120);
-  carcass.position = { ...patchCentre(210), x: patchCentre(210).x + 40, heading: 0 };
+  carcass.position = { ...patchCentre(ISLAND_GRID, 210), x: patchCentre(ISLAND_GRID, 210).x + 40, heading: 0 };
   if (fedFrom) carcass.consumers.push({ agentId: tiger.id, at: 0, kg: 10 });
   world.carcasses.push(carcass);
   return { world, tiger, carcass };

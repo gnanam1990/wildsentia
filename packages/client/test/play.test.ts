@@ -143,11 +143,15 @@ describe('play page refusals', () => {
     const source = (path: string) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
     const live = source('server/src/live/liveLayer.ts');
     const world = source('sim/src/world.ts');
+    // Congo 1C: owned animals, and who may steer them.
+    const control = source('server/src/ownership/control.ts');
     const blocks = world.slice(world.indexOf('#blockFor('), world.indexOf('return null;', world.indexOf('#blockFor(')));
     const codes = new Set([
       ...[...live.matchAll(/return '([a-z_]+)'/g)].map((m) => m[1]!),
       ...[...live.matchAll(/reason: '([a-z_]+)'/g)].map((m) => m[1]!),
       ...[...blocks.matchAll(/return '([a-z_]+)'/g)].map((m) => m[1]!),
+      ...[...control.matchAll(/reason: '([a-z_]+)'/g)].map((m) => m[1]!),
+      'owned_only',
     ]);
     codes.delete('released');
     expect(codes.size).toBeGreaterThan(15);

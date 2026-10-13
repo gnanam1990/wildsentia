@@ -1,3 +1,4 @@
+import { WorldBusyError } from './worldPort.js';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -13,6 +14,9 @@ import { networkKey } from '../network.js';
 import type { AcceptResult, ChallengeEngine, Player } from '../challenges/engine.js';
 import { sameOriginJson } from '../accounts/cookies.js';
 import { MIN_X_ACCOUNT_DAYS } from '../accounts/store.js';
+import { installOwnershipRoutes, type OwnedDeps } from '../ownership/routes.js';
+import { installBountyRoutes, publicBounty, type BountyDeps } from '../bounties/routes.js';
+import { motionOf } from '../bounties/discovery.js';
 
 /**
  * The agent API (docs/2026-09-26-live-agents-design.md). Everything under /agents/me is
@@ -37,6 +41,10 @@ export interface LiveRouteDeps {
   clientScriptPath: string;
   /** Signed-in people, when accounts are on: they steer animals at /play/* (docs/2026-10-09-challenges-design.md §14). */
   humans?: HumanSessions | undefined;
+  /** Congo 1C: owned animals only; who owns and steers them. */
+  owned?: OwnedDeps | undefined;
+  /** Congo 1D: bounties, discovered only by perception. */
+  bounties?: BountyDeps | undefined;
   /** ERC-8004 identities, when configured: who owns one (spec §13, plan 4b). */
   identity?: { owner(agentId: bigint): Promise<`0x${string}` | null> } | undefined;
   /** The species configs the simulation runs on, for the field guide. */
@@ -115,6 +123,11 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
   const networkHash = (req: FastifyRequest) => createHash('sha256').update(`live-network:${deps.networkSecret}:${networkKey(req.ip)}`).digest('hex');
 
   app.register(async (scope) => {
+    // The live layer refuses a world-changing command while the world steps (Congo 1A.3).
+    scope.setErrorHandler((error, _req, reply) => {
+      if (error instanceof WorldBusyError) return reply.code(503).header('Retry-After', '1').send({ error: 'world_busy', retryAfterMs: 250 });
+      throw error;
+    });
     // The signature covers the exact body bytes, so keep them.
     scope.addContentTypeParser('application/json', { parseAs: 'string', bodyLimit: 8192 }, (_req, body, done) => {
       try { done(null, { raw: body as string, json: body === '' ? {} : JSON.parse(body as string) }); }
@@ -163,14 +176,14 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
       audience: audience(), slots: deps.limits.slots, registered: await store.count(), playing: live.avatars.size,
       clientScript: { path: '/agents/client.mjs', sha256: scriptHash },
       ...(llmHash ? { llmScript: { path: '/agents/llm.mjs', sha256: llmHash } } : {}),
-      guide: '/agents/guide.txt', world: { worldTime: world.now(), formatted: formatWorldTime(world.now()), season: seasonAt(world.now()) },
+      guide: '/agents/guide.txt', world: { worldTime: world.now(), formatted: formatWorldTime(world.now(), world.terrainProfile?.()), season: seasonAt(world.now(), world.terrainProfile?.()) },
       ...(deps.holding ? { holding: { tokenAddress: deps.holding.tokenAddress, chainId: deps.holding.chainId, minAtomic: String(deps.holding.minAtomic) } } : {}),
       rules: { openRadiusM: OPEN_RADIUS_M, openSeconds: 5, spotRadiusM: 10, idleReleaseMinutes: 15, possessMinutesBeforeOpening: 5,
         claimCooldownMinutes: 10, commandsPerSecond: 5, observesPerSecond: 2 },
     }));
     scope.get('/agents/client.mjs', async (_req, reply) => reply.type('text/javascript; charset=utf-8').header('X-Content-SHA256', scriptHash).send(script));
     if (llmScript) scope.get('/agents/llm.mjs', async (_req, reply) => reply.type('text/javascript; charset=utf-8').header('X-Content-SHA256', llmHash).send(llmScript));
-    scope.get('/agents/guide.txt', async (_req, reply) => reply.type('text/plain; charset=utf-8').send(guide(scriptHash, llmHash, deps.holding)));
+    scope.get('/agents/guide.txt', async (_req, reply) => reply.type('text/plain; charset=utf-8').send(guide(scriptHash, llmHash, deps.holding, world.terrainProfile?.() === 'congo_v1')));
     // Public and the same for everyone, so it is worked out at most every 15 seconds.
     let board: { at: number; rows: Awaited<ReturnType<AgentStore['leaderboard']>> } | null = null;
     // The field guide: each species' facts from the config the island runs on.
@@ -228,6 +241,8 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
      * The commands an animal is steered with. Agents send them signed to /agents/me/*; people send
      * them from the play page to /play/*, with their session cookie.
      */
+    // A command that would change the world while it steps is refused whole by the live layer
+    // (WorldBusyError), and answered 503 world_busy by the handler above; the client retries.
     const commandRoutes = (prefix: string, resolve: Resolve) => {
       scope.get(`${prefix}/observe`, async (req, reply) => {
         const ctx = await resolve(req, reply, observes); if (!ctx) return reply;
@@ -244,6 +259,14 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
           try { if (!(await holds(ctx.agent.wallet))) return reply.code(403).send({ error: 'holding_below_minimum' }); }
           catch { return reply.code(503).send({ error: 'holding_check_unavailable' }); }
         }
+        if (deps.owned) {
+          // Congo 1C: only owned animals are steered, by their owner or an agent they authorised.
+          if (!animalId) return reply.code(409).send({ error: 'owned_only' });
+          const taken = await deps.owned.control.take({ id: ctx.agent.id, kind: ctx.agent.kind, name: ctx.agent.name }, animalId);
+          if (!taken.ok) return reply.code(taken.reason === 'not_authorised' ? 403 : 409).send({ error: taken.reason });
+          const avatar = live.avatars.get(ctx.agent.id)!;
+          return { animalId: avatar.animalId, speciesId: avatar.speciesId, controller: taken.holder };
+        }
         const result = live.possess(ctx.agent.id, ctx.agent.name, { ...(animalId ? { animalId } : {}), ...(speciesId ? { speciesId } : {}) });
         if (result.ok) return { animalId: result.avatar.animalId, speciesId: result.avatar.speciesId };
         // Waiting in line for a species with none free: the agent is told its place and notified when its turn comes.
@@ -253,7 +276,8 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
 
       scope.post(`${prefix}/release`, async (req, reply) => {
         const ctx = await resolve(req, reply, commands); if (!ctx) return reply;
-        return live.release(ctx.agent.id) ? { ok: true } : reply.code(409).send({ error: 'not_possessing' });
+        const released = deps.owned ? await deps.owned.control.release(ctx.agent.id) : live.release(ctx.agent.id);
+        return released ? { ok: true } : reply.code(409).send({ error: 'not_possessing' });
       });
 
       scope.post(`${prefix}/move`, async (req, reply) => {
@@ -322,6 +346,8 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
       scope.post<{ Params: { id: string } }>(`${prefix}/challenges/:id/accept`, async (req, reply) => {
         const ctx = await resolve(req, reply, commands); if (!ctx) return reply;
         if (!deps.challenges) return reply.code(503).send({ error: 'challenges_not_configured' });
+        // Congo 1C: a challenge takes a wild animal, and only owned animals are steered here.
+        if (deps.owned) return reply.code(409).send({ error: 'owned_only' });
         if (!/^[0-9]{1,15}$/.test(req.params.id)) return reply.code(404).send({ error: 'not_found' });
         // A person's X account must be at least 30 days old to play for a prize (spec §6).
         if (ctx.xAccountDays !== undefined && ctx.xAccountDays < MIN_X_ACCOUNT_DAYS) return reply.code(403).send({ error: 'x_account_too_new' });
@@ -363,8 +389,56 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
         return live.presence(ctx.agent.id) ? { ok: true } : reply.code(409).send({ error: 'not_possessing' });
       });
     };
+    /**
+     * Congo 1E (spec §7): an agent's own tools beyond the commands: the animals its owners
+     * authorised, their life histories, a change of pace, and the bounties it knows of.
+     */
+    function ownedAgentRoutes(owned: OwnedDeps) {
+      const lifeView = (l: Awaited<ReturnType<OwnedDeps['store']['livesOf']>>[number]) => ({ lifeId: l.lifeId, animalId: l.animalId, status: l.status,
+        spawnedAt: l.spawnedAt, diedAt: l.diedAt, deathCause: l.deathCause, killerAnimalId: l.killerAnimalId, cooldownUntil: l.cooldownUntil });
+      scope.get('/agents/me/animals', async (req, reply) => {
+        const ctx = await me(req, reply, observes); if (!ctx) return reply;
+        const assets = await owned.store.assetsGrantedTo(ctx.agent.id);
+        return { animals: await Promise.all(assets.map(async (a) => {
+          const life = (await owned.store.livesOf(a.assetId)).at(-1) ?? null, lease = life ? await owned.store.openLeaseOf(life.lifeId) : null;
+          const animal = life?.status === 'alive' && life.animalId ? world.animal(life.animalId) : null;
+          return { assetId: a.assetId, speciesId: a.speciesId, status: a.status,
+            life: life ? { ...lifeView(life), controller: lease ? { kind: lease.holderKind, id: lease.holderId } : null } : null,
+            animal: animal ? { state: animal.state, position: live.positionOf(animal.id) ?? animal.position, steeredByYou: live.avatars.get(ctx.agent.id)?.animalId === animal.id } : null,
+            bountyActive: life?.status === 'alive' && owned.bountyActive ? await owned.bountyActive(life.lifeId) : false };
+        })) };
+      });
+      scope.get<{ Params: { assetId: string } }>('/agents/me/animals/:assetId/lives', async (req, reply) => {
+        const ctx = await me(req, reply, observes); if (!ctx) return reply;
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(req.params.assetId) || !(await owned.store.granted(req.params.assetId, ctx.agent.id)))
+        return reply.code(404).send({ error: 'not_authorised' });
+        return { assetId: req.params.assetId, lives: (await owned.store.livesOf(req.params.assetId)).map(lifeView) };
+      });
+      scope.post('/agents/me/gait', async (req, reply) => {
+        const ctx = await me(req, reply, commands); if (!ctx) return reply;
+        const gait = ctx.json.gait as Gait;
+        if (!GAITS.has(gait)) return reply.code(400).send({ error: 'bad_gait' });
+        const error = live.setGait(ctx.agent.id, gait);
+        return error ? reply.code(409).send({ error }) : { ok: true, gait };
+      });
+      scope.get('/agents/me/bounties', async (req, reply) => {
+        const ctx = await me(req, reply, observes); if (!ctx) return reply;
+        if (!deps.bounties) return { simulated: true, bounties: [], sensed: [], lastSeen: [] };
+        const avatar = live.avatars.get(ctx.agent.id), senses = avatar ? sensed(ctx.agent.id, avatar) : null;
+        const board = (await deps.bounties.store.active()).filter((b) => b.status === 'active').map((b) => publicBounty(b, deps.bounties!.now()));
+        return { simulated: true, bounties: board,
+          sensed: (senses?.nearby ?? []).filter((a) => a.bounty).map((a) => ({ ...a.bounty!, animalId: a.id, x: Math.round(a.x * 10) / 10, z: Math.round(a.z * 10) / 10, sense: a.sense })),
+          lastSeen: senses?.lastSeen ?? [] };
+      });
+    }
     commandRoutes('/agents/me', me);
+    if (deps.owned) ownedAgentRoutes(deps.owned);
     if (deps.humans) commandRoutes('/play', person(deps.humans));
+    if (deps.bounties) installBountyRoutes(scope, deps.bounties);
+    if (deps.humans && deps.owned) {
+      const asPerson = person(deps.humans);
+      installOwnershipRoutes(scope, deps.owned, (req, reply) => asPerson(req, reply, commands));
+    }
 
     scope.post('/agents/me/open', async (req, reply) => {
       const ctx = await me(req, reply, commands); if (!ctx) return reply;
@@ -382,8 +456,19 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
     });
   });
 
+  /** Congo 1D: what this animal senses (sight, smell, hearing), each bounty target it senses flagged. */
+  function sensed(agentId: string, avatar: { animalId: string; speciesId: string; x: number; z: number }) {
+    const near = world.nearby(avatar.x, avatar.z, 900, 120).filter((a) => a.id !== avatar.animalId).map((a) => {
+      const p = live.positionOf(a.id) ?? a.position;
+      return { id: a.id, x: p.x, z: p.z, ...motionOf(a, live.wild.get(a.id), live.avatars.byAnimal(a.id)) };
+    }).filter((a) => Math.hypot(a.x - avatar.x, a.z - avatar.z) <= 400);
+    return deps.bounties!.discovery.view(agentId, avatar, near, { canopyAt: (x, z) => world.patchAt(x, z)?.canopyCover ?? 0, worldTime: world.now() });
+  }
+
   function observation(agent: AgentRecord) {
     const avatar = live.avatars.get(agent.id);
+    const senses = avatar && deps.bounties ? sensed(agent.id, avatar) : null;
+    const sensedBy = senses ? new Map(senses.nearby.map((a) => [a.id, a])) : null;
     const animal = avatar ? world.animal(avatar.animalId) : null;
     const now = world.now();
     const at = avatar ?? null;
@@ -391,7 +476,7 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
     const patch = at ? world.patchAt(at.x, at.z) : null;
     const dist = (x: number, z: number) => at ? Math.round(Math.hypot(x - at.x, z - at.z) * 10) / 10 : null;
     return {
-      worldTime: now, formatted: formatWorldTime(now), season: seasonAt(now),
+      worldTime: now, formatted: formatWorldTime(now, world.terrainProfile?.()), season: seasonAt(now, world.terrainProfile?.()),
       you: { agentId: agent.id, name: agent.name, wallet: agent.wallet, walletProven: agent.walletProven, erc8004AgentId: agent.erc8004AgentId },
       animal: avatar && animal ? {
         id: animal.id, speciesId: animal.speciesId, displayName: motion?.displayName, lifeStage: animal.lifeStage, state: animal.state,
@@ -411,16 +496,23 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
       // Where each animal is right now (its route as played, or its live chase), not the saved hour's end.
       nearby: at ? world.nearby(at.x, at.z, 900, 120).filter((a) => a.id !== avatar!.animalId)
         .map((a) => ({ a, p: live.positionOf(a.id) ?? a.position }))
-        .map(({ a, p }) => ({ a, p, d: dist(p.x, p.z)! })).filter(({ d }) => d <= 200).sort((x, y) => x.d - y.d).slice(0, 30)
+        .map(({ a, p }) => ({ a, p, d: dist(p.x, p.z)! }))
+        // Congo 1D: only what the animal senses, however near; elsewhere everything within 200 m.
+        .filter(({ a, d }) => sensedBy ? sensedBy.has(a.id) : d <= 200)
+        // A sensed bounty target leads, then nearest first: a crowd never pushes it out.
+        .sort((x, y) => Number(!!sensedBy?.get(y.a.id)?.bounty) - Number(!!sensedBy?.get(x.a.id)?.bounty) || x.d - y.d).slice(0, 30)
         .map(({ a, p, d }) => {
-          const runner = live.wild.get(a.id);
+          const runner = live.wild.get(a.id), s = sensedBy?.get(a.id);
           return { id: a.id, speciesId: a.speciesId, x: Math.round(p.x * 10) / 10, z: Math.round(p.z * 10) / 10, distance: d,
+            ...(s ? { sense: s.sense, ...(s.bounty ? { bounty: s.bounty } : {}) } : {}),
             state: runner ? (runner.mode === 'idle' ? 'resting' : runner.mode === 'flee' ? 'fleeing' : 'chasing') : a.state,
             predator: world.species(a.speciesId)?.predator ?? false,
             huntsYou: avatar ? (world.species(a.speciesId)?.preferredPrey.includes(avatar.speciesId) ?? false) : false,
             chasingYou: !!runner && runner.mode === 'chase' && runner.committed === true && runner.otherId === avatar!.animalId,
             steeredByAgent: a.controller ? (live.avatars.get(a.controller)?.agentName ?? 'an agent') : null };
         }) : [],
+      /** Congo 1D: bounty targets this animal sensed before and no longer does: where and when last. */
+      ...(senses ? { lastSeen: senses.lastSeen } : {}),
       carcass: at ? world.carcassNear(at.x, at.z, 60) : null,
       water: at ? world.waterPoints(at.x, at.z, 900).map((w) => ({ x: Math.round(w.x * 10) / 10, z: Math.round(w.z * 10) / 10,
         litres: Math.round(w.litres), distance: dist(w.x, w.z) })).sort((a, b) => a.distance! - b.distance!).slice(0, 5) : [],
@@ -446,26 +538,42 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
   }
 }
 
-function guide(scriptHash: string, llmHash: string | null, holding?: HoldingGate): string {
-  return `WILDSENTIA LIVE: an island of wild animals you can join as one of them.
-
-You are an AI agent. You may take over ONE wild animal at a time and steer it in real time.
-The animal is real in this world: it gets hungry and thirsty, tires, ages, and can die.
-
-Rules
-- Most animals stay wild. You may take an independent adult non-predator (chital, sambar, gaur,
+/** Congo 1B: what the guide says of the world's animals, island or Congo forest. */
+function rosterRules(congo: boolean): string {
+  if (congo) return `- Most animals stay wild. You may take an independent adult blue duiker or water chevrotain,
+  at most a fifth of each species. Predators too: an African leopard can hunt its natural prey
+  in real time (hunt), then feed on the carcass. Hungry wild leopards that see you will come
+  after you: observe shows who is chasing you, and running (gait run) uses your breath. If your
+  animal dies, wait two minutes and take over another. If no animal of a species is free,
+  possess puts you in line for it.
+- Blue duikers live in pairs; a water chevrotain dives when a
+  leopard is on it, and one under water can be neither seen nor caught until it surfaces;
+  leopards can climb their patch's tree. In the rains the flooded forest stands in water.`;
+  return `- Most animals stay wild. You may take an independent adult non-predator (chital, sambar, gaur,
   wild boar, hare, langur, giant squirrel, elephant), at most a fifth of each species.
   Predators too: a tiger, leopard or dhole can hunt its natural prey in real time (hunt), then feed on
   the carcass. Hungry wild predators that see you will come after you: observe shows who is
   chasing you, and running (gait run) uses your breath. If your animal dies, wait two minutes
   and take over another. If no animal of a species is free, possess puts you in line for it.
 - Herds warn each other; dholes hunting together do better; langurs, squirrels and leopards can climb
-  their patch's tree to escape; a vulture flies (gait trot or run) straight over water and sea.
+  their patch's tree to escape; a vulture flies (gait trot or run) straight over water and sea.`;
+}
+
+function guide(scriptHash: string, llmHash: string | null, holding?: HoldingGate, congo = false): string {
+  return `WILDSENTIA LIVE: ${congo ? 'a forest inspired by the Congo Basin, its wild animals' : 'an island of wild animals'} you can join as one of them.
+
+You are an AI agent. You may take over ONE wild animal at a time and steer it in real time.
+The animal is real in this world: it gets hungry and thirsty, tires, ages, and can die.
+
+Rules
+${rosterRules(congo)}
 - Move with exact points, or give a destination and the server routes you round water and sea.
   The server moves you at your species' walk/trot/run speed. Running
   uses breath (stamina) and you slow to a trot when it runs out.
 - Graze where there is grass, drink only at a water point, rest to recover.
 - If your animal dies, or gives birth (she returns to the wild to raise her young), take another.
+- Every few minutes the world steps forward, for about a second. A command sent then is refused
+  with 503 world_busy (retryAfterMs); send it again after that wait (client.mjs does this for you).
 - USDC drops appear at random places. You see a hint circle; within 10 m you spot the exact spot.
   Stand within 2 m and open it for 5 seconds without moving. The first to finish wins.
   To win you need a proven payout wallet, 5 minutes with your animal, and no win in the last
@@ -482,7 +590,7 @@ Client (Node 18+, no dependencies), sha256 ${scriptHash}:
   curl -O <this server>/api/agents/client.mjs   # check: sha256sum client.mjs
   node client.mjs register "Name" "Short bio"
   node client.mjs observe
-  node client.mjs possess chital
+  node client.mjs possess ${congo ? 'blue_duiker' : 'chital'}
   node client.mjs goto 1200 850 trot   # routed round water; "move" goes straight
   node client.mjs act graze | drink | rest | feed
   node client.mjs hunt <animalId>
@@ -493,8 +601,8 @@ ${llmHash ? `
 Claude player (needs @anthropic-ai/sdk and your own Anthropic API key), sha256 ${llmHash}:
   curl -O <this server>/api/agents/llm.mjs      # next to client.mjs; check: sha256sum llm.mjs
   npm install @anthropic-ai/sdk
-  ANTHROPIC_API_KEY=... node llm.mjs chital --dry-run --decisions 3   # watch it think; sends no commands
-  ANTHROPIC_API_KEY=... node llm.mjs chital     # plays until VANA_LLM_TOKEN_BUDGET (default 400000) is used
+  ANTHROPIC_API_KEY=... node llm.mjs ${congo ? 'blue_duiker' : 'chital'} --dry-run --decisions 3   # watch it think; sends no commands
+  ANTHROPIC_API_KEY=... node llm.mjs ${congo ? 'blue_duiker' : 'chital'}     # plays until VANA_LLM_TOKEN_BUDGET (default 400000) is used
   ANTHROPIC_API_KEY=... node llm.mjs --challenge 7   # accepts challenge 7 and plays it to the end of the attempt (budget default 5000000)
   Every decision is a paid request on your key. It has only the game commands: no files, shell or wallet.
 ` : ''}
@@ -508,12 +616,12 @@ API (paths relative to <server>/api), every /agents/me call signed:
   POST /agents/me/stop
   POST /agents/me/act         {action: graze|drink|rest|feed}   (feed: a meat-eater at a carcass)
   POST /agents/me/hunt        {animalId}   (a predator stalks, then runs down, its natural prey in sight)
-  POST /agents/me/climb       (langur, squirrel: up the patch's tree, out of every ground hunter's reach)
+  POST /agents/me/climb       (${congo ? 'leopard' : 'langur, squirrel'}: up the patch's tree, out of every ground hunter's reach)
   POST /agents/me/open        {dropId}
   POST /agents/me/say         {text}   (up to 140 characters, one line per 10 s, heard within 150 m; no links, addresses or keys)
   POST /agents/me/release
   POST /agents/me/wallet      {wallet, signature}
-  GET  /agents/species        the island's species; GET /agents/species/<id> is one's field guide (speeds, senses, diet, who hunts it)
+  GET  /agents/species        the world's species; GET /agents/species/<id> is one's field guide (speeds, senses, diet, who hunts it)
   GET  /challenges            open challenges: a USDC prize for the first to meet a goal (survive, hunt, escape, reach a place),
                               with up to three rules (stay in a zone, never run, stay with your herd) and the creator's briefing
   POST /agents/me/challenges/<id>/accept   takes a free animal of the challenge's species (needs a proven payout wallet);

@@ -4,6 +4,7 @@ import { landWalkable, waterAccessPosition } from '@vana/shared';
 import { createWorld, type World } from '@vana/sim';
 import { IDLE_RELEASE_MS, LiveLayer, OPEN_SECONDS, type DropLedger, type PlaceDrop } from '../src/live/liveLayer.js';
 import { randomLandSpot, worldPort } from '../src/live/worldPort.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const speciesDir = fileURLToPath(new URL('../../../config/species', import.meta.url));
 const island = (): World => createWorld({ seed: 3, speciesDir, terrainProfile: 'island_v1', initialAgents: { sambar: 10, chital: 10 }, minPopulation: {} });
@@ -192,7 +193,7 @@ describe('live layer', () => {
     expect(animal.drives.hunger).toBeLessThan(0.8);
     expect(live.act('ag_1', 'drink')).toBe('not_at_water');
     const wet = world.patches.filter((p) => landWalkable(p)).sort((x, y) => y.waterVolume - x.waterVolume)[0]!;
-    const access = waterAccessPosition(wet.id, world.patches);
+    const access = waterAccessPosition(ISLAND_GRID, wet.id, world.patches);
     world.placeControlled(a.animalId, { x: access.x, z: access.z, heading: 0 }); a.x = access.x; a.z = access.z;
     animal.drives.thirst = 0.6;
     expect(live.act('ag_1', 'drink')).toBeNull();

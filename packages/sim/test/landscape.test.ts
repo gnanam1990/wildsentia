@@ -1,15 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { fileURLToPath } from 'node:url';
-import { GRID_SIZE } from '@vana/shared';
+
 import { createWorld } from '../src/world.js';
 import { assertNutrientsConserved } from '../src/fields/nutrients.js';
 import { expectedExchange } from '../src/landscape.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const speciesDir = fileURLToPath(new URL('../../../config/species', import.meta.url));
 const onEdge = (patchId: number): boolean => {
-  const x = patchId % GRID_SIZE;
-  const y = Math.floor(patchId / GRID_SIZE);
-  return x === 0 || y === 0 || x === GRID_SIZE - 1 || y === GRID_SIZE - 1;
+  const x = patchId % ISLAND_GRID.cols;
+  const y = Math.floor(patchId / ISLAND_GRID.cols);
+  return x === 0 || y === 0 || x === ISLAND_GRID.cols - 1 || y === ISLAND_GRID.cols - 1;
 };
 
 describe('expectedExchange', () => {

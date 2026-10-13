@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { PATCH_COUNT } from '@vana/shared';
+
 import { buildGrid } from '../src/grid.js';
+import { ISLAND_GRID, patchCount } from '@vana/shared';
 
 describe('buildGrid', () => {
   it('produces one patch per grid cell, indexed by id', () => {
     const grid = buildGrid(1);
-    expect(grid).toHaveLength(PATCH_COUNT);
+    expect(grid).toHaveLength(patchCount(ISLAND_GRID));
     grid.forEach((p, i) => expect(p.id).toBe(i));
   });
 
@@ -37,4 +38,31 @@ describe('buildGrid', () => {
     expect(grid.some((p) => p.habitat === 'water')).toBe(true);
     expect(grid.some((p) => p.habitat === 'grassland')).toBe(true);
   });
+
+  it('builds the 48 km congo_v1 grid from congo_terrain_v1', () => {
+    const patches = buildGrid(7, 'congo_v1');
+    expect(patches).toHaveLength(25_600);
+    expect(patches.every((p, i) => p.id === i && p.congoSeed === 7 && p.islandSeed === undefined && p.surface === 'land')).toBe(true);
+    expect(patches[0]!.neighbours).toEqual([1, 160]);
+    expect(patches[161]!).toMatchObject({ x: 1, y: 1 });
+    const river = patches.filter((p) => p.habitat === 'water');
+    expect(river.length).toBeGreaterThan(0);
+    expect(river.every((p) => p.waterVolume >= 300_000 && p.canopyCover === 0)).toBe(true);
+    expect(patches.find((p) => p.habitat === 'bai')!.canopyCover).toBe(0.05);
+    expect(patches.every((p) => p.elevation >= 0 && p.elevation <= 1)).toBe(true);
+    expect(buildGrid(7, 'congo_v1')).toEqual(patches);
+  }, 60_000);
+
+  it('marks the main river\'s deep middle, which no land animal can walk (1B)', async () => {
+    const { landWalkable } = await import('@vana/shared');
+    const patches = buildGrid(7, 'congo_v1');
+    const deep = patches.filter((p) => p.deepWater);
+    expect(deep.length).toBeGreaterThan(100);
+    expect(deep.every((p) => p.habitat === 'water' && p.neighbours.every((n) => patches[n]!.habitat === 'water'))).toBe(true);
+    expect(deep.every((p) => !landWalkable(p))).toBe(true);
+    // A river patch with dry ground beside it (a bank, or a narrow tributary) stays wadeable.
+    const shallow = patches.filter((p) => p.habitat === 'water' && !p.deepWater);
+    expect(shallow.length).toBeGreaterThan(0);
+    expect(shallow.every((p) => landWalkable(p))).toBe(true);
+  }, 60_000);
 });

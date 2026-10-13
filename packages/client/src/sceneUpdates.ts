@@ -1,3 +1,4 @@
+import { parseWorldGrid, setWorldGrid } from './worldGrid.js';
 import { isCommunityState, type CommunityState, type LiveEncounterFrame, type MicroEcologyState } from '@vana/shared';
 import { WorldStore, type AnimalState, type WorldState } from './protocol.js';
 import { isLiveEncounterFrame } from './liveEncounters.js';
@@ -6,6 +7,8 @@ import type { PatchView } from './terrain.js';
 export interface SceneEnvironment { patches: PatchView[]; carcasses: AnimalState[]; microEcology?: MicroEcologyState; community?: CommunityState | null }
 export interface SceneUpdate {
   checkpointId: string;
+  /** Congo 1A.4: the regions this scene covers, on a world of many; absent on the island. */
+  regions?: string[];
   world: WorldState;
   animals: AnimalState[];
   environment: SceneEnvironment;
@@ -33,6 +36,8 @@ function environment(value: unknown): SceneEnvironment | null {
   if (!record(value) || !Array.isArray(value.patches) || value.patches.length === 0 || value.patches.length > 10_000) return null;
   const ids = new Set<number>();
   const islandSeed = record(value.patches[0]) ? value.patches[0].islandSeed : undefined;
+  const congoSeed = record(value.patches[0]) ? value.patches[0].congoSeed : undefined;
+  if (congoSeed !== undefined && !Number.isSafeInteger(congoSeed)) return null;
   if (islandSeed !== undefined && (!Number.isSafeInteger(islandSeed) || value.patches.length !== 400)) return null;
   for (const p of value.patches) {
     if (!record(p) || !integer(p.id) || ids.has(p.id) || !integer(p.x) || !integer(p.y)
@@ -40,7 +45,10 @@ function environment(value: unknown): SceneEnvironment | null {
       || !nonnegative(p.elevation) || p.elevation > 1 || !nonnegative(p.canopyCover) || p.canopyCover > 1) return null;
     ids.add(p.id);
     if (p.islandSeed !== islandSeed || (islandSeed !== undefined && (!['land', 'coast', 'ocean'].includes(String(p.surface)) || p.id >= 400))
-      || (islandSeed === undefined && p.surface !== undefined)) return null;
+      || (islandSeed === undefined && congoSeed === undefined && p.surface !== undefined)) return null;
+    // Congo 1A.4: every patch of a Congo scene is land of the same seed; flood and deep river are flags.
+    if (p.congoSeed !== congoSeed || (congoSeed !== undefined && (p.surface !== 'land' || islandSeed !== undefined
+      || (p.flooded !== undefined && typeof p.flooded !== 'boolean') || (p.deepWater !== undefined && typeof p.deepWater !== 'boolean')))) return null;
     if (p.floweringGuild !== undefined && p.floweringGuild !== null) {
       const guild = p.floweringGuild;
       if (!record(guild) || !['shola', 'riparian'].includes(p.habitat as string)
@@ -78,6 +86,7 @@ export class SceneUpdates<Prepared> {
   #received: SceneUpdate | null = null;
   #pending: SceneUpdate | null = null;
   #committedId: string | null = null;
+  #committedEnvironment: SceneEnvironment | null = null;
   #generation = 0;
   #running = false;
   constructor(private readonly hooks: {
@@ -88,7 +97,7 @@ export class SceneUpdates<Prepared> {
   }) {}
 
   reset(): void {
-    this.#generation++; this.#received = null; this.#pending = null; this.#committedId = null;
+    this.#generation++; this.#received = null; this.#pending = null; this.#committedId = null; this.#committedEnvironment = null;
     this.hooks.status('stale');
   }
 
@@ -98,6 +107,8 @@ export class SceneUpdates<Prepared> {
       || !record(message.world) || !integer(message.world.worldTime) || !integer(message.world.nextEventSequence)
       || !record(message.world.population) || !Object.values(message.world.population).every(integer)
       || !finite(message.world.worldHoursPerRealHour) || message.world.worldHoursPerRealHour <= 0) return false;
+    // The lattice comes first: every position below is checked against it.
+    setWorldGrid(parseWorldGrid(message.world.grid));
     const previous = this.#received?.checkpointId === message.checkpointId ? this.#received : null;
     // Ordered WebSocket messages may repeat a checkpoint, never roll back within a connection.
     if (this.#received && message.world.worldTime < this.#received.world.worldTime) return false;
@@ -113,7 +124,9 @@ export class SceneUpdates<Prepared> {
       frame = message.frame as LiveEncounterFrame | null;
     }
     const parsed = new WorldStore(); parsed.apply({ ...message.world, type: 'world' });
-    this.#pending = this.#received = { checkpointId: message.checkpointId, world: parsed.world!, animals: living,
+    const regions = Array.isArray(message.regions) && message.regions.length <= 64
+      && message.regions.every((r) => typeof r === 'string' && /^r\d{1,4}_\d{1,4}$/.test(r)) ? message.regions as string[] : undefined;
+    this.#pending = this.#received = { checkpointId: message.checkpointId, ...(regions ? { regions } : {}), world: parsed.world!, animals: living,
       environment: env, frame, frameReceivedAt: message.frame === undefined ? previous!.frameReceivedAt : receivedAt };
     void this.#drain();
     return true;
@@ -128,16 +141,18 @@ export class SceneUpdates<Prepared> {
         const generation = this.#generation;
         let prepared: Prepared | undefined;
         try {
-          if (update.checkpointId !== this.#committedId) {
+          // A new checkpoint, or (Congo 1A.4) other regions of the same one: new ground to draw.
+          if (update.checkpointId !== this.#committedId || update.environment !== this.#committedEnvironment) {
             this.hooks.status('loading'); prepared = await this.hooks.prepare(update.environment);
           }
           const latest = this.#pending as SceneUpdate | null;
-          if (generation !== this.#generation || (latest && latest.checkpointId !== update.checkpointId)) {
+          if (generation !== this.#generation || (latest && (latest.checkpointId !== update.checkpointId
+            || latest.environment !== update.environment))) {
             if (prepared !== undefined) this.hooks.discard(prepared);
             continue;
           }
           if (latest) { update = latest; this.#pending = null; }
-          this.hooks.commit(update, prepared); this.#committedId = update.checkpointId;
+          this.hooks.commit(update, prepared); this.#committedId = update.checkpointId; this.#committedEnvironment = update.environment;
           this.hooks.status('ready');
         } catch {
           if (prepared !== undefined) this.hooks.discard(prepared);

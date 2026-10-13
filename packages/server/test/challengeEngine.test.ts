@@ -13,6 +13,7 @@ import { HERD_GRACE_MS } from '../src/challenges/rules.js';
 import { WORLD_DAY_SECONDS } from '../src/challenges/goals.js';
 import { REACH_WITHIN_M, rulesHash, type ChallengeTerms } from '../src/challenges/terms.js';
 import { testDatabaseUrl } from './testDatabase.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const url = testDatabaseUrl();
 const maybe = url ? describe : describe.skip;
@@ -30,6 +31,7 @@ maybe('challenge engine', () => {
   let centre: { x: number; z: number };
   let openPatch: number;
   let port: ReturnType<typeof worldPort>;
+  let busy = false;
 
   beforeEach(async () => {
     await migrate(pool!);
@@ -40,11 +42,12 @@ maybe('challenge engine', () => {
     }
     world = createWorld({ seed: 6, speciesDir, terrainProfile: 'island_v1', initialAgents: { tiger: 2, chital: 12 }, minPopulation: {} });
     const open = world.patches.find((p) => landWalkable(p) && p.neighbours.every((n) => landWalkable(world.patches[n])))!;
-    openPatch = open.id; centre = patchCentre(open.id);
+    openPatch = open.id; centre = patchCentre(ISLAND_GRID, open.id);
     now = T0; worldNow = 1_000_000; random = 0; nextId = 0;
     const base = worldPort(() => world, () => 'w');
     // Tests move animals by hand; the port's half-second index must see each move at once.
-    port = { ...base, now: () => worldNow, nearby: (x, z, radius, limit) => { forgetPatchIndex(); return base.nearby(x, z, radius, limit); } };
+    busy = false;
+    port = { ...base, busy: () => busy, now: () => worldNow, nearby: (x, z, radius, limit) => { forgetPatchIndex(); return base.nearby(x, z, radius, limit); } };
     live = new LiveLayer(port, null, () => now, () => random);
     store = new ChallengeStore(pool!);
     engine = new ChallengeEngine(store, live, port, () => now, { recordOnChain: true });
@@ -75,6 +78,23 @@ maybe('challenge engine', () => {
     for (let i = 0; i < seconds * 10; i++) { now += 100; live.tick(0.1); if (i % 10 === 9) await engine.tick(); }
   };
   const wildChital = () => world.agents.find((a) => a.alive && a.speciesId === 'chital' && !a.controller && a.lifeStage === 'adult')!;
+
+  it('keeps a waiting player at the front when the world is busy as their animal comes free (1A.3 review)', async () => {
+    const id = await challenge({ template: 'hunt', version: 1, speciesId: 'tiger', count: 1, rules: [], briefing: '' });
+    expect(await engine.accept(player('ag_000000000000000b'), id)).toMatchObject({ ok: true, queued: false });
+    expect(await engine.accept(player('ag_000000000000000c'), id)).toMatchObject({ ok: true, queued: true, position: 1 });
+    expect(live.release('ag_000000000000000b')).toBe(true);
+    busy = true;
+    const notes: string[] = [];
+    const notify = live.notify.bind(live);
+    live.notify = (agentId, text) => { notes.push(text); notify(agentId, text); };
+    await engine.tick();
+    expect(notes.some((n) => n.includes('off its waiting list'))).toBe(false);
+    expect(engine.waitingOf('ag_000000000000000c')).toMatchObject({ challengeId: id, position: 1 });
+    busy = false;
+    await engine.tick();
+    expect(engine.progressOf('ag_000000000000000c')).toMatchObject({ challengeId: id });
+  });
 
   it('refuses players who cannot take part', async () => {
     const id = await challenge({ template: 'hunt', version: 1, speciesId: 'tiger', count: 1, rules: [], briefing: '' });
@@ -188,9 +208,9 @@ maybe('challenge engine', () => {
 
   it('starts a herd-rule attempt with an animal that is with its herd, not one alone across the island', async () => {
     const chital = world.agents.filter((a) => a.alive && a.speciesId === 'chital' && a.lifeStage === 'adult' && !a.controller);
-    const far = world.patches.find((p) => landWalkable(p) && Math.hypot(patchCentre(p.id).x - centre.x, patchCentre(p.id).z - centre.z) > 3000)!;
+    const far = world.patches.find((p) => landWalkable(p) && Math.hypot(patchCentre(ISLAND_GRID, p.id).x - centre.x, patchCentre(ISLAND_GRID, p.id).z - centre.z) > 3000)!;
     // The first candidate stands alone, far off; the rest graze together.
-    chital[0]!.patchId = far.id; chital[0]!.position = { ...patchCentre(far.id), heading: 0 };
+    chital[0]!.patchId = far.id; chital[0]!.position = { ...patchCentre(ISLAND_GRID, far.id), heading: 0 };
     chital.slice(1).forEach((a, i) => put(a.id, i * 5));
     const id = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 1, rules: [{ type: 'herd', maxDistanceM: 50 }], briefing: '' });
     const started = await accepted('ag_000000000000000a', id);
@@ -475,7 +495,7 @@ maybe('challenge engine', () => {
   it('starts a reach attempt at least a kilometre from its target, and wins it within 25 m', async () => {
     // A spot on land 1.2-2 km from a chital, with a chital right beside it that must not be chosen.
     const herd = wildChital();
-    const spot = world.patches.map((p) => patchCentre(p.id)).find((c, i) => landWalkable(world.patches[i]!)
+    const spot = world.patches.map((p) => patchCentre(ISLAND_GRID, p.id)).find((c, i) => landWalkable(world.patches[i]!)
       && Math.hypot(c.x - herd.position!.x, c.z - herd.position!.z) > 1200 && Math.hypot(c.x - herd.position!.x, c.z - herd.position!.z) < 2000)!;
     const tx = Math.round(spot.x), tz = Math.round(spot.z);
     const near = world.agents.find((x) => x.alive && x.speciesId === 'chital' && x.id !== herd.id && !x.controller)!;
@@ -633,8 +653,8 @@ maybe('challenge engine', () => {
       world = createWorld({ seed: 6, speciesDir, terrainProfile: 'island_v1', initialAgents: { tiger: 2, chital: 260 }, minPopulation: {} });
       const last = world.agents.filter((x) => x.speciesId === 'chital' && x.alive && !x.dependentOn).at(-1)!;
       const lone = world.patches.find((p) => landWalkable(p) && world.agents.every((x) => x === last || !x.position
-        || Math.hypot(x.position.x - patchCentre(p.id).x, x.position.z - patchCentre(p.id).z) > 600))!;
-      const c = patchCentre(lone.id);
+        || Math.hypot(x.position.x - patchCentre(ISLAND_GRID, p.id).x, x.position.z - patchCentre(ISLAND_GRID, p.id).z) > 600))!;
+      const c = patchCentre(ISLAND_GRID, lone.id);
       last.patchId = lone.id; last.position = { x: c.x, z: c.z, heading: 0 };
       const id = await challenge({ template: 'survive', version: 1, speciesId: 'chital', days: 1, briefing: '',
         rules: [{ type: 'zone', x: Math.round(c.x), z: Math.round(c.z), radiusM: 200 }] });

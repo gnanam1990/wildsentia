@@ -1,5 +1,5 @@
 import { NUTRIENT_PER_KG_BIOMASS, positionInPatch, takeEdibleMass,
-  type Agent, type Carcass, type Patch, type SpeciesConfig, type WorldPosition } from '@vana/shared';
+  type Agent, type Carcass, type Patch, type SpeciesConfig, type WorldPosition, type WorldGrid } from '@vana/shared';
 import type { EventLog } from '../events/log.js';
 import { HUNGER_PER_DAY, THIRST_PER_DAY, updateDrives } from './drives.js';
 import { needsOf, needsProvisioning, inCareContact } from './needs.js';
@@ -39,13 +39,13 @@ export function choosePackRecipient(donor: Agent, members: readonly Agent[], cfg
 
 /** Read-only route forecast. A recipient waits at most one decision and only for an already
  * loaded carrier that can reach its start point with useful contact time remaining. */
-export function canWaitForPackFood(donor: Agent, target: FamilyLocation, cfg: SpeciesConfig,
+export function canWaitForPackFood(grid: WorldGrid, donor: Agent, target: FamilyLocation, cfg: SpeciesConfig,
   patches: Patch[], start: number, hours: number): boolean {
   const food = donor.packFood;
   if (!food || food.kg <= 0 || food.expiresAt <= start) return false;
   const copy = structuredClone(donor); updateDrives(copy, cfg, hours);
   if (copy.drives.hunger >= 0.65 || copy.drives.thirst >= 0.65 || copy.drives.fear >= 0.5) return false;
-  const travel = navigate(copy, cfg, patches, target.patchId, 'deliver_pack_food', start, hours * 3600,
+  const travel = navigate(grid, copy, cfg, patches, target.patchId, 'deliver_pack_food', start, hours * 3600,
     false, target.position);
   return travel.trace.completed && travel.seconds <= hours * 3600 * 0.9
     && start + travel.seconds + 60 < food.expiresAt;
@@ -55,16 +55,16 @@ export interface PackCollection { visit: CareVisit; carcass: Carcass; recipient:
 export interface PackDelivery { visit: CareVisit; recipient: Agent; recipientStart: FamilyLocation;
   sourceEventId: string; start: number; end: number; settled?: boolean }
 
-export function beginPackCollection(donor: Agent, recipient: Agent, carcass: Carcass, cfg: SpeciesConfig,
+export function beginPackCollection(grid: WorldGrid, donor: Agent, recipient: Agent, carcass: Carcass, cfg: SpeciesConfig,
   patches: Patch[], start: number, hours: number, log: EventLog): PackCollection | null {
   if (!cfg.social.cooperativeCare || donor.packFood || carcass.diedAt > start || carcass.pathogenLoad > cfg.diet.carrionTolerance
     || carcass.cachedBy !== undefined) return null;
-  const target = { patchId: carcass.patchId, position: { ...locateCarcass(carcass) } };
-  return { visit: travelToFamily(donor, cfg, patches, target, 'collect_pack_food', start, hours, log, radiusFor(cfg)),
+  const target = { patchId: carcass.patchId, position: { ...locateCarcass(grid, carcass) } };
+  return { visit: travelToFamily(grid, donor, cfg, patches, target, 'collect_pack_food', start, hours, log, radiusFor(cfg)),
     carcass, recipient, start, end: start + hours * 3600 };
 }
 
-export function finishPackCollection(collection: PackCollection, cfg: SpeciesConfig, carcasses: readonly Carcass[],
+export function finishPackCollection(grid: WorldGrid, collection: PackCollection, cfg: SpeciesConfig, carcasses: readonly Carcass[],
   nursingParents: ReadonlySet<string>, log: EventLog): void {
   if (collection.settled) return;
   collection.settled = true;
@@ -72,8 +72,8 @@ export function finishPackCollection(collection: PackCollection, cfg: SpeciesCon
   if (!policy || donor.packFood || !packDonorEligible(donor, cfg, nursingParents)
     || !packRecipientEligible(donor, recipient, cfg, nursingParents) || !carcasses.includes(carcass)
     || donor.lastEncounterAt === start || donor.currentGoal !== 'collect_pack_food' || donor.state !== 'resting'
-    || !samePoint(donor.position, visit.position) || !positionInPatch(carcass.position, carcass.patchId)
-    || donor.patchId !== carcass.patchId || !positionInPatch(donor.position, donor.patchId)
+    || !samePoint(donor.position, visit.position) || !positionInPatch(grid, carcass.position, carcass.patchId)
+    || donor.patchId !== carcass.patchId || !positionInPatch(grid, donor.position, donor.patchId)
     || Math.hypot(donor.position.x - carcass.position.x, donor.position.z - carcass.position.z) > radiusFor(cfg) + 1e-8
     || !(visit.arrival < end)) return;
   const availableSeconds = end - Math.max(start, visit.arrival, carcass.diedAt);
@@ -90,14 +90,14 @@ export function finishPackCollection(collection: PackCollection, cfg: SpeciesCon
     recipientId: recipient.id, packId: donor.groupId! };
 }
 
-export function beginPackDelivery(donor: Agent, recipient: Agent, target: FamilyLocation, cfg: SpeciesConfig,
+export function beginPackDelivery(grid: WorldGrid, donor: Agent, recipient: Agent, target: FamilyLocation, cfg: SpeciesConfig,
   patches: Patch[], start: number, hours: number, log: EventLog): PackDelivery | null {
   if (!cfg.social.cooperativeCare || !donor.packFood || donor.packFood.collectedAt > start) return null;
-  return { visit: travelToFamily(donor, cfg, patches, target, 'deliver_pack_food', start, hours, log),
+  return { visit: travelToFamily(grid, donor, cfg, patches, target, 'deliver_pack_food', start, hours, log),
     recipient, recipientStart: structuredClone(target), sourceEventId: donor.packFood.sourceEventId, start, end: start + hours * 3600 };
 }
 
-export function finishPackDelivery(delivery: PackDelivery, cfg: SpeciesConfig, patches: Patch[],
+export function finishPackDelivery(grid: WorldGrid, delivery: PackDelivery, cfg: SpeciesConfig, patches: Patch[],
   nursingParents: ReadonlySet<string>, log: EventLog): void {
   if (delivery.settled) return;
   delivery.settled = true;
@@ -110,7 +110,7 @@ export function finishPackDelivery(delivery: PackDelivery, cfg: SpeciesConfig, p
     || recipient.lastEncounterAt === start || donor.currentGoal !== 'deliver_pack_food' || donor.state !== 'resting'
     || recipient.state !== 'resting' || recipient.patchId !== recipientStart.patchId
     || !samePoint(recipient.position, recipientStart.position) || !samePoint(donor.position, visit.position)
-    || !inCareContact(donor, recipient, cfg)) return;
+    || !inCareContact(grid, donor, recipient, cfg)) return;
   const seconds = Math.max(0, Math.min(end, food.expiresAt) - Math.max(start, visit.arrival));
   const daily = needsOf(recipient, cfg);
   const foodDeficit = recipient.drives.hunger / HUNGER_PER_DAY * daily.foodKg;

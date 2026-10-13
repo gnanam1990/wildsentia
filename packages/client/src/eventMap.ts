@@ -1,4 +1,5 @@
-import { GRID_SIZE, PATCH_METRES } from '@vana/shared';
+import { worldGrid } from './worldGrid.js';
+
 import { islandHeightField } from './islandHeightField.js';
 import type { PatchView } from './terrain.js';
 
@@ -28,9 +29,9 @@ export function mapMarkerGlyph(type: string): string {
   return type === 'hunt' ? 'H' : type === 'human_hunt' ? 'P' : type === 'human_born' ? 'C' : type === 'human_died' ? 'X' : type === 'born' ? 'B' : type === 'immigration' ? 'A' : 'D';
 }
 export function mapPercent(position: { x: number; z: number }): { left: number; top: number } {
-  const span = GRID_SIZE * PATCH_METRES;
-  return { left: Math.max(0, Math.min(100, (position.x + PATCH_METRES / 2) / span * 100)),
-    top: Math.max(0, Math.min(100, (position.z + PATCH_METRES / 2) / span * 100)) };
+  const span = worldGrid().cols * worldGrid().patchM;
+  return { left: Math.max(0, Math.min(100, (position.x + worldGrid().patchM / 2) / span * 100)),
+    top: Math.max(0, Math.min(100, (position.z + worldGrid().patchM / 2) / span * 100)) };
 }
 export class EventMap {
   #markers: MapMarker[] = [];
@@ -78,15 +79,15 @@ export class EventMap {
     // Keep keyboard focus stable during refresh; replace only when focus is outside the dynamic region.
     if (this.#list.contains(document.activeElement) || this.#map.contains(document.activeElement)) return;
     this.#map.replaceChildren(); this.#list.replaceChildren();
-    const terrain = document.createElement('canvas'), resolution = this.#patches[0]?.islandSeed === undefined ? GRID_SIZE : 200;
+    const terrain = document.createElement('canvas'), resolution = this.#patches[0]?.islandSeed === undefined ? worldGrid().cols : 200;
     terrain.width = resolution; terrain.height = resolution;
     terrain.setAttribute('aria-hidden', 'true'); const context = terrain.getContext('2d');
     const byId = new Map(this.#patches.map(p => [p.id, p]));
     if (context) for (let row = 0; row < resolution; row++) for (let col = 0; col < resolution; col++) {
-      const p = byId.get(Math.floor(row / resolution * GRID_SIZE) * GRID_SIZE + Math.floor(col / resolution * GRID_SIZE));
+      const p = byId.get(Math.floor(row / resolution * worldGrid().cols) * worldGrid().cols + Math.floor(col / resolution * worldGrid().cols));
       if (!p) continue;
-      const x = (col + 0.5) / resolution * GRID_SIZE * PATCH_METRES - PATCH_METRES / 2;
-      const z = (row + 0.5) / resolution * GRID_SIZE * PATCH_METRES - PATCH_METRES / 2;
+      const x = (col + 0.5) / resolution * worldGrid().cols * worldGrid().patchM - worldGrid().patchM / 2;
+      const z = (row + 0.5) / resolution * worldGrid().cols * worldGrid().patchM - worldGrid().patchM / 2;
       context.fillStyle = mapTerrainColour(p, x, z);
       context.fillRect(col, row, 1, 1);
     }

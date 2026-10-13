@@ -1,10 +1,10 @@
-import { isWorldPosition, type WorldPosition } from '@vana/shared';
+import { isWorldPosition, type WorldGrid, type WorldPosition } from '@vana/shared';
 
 /** Deterministic straight-line local approach. This is not obstacle/shore pathfinding. */
 export function approachContact(
-  from: WorldPosition, target: WorldPosition, speedMs: number, secondsAvailable: number, contactRadiusM: number,
+  grid: WorldGrid, from: WorldPosition, target: WorldPosition, speedMs: number, secondsAvailable: number, contactRadiusM: number,
 ): { position: WorldPosition; distanceM: number; seconds: number; arrived: boolean } {
-  if (!isWorldPosition(from) || !isWorldPosition(target)
+  if (!isWorldPosition(grid, from) || !isWorldPosition(grid, target)
     || !Number.isFinite(speedMs) || speedMs <= 0
     || !Number.isFinite(secondsAvailable) || secondsAvailable < 0
     || !Number.isFinite(contactRadiusM) || contactRadiusM < 0) {

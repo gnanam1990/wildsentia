@@ -353,7 +353,7 @@ export function runSoak({ seed, days, speciesDir, terrainProfile = 'mainland', c
     for (let hour = 0; hour < 24; hour++) {
       world.step(1); parentCare.sample(world.agents, hourIndex++); tally(); samplePeaks();
       if (failures.length < MAX_RECORDED_FAILURES) {
-        const invalid = world.agents.find(a => a.alive && !positionInPatch(a.position, a.patchId));
+        const invalid = world.agents.find(a => a.alive && !positionInPatch(world.grid, a.position, a.patchId));
         if (invalid) failures.push(`day ${day} hour ${hour}: ${invalid.id} position/patch disagreement`);
       }
       if (island && failures.length < MAX_RECORDED_FAILURES) {

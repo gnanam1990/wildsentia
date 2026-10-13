@@ -1,3 +1,4 @@
+import { worldGrid } from './worldGrid.js';
 import type { Drives } from './protocol.js';
 import { patchCentre, subPatchOffset } from './space.js';
 import { isMovementTrace, positionInPatch, treeAnchorGeometry, type MovementTrace, type WorldPosition } from '@vana/shared';
@@ -29,10 +30,10 @@ const record = (value: unknown): value is Record<string, unknown> => typeof valu
 /** A ground approach with zero vertical motion is a valid failed attempt, not a climb pose. */
 export function isRecordedClimb(value: unknown): value is RecordedClimb {
   if (!record(value) || typeof value.eventId !== 'string' || !value.eventId
-    || !isMovementTrace(value.trace) || (value.direction !== 'ascend' && value.direction !== 'descend')
+    || !isMovementTrace(worldGrid(), value.trace) || (value.direction !== 'ascend' && value.direction !== 'descend')
     || !['local_threat', 'threat_gone', 'canopy_lost', 'urgent_need'].includes(String(value.reason))
     || value.outcome !== (value.trace.completed ? 'success' : 'interrupted')) return false;
-  const anchor = treeAnchorGeometry(value.trace.destinationPatchId);
+  const anchor = treeAnchorGeometry(worldGrid(), value.trace.destinationPatchId);
   if (!anchor || value.treeAnchorId !== anchor.id
     || value.trace.goal !== (value.direction === 'ascend' ? 'flee' : 'rest')
     || typeof value.verticalDistanceM !== 'number' || !Number.isFinite(value.verticalDistanceM)
@@ -78,7 +79,7 @@ const FIVE_YEARS = 5 * 365 * 86_400;
 
 /** Do not turn a migrated world into a claim of precise historical tracking. */
 export function trackPrecision(track: readonly LifeTrackPoint[]): string {
-  const recorded = track.filter((p) => positionInPatch(p.position, p.patchId)).length;
+  const recorded = track.filter((p) => positionInPatch(worldGrid(), p.position, p.patchId)).length;
   if (recorded === 0) return 'Legacy patch-only record: positions and paths are approximate.';
   if (recorded < track.length) return 'Mixed record: older positions are approximate; paths between samples are interpolated.';
   return 'Server-recorded positions; paths between samples are interpolated, not collision-aware.';
@@ -98,13 +99,13 @@ export function pointAt(track: readonly LifeTrackPoint[], id: string, worldTime:
   x: number; z: number; heading: number; moving: boolean; altitudeM?: number;
   state: string; drives: Drives;
 } {
-  const offset = subPatchOffset(id);
+  const offset = subPatchOffset(worldGrid(), id);
   let i = 0;
   while (i + 1 < track.length && track[i + 1]!.worldTime <= worldTime) i++;
   const here = track[i]!;
   const next = track[i + 1];
-  const resolved = (point: LifeTrackPoint): WorldPosition => positionInPatch(point.position, point.patchId)
-    ? point.position : { x: patchCentre(point.patchId).x + offset.x, z: patchCentre(point.patchId).z + offset.z, heading: 0 };
+  const resolved = (point: LifeTrackPoint): WorldPosition => positionInPatch(worldGrid(), point.position, point.patchId)
+    ? point.position : { x: patchCentre(worldGrid(), point.patchId).x + offset.x, z: patchCentre(worldGrid(), point.patchId).z + offset.z, heading: 0 };
   const from = resolved(here);
   if (next === undefined || worldTime <= here.worldTime) {
     return { ...from, moving: false, state: here.state, drives: here.drives,

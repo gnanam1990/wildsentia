@@ -1,5 +1,5 @@
 import type { Agent, Carcass, Patch, RngState, WorldTime, WaterBudget, TerrainProfile, MicroEcologyState } from '@vana/shared';
-import { isIslandProfile, islandGeometrySeed, yearOf } from '@vana/shared';
+import { ISLAND_GRID, gridForProfile, isCongoProfile, isIslandProfile, islandGeometrySeed, yearOf } from '@vana/shared';
 import { positionInPatch, patchAtPosition, isCommunityState, type CommunityState } from '@vana/shared';
 import { humanWalkable } from './communityNavigation.js';
 import { validateIllness } from './agents/illness.js';
@@ -70,6 +70,95 @@ export function takeSnapshot(world: World): Snapshot {
   };
 }
 
+/** How many records a slice of checkpoint work handles before yielding (Congo 1A.3). */
+const SNAPSHOT_SLICE = 1_000;
+/** Copying is heavier than serializing: a quarter as many records per slice. */
+const CLONE_SLICE = 250;
+
+function* cloneInSlices<T>(items: readonly T[]): Generator<void, T[]> {
+  const out = new Array<T>(items.length);
+  for (let i = 0; i < items.length; i++) {
+    out[i] = structuredClone(items[i]!);
+    if ((i + 1) % CLONE_SLICE === 0) yield;
+  }
+  return out;
+}
+
+/**
+ * `takeSnapshot`, in slices: the large arrays are copied a slice at a time, so a host can let
+ * other work run while a large world is checkpointed. The world must not change until it
+ * returns (the host holds commands meanwhile). The result deep-equals `takeSnapshot(world)`.
+ */
+export function* takeSnapshotSlices(world: World): Generator<void, Snapshot> {
+  const state = world.__exportState();
+  const community = world.community ? structuredClone(world.community) : null;
+  const patches = yield* cloneInSlices(world.patches);
+  const agents = yield* cloneInSlices(world.agents);
+  const microEcology = structuredClone(world.microEcology);
+  yield;
+  const carcasses = yield* cloneInSlices(world.carcasses);
+  const deceased = yield* cloneInSlices(world.deceased);
+  return {
+    ...(community ? { community } : {}),
+    simVersion: SIM_VERSION,
+    terrainProfile: world.terrainProfile,
+    worldTime: world.now(),
+    seed: state.seed,
+    patches,
+    agents,
+    ledger: { ...world.ledger },
+    waterBudget: { ...world.waterBudget },
+    microEcology,
+    agentSeq: state.agentSeq,
+    rngState: state.rngState,
+    eventSequence: world.log.exportSequence(),
+    carcasses,
+    carcassSeq: state.carcassSeq,
+    deceased,
+    groupSeq: state.groupSeq,
+    groups: structuredClone(state.groups),
+    pedigree: structuredClone(state.pedigree),
+    ...(Object.keys(world.islandArrivals).length ? { islandArrivals: { ...world.islandArrivals } } : {}),
+    ...(world.pendingArrivals.length ? { pendingArrivals: structuredClone(world.pendingArrivals) } : {}),
+  };
+}
+
+/**
+ * A snapshot as JSON, in fragments: its large arrays one slice of records at a time. Joined, the
+ * fragments are byte for byte `JSON.stringify(snapshot)`.
+ */
+export function* snapshotJson(snapshot: Snapshot): Generator<string> {
+  let pending = '';
+  // Fragments accumulate into `pending` and are handed out a slice of records at a time.
+  function* value(v: unknown): Generator<string> {
+    if (Array.isArray(v) && v.length > SNAPSHOT_SLICE) {
+      pending += '[';
+      for (let i = 0; i < v.length; i++) {
+        if (i) pending += ',';
+        yield* value(v[i]);
+        if ((i + 1) % SNAPSHOT_SLICE === 0) { yield pending; pending = ''; }
+      }
+      pending += ']';
+    } else if (v !== null && typeof v === 'object' && !Array.isArray(v) && Object.getPrototypeOf(v) === Object.prototype
+      && Object.values(v).some((x) => Array.isArray(x) && x.length > SNAPSHOT_SLICE || x !== null && typeof x === 'object' && !Array.isArray(x))) {
+      pending += '{';
+      let first = true, count = 0;
+      for (const [key, x] of Object.entries(v)) {
+        if (x === undefined || typeof x === 'function' || typeof x === 'symbol') continue;
+        pending += (first ? '' : ',') + JSON.stringify(key) + ':';
+        first = false;
+        yield* value(x);
+        if (++count % SNAPSHOT_SLICE === 0) { yield pending; pending = ''; }
+      }
+      pending += '}';
+    } else {
+      pending += JSON.stringify(v) ?? 'null';
+    }
+  }
+  yield* value(snapshot);
+  yield pending;
+}
+
 export function restoreSnapshot(snapshot: Snapshot, options: WorldOptions): World {
   if ((snapshot.community?.profile ?? 'none') !== (options.communityProfile ?? 'none'))
     throw new Error('community profile mismatch: use a new database; never add or remove a saved household silently');
@@ -107,7 +196,7 @@ export function restoreSnapshot(snapshot: Snapshot, options: WorldOptions): Worl
   for (const agent of [...snapshot.agents, ...snapshot.deceased]) {
     validateIllness(agent.illness, snapshot.worldTime);
     validateWound(agent.wound, snapshot.worldTime);
-    validateVerticalCheckpoint(agent, snapshot.patches[agent.patchId], climbers.has(agent.speciesId));
+    validateVerticalCheckpoint(gridForProfile(snapshot.terrainProfile ?? 'mainland'), agent, snapshot.patches[agent.patchId], climbers.has(agent.speciesId));
     if (agent.lastMaternalWaterAt !== undefined
       && (!Number.isFinite(agent.lastMaternalWaterAt) || agent.lastMaternalWaterAt < agent.bornAt
         || agent.lastMaternalWaterAt > snapshot.worldTime || agent.speciesId !== 'boar'))
@@ -131,6 +220,12 @@ export function restoreSnapshot(snapshot: Snapshot, options: WorldOptions): Worl
     throw new Error('island checkpoint geometry does not match its versioned seed');
   if (world.terrainProfile === 'mainland' && snapshot.patches.some(p => p.islandSeed !== undefined || p.surface !== undefined))
     throw new Error('mainland checkpoint contains island geometry');
+  if (isCongoProfile(world.terrainProfile) && (snapshot.patches.length !== world.patches.length
+    || snapshot.patches.some((p, i) => p.id !== i || p.congoSeed !== snapshot.seed || p.islandSeed !== undefined
+      || p.elevation !== world.patches[i]!.elevation || p.habitat !== world.patches[i]!.habitat)))
+    throw new Error('congo checkpoint geometry does not match its versioned seed');
+  if (!isCongoProfile(world.terrainProfile) && snapshot.patches.some(p => p.congoSeed !== undefined))
+    throw new Error('checkpoint contains Congo geometry for another profile');
   world.log.restoreSequence(snapshot.eventSequence ?? 0);
   world.community = snapshot.community ? structuredClone(snapshot.community) : null;
 
@@ -141,11 +236,14 @@ export function restoreSnapshot(snapshot: Snapshot, options: WorldOptions): Worl
     throw new Error('community checkpoint has no dry land site');
   if (world.community && world.community.version >= 5 && world.community.people.some(person =>
     !humanWalkable(world.patches[person.patchId]) || person.task?.journey?.waypoints.some(point =>
-      !humanWalkable(world.patches[patchAtPosition(point)]))))
+      !humanWalkable(world.patches[patchAtPosition(world.grid, point)]))))
     throw new Error('community checkpoint contains a non-walkable person route');
   world.waterBudget = snapshot.waterBudget ? structuredClone(snapshot.waterBudget) : newWaterBudget(world.patches, snapshot.worldTime);
   world.agents.length = 0;
   world.agents.push(...structuredClone(snapshot.agents));
+  // Congo 1C: an owned animal names its asset, and only the Congo world holds owned animals.
+  if (world.agents.some((a) => a.assetId !== undefined && (typeof a.assetId !== 'string' || !a.assetId || !isCongoProfile(world.terrainProfile))))
+    throw new Error('invalid owned animal in checkpoint');
   world.carcasses.length = 0;
   world.carcasses.push(...structuredClone(snapshot.carcasses ?? []));
   if (world.carcasses.some(c => c.cachedBy !== undefined && (typeof c.cachedBy !== 'string' || !c.cachedBy || c.cause !== 'predation')))
@@ -349,7 +447,7 @@ export function upgradeV14Snapshot(snapshot: Snapshot): Snapshot {
  * legacy checkpoint whose patch-only breeding move disagrees with its recorded position. */
 export function upgradeV15Snapshot(snapshot: Snapshot): Snapshot {
   if (snapshot.simVersion !== 'sim_0.15.0') throw new Error('only sim_0.15.0 snapshots can use this upgrade');
-  if (snapshot.agents.some(a => a.alive && !positionInPatch(a.position, a.patchId)))
+  if (snapshot.agents.some(a => a.alive && !positionInPatch(ISLAND_GRID, a.position, a.patchId)))
     throw new Error('inconsistent v0.15 spatial checkpoint; explicit recovery review required');
   return upgradeLegacyMicroFields(snapshot);
 }

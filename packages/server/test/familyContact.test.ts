@@ -11,6 +11,7 @@ import { SimHost } from './trackedHost.js';
 import { buildApi } from '../src/api.js';
 import { testDatabaseUrl } from './testDatabase.js';
 import { stripFloweringGuild } from '../../sim/test/legacySnapshot.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const url = testDatabaseUrl(), pool = url ? createPool(url) : null, maybe = url ? describe : describe.skip;
 const options = () => ({ pool: pool!, seed: 5, speciesDir: fileURLToPath(new URL('../../../config/species', import.meta.url)),
@@ -43,7 +44,7 @@ maybe('durable parental contact', () => {
       expect((await api.inject(path)).json().events.some((e: { type: string }) => e.type === 'provisioned')).toBe(false);
       expect(host.liveEncounterFrame()).toBeNull();
       await host.snapshotNow();
-      const history = await new EventStore(pool!).recent(1000), feed = history.find(e => e.type === 'provisioned')!;
+      const history = await new EventStore(pool!, ISLAND_GRID).recent(1000), feed = history.find(e => e.type === 'provisioned')!;
       expect(feed).toBeDefined(); expect(feed.conditions.schedule).toBe('daily_nursing');
       expect(feed.causalParents).toHaveLength(2);
       const routes = feed.causalParents.map(id => history.find(e => e.id === id)!);
@@ -69,7 +70,7 @@ maybe('durable parental contact', () => {
       const after = restored.world.agents.find(a => a.id === saved.id)!;
       expect(after.nursingIntake).toEqual(saved.nursingIntake);
       expect(after.nursingSite).toEqual(saved.nursingSite);
-      expect((await new EventStore(pool!).recent(1000)).filter(e => e.type === 'provisioned')).toEqual([feed]);
+      expect((await new EventStore(pool!, ISLAND_GRID).recent(1000)).filter(e => e.type === 'provisioned')).toEqual([feed]);
     } finally { await api.close(); }
   });
   it('publishes only saved care evidence, plays the real approach, and retains the visit on restart', async () => {
@@ -86,10 +87,10 @@ maybe('durable parental contact', () => {
       expect(host.liveEncounterFrame()).toBeNull();
       expect((await api.inject(`/animals/${child!.id}/events`)).json().events.some((e: { type: string }) => e.type === 'provisioned')).toBe(false);
       await host.snapshotNow();
-      const history = await new EventStore(pool!).recent(1000), visit = history.find(e => e.type === 'provisioned')!;
+      const history = await new EventStore(pool!, ISLAND_GRID).recent(1000), visit = history.find(e => e.type === 'provisioned')!;
       expect(visit).toBeDefined(); expect(visit.position).toEqual(waiting);
       const move = history.find(e => e.id === visit.causalParents[0])!;
-      expect(isMovementTrace(move.movement)).toBe(true);
+      expect(isMovementTrace(ISLAND_GRID, move.movement)).toBe(true);
       expect(move.movement!.goal).toBe('care_for_young');
       expect(Number(visit.conditions.arrivalWorldTime) + Number(visit.conditions.provisioningSeconds)).toBeCloseTo(3600);
       expect((await api.inject(`/animals/${child!.id}/events`)).json().events).toContainEqual(visit);
@@ -104,7 +105,7 @@ maybe('durable parental contact', () => {
       const animals = structuredClone(host.world.agents); await host.abort();
       const restored = new SimHost(options()); await restored.boot();
       expect(restored.world.agents).toEqual(animals); expect(restored.liveEncounterFrame()).toBeNull();
-      expect((await new EventStore(pool!).recent(1000)).find(e => e.id === visit.id)).toEqual(visit);
+      expect((await new EventStore(pool!, ISLAND_GRID).recent(1000)).find(e => e.id === visit.id)).toEqual(visit);
     } finally { await api.close(); }
   });
 });

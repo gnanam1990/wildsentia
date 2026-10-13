@@ -4,6 +4,7 @@ import { resolveSpatialHunt, type SpatialHuntInput } from '../src/agents/encount
 import { subdueSecondsFor } from '../src/agents/behaviours.js';
 import { createWorld } from '../src/world.js';
 import { SPECIES_DIR, speciesOf } from './helpers.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const input: SpatialHuntInput = {
   predatorId: 'tiger_a', preyId: 'sambar_a', patchId: 0, worldTime: 3600,
@@ -15,7 +16,7 @@ const input: SpatialHuntInput = {
     predatorCondition: 1, preyEvasiveness: 0, preyCondition: 1, preyAlert: false,
     herdSize: 1, commitDistanceM: 10 },
 };
-const run = (changes: Partial<SpatialHuntInput> = {}) => resolveSpatialHunt({ ...input, ...changes }, createRng(3, 'encounter'));
+const run = (changes: Partial<SpatialHuntInput> = {}) => resolveSpatialHunt({ grid: ISLAND_GRID, ...input, ...changes }, createRng(3, 'encounter'));
 
 describe('a seized prey is subdued before it dies (sim_0.36.0)', () => {
   it('records a subdue hold after the killing contact; the prey dies at its last sample', () => {
@@ -49,14 +50,14 @@ describe('a seized prey is subdued before it dies (sim_0.36.0)', () => {
     expect(short.killed).toBe(true);
     expect(short.trace.samples.at(-1)!.seconds).toBeCloseTo(60, 9);
     // A failed contact is still an escape, with no hold.
-    const escaped = resolveSpatialHunt({ ...input, subdueSeconds: 60, contest: { ...input.contest, baseSuccess: 0 } }, createRng(3, 'encounter'));
+    const escaped = resolveSpatialHunt({ grid: ISLAND_GRID, ...input, subdueSeconds: 60, contest: { ...input.contest, baseSuccess: 0 } }, createRng(3, 'encounter'));
     expect(escaped.trace.samples.some(s => s.phase === 'subdue')).toBe(false);
   });
 
   it('a heavy prey sometimes fights free partway through the hold and runs, wounded but alive', () => {
     let freed = 0, killed = 0;
     for (let seed = 1; seed <= 400; seed++) {
-      const r = resolveSpatialHunt({ ...input, subdueSeconds: 120, subdueDragM: 3, subdueBreakFreeChance: 0.2 }, createRng(seed, 'hold'));
+      const r = resolveSpatialHunt({ grid: ISLAND_GRID, ...input, subdueSeconds: 120, subdueDragM: 3, subdueBreakFreeChance: 0.2 }, createRng(seed, 'hold'));
       if (r.stage === 'broke_free') {
         freed++;
         expect(r.killed).toBe(false);
@@ -98,8 +99,8 @@ describe('a seized prey is subdued before it dies (sim_0.36.0)', () => {
     for (let seed = 1; seed <= 30 && !checked; seed++) {
       const world = createWorld({ seed, speciesDir: SPECIES_DIR, initialAgents: { tiger: 1, chital: 20 }, minPopulation: {} });
       const tiger = world.agents.find(a => a.speciesId === 'tiger')!;
-      for (const a of world.agents) { a.patchId = 210; a.position = { ...patchCentre(210), heading: 0 }; }
-      tiger.position = { ...patchCentre(210), x: patchCentre(210).x + 60, heading: 0 };
+      for (const a of world.agents) { a.patchId = 210; a.position = { ...patchCentre(ISLAND_GRID, 210), heading: 0 }; }
+      tiger.position = { ...patchCentre(ISLAND_GRID, 210), x: patchCentre(ISLAND_GRID, 210).x + 60, heading: 0 };
       tiger.drives = { hunger: 0.7, thirst: 0, fatigue: 0, fear: 0 };
       world.__reindexForTest();
       for (let h = 0; h < 24 && !checked; h++) {

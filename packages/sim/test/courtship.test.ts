@@ -8,6 +8,7 @@ import { ISLAND_POPULATION } from '../src/forest.js';
 import { restoreSnapshot, takeSnapshot, upgradeV15Snapshot } from '../src/snapshot.js';
 import { makeAgent, speciesOf, SPECIES_DIR } from './helpers.js';
 import { asLegacySnapshot } from './legacySnapshot.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 function fixture() {
   const patches = buildGrid(1); for (const patch of patches) patch.habitat = 'grassland';
@@ -60,13 +61,13 @@ describe('physical mate approach and end-of-tick contact', () => {
   });
   it('crosses a patch boundary through a recorded route before any conception trial', () => {
     const f = fixture(), bool = vi.spyOn(f.rng, 'bool').mockReturnValue(true);
-    const visit = approachMate(f.female, f.male, f.target, f.cfg, f.patches, 0, 1, 0, f.log);
+    const visit = approachMate(ISLAND_GRID, f.female, f.male, f.target, f.cfg, f.patches, 0, 1, 0, f.log);
     expect(visit.arrival).toBeGreaterThan(0); expect(visit.arrival).toBeLessThan(3600);
-    expect(f.female.patchId).toBe(1); expect(positionInPatch(f.female.position, 1)).toBe(true);
+    expect(f.female.patchId).toBe(1); expect(positionInPatch(ISLAND_GRID, f.female.position, 1)).toBe(true);
     expect(f.female.pregnantSince).toBeNull(); expect(bool).not.toHaveBeenCalled();
-    const route = f.log.all()[0]!; expect(isMovementTrace(route.movement)).toBe(true);
+    const route = f.log.all()[0]!; expect(isMovementTrace(ISLAND_GRID, route.movement)).toBe(true);
     expect(route.movement!.samples[0]!.position.x).toBe(140);
-    finishCourtship(visit, f.cfg, 0, 3600, 2, f.rng, f.log);
+    finishCourtship(ISLAND_GRID, visit, f.cfg, 0, 3600, 2, f.rng, f.log);
     expect(f.female.pregnantSince).toBe(3600); expect(f.female.pregnancyFatherId).toBe('male');
     const event = f.log.all().at(-1)!;
     expect(event.outcome).toBe('success'); expect(event.worldTime).toBe(3600);
@@ -74,42 +75,42 @@ describe('physical mate approach and end-of-tick contact', () => {
   });
   it.each(['moved', 'died', 'unreceptive', 'encounter'] as const)('does not conceive when the mate %s after the approach began', cause => {
     const f = fixture(), bool = vi.spyOn(f.rng, 'bool');
-    const visit = approachMate(f.female, f.male, f.target, f.cfg, f.patches, 0, 1, 0, f.log);
+    const visit = approachMate(ISLAND_GRID, f.female, f.male, f.target, f.cfg, f.patches, 0, 1, 0, f.log);
     if (cause === 'moved') f.male.position!.x += 20;
     if (cause === 'died') f.male.alive = false;
     if (cause === 'unreceptive') f.male.drives.thirst = .99;
     if (cause === 'encounter') f.male.lastEncounterAt = 0;
-    finishCourtship(visit, f.cfg, 0, 3600, 2, f.rng, f.log);
+    finishCourtship(ISLAND_GRID, visit, f.cfg, 0, 3600, 2, f.rng, f.log);
     expect(f.female.pregnantSince).toBeNull(); expect(f.female.nextOestrusAt).toBeUndefined();
     expect(bool).not.toHaveBeenCalled(); expect(f.log.all().at(-1)!.outcome).toBe('interrupted');
   });
   it('does not infer end-of-hour mating from equal planar coordinates when a partner climbed', () => {
     const f = fixture(), bool = vi.spyOn(f.rng, 'bool');
-    const visit = approachMate(f.female, f.male, f.target, f.cfg, f.patches, 0, 1, 0, f.log);
+    const visit = approachMate(ISLAND_GRID, f.female, f.male, f.target, f.cfg, f.patches, 0, 1, 0, f.log);
     expect(visit.arrival).toBeLessThan(3600);
     f.male.altitudeM = 2;
-    finishCourtship(visit, f.cfg, 0, 3600, 2, f.rng, f.log);
+    finishCourtship(ISLAND_GRID, visit, f.cfg, 0, 3600, 2, f.rng, f.log);
     expect(f.female.pregnantSince).toBeNull();
     expect(f.log.all().at(-1)?.outcome).toBe('interrupted');
     expect(bool).not.toHaveBeenCalled();
   });
   it('spends travel time and cannot turn a partial or blocked route into mating', () => {
     const f = fixture(), bool = vi.spyOn(f.rng, 'bool');
-    const partial = approachMate(f.female, f.male, f.target, f.cfg, f.patches, 0, 1 / 3600, 0, f.log);
+    const partial = approachMate(ISLAND_GRID, f.female, f.male, f.target, f.cfg, f.patches, 0, 1 / 3600, 0, f.log);
     expect(partial.arrival).toBe(Infinity); expect(f.female.position!.x).toBeLessThan(145);
-    expect(positionInPatch(f.female.position, f.female.patchId)).toBe(true);
-    finishCourtship(partial, f.cfg, 0, 1, 2, f.rng, f.log); expect(bool).not.toHaveBeenCalled();
+    expect(positionInPatch(ISLAND_GRID, f.female.position, f.female.patchId)).toBe(true);
+    finishCourtship(ISLAND_GRID, partial, f.cfg, 0, 1, 2, f.rng, f.log); expect(bool).not.toHaveBeenCalled();
     f.patches[1]!.surface = 'ocean';
-    const blocked = approachMate(f.female, f.male, f.target, f.cfg, f.patches, 1, 1, 0, f.log);
-    finishCourtship(blocked, f.cfg, 1, 3601, 2, f.rng, f.log);
+    const blocked = approachMate(ISLAND_GRID, f.female, f.male, f.target, f.cfg, f.patches, 1, 1, 0, f.log);
+    finishCourtship(ISLAND_GRID, blocked, f.cfg, 1, 3601, 2, f.rng, f.log);
     expect(f.female.pregnantSince).toBeNull(); expect(f.log.all().at(-1)!.outcome).toBe('abandoned');
   });
   it('does not claim same-patch contact across hundreds of metres; real rejection ends the cycle', () => {
     const f = fixture(); f.male.patchId = 0; f.male.position!.x = -100;
     const target = { patchId: 0, position: { ...f.male.position! } };
-    const visit = approachMate(f.female, f.male, target, f.cfg, f.patches, 0, 1, 0, f.log);
+    const visit = approachMate(ISLAND_GRID, f.female, f.male, target, f.cfg, f.patches, 0, 1, 0, f.log);
     expect(f.log.all()[0]!.effects.distanceM).toBeGreaterThan(230);
-    vi.spyOn(f.rng, 'bool').mockReturnValue(false); finishCourtship(visit, f.cfg, 0, 3600, 2, f.rng, f.log);
+    vi.spyOn(f.rng, 'bool').mockReturnValue(false); finishCourtship(ISLAND_GRID, visit, f.cfg, 0, 3600, 2, f.rng, f.log);
     expect(f.female.pregnantSince).toBeNull(); expect(f.female.nextOestrusAt).toBeGreaterThan(3600);
   });
   it('keeps every agent position/patch consistent across the full island founding cohort and replay', () => {
@@ -118,7 +119,7 @@ describe('physical mate approach and end-of-tick contact', () => {
     const world = createWorld(config);
     for (let hour = 0; hour < 12; hour++) {
       world.step(1);
-      expect(world.agents.filter(a => a.alive && !positionInPatch(a.position, a.patchId)).map(a => a.id)).toEqual([]);
+      expect(world.agents.filter(a => a.alive && !positionInPatch(ISLAND_GRID, a.position, a.patchId)).map(a => a.id)).toEqual([]);
     }
     const restored = restoreSnapshot(takeSnapshot(world), config);
     world.step(12); restored.step(12); expect(takeSnapshot(restored)).toEqual(takeSnapshot(world));
@@ -129,7 +130,7 @@ describe('physical mate approach and end-of-tick contact', () => {
     const old = asLegacySnapshot(takeSnapshot(world), 'sim_0.15.0');
     const next = upgradeV15Snapshot(old); expect(next.simVersion).toBe(SIM_VERSION); expect(old.simVersion).toBe('sim_0.15.0');
     expect(next.agents).toEqual(old.agents);
-    old.agents[0]!.position = { ...patchCentre((old.agents[0]!.patchId + 1) % 400), heading: 0 };
+    old.agents[0]!.position = { ...patchCentre(ISLAND_GRID, (old.agents[0]!.patchId + 1) % 400), heading: 0 };
     expect(() => upgradeV15Snapshot(old)).toThrow('recovery review');
     expect(() => upgradeV15Snapshot(next)).toThrow('only sim_0.15.0');
   });

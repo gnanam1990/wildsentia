@@ -116,4 +116,23 @@ describe('species config', () => {
     expect(() => parseSpecies({ ...hare, locomotion: { ...hare.locomotion, sprintMs: 0.1 } }))
       .toThrow(/sprint/i);
   });
+
+  it('accepts the Congo fields (swimming, prey life stages, freezing first, flooded costs) and bounds them (1B)', () => {
+    const leopard = species.get('leopard')!;
+    const swimmer = { ...leopard, locomotion: { ...leopard.locomotion, swims: { swimMs: 0.7, diveSeconds: 240 },
+      floodedTerrainCost: { flooded_forest: 3 } }, escape: { ...leopard.escape, freezeFirst: true },
+      hunting: { ...leopard.hunting!, preyLifeStages: ['juvenile', 'adult'] } };
+    expect(parseSpecies(swimmer).locomotion.swims).toEqual({ swimMs: 0.7, diveSeconds: 240 });
+    expect(parseSpecies(swimmer).hunting!.preyLifeStages).toEqual(['juvenile', 'adult']);
+    expect(parseSpecies(swimmer).escape.freezeFirst).toBe(true);
+    expect(parseSpecies(swimmer).locomotion.floodedTerrainCost).toEqual({ flooded_forest: 3 });
+    for (const bad of [{ swimMs: 0, diveSeconds: 240 }, { swimMs: 0.7, diveSeconds: -1 }, { swimMs: 0.7, diveSeconds: 3_601 }])
+      expect(() => parseSpecies({ ...swimmer, locomotion: { ...swimmer.locomotion, swims: bad } })).toThrow();
+    expect(() => parseSpecies({ ...swimmer, hunting: { ...swimmer.hunting, preyLifeStages: ['tadpole'] } })).toThrow();
+    // No island species carries any of them.
+    for (const s of species.values()) {
+      expect(s.locomotion.swims).toBeUndefined();
+      expect(s.hunting?.preyLifeStages).toBeUndefined();
+    }
+  });
 });

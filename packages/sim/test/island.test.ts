@@ -1,3 +1,4 @@
+import { ISLAND_GRID } from '@vana/shared';
 import { describe, expect, it } from 'vitest';
 import { islandHeightAt, islandVertexHeight, islandPatchSurface, ISLAND_SEGMENTS, landWalkable, landRayDistance,
   patchCentre, patchAtPosition, createRng } from '@vana/shared';
@@ -11,6 +12,7 @@ import { navigate, planRoute } from '../src/agents/navigation.js';
 import { resolveSpatialHunt } from '../src/agents/encounters.js';
 import { SPECIES_DIR, makeAgent, speciesOf } from './helpers.js';
 import { asLegacySnapshot } from './legacySnapshot.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const options = { seed: 1, speciesDir: SPECIES_DIR, initialAgents: { chital: 30, tiger: 2, dhole: 6 },
   minPopulation: {}, terrainProfile: 'island_v1' as const };
@@ -53,11 +55,11 @@ describe('authoritative island geography', () => {
         Math.abs(a.x - b.x) + Math.abs(a.y - b.y) >= ISLAND_BASIN_SEPARATION_PATCHES))).toBe(true);
       expect(islandFreshwaterBasinIds(patches)).toEqual([]);
       const start = patches.find(landWalkable)!;
-      const elephant = makeAgent('elephant', { patchId: start.id, position: { ...patchCentre(start.id), heading: 0 } });
+      const elephant = makeAgent('elephant', { patchId: start.id, position: { ...patchCentre(ISLAND_GRID, start.id), heading: 0 } });
       for (const lake of lakes) {
         expect(lake.waterVolume).toBe(ISLAND_INITIAL_LAKE_WATER_L);
         expect(lake.capacity).toEqual({ grass: 0, browse: 0 });
-        expect(planRoute(elephant, lake.id, patches, speciesOf('elephant'))).not.toBeNull();
+        expect(planRoute(ISLAND_GRID, elephant, lake.id, patches, speciesOf('elephant'))).not.toBeNull();
       }
       expect(buildGrid(seed, 'island_v1')).toEqual(patches);
     }
@@ -77,7 +79,7 @@ describe('authoritative island geography', () => {
   it('keeps perennial basin input and dry-season water finite and in the water ledger', () => {
     const patches = buildGrid(1, 'island_v1'), budget = newWaterBudget(patches, 0);
     const lakes = patches.filter(p => p.surface === 'land' && p.habitat === 'water');
-    for (let hour = 0; hour < 90 * 24; hour++) updateDrainage(patches, 1, 'dry', budget);
+    for (let hour = 0; hour < 90 * 24; hour++) updateDrainage(ISLAND_GRID, patches, 1, 'dry', budget);
     expect(budget.groundwaterL).toBeGreaterThanOrEqual(lakes.length * 400 * 90 * 24);
     expect(budget.boundaryOutflowL).toBeGreaterThan(0);
     expect(lakes.every(p => p.waterVolume > 0 && Number.isFinite(p.waterVolume))).toBe(true);
@@ -95,7 +97,7 @@ describe('authoritative island geography', () => {
     for (let i = 0; i <= ISLAND_SEGMENTS; i++) for (const [col, row] of [[0, i], [i, 0], [ISLAND_SEGMENTS, i], [i, ISLAND_SEGMENTS]])
       expect(islandVertexHeight(seed, col!, row!)).toBeLessThan(0);
     for (const p of land) {
-      expect(islandPatchSurface(seed, p.id)).toBe('land'); const centre = patchCentre(p.id);
+      expect(islandPatchSurface(seed, p.id)).toBe('land'); const centre = patchCentre(ISLAND_GRID, p.id);
       for (const dx of [-149.9, 0, 149.9]) for (const dz of [-149.9, 0, 149.9])
         expect(islandHeightAt(seed, centre.x + dx, centre.z + dz)).toBeGreaterThanOrEqual(2);
     }
@@ -113,28 +115,28 @@ describe('authoritative island geography', () => {
   it('never routes an ordinary agent into a coast/ocean cell, including a saved route', () => {
     const p = buildGrid(1, 'island_v1'), start = p.find(a => landWalkable(a) && a.neighbours.some(id => !landWalkable(p[id])))!;
     const destination = start.neighbours.find(id => !landWalkable(p[id]))!;
-    const a = makeAgent('chital', { patchId: start.id, position: { ...patchCentre(start.id), heading: 0 } });
+    const a = makeAgent('chital', { patchId: start.id, position: { ...patchCentre(ISLAND_GRID, start.id), heading: 0 } });
     const before = { ...a.position! }; a.journey = { goal: 'wander', destinationPatchId: destination, route: [destination] };
-    const result = navigate(a, speciesOf('chital'), p, destination, 'wander', 0, 3600);
+    const result = navigate(ISLAND_GRID, a, speciesOf('chital'), p, destination, 'wander', 0, 3600);
     expect(result.unreachable).toBe(true); expect(a.position).toEqual(before); expect(a.journey).toBeUndefined();
   });
   it('stops a hunt at the dry-land boundary without inventing a kill or leaving the land', () => {
     const patches = buildGrid(1, 'island_v1');
     const p = patches.find(p => landWalkable(p) && p.id % 20 < 19 && !landWalkable(patches[p.id + 1]))!;
-    const c = patchCentre(p.id), predator = { x: c.x + 130, z: c.z, heading: 0 }, prey = { x: c.x + 149, z: c.z, heading: 0 };
-    const result = resolveSpatialHunt({ predatorId: 'tiger_a', preyId: 'chital_b', patchId: p.id, worldTime: 0,
+    const c = patchCentre(ISLAND_GRID, p.id), predator = { x: c.x + 130, z: c.z, heading: 0 }, prey = { x: c.x + 149, z: c.z, heading: 0 };
+    const result = resolveSpatialHunt({ grid: ISLAND_GRID, predatorId: 'tiger_a', preyId: 'chital_b', patchId: p.id, worldTime: 0,
       predator, prey, predatorWalkMs: 1, predatorSprintMs: 10, preySprintMs: 1, preyTrotMs: 1,
       predatorSprintSeconds: 25, preySprintSeconds: 40, contactRadiusM: 1, secondsAvailable: 3600, chaseStaminaCost: 0.3,
-      landBoundaryM: (position, heading) => landRayDistance(patches, position, heading),
+      landBoundaryM: (position, heading) => landRayDistance(ISLAND_GRID, patches, position, heading),
       contest: { baseSuccess: 1, stalkConcealment: 1, canopyCover: 1, predatorStamina: 1, predatorCondition: 1,
         preyEvasiveness: 0, preyCondition: 1, preyAlert: false, herdSize: 1, commitDistanceM: 10 } }, createRng(3, 'hunt'));
     expect(result.stage).toBe('boundary_escape'); expect(result.killed).toBe(false);
     for (const sample of result.trace.samples) for (const position of [sample.predator, sample.prey])
-      expect(landWalkable(patches[patchAtPosition(position)])).toBe(true);
+      expect(landWalkable(patches[patchAtPosition(ISLAND_GRID, position)])).toBe(true);
   });
   it('discharges coastal runoff to the ocean without making sea water a freshwater resource', () => {
     const p = buildGrid(1, 'island_v1'), b = newWaterBudget(p, 0);
-    for (let i = 0; i < 72; i++) updateDrainage(p, 1, 'monsoon', b);
+    for (let i = 0; i < 72; i++) updateDrainage(ISLAND_GRID, p, 1, 'monsoon', b);
     expect(b.boundaryOutflowL).toBeGreaterThan(0);
     expect(p.filter(p => p.surface === 'ocean').every(p => p.waterVolume === 0)).toBe(true);
     expect(waterBudgetResidual(p, b)).toBeCloseTo(0, 6);

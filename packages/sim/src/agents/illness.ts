@@ -85,7 +85,7 @@ export function advanceIllness(agent: Agent, end: number, log: EventLog): WorldE
   if (end < illness.incubationUntil) return null;
   const append = (type: 'disease_symptomatic' | 'disease_recovered' | 'disease_fatal',
     effects: Record<string, number>): WorldEvent => log.append({ type, worldTime: end, simVersion: '',
-    patchId: agent.patchId, ...(positionInPatch(agent.position, agent.patchId) ? { position: { ...agent.position } } : {}),
+    patchId: agent.patchId, ...(positionInPatch(log.grid, agent.position, agent.patchId) ? { position: { ...agent.position } } : {}),
     actors: [agent.id], conditions: { kind: illness.kind, sourceCarcassId: illness.sourceCarcassId,
       sourceMealEventId: illness.sourceMealEventId, incubationUntil: illness.incubationUntil,
       timing: 'decision_end', model: 'generic_carrion_v1' }, outcome: 'success', effects,

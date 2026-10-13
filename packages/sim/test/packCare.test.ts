@@ -13,6 +13,7 @@ import { createWorld, SIM_VERSION } from '../src/world.js';
 import { takeSnapshot, restoreSnapshot, upgradeV12Snapshot } from '../src/snapshot.js';
 import { makeAgent, SPECIES_DIR, speciesOf } from './helpers.js';
 import { asLegacySnapshot } from './legacySnapshot.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 function fixture() {
   const cfg = structuredClone(speciesOf('dhole')), patches = buildGrid(1), log = new EventLog(1, SIM_VERSION);
@@ -26,10 +27,10 @@ function fixture() {
   const nursing = new Set([recipient.id]), bodies = [carcass], agents = [donor, recipient];
   const nutrient = () => totalNutrients(patches, agents, { imported: 0, exported: 0 }, bodies);
   const collect = (hours = 1) => {
-    const c = beginPackCollection(donor, recipient, carcass, cfg, patches, 0, hours, log)!;
-    finishPackCollection(c, cfg, bodies, nursing, log); return c;
+    const c = beginPackCollection(ISLAND_GRID, donor, recipient, carcass, cfg, patches, 0, hours, log)!;
+    finishPackCollection(ISLAND_GRID, c, cfg, bodies, nursing, log); return c;
   };
-  const deliver = (hours = 1) => beginPackDelivery(donor, recipient,
+  const deliver = (hours = 1) => beginPackDelivery(ISLAND_GRID, donor, recipient,
     { patchId: recipient.patchId, position: { ...recipient.position! } }, cfg, patches, 3600, hours, log)!;
   return { cfg, patches, log, donor, recipient, carcass, nursing, bodies, agents, nutrient, collect, deliver };
 }
@@ -52,10 +53,10 @@ describe('source-backed cooperative food care', () => {
     expect(s.nutrient()).toBeCloseTo(baseline, 8);
     const event = s.log.all().find(e => e.type === 'pack_food_collected')!;
     expect(event.causalParents).toEqual([collection.visit.routeId]);
-    expect(isMovementTrace(s.log.all().find(e => e.id === collection.visit.routeId)!.movement)).toBe(true);
+    expect(isMovementTrace(ISLAND_GRID, s.log.all().find(e => e.id === collection.visit.routeId)!.movement)).toBe(true);
     expect(event.worldTime).toBe(3600); expect(s.donor.packFood!.sourceEventId).toBe(event.id);
     const after = structuredClone(s.donor.packFood);
-    finishPackCollection(collection, s.cfg, s.bodies, s.nursing, s.log);
+    finishPackCollection(ISLAND_GRID, collection, s.cfg, s.bodies, s.nursing, s.log);
     expect(s.donor.packFood).toEqual(after);
   });
   it('does not collect or transfer through missing contact time', () => {
@@ -63,19 +64,19 @@ describe('source-backed cooperative food care', () => {
     expect(c.visit.arrival).toBe(Infinity); expect(s.donor.packFood).toBeUndefined();
     expect(carcassMass(s.carcass.biomass)).toBe(20);
     s.collect(); const food = structuredClone(s.donor.packFood), d = s.deliver(0.001);
-    finishPackDelivery(d, s.cfg, s.patches, s.nursing, s.log);
+    finishPackDelivery(ISLAND_GRID, d, s.cfg, s.patches, s.nursing, s.log);
     expect(s.donor.packFood).toEqual(food);
   });
   it('rejects a future or too-high-pathogen source rather than collecting food before it exists', () => {
     const s = fixture(); s.carcass.diedAt = 1;
-    expect(beginPackCollection(s.donor, s.recipient, s.carcass, s.cfg, s.patches, 0, 1, s.log)).toBeNull();
+    expect(beginPackCollection(ISLAND_GRID, s.donor, s.recipient, s.carcass, s.cfg, s.patches, 0, 1, s.log)).toBeNull();
     s.carcass.diedAt = 0; s.carcass.pathogenLoad = 1;
-    expect(beginPackCollection(s.donor, s.recipient, s.carcass, s.cfg, s.patches, 0, 1, s.log)).toBeNull();
+    expect(beginPackCollection(ISLAND_GRID, s.donor, s.recipient, s.carcass, s.cfg, s.patches, 0, 1, s.log)).toBeNull();
   });
   it('delivers exact food and model moisture at contact, caps the recipient rate and cannot double-spend a visit', () => {
     const s = fixture(); s.collect(); const baseline = s.nutrient(), amount = s.donor.packFood!.kg;
     const before = { ...s.recipient.drives }, d = s.deliver();
-    finishPackDelivery(d, s.cfg, s.patches, s.nursing, s.log);
+    finishPackDelivery(ISLAND_GRID, d, s.cfg, s.patches, s.nursing, s.log);
     const event = s.log.all().find(e => e.type === 'pack_food_delivered')!;
     expect(event).toBeDefined(); expect(event.effects.kg).toBeGreaterThan(0);
     expect(event.effects.kg).toBeLessThanOrEqual(amount);
@@ -85,7 +86,7 @@ describe('source-backed cooperative food care', () => {
     expect(before.thirst - s.recipient.drives.thirst).toBeCloseTo(kg * 0.65 / needs.waterL * THIRST_PER_DAY);
     expect(s.nutrient()).toBeCloseTo(baseline, 8);
     const settled = structuredClone(s.recipient);
-    finishPackDelivery(d, s.cfg, s.patches, s.nursing, s.log); expect(s.recipient).toEqual(settled);
+    finishPackDelivery(ISLAND_GRID, d, s.cfg, s.patches, s.nursing, s.log); expect(s.recipient).toEqual(settled);
   });
   it.each(['donor_dead', 'recipient_dead', 'donor_interrupted', 'recipient_interrupted', 'recipient_moved',
     'donor_moved', 'wrong_pack', 'wrong_target', 'newborn', 'moving_recipient'])('rejects delivery after %s', reason => {
@@ -101,7 +102,7 @@ describe('source-backed cooperative food care', () => {
     if (reason === 'newborn') { s.nursing.clear(); s.recipient.ageDays = 2; }
     if (reason === 'moving_recipient') s.recipient.state = 'travelling';
     const before = structuredClone(s.recipient.drives), food = structuredClone(s.donor.packFood);
-    finishPackDelivery(d, s.cfg, s.patches, s.nursing, s.log);
+    finishPackDelivery(ISLAND_GRID, d, s.cfg, s.patches, s.nursing, s.log);
     expect(s.recipient.drives).toEqual(before); expect(s.donor.packFood).toEqual(food);
     expect(s.log.all().some(e => e.type === 'pack_food_delivered')).toBe(false);
   });
@@ -109,10 +110,10 @@ describe('source-backed cooperative food care', () => {
     const s = fixture(); s.carcass.biomass = { muscle: 0.01, organ: 0.01, hide: 0, bone: 0 };
     s.collect(); expect(s.donor.packFood!.kg).toBeCloseTo(0.02);
     expect(edibleMass(s.carcass.biomass)).toBe(0);
-    expect(beginPackCollection(s.donor, s.recipient, s.carcass, s.cfg, s.patches, 3600, 1, s.log)).toBeNull();
+    expect(beginPackCollection(ISLAND_GRID, s.donor, s.recipient, s.carcass, s.cfg, s.patches, 3600, 1, s.log)).toBeNull();
     const other = { ...s.donor, id: 'other' }; delete other.packFood;
-    const c = beginPackCollection(other, s.recipient, s.carcass, s.cfg, s.patches, 0, 1, s.log)!;
-    finishPackCollection(c, s.cfg, s.bodies, s.nursing, s.log); expect(other.packFood).toBeUndefined();
+    const c = beginPackCollection(ISLAND_GRID, other, s.recipient, s.carcass, s.cfg, s.patches, 0, 1, s.log)!;
+    finishPackCollection(ISLAND_GRID, c, s.cfg, s.bodies, s.nursing, s.log); expect(other.packFood).toBeUndefined();
   });
   it('self-digests expired or urgently needed cargo exactly once, conserving its biomass', () => {
     for (const urgent of [false, true]) {
@@ -127,13 +128,13 @@ describe('source-backed cooperative food care', () => {
   });
   it('does not promise a wait for an empty, late, exhausted or unreachable carrier', () => {
     const s = fixture(), target = { patchId: 0, position: { ...s.recipient.position! } };
-    expect(canWaitForPackFood(s.donor, target, s.cfg, s.patches, 0, 1)).toBe(false);
-    s.collect(); expect(canWaitForPackFood(s.donor, target, s.cfg, s.patches, 3600, 1)).toBe(true);
+    expect(canWaitForPackFood(ISLAND_GRID, s.donor, target, s.cfg, s.patches, 0, 1)).toBe(false);
+    s.collect(); expect(canWaitForPackFood(ISLAND_GRID, s.donor, target, s.cfg, s.patches, 3600, 1)).toBe(true);
     const position = structuredClone(s.donor.position);
     s.donor.drives.hunger = 0.649;
-    expect(canWaitForPackFood(s.donor, target, s.cfg, s.patches, 3600, 1)).toBe(false);
+    expect(canWaitForPackFood(ISLAND_GRID, s.donor, target, s.cfg, s.patches, 3600, 1)).toBe(false);
     s.donor.drives.hunger = 0.1; s.cfg.locomotion.walkMs = 0.00001;
-    expect(canWaitForPackFood(s.donor, target, s.cfg, s.patches, 3600, 1)).toBe(false);
+    expect(canWaitForPackFood(ISLAND_GRID, s.donor, target, s.cfg, s.patches, 3600, 1)).toBe(false);
     expect(s.donor.position).toEqual(position);
   });
   it('gates pack identity, donor maturity, source configuration and recipient development', () => {

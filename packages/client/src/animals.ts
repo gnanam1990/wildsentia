@@ -297,6 +297,8 @@ export class AnimalLayer {
   ): void {
     const positions = new Map<string, RenderPosition>();
     for (const animal of animals.values()) {
+      // A diver under water is not drawn (Congo 1B): nothing of it shows until it surfaces.
+      if (underWater(animal)) continue;
       const pose = recorded.get(animal.id);
       if (pose) {
         this.tracker.placeRecorded(animal.id, pose.position, nowMs);
@@ -596,4 +598,9 @@ export class AnimalLayer {
     this.root.remove(rig.group);
     this.#rigs.delete(id);
   }
+}
+
+/** Congo 1B: an animal under water (a diving chevrotain) is out of sight. */
+export function underWater(animal: { locomotionMode?: string | undefined }): boolean {
+  return animal.locomotionMode === 'submerged';
 }
