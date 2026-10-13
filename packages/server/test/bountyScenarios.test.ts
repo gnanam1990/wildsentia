@@ -77,8 +77,8 @@ maybe('bounty scenarios', () => {
     expect((await bounties.record(b.bountyId))!.sha256).toMatch(/^[0-9a-f]{64}$/);
     // The owner's pages show each asset's last decided bounty and its payout.
     // Each owner sees the bounty from their side: the target's owner was not paid; the predator's owner was.
-    expect(await bounties.lastDecidedOnAsset(duiker.assetId)).toEqual({ outcome: 'predator', role: 'target', payout: { status: 'recorded' }, paidToOwner: false });
-    expect(await bounties.lastDecidedOnAsset(leopard.assetId)).toEqual({ outcome: 'predator', role: 'winner', payout: { status: 'recorded' }, paidToOwner: true });
+    expect(await bounties.lastDecidedOnAsset(duiker.assetId)).toEqual({ lifeId: duiker.lifeId, outcome: 'predator', role: 'target', payout: { status: 'recorded' }, paidToOwner: false });
+    expect(await bounties.lastDecidedOnAsset(leopard.assetId)).toEqual({ lifeId: leopard.lifeId, outcome: 'predator', role: 'winner', payout: { status: 'recorded' }, paidToOwner: true });
   });
 
   it('pays the target\'s owner at publication when it is alive at the deadline', async () => {

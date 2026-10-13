@@ -11,7 +11,7 @@ export interface OwnedDeps {
   /** Congo 1D: whether a bounty is active on a life (shown only to its owner). */
   bountyActive?: (lifeId: string) => Promise<boolean>;
   /** Congo 1D: an asset's last decided bounty and its payout (shown only to its owner). */
-  lastBounty?: (assetId: string) => Promise<{ outcome: string; role: string; payout: { status: string } | null; paidToOwner: boolean } | null>;
+  lastBounty?: (assetId: string) => Promise<{ lifeId: string; outcome: string; role: string; payout: { status: string } | null; paidToOwner: boolean } | null>;
   /** Congo 1E: an alive animal's state now, and whether anyone is steering it. */
   animalOf?: (animalId: string) => { state: string; steered: boolean } | null;
 }

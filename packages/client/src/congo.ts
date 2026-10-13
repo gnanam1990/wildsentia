@@ -26,8 +26,13 @@ function button(label: string, onClick: () => Promise<unknown>, quiet = false): 
   return b;
 }
 
+/** Someone is typing or acting in the list: it is not redrawn under them (the next refresh catches up). */
+const busyInList = () => $('congo-assets').contains(document.activeElement) && document.activeElement !== document.body
+  || [...$('congo-assets').querySelectorAll('input')].some((i) => (i as HTMLInputElement).value !== '');
+
 function renderAssets(assets: Array<AssetView & { agents: string[] }>): void {
   const list = $('congo-assets');
+  if (busyInList()) return;
   list.replaceChildren();
   if (assets.length === 0) { const li = document.createElement('li'); li.className = 'small'; li.textContent = 'No animals yet: buy one below.'; list.append(li); }
   for (const a of assets) {
@@ -106,7 +111,8 @@ async function refreshBoard(): Promise<void> {
 async function refresh(): Promise<void> {
   try {
     const mine = await api<{ assets: Array<AssetView & { agents: string[] }>; maxAlivePerOwner: number }>('/congo/assets');
-    $('congo-who').textContent = 'Signed in. Your animals are below.';
+    const who = 'Signed in. Your animals are below.';
+    if ($('congo-who').textContent !== who) $('congo-who').textContent = who;
     $('congo-signin').hidden = true;
     $('congo-limit').textContent = `Up to ${mine.maxAlivePerOwner ?? store?.maxAlivePerOwner ?? 2} of your animals may be alive at once.`;
     renderAssets(mine.assets);
@@ -136,7 +142,11 @@ async function devPeople(): Promise<void> {
 $('congo-status-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const out = $('congo-bounty-status'), id = $<HTMLInputElement>('congo-bounty-id').value.trim();
-  try { out.textContent = JSON.stringify(await api(`/congo/bounties/${encodeURIComponent(id)}`), null, 2); }
+  try {
+    const b = await api<{ speciesId: string; region: string; amountAtomic: string; decimals: number; status: string; timeLeftWorldSeconds: number; outcome?: string }>(`/congo/bounties/${encodeURIComponent(id)}`);
+    out.textContent = [`${name(b.speciesId)} in ${b.region}`, `Reward ${simAmount(b.amountAtomic, b.decimals, store?.token ?? 'SIM-USDC')}`, `Status: ${b.status}`,
+      b.status === 'active' ? `Time left: ${timeLeft(b.timeLeftWorldSeconds)}` : '', b.outcome ? `Outcome: ${b.outcome}` : ''].filter(Boolean).join('\n');
+  }
   catch (e) { out.textContent = (e as Error).message === 'not_found' ? 'No published bounty has that id.' : `Unavailable (${(e as Error).message}).`; }
   out.hidden = false;
 });

@@ -12,7 +12,7 @@ export interface AssetView {
   /** The animal as the world has it now (alive lives only). */
   animal?: { state: string; steered?: boolean } | null;
   /** Its last bounty's outcome and payout, if a bounty has been decided on it. */
-  bounty?: { outcome: 'predator' | 'survived' | 'void'; role: 'target' | 'winner'; payout: { status: 'intent' | 'recorded' } | null; paidToOwner: boolean } | null;
+  bounty?: { lifeId: string; outcome: 'predator' | 'survived' | 'void'; role: 'target' | 'winner'; payout: { status: 'intent' | 'recorded' } | null; paidToOwner: boolean } | null;
 }
 export type Tone = 'ok' | 'warn' | 'muted' | 'bad';
 
@@ -36,23 +36,41 @@ export function simAmount(atomic: string, decimals: number, token: string): stri
   return `${whole}.${fraction} ${token} (SIMULATED)`;
 }
 
-/** The one state a person sees for an animal, most important first. */
+/** What a bounty decided on this life means to its owner, in a few words. */
+function bountyNote(b: NonNullable<AssetView['bounty']>): string {
+  const paid = b.payout ? `payout ${b.payout.status === 'recorded' ? 'recorded' : 'pending'} (SIMULATED)` : null;
+  if (b.paidToOwner && paid) return b.role === 'winner' ? `Won a bounty: ${paid}` : `Survived its bounty: ${paid}`;
+  if (b.role === 'target' && b.outcome === 'predator') return 'Taken by a predator: the reward went to its owner';
+  return 'Bounty outcome verified';
+}
+const lower = (s: string) => `${s[0]!.toLowerCase()}${s.slice(1)}`;
+
+/**
+ * The one state a person sees for an animal: what it is doing now leads (alive, then its
+ * cooldown); a bounty decided on this same life rides alongside, or leads once the life is over.
+ * A bounty of an earlier life is not this animal's any more.
+ */
 export function assetState(a: AssetView, now: number): { label: string; tone: Tone; detail?: string } {
-  const taken = a.bounty?.role === 'target' && a.bounty.outcome === 'predator' ? 'taken by a predator: the reward went to its owner' : null;
-  const cooling = a.life?.status === 'cooldown' && a.life.cooldownUntil ? Date.parse(a.life.cooldownUntil) - now : 0;
-  if (a.bounty && (!a.life || a.life.status !== 'alive' || !a.life.bountyActive)) {
-    // Only a payout to this owner is theirs to see as pending or recorded.
-    if (a.bounty.paidToOwner && a.bounty.payout?.status === 'recorded') return { label: 'Payout recorded (SIMULATED)', tone: 'ok' };
-    if (a.bounty.paidToOwner && a.bounty.payout?.status === 'intent') return { label: 'Payout pending (SIMULATED)', tone: 'warn' };
-    // While a cooldown runs it leads (the animal cannot respawn yet), with the outcome alongside.
-    if (taken && cooling <= 0) return { label: 'Outcome verified', tone: 'muted', detail: `${taken[0]!.toUpperCase()}${taken.slice(1)}` };
-    if (!taken && (!a.life || a.life.status === 'alive')) return { label: 'Outcome verified', tone: 'muted' };
-  }
   const life = a.life;
   if (!life) return { label: 'Not yet spawned', tone: 'muted' };
+  const bounty = a.bounty && a.bounty.lifeId === life.lifeId ? a.bounty : null, note = bounty ? bountyNote(bounty) : null;
+  if (life.status === 'alive') {
+    const state = liveState(a, life);
+    return note ? { ...state, detail: note } : state;
+  }
+  const cooling = life.status === 'cooldown' && life.cooldownUntil ? Date.parse(life.cooldownUntil) - now : 0;
   if (cooling > 0) return { label: 'Cooldown', tone: 'muted',
-    detail: `Can respawn in ${countdown(cooling)}${taken ? ` · ${taken}` : life.deathCause ? ` · died of ${life.deathCause}` : ''}` };
-  if (life.status !== 'alive') return { label: 'Ready to respawn', tone: 'ok' };
+    detail: `Can respawn in ${countdown(cooling)}${note ? ` · ${lower(note)}` : life.deathCause ? ` · died of ${life.deathCause}` : ''}` };
+  if (bounty) {
+    if (bounty.paidToOwner && bounty.payout?.status === 'recorded') return { label: 'Payout recorded (SIMULATED)', tone: 'ok' };
+    if (bounty.paidToOwner && bounty.payout?.status === 'intent') return { label: 'Payout pending (SIMULATED)', tone: 'warn' };
+    return bounty.role === 'target' && bounty.outcome === 'predator' ? { label: 'Outcome verified', tone: 'muted', detail: note! } : { label: 'Outcome verified', tone: 'muted' };
+  }
+  return { label: 'Ready to respawn', tone: 'ok' };
+}
+
+/** An alive animal's state now. */
+function liveState(a: AssetView, life: LifeView): { label: string; tone: Tone; detail?: string } {
   if (life.bountyActive) return { label: 'Bounty active', tone: 'warn' };
   if (life.controller && a.animal && a.animal.steered === false) return { label: 'Disconnected', tone: 'bad', detail: 'Its controller is not steering it now' };
   switch (a.animal?.state) {

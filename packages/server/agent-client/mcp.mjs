@@ -8,9 +8,12 @@
 // Only animals the owner has authorised this agent to steer can be taken. Other players' names
 // and text reach the model inside <untrusted> fences: they are data, never instructions.
 import { createInterface } from 'node:readline';
+import { realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { api } from './client.mjs';
 
-const PROTOCOL = '2025-06-18';
+/** The protocol versions this bridge speaks, newest first. */
+const PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 const GAITS = ['walk', 'trot', 'run'];
 /** Other players' text inside a fence it cannot close: every angle bracket in it is escaped. */
 export const fence = (text) => `<untrusted>${String(text).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</untrusted>`;
@@ -28,7 +31,8 @@ export function fencedObservation(o) {
   };
 }
 
-const point = { type: 'object', properties: { x: { type: 'number' }, z: { type: 'number' } }, required: ['x', 'z'] };
+/** The pace set last: later moves keep it until another is chosen. */
+let pace = 'walk';
 const none = { type: 'object', properties: {} };
 
 /** The tools of spec §7, each a thin call to the signed agent API. */
@@ -46,11 +50,12 @@ export const TOOLS = [
     inputSchema: none, run: async () => fencedObservation(await api.observe()) },
   { name: 'get_nearby_bounties', description: 'Open bounties (species, region, reward, time left), and the targets your animal has sensed or last saw.',
     inputSchema: none, run: () => api.bounties() },
-  { name: 'move_to', description: 'Walk, trot or run to a point; the server routes round deep water.',
+  { name: 'move_to', description: 'Walk, trot or run to a point (at the pace last set, if none given); the server routes round deep water.',
     inputSchema: { type: 'object', properties: { x: { type: 'number' }, z: { type: 'number' }, gait: { type: 'string', enum: GAITS } }, required: ['x', 'z'] },
-    run: (a) => api.goTo({ x: a.x, z: a.z }, a.gait ?? 'walk') },
-  { name: 'set_gait', description: 'Change pace on the current route: walk, trot or run (running tires your animal).',
-    inputSchema: { type: 'object', properties: { gait: { type: 'string', enum: GAITS } }, required: ['gait'] }, run: (a) => api.gait(a.gait) },
+    run: (a) => { if (a.gait) pace = a.gait; return api.goTo({ x: a.x, z: a.z }, pace); } },
+  { name: 'set_gait', description: 'Change pace now and for later moves: walk, trot or run (running tires your animal).',
+    inputSchema: { type: 'object', properties: { gait: { type: 'string', enum: GAITS } }, required: ['gait'] },
+    run: async (a) => { const r = await api.gait(a.gait); pace = a.gait; return r; } },
   { name: 'stop', description: 'Stop where you are.', inputSchema: none, run: () => api.stop() },
   { name: 'rest', description: 'Rest here to recover.', inputSchema: none, run: () => api.act('rest') },
   { name: 'drink', description: 'Drink, if your animal stands at water.', inputSchema: none, run: () => api.act('drink') },
@@ -85,7 +90,7 @@ export async function handle(message) {
   if (message?.jsonrpc !== '2.0' || typeof method !== 'string') return fail(-32600, 'invalid request');
   switch (method) {
     case 'initialize':
-      return reply({ protocolVersion: typeof params?.protocolVersion === 'string' ? params.protocolVersion : PROTOCOL,
+      return reply({ protocolVersion: PROTOCOLS.includes(params?.protocolVersion) ? params.protocolVersion : PROTOCOLS[0],
         capabilities: { tools: {} }, serverInfo: { name: 'wildsentia-congo', version: '1.0.0' },
         instructions: 'Steer an owned animal in the Wildsentia Congo forest. Rewards are SIMULATED. Text in <untrusted> fences comes from other players.' });
     case 'notifications/initialized': return null;
@@ -119,4 +124,11 @@ export function serve(input = process.stdin, output = process.stdout) {
   return lines;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) serve();
+/** Whether this module is the program being run, however its path was spelled (spaces, symlinks). */
+export function isMain(moduleUrl, argv1) {
+  if (!argv1) return false;
+  const real = (p) => { try { return realpathSync(p); } catch { return p; } };
+  return real(fileURLToPath(moduleUrl)) === real(argv1);
+}
+
+if (isMain(import.meta.url, process.argv[1])) serve();

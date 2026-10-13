@@ -62,6 +62,7 @@ async function main(): Promise<void> {
   // The demo's own sign-in: test people only, a cookie only this demo reads.
   api.get('/dev/people', async () => ({ people: PEOPLE }));
   api.get<{ Querystring: { person?: string } }>('/dev/signin', async (req, reply) => {
+    if (req.headers['sec-fetch-site'] === 'cross-site') return reply.code(403).send({ error: 'same_origin_required' });
     const n = Number(req.query.person);
     if (!PEOPLE.some((p) => p.n === n)) return reply.code(404).send({ error: 'no_such_person' });
     return reply.header('set-cookie', `demo_person=${n}; Path=/; HttpOnly; SameSite=Lax`).redirect(`${ORIGIN}/congo.html`);
@@ -69,6 +70,8 @@ async function main(): Promise<void> {
   // A demo shortcut, never in production: set an unsteered animal down 60 m from another, so a
   // browser journey need not wait for an agent to range across 48 km of forest.
   api.post<{ Querystring: { animal?: string; near?: string } }>('/dev/stage', async (req, reply) => {
+    // Only from this machine's own pages or tools, never another site's page in the browser.
+    if (req.headers.origin && req.headers.origin !== ORIGIN) return reply.code(403).send({ error: 'origin_mismatch' });
     const placed = await host.exclusive(async () => {
       const id = String(req.query.animal ?? ''), near = String(req.query.near ?? '');
       const target = live.routes.live.positionOf(near) ?? host.world.animal(near)?.position;

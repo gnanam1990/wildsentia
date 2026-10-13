@@ -19,3 +19,6 @@
 .congo-checks { list-style: none; padding: 0; display: grid; gap: 4px; }
 .congo-checks .pass::before { content: '✓ '; } .congo-checks .fail::before { content: '✗ '; }
 @media (max-width: 520px) { .congo-asset { padding: 12px; } .holder-page button { width: 100%; } }
+/* Secondary actions (sell, revoke, cancel) read as secondary. */
+.congo-page button.quiet { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+.congo-page button.quiet:hover { background: var(--line); color: var(--ink); }

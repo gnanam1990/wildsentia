@@ -23,7 +23,7 @@ const bodyOf = (req: FastifyRequest): Record<string, unknown> => {
 /** What anyone may know of a bounty: never the animal, its life or its owner (spec §6). */
 export function publicBounty(b: Bounty, worldTime: number) {
   return { bountyId: b.bountyId, preset: b.preset, speciesId: b.targetSpeciesId, region: b.targetRegion, amountAtomic: b.amountAtomic.toString(),
-    decimals: b.decimals, timeLeftWorldSeconds: Math.max(0, Math.round((b.deadlineWorldTime ?? worldTime) - worldTime)), status: b.status, simulated: true as const };
+    decimals: b.decimals, timeLeftWorldSeconds: b.status === 'active' ? Math.max(0, Math.round((b.deadlineWorldTime ?? worldTime) - worldTime)) : 0, status: b.status, simulated: true as const };
 }
 
 /**

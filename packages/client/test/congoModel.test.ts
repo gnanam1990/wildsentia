@@ -19,16 +19,28 @@ describe('the Congo player pages', () => {
       .toMatchObject({ label: 'Cooldown', detail: 'Can respawn in 1 h 05 min · died of predation' });
     expect(assetState(asset({ life: life({ status: 'dead' }) }), now).label).toBe('Ready to respawn');
     expect(assetState(asset({ life: null }), now).label).toBe('Not yet spawned');
-    expect(assetState(asset({ bounty: { outcome: 'predator', role: 'winner', payout: { status: 'intent' }, paidToOwner: true } }), now).label).toBe('Payout pending (SIMULATED)');
-    expect(assetState(asset({ bounty: { outcome: 'survived', role: 'target', payout: { status: 'recorded' }, paidToOwner: true } }), now).label).toBe('Payout recorded (SIMULATED)');
-    expect(assetState(asset({ bounty: { outcome: 'void', role: 'target', payout: null, paidToOwner: false } }), now).label).toBe('Outcome verified');
+    expect(assetState(asset({ life: life({ status: 'dead' }), bounty: { lifeId: 'l1', outcome: 'predator', role: 'winner', payout: { status: 'intent' }, paidToOwner: true } }), now).label).toBe('Payout pending (SIMULATED)');
+    expect(assetState(asset({ life: life({ status: 'dead' }), bounty: { lifeId: 'l1', outcome: 'survived', role: 'target', payout: { status: 'recorded' }, paidToOwner: true } }), now).label).toBe('Payout recorded (SIMULATED)');
+    expect(assetState(asset({ life: life({ status: 'dead' }), bounty: { lifeId: 'l1', outcome: 'void', role: 'target', payout: null, paidToOwner: false } }), now).label).toBe('Outcome verified');
     // The target's owner sees the outcome, not someone else's payout.
-    expect(assetState(asset({ life: life({ status: 'dead' }), bounty: { outcome: 'predator', role: 'target', payout: { status: 'recorded' }, paidToOwner: false } }), now))
+    expect(assetState(asset({ life: life({ status: 'dead' }), bounty: { lifeId: 'l1', outcome: 'predator', role: 'target', payout: { status: 'recorded' }, paidToOwner: false } }), now))
       .toMatchObject({ label: 'Outcome verified', detail: 'Taken by a predator: the reward went to its owner' });
     // While its cooldown runs, that is what the owner sees (it cannot respawn yet), with the outcome alongside.
     expect(assetState(asset({ life: life({ status: 'cooldown', diedAt: '2026-10-13T11:50:00Z', cooldownUntil: '2026-10-13T13:50:00Z', deathCause: 'predation' }),
-      bounty: { outcome: 'predator', role: 'target', payout: { status: 'recorded' }, paidToOwner: false } }), now))
+      bounty: { lifeId: 'l1', outcome: 'predator', role: 'target', payout: { status: 'recorded' }, paidToOwner: false } }), now))
       .toMatchObject({ label: 'Cooldown', detail: 'Can respawn in 1 h 50 min · taken by a predator: the reward went to its owner' });
+  });
+  it('lets the animal\'s state now lead, with a bounty of this life alongside, and forgets the bounty of an earlier life', () => {
+    const now = Date.parse('2026-10-13T12:00:00Z');
+    const won = { lifeId: 'l1', outcome: 'predator' as const, role: 'winner' as const, payout: { status: 'recorded' as const }, paidToOwner: true };
+    // The winner, alive and steered by nobody now: the live state, with its payout alongside.
+    expect(assetState(asset({ life: life({ controller: { kind: 'agent', id: 'ag_1' } }), animal: { state: 'resting', steered: false }, bounty: won }), now))
+      .toMatchObject({ label: 'Disconnected', detail: 'Won a bounty: payout recorded (SIMULATED)' });
+    // The winner, later dead and cooling down: the cooldown leads (no Respawn yet).
+    expect(assetState(asset({ life: life({ status: 'cooldown', cooldownUntil: '2026-10-13T12:30:00Z' }), bounty: won }), now).label).toBe('Cooldown');
+    // A respawned target: the new life is just alive; the old life's bounty is not shown.
+    expect(assetState(asset({ life: life({ lifeId: 'l2' }), animal: { state: 'grazing' },
+      bounty: { lifeId: 'l1', outcome: 'predator', role: 'target', payout: { status: 'recorded' }, paidToOwner: false } }), now)).toEqual({ label: 'Alive', tone: 'ok' });
   });
   it('writes amounts in exact units, always marked SIMULATED, and times left plainly', () => {
     expect(simAmount('10000000', 6, 'SIM-USDC')).toBe('10.00 SIM-USDC (SIMULATED)');

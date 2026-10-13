@@ -29,6 +29,7 @@ const pool = url ? createPool(url) : null;
 const speciesDir = fileURLToPath(new URL('../../../config/species-congo', import.meta.url));
 const config = loadOwnershipConfig(fileURLToPath(new URL('../../../config/ownership-congo.json', import.meta.url)));
 
+const commands: Array<{ agentId: string; command: string; args: Record<string, unknown> }> = [];
 let host: SimHost, app: FastifyInstance, live: LiveLayer, base = '', ticker: NodeJS.Timeout | undefined;
 let ownership: OwnershipStore, lives: LifeService, engine: BountyEngine, discovery: BountyDiscovery;
 beforeAll(async () => {
@@ -49,6 +50,7 @@ beforeAll(async () => {
   engine = new BountyEngine(bountyStore, ownership, host, new DevSettlementAdapter(bountyStore), () => 12);
   discovery = new BountyDiscovery(bountyStore, () => 'w1');
   live.onHunt = (h) => { if (h.killed) void engine.adjudicate(); };
+  live.onCommand = (record) => { commands.push(record); };
   app = Fastify();
   installLiveAgents(app, { live, world: port, store: new AgentStore(pool!), ledger: null,
     limits: { slots: 5, perNetworkPerDay: 5 }, networkSecret: 's', clientScriptPath: fileURLToPath(new URL('../agent-client/client.mjs', import.meta.url)),
@@ -81,23 +83,23 @@ maybe('the example agent', () => {
       expect((await mcp.tools()).length).toBeGreaterThanOrEqual(17);
       const me = await mcp.call('register_agent', { name: 'Hunter' });
       await ownership.grant(leopardAsset, me.agentId);
-      // The owner's leopard starts its hunt 60 m downwind of the duiker, as if it had ranged there.
+      // Staged as if it had ranged there: right after it takes control, the leopard stands 60 m from the duiker.
       const log: string[] = [];
-      const placed = (async () => {
-        for (let i = 0; i < 200 && !live.avatars.get(me.agentId); i++) await new Promise((r) => setTimeout(r, 25));
-        const avatar = live.avatars.get(me.agentId)!, prey = host.world.animal(duiker.animalId)!.position!;
-        avatar.x = prey.x + 60; avatar.z = prey.z;
-      })();
-      const result = await hunt(mcp, { log: (l: string) => log.push(l), tick: () => new Promise((r) => setTimeout(r, 1000)), maxSteps: 40 });
-      await placed;
+      const result = await hunt(mcp, { log: (l: string) => log.push(l), tick: () => new Promise((r) => setTimeout(r, 1000)), maxSteps: 40,
+        afterTakeControl: async () => {
+          await host.exclusive(async () => {
+            const avatar = live.avatars.get(me.agentId)!, prey = host.world.animal(duiker.animalId)!.position!;
+            avatar.x = prey.x + 60; avatar.z = prey.z; avatar.path = []; avatar.moving = false;
+          });
+        } });
       expect(result, log.join('\n')).toMatchObject({ ok: true, target: duiker.animalId, bountyId: draft.bounty.bountyId });
+      // The server accepted its hunt of the bounty's target (not merely a log line).
+      expect(commands).toContainEqual(expect.objectContaining({ agentId: me.agentId, command: 'hunt', args: { targetId: duiker.animalId } }));
       // The chase plays out in real time; the leopard catches the duiker or it gets away.
       for (let i = 0; i < 120 && host.world.animal(duiker.animalId)!.alive; i++) await new Promise((r) => setTimeout(r, 250));
       if (!host.world.animal(duiker.animalId)!.alive) {
         await engine.adjudicate();
         expect((await mcp.call('get_bounty_status', { bountyId: draft.bounty.bountyId }))).toMatchObject({ status: 'settled', outcome: 'predator' });
-      } else {
-        expect(log.join('\n')).toMatch(/hunt:/);
       }
     } finally { mcp.close(); }
   });

@@ -410,7 +410,8 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
       });
       scope.get<{ Params: { assetId: string } }>('/agents/me/animals/:assetId/lives', async (req, reply) => {
         const ctx = await me(req, reply, observes); if (!ctx) return reply;
-        if (!/^[0-9a-f-]{36}$/.test(req.params.assetId) || !(await owned.store.granted(req.params.assetId, ctx.agent.id))) return reply.code(404).send({ error: 'not_authorised' });
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(req.params.assetId) || !(await owned.store.granted(req.params.assetId, ctx.agent.id)))
+        return reply.code(404).send({ error: 'not_authorised' });
         return { assetId: req.params.assetId, lives: (await owned.store.livesOf(req.params.assetId)).map(lifeView) };
       });
       scope.post('/agents/me/gait', async (req, reply) => {
