@@ -92,11 +92,19 @@ export class BountyStore {
     return (await this.pool.query("select * from bounties where world_id<>$1 and status in ('active','on_hold')", [this.worldId])).rows.map(bounty);
   }
 
-  /** An asset's most recently decided bounty and its payout, for its owner's pages. */
-  async lastDecidedOnAsset(assetId: string): Promise<{ outcome: Outcome; payout: { status: 'intent' | 'recorded' } | null } | null> {
-    const row = (await this.pool.query(`select b.outcome, s.status as payout from bounties b left join bounty_settlements s using (bounty_id)
-      where b.target_asset_id=$1 and b.outcome is not null order by b.adjudicated_at desc limit 1`, [assetId])).rows[0];
-    return row ? { outcome: row.outcome as Outcome, payout: row.payout ? { status: row.payout as 'intent' | 'recorded' } : null } : null;
+  /**
+   * An asset's most recently decided bounty, as its owner sees it: on the asset's own animal
+   * (target) or one its animal won (winner), its payout, and whether that payout is the owner's.
+   */
+  async lastDecidedOnAsset(assetId: string): Promise<{ outcome: Outcome; role: 'target' | 'winner'; payout: { status: 'intent' | 'recorded' } | null; paidToOwner: boolean } | null> {
+    const row = (await this.pool.query(`select b.outcome, s.status as payout, s.payee_wallet, a.owner_wallet,
+        case when b.target_asset_id=$1 then 'target' else 'winner' end as role
+      from bounties b left join bounty_settlements s using (bounty_id) join animal_assets a on a.asset_id=$1
+      where b.outcome is not null and (b.target_asset_id=$1 or (b.outcome='predator' and b.winner_animal_id in
+        (select animal_id from animal_lives where asset_id=$1 and animal_id is not null)))
+      order by b.adjudicated_at desc limit 1`, [assetId])).rows[0];
+    return row ? { outcome: row.outcome as Outcome, role: row.role as 'target' | 'winner', payout: row.payout ? { status: row.payout as 'intent' | 'recorded' } : null,
+      paidToOwner: !!row.payee_wallet && row.payee_wallet === row.owner_wallet } : null;
   }
 
   /** The active bounty on a life, if any. */

@@ -19,9 +19,12 @@ describe('the Congo player pages', () => {
       .toMatchObject({ label: 'Cooldown', detail: 'Can respawn in 1 h 05 min · died of predation' });
     expect(assetState(asset({ life: life({ status: 'dead' }) }), now).label).toBe('Ready to respawn');
     expect(assetState(asset({ life: null }), now).label).toBe('Not yet spawned');
-    expect(assetState(asset({ bounty: { outcome: 'predator', payout: { status: 'intent' } } }), now).label).toBe('Payout pending (SIMULATED)');
-    expect(assetState(asset({ bounty: { outcome: 'survived', payout: { status: 'recorded' } } }), now).label).toBe('Payout recorded (SIMULATED)');
-    expect(assetState(asset({ bounty: { outcome: 'void', payout: null } }), now).label).toBe('Outcome verified');
+    expect(assetState(asset({ bounty: { outcome: 'predator', role: 'winner', payout: { status: 'intent' }, paidToOwner: true } }), now).label).toBe('Payout pending (SIMULATED)');
+    expect(assetState(asset({ bounty: { outcome: 'survived', role: 'target', payout: { status: 'recorded' }, paidToOwner: true } }), now).label).toBe('Payout recorded (SIMULATED)');
+    expect(assetState(asset({ bounty: { outcome: 'void', role: 'target', payout: null, paidToOwner: false } }), now).label).toBe('Outcome verified');
+    // The target's owner sees the outcome, not someone else's payout.
+    expect(assetState(asset({ life: life({ status: 'dead' }), bounty: { outcome: 'predator', role: 'target', payout: { status: 'recorded' }, paidToOwner: false } }), now))
+      .toMatchObject({ label: 'Outcome verified', detail: 'Taken by a predator: the reward went to its owner' });
   });
   it('writes amounts in exact units, always marked SIMULATED, and times left plainly', () => {
     expect(simAmount('10000000', 6, 'SIM-USDC')).toBe('10.00 SIM-USDC (SIMULATED)');

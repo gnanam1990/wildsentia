@@ -12,7 +12,7 @@ export interface AssetView {
   /** The animal as the world has it now (alive lives only). */
   animal?: { state: string; steered?: boolean } | null;
   /** Its last bounty's outcome and payout, if a bounty has been decided on it. */
-  bounty?: { outcome: 'predator' | 'survived' | 'void'; payout: { status: 'intent' | 'recorded' } | null } | null;
+  bounty?: { outcome: 'predator' | 'survived' | 'void'; role: 'target' | 'winner'; payout: { status: 'intent' | 'recorded' } | null; paidToOwner: boolean } | null;
 }
 export type Tone = 'ok' | 'warn' | 'muted' | 'bad';
 
@@ -39,8 +39,11 @@ export function simAmount(atomic: string, decimals: number, token: string): stri
 /** The one state a person sees for an animal, most important first. */
 export function assetState(a: AssetView, now: number): { label: string; tone: Tone; detail?: string } {
   if (a.bounty && (!a.life || a.life.status !== 'alive' || !a.life.bountyActive)) {
-    if (a.bounty.payout?.status === 'recorded') return { label: 'Payout recorded (SIMULATED)', tone: 'ok' };
-    if (a.bounty.payout?.status === 'intent') return { label: 'Payout pending (SIMULATED)', tone: 'warn' };
+    // Only a payout to this owner is theirs to see as pending or recorded.
+    if (a.bounty.paidToOwner && a.bounty.payout?.status === 'recorded') return { label: 'Payout recorded (SIMULATED)', tone: 'ok' };
+    if (a.bounty.paidToOwner && a.bounty.payout?.status === 'intent') return { label: 'Payout pending (SIMULATED)', tone: 'warn' };
+    if (a.bounty.role === 'target' && a.bounty.outcome === 'predator' && (!a.life || a.life.status !== 'alive' || !a.life.cooldownUntil || Date.parse(a.life.cooldownUntil) <= now))
+      return { label: 'Outcome verified', tone: 'muted', detail: 'Taken by a predator: the reward went to its owner' };
     if (!a.life || a.life.status === 'alive') return { label: 'Outcome verified', tone: 'muted' };
   }
   const life = a.life;
