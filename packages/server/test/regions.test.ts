@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { fileURLToPath } from 'node:url';
 import { regionOfPatch, CONGO_GRID } from '@vana/shared';
 import { createPool } from '../src/db/pool.js';
@@ -15,8 +15,9 @@ const speciesDir = fileURLToPath(new URL('../../../config/species', import.meta.
 
 class FakeSocket implements GatewaySocket {
   raw: string[] = [];
+  sentData: Array<string | Buffer> = [];
   bufferedAmount = 0;
-  send(data: string | Buffer): void { this.raw.push(String(data)); }
+  send(data: string | Buffer): void { this.sentData.push(data); this.raw.push(String(data)); }
   close(): void {}
   scenes(): Array<Record<string, unknown>> { return this.raw.map((r) => JSON.parse(r) as Record<string, unknown>).filter((m) => m.type === 'scene'); }
 }
@@ -77,5 +78,24 @@ maybe('a world served by region', () => {
     expect(moved.regions).not.toContain('r4_4');
     expect((moved.environment as { patches: unknown[] }).patches.length).toBe((moved.regions as unknown[]).length * 400);
     gateway.disconnect(socket);
+  });
+
+  it('shares one encoded region scene among viewers, and sends a viewer new regions at most once in 10 s', () => {
+    let now = 1_000_000;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      const gateway = new Gateway(host), a = new FakeSocket(), b = new FakeSocket();
+      gateway.handle(a); gateway.handle(b);
+      const east = { type: 'view' as const, x: 35_850, z: 23_850, radius: 1_000 }, west = { type: 'view' as const, x: 9_000, z: 23_850, radius: 1_000 };
+      gateway.receive(a, east); gateway.receive(b, east); gateway.broadcast();
+      expect(a.sentData.at(-1)).toBe(b.sentData.at(-1)); // the same Buffer, encoded once
+      const scenes = () => a.scenes().length;
+      const before = scenes();
+      for (let i = 0; i < 10; i++) { now += 1_000; gateway.receive(a, i % 2 ? east : west); gateway.broadcast(); }
+      expect(scenes() - before).toBeLessThanOrEqual(1);
+      now += 10_000; gateway.broadcast();
+      expect(a.scenes().at(-1)!.regions).toEqual(expect.arrayContaining(['r5_3'])); // the view it settled on arrives
+      gateway.disconnect(a); gateway.disconnect(b);
+    } finally { clock.mockRestore(); }
   });
 });

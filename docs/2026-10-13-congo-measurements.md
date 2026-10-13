@@ -47,3 +47,19 @@ For comparison, the 36 km² mainland forest steps 4,048 animals in 84 ms per wor
 
   Both are fine at 400 patches. Across 25,600 patches a long route will be slow, so both should use a binary heap.
 - **This is only the first 48 hours.** Populations, carcasses and hunting change over weeks. The 30-day Congo soak in sub-project 1B repeats these measurements with the real Congo species.
+
+## The server never stalls (plan 1A.3, 13 October)
+
+The world now steps, and checkpoints, in slices. Between slices the server answers viewers and agents, and commands that would change the world wait with `503 world_busy`. These timings are from the Congo stand-in world (about 48,000 animals), measured inside the full sim test suite:
+
+| Work | Slices | 99th percentile | Longest |
+|---|---|---|---|
+| One world hour | 767 per hour | 6 ms | 40 ms |
+| Copying the checkpoint | 250 records each | 4 ms | 18 ms |
+| Serializing the checkpoint (77 MB) | 1,000 records each | 21 ms | 46 ms |
+
+Before this, the step held the server for about 850 ms and the checkpoint for about 900 ms (copy plus `JSON.stringify`). The server's default slice is 25 ms (`sliceMs`).
+
+**Route search** was measured and left alone:
+- **Animal routes** (sim `planRoute`): corner to corner across the map takes 71 ms with the old sorted queue, and animals route only a few patches at a time.
+- **Live-layer routes** (`landRoute`): about 1 ms, because every Congo patch can be walked, so routes run straight.

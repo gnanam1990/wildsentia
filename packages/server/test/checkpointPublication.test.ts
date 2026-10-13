@@ -87,7 +87,7 @@ maybe('durable live observer publication', () => {
     let enter!: () => void, release!: () => void;
     const entered = new Promise<void>((resolve) => { enter = resolve; });
     const gate = new Promise<void>((resolve) => { release = resolve; });
-    const spy = vi.spyOn(SnapshotStore.prototype, 'save').mockImplementationOnce(async () => {
+    const spy = vi.spyOn(SnapshotStore.prototype, 'saveJson').mockImplementationOnce(async () => {
       enter(); await gate; throw new Error('injected save failure');
     });
     const saving = host.snapshotNow(); const failure = expect(saving).rejects.toThrow('injected save failure');

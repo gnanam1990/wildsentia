@@ -58,6 +58,8 @@ export const MAX_VIEW_RADIUS_M = 1500;
 const REGION_MARGIN_M = 300;
 /** Distinct region sets serialized per checkpoint; beyond this a set is built per viewer. */
 const MAX_REGION_SCENES = 64;
+/** A viewer is sent a new region set at most this often, however often its view moves. */
+export const REGION_SWITCH_MIN_MS = 10_000;
 
 interface Session {
   socket: GatewaySocket;
@@ -71,6 +73,7 @@ interface Session {
   /** Congo 1A.3: on a world of many regions, those this viewer was last sent, and whether its view has moved off them. */
   regions: string[] | null;
   regionsDirty: boolean;
+  lastRegionSceneAt: number;
 }
 
 /**
@@ -112,7 +115,7 @@ export class Gateway {
     const regions = this.#regional ? this.#regionsFor(null) : null;
     this.#sessions.set(socket, { socket, watching: null, recordedFrameId: frame?.id ?? null,
       recordingDirty: false, checkpointId: view.id, lastHeartbeatAt: Date.now(), view: null, liveEmpty: true,
-      regions, regionsDirty: false });
+      regions, regionsDirty: false, lastRegionSceneAt: 0 });
     const scene = regions ? this.#regionScene(view, regions) : this.#scene(view);
     this.#send(socket, `${scene.base},"environment":${scene.environment},"frame":${JSON.stringify(frame)}}`);
   }
@@ -223,13 +226,16 @@ export class Gateway {
     // One serialization per distinct recording, and one encoded copy per distinct message: every
     // viewer due the same scene is handed the same Buffer. Building and converting a ~1.6 MB
     // string per viewer held the event loop for ~1.9 s at 500 viewers (load test, 5 October).
-    type Recording = { payload: string; id: string | null; encoded: Map<boolean, Buffer> };
+    // Encoded once per (region set, fresh or not): viewers looking at the same regions share a Buffer.
+    type Recording = { payload: string; id: string | null; encoded: Map<string, Buffer> };
     const recordings = new Map<string | null, Recording>();
     let custom = 0;
     for (const session of this.#sessions.values()) {
       const { socket } = session;
-      // A viewer that has moved onto other regions is sent them as a fresh scene.
-      const freshCheckpoint = session.checkpointId !== view.id || session.regionsDirty;
+      // A viewer that has moved onto other regions is sent them as a fresh scene, at most once
+      // per REGION_SWITCH_MIN_MS: a view flipping back and forth cannot make a 2 MB scene a second.
+      const moved = session.regionsDirty && Date.now() - session.lastRegionSceneAt >= REGION_SWITCH_MIN_MS;
+      const freshCheckpoint = session.checkpointId !== view.id || moved;
       if (!freshCheckpoint && !session.recordingDirty && session.recordedFrameId === frameId) {
         // A world hour takes five real minutes. Repeating the unchanged ~1 MB scene every
         // second wastes tens of GB per viewer/day without advancing the client playhead.
@@ -256,16 +262,17 @@ export class Gateway {
         if (shared) recordings.set(session.watching, recording);
       }
       // Immutable checkpoint geometry can exceed 1 MB: only a viewer new to this checkpoint gets it.
-      let message = session.regions ? undefined : recording.encoded.get(freshCheckpoint);
+      const encodedKey = `${session.regions?.join(',') ?? ''}|${freshCheckpoint}`;
+      let message = recording.encoded.get(encodedKey);
       if (!message) {
         const part = session.regions ? this.#regionScene(view, session.regions) : scene;
         message = Buffer.from(`${part.base}${freshCheckpoint ? `,"environment":${part.environment}` : ''},"frame":${recording.payload}}`);
-        if (!session.regions) recording.encoded.set(freshCheckpoint, message);
+        recording.encoded.set(encodedKey, message);
       }
       this.#send(socket, message);
       session.recordedFrameId = recording.id;
       session.recordingDirty = false;
-      session.regionsDirty = false;
+      if (session.regions && freshCheckpoint) { session.regionsDirty = false; session.lastRegionSceneAt = Date.now(); }
       session.checkpointId = view.id;
       session.lastHeartbeatAt = Date.now();
     }
@@ -448,7 +455,9 @@ export class Gateway {
       carcasses: regions.flatMap((id) => view.regionCarcasses(id)).map((c) => this.#carcassView(c)),
     });
     const scene = { base, environment };
-    if (this.#regionScenes.scenes.size < MAX_REGION_SCENES) this.#regionScenes.scenes.set(key, scene);
+    // Least recently built first out: no set of viewers can pin the cache full.
+    if (this.#regionScenes.scenes.size >= MAX_REGION_SCENES) this.#regionScenes.scenes.delete(this.#regionScenes.scenes.keys().next().value!);
+    this.#regionScenes.scenes.set(key, scene);
     return scene;
   }
 }
