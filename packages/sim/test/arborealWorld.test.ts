@@ -8,13 +8,14 @@ import { EventLog } from '../src/events/log.js';
 import { restoreSnapshot, takeSnapshot } from '../src/snapshot.js';
 import { createWorld, SIM_VERSION } from '../src/world.js';
 import { makeAgent, makeServices, makeView, SPECIES_DIR, speciesOf } from './helpers.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const options = { seed: 17, speciesDir: SPECIES_DIR, initialAgents: { langur: 1, tiger: 1 }, minPopulation: {},
   retainEvents: 'all' as const };
 
 function threatenedWorld() {
-  const world = createWorld(options), patch = world.patches.find(p => treeAnchorForPatch(p))!;
-  const anchor = treeAnchorForPatch(patch)!;
+  const world = createWorld(options), patch = world.patches.find(p => treeAnchorForPatch(ISLAND_GRID, p))!;
+  const anchor = treeAnchorForPatch(ISLAND_GRID, patch)!;
   const langur = world.agents.find(a => a.speciesId === 'langur')!;
   const tiger = world.agents.find(a => a.speciesId === 'tiger')!;
   Object.assign(langur, { patchId: patch.id, position: { x: anchor.x + 12, z: anchor.z + 5, heading: 0 },
@@ -39,7 +40,7 @@ describe('v0.25 authoritative tree ascent and descent', () => {
     expect(event.outcome).toBe('success');
     expect(event.effects.horizontalDistanceM).toBeGreaterThan(0);
     expect(event.effects.verticalDistanceM).toBe(6);
-    expect(isMovementTrace(trace)).toBe(true);
+    expect(isMovementTrace(ISLAND_GRID, trace)).toBe(true);
     expect(trace.samples[0]!.position).toEqual(from);
     expect(trace.samples[0]!.altitudeM).toBeUndefined();
     for (let i = 1; i < trace.samples.length; i++)
@@ -89,7 +90,7 @@ describe('v0.25 authoritative tree ascent and descent', () => {
     expect(descent.effects).toMatchObject({ horizontalDistanceM: 0, verticalDistanceM: 6, durationSeconds: 24 });
     expect(descent.movement?.startWorldTime).toBe(before);
     expect(descent.movement?.samples.map(s => s.altitudeM)).toEqual([6, 0]);
-    expect(isMovementTrace(descent.movement)).toBe(true);
+    expect(isMovementTrace(ISLAND_GRID, descent.movement)).toBe(true);
     expect(langur.position?.x).toBe(anchor.x); expect(langur.position?.z).toBe(anchor.z);
     expect(langur.altitudeM).toBeUndefined(); expect(langur.treeAnchorId).toBeUndefined();
     expect(events.some(e => ['moved', 'fled', 'fed', 'drank', 'courtship'].includes(e.type))).toBe(false);
@@ -121,7 +122,7 @@ describe('v0.25 authoritative tree ascent and descent', () => {
     const { world, langur, tiger } = threatenedWorld();
     world.step(1);
     tiger.patchId = (langur.patchId + 20) % world.patches.length;
-    tiger.position = initialPosition(tiger.id, tiger.patchId);
+    tiger.position = initialPosition(ISLAND_GRID, tiger.id, tiger.patchId);
     const prior = { hunger: langur.drives.hunger, thirst: langur.drives.thirst };
     world.log.take(); world.step(1);
     const event = world.log.byActor(langur.id).find(e => e.type === 'tree_climbed')!;
@@ -152,14 +153,14 @@ describe('v0.25 authoritative tree ascent and descent', () => {
 
   it('does not report successful ascent when reaching the trunk consumes all available time', () => {
     const patches = threatenedWorld().world.patches;
-    const patch = patches.find(p => treeAnchorForPatch(p))!, anchor = treeAnchorForPatch(patch)!;
+    const patch = patches.find(p => treeAnchorForPatch(ISLAND_GRID, p))!, anchor = treeAnchorForPatch(ISLAND_GRID, patch)!;
     const animal = makeAgent('langur', { id: 'langur-zero-budget', patchId: patch.id,
       position: { x: anchor.x + 10, z: anchor.z, heading: 0 }, drives: { hunger: 0, thirst: 0, fatigue: 0, fear: 1 } });
     const tiger = makeAgent('tiger', { id: 'tiger-threat', patchId: patch.id,
       position: { x: anchor.x + 20, z: anchor.z, heading: 0 } });
     const cfg = speciesOf('langur'), view = makeView(patches, [animal, tiger]);
     const probe = structuredClone(animal) as Agent;
-    const duration = navigate(probe, cfg, patches, patch.id, 'flee', 0, 3600, true,
+    const duration = navigate(ISLAND_GRID, probe, cfg, patches, patch.id, 'flee', 0, 3600, true,
       { x: anchor.x, z: anchor.z, heading: 0 }).seconds;
     expect(duration).toBeGreaterThan(0);
     const log = new EventLog(17, SIM_VERSION);
@@ -185,7 +186,7 @@ describe('v0.25 authoritative tree ascent and descent', () => {
   it('excludes a saved elevated animal from planar prey detection', () => {
     const { world, patch, anchor, langur, tiger } = threatenedWorld();
     langur.position = { x: anchor.x, z: anchor.z, heading: 0 };
-    langur.altitudeM = 3; langur.locomotionMode = 'climb'; langur.treeAnchorId = treeAnchorGeometry(patch.id)!.id;
+    langur.altitudeM = 3; langur.locomotionMode = 'climb'; langur.treeAnchorId = treeAnchorGeometry(ISLAND_GRID, patch.id)!.id;
     const view = makeView(world.patches, [langur, tiger]);
     expect(perceive(tiger, speciesOf('tiger'), view).prey.some(p => p.agent.id === langur.id)).toBe(false);
     delete langur.altitudeM; delete langur.locomotionMode; delete langur.treeAnchorId;

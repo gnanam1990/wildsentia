@@ -1,5 +1,5 @@
 import {
-  GRID_SIZE, NUTRIENT_PER_KG_BIOMASS, dayOfYear, microBiomassKg, seasonAt, yearOf,
+  NUTRIENT_PER_KG_BIOMASS, dayOfYear, microBiomassKg, seasonAt, yearOf,
   type Carcass, type FishCohort, type MicroEcologyState, type MicroPatchPopulation, type Patch, type Season, type WorldTime,
 } from '@vana/shared';
 
@@ -159,8 +159,7 @@ function wetFreshwater(patch: Patch): boolean {
 function connectedWetNeighbours(patch: Patch, byId: Map<number, Patch>): Patch[] {
   return patch.neighbours.map((id) => byId.get(id)).filter((other): other is Patch => !!other
     && wetFreshwater(other) && other.neighbours.includes(patch.id)
-    && Math.abs(other.id % GRID_SIZE - patch.id % GRID_SIZE)
-      + Math.abs(Math.floor(other.id / GRID_SIZE) - Math.floor(patch.id / GRID_SIZE)) === 1)
+    && Math.abs(other.x - patch.x) + Math.abs(other.y - patch.y) === 1)
     .sort((a, b) => a.id - b.id);
 }
 

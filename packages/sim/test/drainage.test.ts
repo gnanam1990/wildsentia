@@ -7,6 +7,7 @@ import { createWorld, SIM_VERSION } from '../src/world.js';
 import { takeSnapshot, restoreSnapshot, upgradeV13Snapshot } from '../src/snapshot.js';
 import { SPECIES_DIR } from './helpers.js';
 import { asLegacySnapshot } from './legacySnapshot.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 function catchment(ids = [42, 43, 44]): Patch[] {
   const grid = buildGrid(1);
@@ -16,7 +17,7 @@ function catchment(ids = [42, 43, 44]): Patch[] {
 describe('conserved downhill surface drainage', () => {
   it('routes real overflow through a chain and retains it in an interior basin', () => {
     const patches = catchment(), budget = newWaterBudget(patches, 0);
-    updateDrainage(patches, 1, 'dry', budget);
+    updateDrainage(ISLAND_GRID, patches, 1, 'dry', budget);
     expect(patches.map(p => p.waterVolume)).toEqual([1200, 1200, 6565.5]);
     expect(patches[0]!.drainage).toMatchObject({ downstreamPatchId: 43, inflowL: 0, outflowL: 1788.5 });
     expect(patches[1]!.drainage!.inflowL).toBe(1788.5);
@@ -27,7 +28,7 @@ describe('conserved downhill surface drainage', () => {
   it('exports only at a real boundary outlet and reconciles rain, seepage and evaporation', () => {
     const patches = catchment([2, 1, 0]), budget = newWaterBudget(patches, 0);
     patches[0]!.habitat = 'water';
-    updateDrainage(patches, 24, 'monsoon', budget);
+    updateDrainage(ISLAND_GRID, patches, 24, 'monsoon', budget);
     expect(budget.groundwaterL).toBe(400 * 24);
     expect(budget.rainfallL).toBe(90 * 24 * 3);
     expect(budget.boundaryOutflowL).toBeGreaterThan(0);
@@ -38,22 +39,22 @@ describe('conserved downhill surface drainage', () => {
     const grid = buildGrid(1), p = grid[42]!;
     p.elevation = 0.5; p.neighbours = [63, 62, 43, 41];
     for (const id of p.neighbours) grid[id]!.elevation = 0.4;
-    expect(drainageGraph(grid).get(42)).toBe(41);
+    expect(drainageGraph(ISLAND_GRID, grid).get(42)).toBe(41);
     for (const id of p.neighbours) grid[id]!.elevation = 0.5;
     grid[63]!.elevation = 0;
-    expect(drainageGraph(grid).get(42)).toBeNull();
+    expect(drainageGraph(ISLAND_GRID, grid).get(42)).toBeNull();
   });
   it('is independent of patch and neighbour storage order', () => {
     const a = catchment(), b = structuredClone(a).reverse();
     for (const p of b) p.neighbours.reverse();
     const ba = newWaterBudget(a, 0), bb = newWaterBudget(b, 0);
-    updateDrainage(a, 1, 'dry', ba); updateDrainage(b, 1, 'dry', bb);
+    updateDrainage(ISLAND_GRID, a, 1, 'dry', ba); updateDrainage(ISLAND_GRID, b, 1, 'dry', bb);
     expect(b.reverse().map(p => [p.waterVolume, p.drainage])).toEqual(a.map(p => [p.waterVolume, p.drainage]));
     expect(bb).toEqual(ba);
   });
   it.each([0, -1, Infinity, NaN])('rejects invalid duration %s before mutation', hours => {
     const p = catchment(), before = structuredClone(p), budget = newWaterBudget(p, 0);
-    expect(() => updateDrainage(p, hours, 'dry', budget)).toThrow(); expect(p).toEqual(before);
+    expect(() => updateDrainage(ISLAND_GRID, p, hours, 'dry', budget)).toThrow(); expect(p).toEqual(before);
   });
   it('bounds evaporation by available water for a very long local step without erasing rain', () => {
     const p = catchment()[0]!, original = p.waterVolume;
@@ -65,7 +66,7 @@ describe('conserved downhill surface drainage', () => {
     for (const volume of [-1, NaN, Infinity]) {
       const p = catchment(), budget = newWaterBudget(p, 0); p[1]!.waterVolume = volume;
       const before = structuredClone(p);
-      expect(() => updateDrainage(p, 1, 'dry', budget)).toThrow(); expect(p).toEqual(before);
+      expect(() => updateDrainage(ISLAND_GRID, p, 1, 'dry', budget)).toThrow(); expect(p).toEqual(before);
     }
   });
   it('accounts actual drinking and resumes the same water budget and events after snapshot restore', () => {

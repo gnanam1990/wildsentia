@@ -1,4 +1,4 @@
-import { positionInPatch, type Agent, type Rng, type WorldEvent, type Wound } from '@vana/shared';
+import { positionInPatch, type Agent, type Rng, type WorldEvent, type Wound, type WorldGrid } from '@vana/shared';
 import type { EventLog } from '../events/log.js';
 
 /** Scenario coefficients only. No cited field study estimates a tiger–chital/sambar
@@ -38,14 +38,14 @@ export function validateWound(wound: Wound | undefined, checkpointTime: number):
 
 /** Only a documented failed physical capture can create a survivor wound. A chase, alert,
  * boundary escape, successful kill or already-active wound never authorizes a new episode. */
-export function exposeToContactWound(prey: Agent, hunt: WorldEvent, decisionEnd: number,
+export function exposeToContactWound(grid: WorldGrid, prey: Agent, hunt: WorldEvent, decisionEnd: number,
   rng: Rng, log: EventLog): boolean {
   if (!prey.alive || prey.wound || !INITIAL_PREY.has(prey.speciesId)
     || hunt.type !== 'hunt' || hunt.outcome !== 'failure' || hunt.conditions.stage !== 'escaped'
     || hunt.actors[1] !== prey.id || hunt.encounter?.preyId !== prey.id
     || !hunt.encounter.samples.some(sample => sample.phase === 'contact')
     || !Number.isFinite(decisionEnd) || decisionEnd < hunt.worldTime
-    || !positionInPatch(prey.position, prey.patchId)
+    || !positionInPatch(grid, prey.position, prey.patchId)
     || !rng.bool(WOUND_POLICY.probabilityGivenFailedContact)) return false;
   const severity = rng.range(WOUND_POLICY.severityMin, WOUND_POLICY.severityMax);
   const recoveryRemainingHours = rng.range(WOUND_POLICY.recoveryMinHours, WOUND_POLICY.recoveryMaxHours);
@@ -92,7 +92,7 @@ export function advanceWound(agent: Agent, end: number, log: EventLog): WorldEve
   agent.drives.hunger = clamp01(agent.drives.hunger + affectedHours / 24 * wound.severity * 0.04);
   const append = (type: 'wound_infected' | 'wound_healed' | 'wound_infection_fatal'): WorldEvent =>
     log.append({ type, worldTime: end, simVersion: '', patchId: agent.patchId,
-      ...(positionInPatch(agent.position, agent.patchId) ? { position: { ...agent.position } } : {}),
+      ...(positionInPatch(log.grid, agent.position, agent.patchId) ? { position: { ...agent.position } } : {}),
       actors: [agent.id], conditions: { kind: 'contact_injury', sourceHuntEventId: wound.sourceHuntEventId,
         timing: 'decision_end', model: 'uncalibrated_contact_wound_v1' },
       outcome: 'success', effects: { severity: wound.severity, activeHours: affectedHours },

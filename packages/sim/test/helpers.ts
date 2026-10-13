@@ -4,6 +4,7 @@ import { loadSpeciesDir } from '../src/config/loader.js';
 import type { WorldView } from '../src/agents/perception.js';
 import type { WorldServices } from '../src/agents/behaviours.js';
 import { makeCarcass } from '../src/fields/decomposition.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 export const SPECIES_DIR = fileURLToPath(new URL('../../../config/species', import.meta.url));
 export const SPECIES = loadSpeciesDir(SPECIES_DIR);
@@ -39,7 +40,7 @@ export function makeAgent(speciesId: string, overrides: Partial<Agent> = {}): Ag
 /** A world view backed by plain arrays, so behaviour can be tested without a World. */
 export function makeView(patches: Patch[], agents: Agent[] = [], carcasses: Carcass[] = []): WorldView {
   return {
-    patches,
+    grid: ISLAND_GRID, patches,
     agentsInPatch: (patchId) => agents.filter((a) => a.alive && a.patchId === patchId),
     carcassesInPatch: (patchId) => carcasses.filter((c) => c.patchId === patchId),
     speciesOf,

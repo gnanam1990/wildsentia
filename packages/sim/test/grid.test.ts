@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { PATCH_COUNT } from '@vana/shared';
+
 import { buildGrid } from '../src/grid.js';
+import { ISLAND_GRID, patchCount } from '@vana/shared';
 
 describe('buildGrid', () => {
   it('produces one patch per grid cell, indexed by id', () => {
     const grid = buildGrid(1);
-    expect(grid).toHaveLength(PATCH_COUNT);
+    expect(grid).toHaveLength(patchCount(ISLAND_GRID));
     grid.forEach((p, i) => expect(p.id).toBe(i));
   });
 

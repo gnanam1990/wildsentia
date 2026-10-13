@@ -4,7 +4,8 @@ import { SIM_VERSION, createWorld } from '../src/world.js';
 import { restoreSnapshot, takeSnapshot, upgradeV5Snapshot, upgradeV7Snapshot, upgradeV8Snapshot, upgradeV16Snapshot, upgradeV17Snapshot, upgradeV18Snapshot, upgradeV19Snapshot, upgradeV20Snapshot, upgradeV21Snapshot, upgradeV22Snapshot, upgradeV23Snapshot, upgradeV24Snapshot, upgradeV25Snapshot, upgradeV26Snapshot, upgradeV27Snapshot, upgradeV28Snapshot, upgradeV29Snapshot, upgradeV30Snapshot, upgradeV31Snapshot, type Snapshot } from '../src/snapshot.js';
 import { establishFloweringGuild } from '../src/fields/floweringGuild.js';
 import { establishRooting } from '../src/fields/rooting.js';
-import { NUTRIENT_PER_KG_BIOMASS } from '@vana/shared';
+import { ISLAND_GRID, NUTRIENT_PER_KG_BIOMASS } from '@vana/shared';
+import { islandPopulation } from '../src/forest.js';
 import { asLegacySnapshot } from './legacySnapshot.js';
 import { navigate } from '../src/agents/navigation.js';
 import { conceive } from '../src/agents/reproduction.js';
@@ -28,6 +29,16 @@ function expectFishMigration(upgraded: Snapshot, old: Snapshot): void {
 }
 
 describe('snapshots', () => {
+  it('restores a snapshot saved before worlds carried a grid as the island grid', () => {
+    const world = createWorld({ seed: 2, speciesDir, terrainProfile: 'island_v1', initialAgents: islandPopulation('island_v1'), minPopulation: {} });
+    world.step(2);
+    const saved = JSON.parse(JSON.stringify(takeSnapshot(world))) as Record<string, unknown>;
+    delete saved.grid;
+    const restored = restoreSnapshot(saved as unknown as Snapshot, { seed: 2, speciesDir, terrainProfile: 'island_v1', initialAgents: {}, minPopulation: {} });
+    expect(restored.grid).toEqual(ISLAND_GRID);
+    expect(restored.patches).toHaveLength(400);
+  });
+
   it('opts a real v0.31 world into hydration-emergency care without rewriting its state', () => {
     const current = takeSnapshot(createWorld({ ...options, initialAgents: { dhole: 3 }, minPopulation: {} }));
     const old = structuredClone(current); old.simVersion = 'sim_0.31.0';
@@ -306,7 +317,7 @@ describe('snapshots', () => {
     const world = createWorld(options); const agent = world.agents[0]!;
     const destination = world.patches[agent.patchId]!.neighbours[0]!;
     const cfg = world.species.get(agent.speciesId)!;
-    navigate(agent, cfg, world.patches, destination, 'wander', world.now(), 1);
+    navigate(ISLAND_GRID, agent, cfg, world.patches, destination, 'wander', world.now(), 1);
     expect(agent.journey).toBeDefined();
     const snapshot = takeSnapshot(world);
     const old = legacySnapshot(snapshot, 'sim_0.8.0');
@@ -316,8 +327,8 @@ describe('snapshots', () => {
     expect(old.simVersion).toBe('sim_0.8.0');
     expect(() => upgradeV8Snapshot({ ...old, simVersion: 'sim_0.7.0' })).toThrow();
     const restored = restoreSnapshot(JSON.parse(JSON.stringify(snapshot)), options);
-    const a = navigate(agent, cfg, world.patches, destination, 'wander', 1, 10);
-    const b = navigate(restored.agents[0]!, cfg, restored.patches, destination, 'wander', 1, 10);
+    const a = navigate(ISLAND_GRID, agent, cfg, world.patches, destination, 'wander', 1, 10);
+    const b = navigate(ISLAND_GRID, restored.agents[0]!, cfg, restored.patches, destination, 'wander', 1, 10);
     expect(b).toEqual(a); expect(restored.agents[0]).toEqual(agent);
   });
   it('requires an explicit v0.7 contact-rules upgrade without changing stored state', () => {

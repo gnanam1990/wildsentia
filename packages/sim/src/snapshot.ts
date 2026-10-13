@@ -1,5 +1,5 @@
 import type { Agent, Carcass, Patch, RngState, WorldTime, WaterBudget, TerrainProfile, MicroEcologyState } from '@vana/shared';
-import { isIslandProfile, islandGeometrySeed, yearOf } from '@vana/shared';
+import { ISLAND_GRID, gridForProfile, isIslandProfile, islandGeometrySeed, yearOf } from '@vana/shared';
 import { positionInPatch, patchAtPosition, isCommunityState, type CommunityState } from '@vana/shared';
 import { humanWalkable } from './communityNavigation.js';
 import { validateIllness } from './agents/illness.js';
@@ -107,7 +107,7 @@ export function restoreSnapshot(snapshot: Snapshot, options: WorldOptions): Worl
   for (const agent of [...snapshot.agents, ...snapshot.deceased]) {
     validateIllness(agent.illness, snapshot.worldTime);
     validateWound(agent.wound, snapshot.worldTime);
-    validateVerticalCheckpoint(agent, snapshot.patches[agent.patchId], climbers.has(agent.speciesId));
+    validateVerticalCheckpoint(gridForProfile(snapshot.terrainProfile ?? 'mainland'), agent, snapshot.patches[agent.patchId], climbers.has(agent.speciesId));
     if (agent.lastMaternalWaterAt !== undefined
       && (!Number.isFinite(agent.lastMaternalWaterAt) || agent.lastMaternalWaterAt < agent.bornAt
         || agent.lastMaternalWaterAt > snapshot.worldTime || agent.speciesId !== 'boar'))
@@ -141,7 +141,7 @@ export function restoreSnapshot(snapshot: Snapshot, options: WorldOptions): Worl
     throw new Error('community checkpoint has no dry land site');
   if (world.community && world.community.version >= 5 && world.community.people.some(person =>
     !humanWalkable(world.patches[person.patchId]) || person.task?.journey?.waypoints.some(point =>
-      !humanWalkable(world.patches[patchAtPosition(point)]))))
+      !humanWalkable(world.patches[patchAtPosition(world.grid, point)]))))
     throw new Error('community checkpoint contains a non-walkable person route');
   world.waterBudget = snapshot.waterBudget ? structuredClone(snapshot.waterBudget) : newWaterBudget(world.patches, snapshot.worldTime);
   world.agents.length = 0;
@@ -349,7 +349,7 @@ export function upgradeV14Snapshot(snapshot: Snapshot): Snapshot {
  * legacy checkpoint whose patch-only breeding move disagrees with its recorded position. */
 export function upgradeV15Snapshot(snapshot: Snapshot): Snapshot {
   if (snapshot.simVersion !== 'sim_0.15.0') throw new Error('only sim_0.15.0 snapshots can use this upgrade');
-  if (snapshot.agents.some(a => a.alive && !positionInPatch(a.position, a.patchId)))
+  if (snapshot.agents.some(a => a.alive && !positionInPatch(ISLAND_GRID, a.position, a.patchId)))
     throw new Error('inconsistent v0.15 spatial checkpoint; explicit recovery review required');
   return upgradeLegacyMicroFields(snapshot);
 }

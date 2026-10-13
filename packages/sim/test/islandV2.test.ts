@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { GRID_SIZE, ISLAND_V2_GEOMETRY_OFFSET, PATCH_METRES, islandGeometrySeed, islandHeightAt, islandPatchSurface,
-  isIslandProfile, landWalkable } from '@vana/shared';
+import { ISLAND_V2_GEOMETRY_OFFSET, islandGeometrySeed, islandHeightAt, islandPatchSurface, isIslandProfile, landWalkable } from '@vana/shared';
 import { buildGrid } from '../src/grid.js';
 import { createWorld } from '../src/world.js';
 import { ISLAND_POPULATION, ISLAND_V2_POPULATION, islandPopulation } from '../src/forest.js';
 import { restoreSnapshot, takeSnapshot } from '../src/snapshot.js';
 import { SPECIES_DIR } from './helpers.js';
+import { ISLAND_GRID } from '@vana/shared';
 
-const km2 = (PATCH_METRES / 1000) ** 2;
-const edge = (id: number) => { const x = id % GRID_SIZE, y = Math.floor(id / GRID_SIZE); return x === 0 || y === 0 || x === GRID_SIZE - 1 || y === GRID_SIZE - 1; };
+const km2 = (ISLAND_GRID.patchM / 1000) ** 2;
+const edge = (id: number) => { const x = id % ISLAND_GRID.cols, y = Math.floor(id / ISLAND_GRID.cols); return x === 0 || y === 0 || x === ISLAND_GRID.cols - 1 || y === ISLAND_GRID.cols - 1; };
 
 describe('island_v2: a larger island in the same 20 x 20 grid (sim_0.37.0)', () => {
   it('holds about 26 km² of core land with a sea margin, twice island_v1, which is unchanged', () => {
@@ -39,7 +39,7 @@ describe('island_v2: a larger island in the same 20 x 20 grid (sim_0.37.0)', () 
     const patches = buildGrid(2, 'island_v2');
     for (const p of patches) expect(islandPatchSurface(key, p.id)).toBe(p.surface);
     // A point deep inland on island_v2 is sea on island_v1.
-    const corner = { x: 4 * PATCH_METRES, z: 4 * PATCH_METRES };
+    const corner = { x: 4 * ISLAND_GRID.patchM, z: 4 * ISLAND_GRID.patchM };
     expect(islandHeightAt(key, corner.x, corner.z)).toBeGreaterThan(2);
     expect(islandHeightAt(2, corner.x, corner.z)).toBeLessThan(0);
     expect(() => islandGeometrySeed(-1, 'island_v2')).toThrow(/out of range/);

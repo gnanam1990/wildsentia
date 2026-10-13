@@ -1,15 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { GRID_SIZE } from '@vana/shared';
+
 import { buildGrid } from '../src/grid.js';
 import { isFloater, packCapacity, packRangeLandFraction, territoryRadiusPatches } from '../src/agents/territory.js';
 import { landWalkable } from '@vana/shared';
 import { makeAgent, speciesOf } from './helpers.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const patches = buildGrid(4);
 const tiger = speciesOf('tiger');
 const chital = speciesOf('chital');
 const dhole = speciesOf('dhole');
-const at = (x: number, y: number): number => y * GRID_SIZE + x;
+const at = (x: number, y: number): number => y * ISLAND_GRID.cols + x;
 
 describe('territory size', () => {
   it('turns square kilometres into a patch radius that covers about that area', () => {

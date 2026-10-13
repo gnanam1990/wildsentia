@@ -11,6 +11,7 @@ import { restoreSnapshot, takeSnapshot, upgradeV6Snapshot } from '../src/snapsho
 import { HUNGER_PER_DAY, THIRST_PER_DAY } from '../src/agents/drives.js';
 import { makeAgent, makeServices, makeView, SPECIES_DIR, speciesOf } from './helpers.js';
 import { asLegacySnapshot } from './legacySnapshot.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const cfg = speciesOf('dhole');
 const pup = () => makeAgent('dhole', { id: 'pup', ageDays: 10, lifeStage: 'newborn',
@@ -73,7 +74,7 @@ describe('young physiology and ability policy', () => {
     const source = needsOf(parent, cfg), target = needsOf(child, cfg);
     const hunger = parent.drives.hunger, thirst = parent.drives.thirst;
     const childHunger = child.drives.hunger, childThirst = child.drives.thirst;
-    const result = provisionYoung(parent, child, cfg, 1);
+    const result = provisionYoung(ISLAND_GRID, parent, child, cfg, 1);
     expect(result.foodEquivalentKg).toBeGreaterThan(0);
     expect(result.waterEquivalentL).toBeGreaterThan(0);
     expect((parent.drives.hunger - hunger) * source.foodKg / HUNGER_PER_DAY)
@@ -87,21 +88,21 @@ describe('young physiology and ability policy', () => {
   it('never overdraws a donor even for a large hungry litter', () => {
     const parent = donor({ drives: { hunger: 0.799, thirst: 0.799, fatigue: 0, fear: 0 } });
     let supplied = 0;
-    for (let i = 0; i < 20; i++) supplied += provisionYoung(parent, pup(), cfg, 24).foodEquivalentKg;
+    for (let i = 0; i < 20; i++) supplied += provisionYoung(ISLAND_GRID, parent, pup(), cfg, 24).foodEquivalentKg;
     expect(supplied).toBeGreaterThan(0);
     expect(parent.drives.hunger).toBeCloseTo(0.8, 12);
     expect(parent.drives.thirst).toBeCloseTo(0.8, 12);
-    expect(provisionYoung(parent, pup(), cfg, 24)).toEqual({ foodEquivalentKg: 0, waterEquivalentL: 0 });
+    expect(provisionYoung(ISLAND_GRID, parent, pup(), cfg, 24)).toEqual({ foodEquivalentKg: 0, waterEquivalentL: 0 });
   });
 
   it('cannot provision from a dead, absent, unrelated or remote parent or after weaning', () => {
     for (const parent of [makeAgent('dhole', { id: 'parent', alive: false }),
       makeAgent('dhole', { id: 'other' }), makeAgent('dhole', { id: 'parent', patchId: 1 }),
       makeAgent('tiger', { id: 'parent' })]) {
-      expect(provisionYoung(parent, pup(), cfg, 1).foodEquivalentKg).toBe(0);
+      expect(provisionYoung(ISLAND_GRID, parent, pup(), cfg, 1).foodEquivalentKg).toBe(0);
     }
     const child = pup(); child.ageDays = cfg.lifecycle.weanDays;
-    expect(provisionYoung(makeAgent('dhole', { id: 'parent' }), child, cfg, 1).foodEquivalentKg).toBe(0);
+    expect(provisionYoung(ISLAND_GRID, makeAgent('dhole', { id: 'parent' }), child, cfg, 1).foodEquivalentKg).toBe(0);
   });
 
   it('does not let an orphan select or execute an adult hunt', () => {

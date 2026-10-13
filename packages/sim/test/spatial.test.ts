@@ -4,6 +4,7 @@ import { locateAgent, placeBeside } from '../src/agents/spatial.js';
 import { createWorld } from '../src/world.js';
 import { takeSnapshot, restoreSnapshot } from '../src/snapshot.js';
 import { makeAgent, SPECIES_DIR } from './helpers.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const options = { seed: 43, speciesDir: SPECIES_DIR, initialAgents: { sambar: 3 }, minPopulation: {} };
 describe('server-owned spatial state', () => {
@@ -20,11 +21,11 @@ describe('server-owned spatial state', () => {
     const births = w.log.all().filter((e) => e.type === 'born');
     expect(births.length).toBeGreaterThan(0);
     for (const birth of births) {
-      expect(positionInPatch(birth.position, birth.patchId)).toBe(true);
+      expect(positionInPatch(ISLAND_GRID, birth.position, birth.patchId)).toBe(true);
       expect(birth.position).toEqual(captured.get(birth.actors[0]!));
       const child = w.agents.find((a) => a.id === birth.actors[0])!;
       expect(birth.position).not.toBe(child.position);
-      child.position = initialPosition(child.id, 20); child.patchId = 20;
+      child.position = initialPosition(ISLAND_GRID, child.id, 20); child.patchId = 20;
       expect(birth.position).toEqual(captured.get(child.id));
     }
   });
@@ -39,17 +40,17 @@ describe('server-owned spatial state', () => {
   });
   it('preserves valid local positions, repairing moved-patch or invalid values', () => {
     const a = makeAgent('sambar', { position: { x: 5, z: 6, heading: 0.4 } });
-    expect(locateAgent(a)).toEqual(a.position);
+    expect(locateAgent(ISLAND_GRID, a)).toEqual(a.position);
     a.patchId = 1;
-    expect(positionInPatch(locateAgent(a), 1)).toBe(true);
+    expect(positionInPatch(ISLAND_GRID, locateAgent(ISLAND_GRID, a), 1)).toBe(true);
     a.position = { x: NaN, z: 0, heading: 0 };
-    expect(locateAgent(a)).toEqual(initialPosition(a.id, 1));
+    expect(locateAgent(ISLAND_GRID, a)).toEqual(initialPosition(ISLAND_GRID, a.id, 1));
   });
   it('keeps contact anchors in bounds and facing the target', () => {
     const a = makeAgent('sambar');
     const target = { x: 149.9, z: 149.9, heading: 0 };
-    placeBeside(a, target, 2);
-    expect(positionInPatch(a.position, 0)).toBe(true);
+    placeBeside(ISLAND_GRID, a, target, 2);
+    expect(positionInPatch(ISLAND_GRID, a.position, 0)).toBe(true);
     expect(Math.hypot(a.position!.x-target.x, a.position!.z-target.z)).toBeLessThanOrEqual(2.01);
     expect(a.position!.heading).toBe(Math.atan2(target.x-a.position!.x, target.z-a.position!.z));
   });
@@ -65,7 +66,7 @@ describe('server-owned spatial state', () => {
   it('preserves the exact death position on the carcass and across snapshot restore', () => {
     const w = createWorld(options);
     const a = w.agents[0]!;
-    const p = initialPosition(a.id, a.patchId); p.x += 2; p.heading = 1;
+    const p = initialPosition(ISLAND_GRID, a.id, a.patchId); p.x += 2; p.heading = 1;
     a.position = p; a.drives.hunger = 1;
     w.step(1);
     const corpse = w.carcasses.find((c) => c.originId === a.id)!;
@@ -85,7 +86,7 @@ describe('server-owned spatial state', () => {
     const before = JSON.stringify(snapshot);
     const a = restoreSnapshot(snapshot, options); const b = restoreSnapshot(snapshot, options);
     expect(JSON.stringify(snapshot)).toBe(before);
-    expect(a.agents.every((agent) => positionInPatch(agent.position, agent.patchId))).toBe(true);
+    expect(a.agents.every((agent) => positionInPatch(ISLAND_GRID, agent.position, agent.patchId))).toBe(true);
     expect(a.agents).toEqual(b.agents);
   });
   it('continues spatial state identically after restart', () => {

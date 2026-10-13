@@ -1,4 +1,4 @@
-import { patchAtPosition, type CommunityState, type HumanAction, type HumanSkill, type WorldPosition } from '@vana/shared';
+import { ISLAND_GRID, patchAtPosition, type CommunityState, type HumanAction, type HumanSkill, type WorldPosition } from '@vana/shared';
 import type { EventLog } from './events/log.js';
 
 export interface HumanWorkWindow {
@@ -33,8 +33,8 @@ export function learnFromSharedWork(state: CommunityState, windows: readonly Hum
     const start = Math.max(a.start, b.start), end = Math.min(a.end, b.end);
     if (end <= start || Math.hypot(a.position.x - b.position.x, a.position.z - b.position.z) > 3) continue;
     const pa = people.get(a.personId), pb = people.get(b.personId);
-    const workPatch = state.version >= 5 ? patchAtPosition(a.position) : pa?.patchId;
-    if (!pa || !pb || workPatch !== (state.version >= 5 ? patchAtPosition(b.position) : pb.patchId)) continue;
+    const workPatch = state.version >= 5 ? patchAtPosition(ISLAND_GRID, a.position) : pa?.patchId;
+    if (!pa || !pb || workPatch !== (state.version >= 5 ? patchAtPosition(ISLAND_GRID, b.position) : pb.patchId)) continue;
     if ((pa.diedAt !== null && pa.diedAt <= start) || (pb.diedAt !== null && pb.diedAt <= start)) continue;
     const seconds = Math.min(end, pa.diedAt ?? end, pb.diedAt ?? end) - start;
     if (seconds <= 0) continue;

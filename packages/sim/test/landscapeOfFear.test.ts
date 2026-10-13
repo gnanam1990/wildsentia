@@ -1,14 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { GRID_SIZE, patchCentre, type Agent } from '@vana/shared';
+import { patchCentre, type Agent } from '@vana/shared';
 import { createWorld, type World } from '../src/world.js';
 import { perceive, threatFear } from '../src/agents/perception.js';
 import { selectGoal } from '../src/agents/goals.js';
 import { createRng } from '@vana/shared';
 import { restoreSnapshot, takeSnapshot, upgradeV33Snapshot } from '../src/snapshot.js';
 import { SPECIES_DIR } from './helpers.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 // Mainland grid, seed 4: patches 210 and 211 are neighbouring land, x 10 and 11 of row 10.
-const P = 10 * GRID_SIZE + 10, Q = P + 1;
+const P = 10 * ISLAND_GRID.cols + 10, Q = P + 1;
 const calm = { hunger: 0, thirst: 0, fatigue: 0, fear: 0 };
 function scene(agents: Record<string, number>): { world: World; get: (species: string, i?: number) => Agent } {
   const world = createWorld({ seed: 4, speciesDir: SPECIES_DIR, initialAgents: agents, minPopulation: {} });
@@ -17,7 +18,7 @@ function scene(agents: Record<string, number>): { world: World; get: (species: s
   return { world, get };
 }
 const place = (world: World, agent: Agent, patchId: number, dx: number, extra: Partial<Agent> = {}) => {
-  const c = patchCentre(patchId);
+  const c = patchCentre(ISLAND_GRID, patchId);
   Object.assign(agent, { patchId, position: { x: c.x + dx, z: c.z, heading: 0 }, drives: { ...calm }, ...extra });
   world.__reindexForTest();
 };

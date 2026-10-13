@@ -1,4 +1,4 @@
-import { positionInPatch, type WorldEvent } from '@vana/shared';
+import { ISLAND_GRID, positionInPatch, type WorldEvent, type WorldGrid } from '@vana/shared';
 
 export interface EventLogOptions {
   /**
@@ -10,6 +10,8 @@ export interface EventLogOptions {
    * process that runs for a long time — the server, the soak runner — must drain or bound this.
    */
   retain?: number | 'all';
+  /** The lattice event positions are checked against. A world passes its own; tests default to the island. */
+  grid?: WorldGrid;
 }
 
 export class EventLog {
@@ -19,16 +21,18 @@ export class EventLog {
   #sequence = 0;
   readonly #simVersion: string;
   readonly #retain: number | 'all';
+  readonly grid: WorldGrid;
   #total = 0;
 
   constructor(seed: number, simVersion: string, options: EventLogOptions = {}) {
     this.#namespace = (seed >>> 0).toString(16).padStart(8, '0');
     this.#simVersion = simVersion;
     this.#retain = options.retain ?? 'all';
+    this.grid = options.grid ?? ISLAND_GRID;
   }
 
   append(event: Omit<WorldEvent, 'id'>): WorldEvent {
-    if (event.position !== undefined && !positionInPatch(event.position, event.patchId)) {
+    if (event.position !== undefined && !positionInPatch(this.grid, event.position, event.patchId)) {
       throw new Error('event position must be finite and inside its recorded patch');
     }
     if (!Number.isSafeInteger(this.#sequence + 1)) throw new Error('event sequence exhausted');

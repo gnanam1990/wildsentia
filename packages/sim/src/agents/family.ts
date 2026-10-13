@@ -1,4 +1,4 @@
-import { type Agent, type Patch, type SpeciesConfig, type WorldPosition } from '@vana/shared';
+import { type Agent, type Patch, type SpeciesConfig, type WorldPosition, type WorldGrid } from '@vana/shared';
 import type { EventLog } from '../events/log.js';
 import { canFollowParent, careRadius, inCareContact, needsOf, needsProvisioning, provisionYoung } from './needs.js';
 import { perceptionRadius } from './perception.js';
@@ -50,7 +50,7 @@ export function chooseCareTarget(parent: Agent, children: readonly Agent[], cfg:
  * still go wherever they must; only aimless wandering is tethered. Returns where to go back to,
  * or null when the parent is already within range (or has no such young).
  */
-export function idleRangeAnchor(parent: Agent, cfg: SpeciesConfig, children: readonly Agent[],
+export function idleRangeAnchor(grid: WorldGrid, parent: Agent, cfg: SpeciesConfig, children: readonly Agent[],
   starts: ReadonlyMap<string, FamilyLocation>, patches: readonly Patch[]): FamilyLocation | null {
   const here = patches[parent.patchId];
   if (!parent.alive || !here) return null;
@@ -64,30 +64,30 @@ export function idleRangeAnchor(parent: Agent, cfg: SpeciesConfig, children: rea
     const steps = Math.abs(there.x - here.x) + Math.abs(there.y - here.y);
     if (steps < nearest) { nearest = steps; anchor = { patchId: site.patchId, position: { ...site.position } }; }
   }
-  return nearest > perceptionRadius(cfg) ? anchor : null;
+  return nearest > perceptionRadius(grid, cfg) ? anchor : null;
 }
 
 /** Both family actions spend ordinary, age-scaled terrain travel time. A target is a detached
  * start-of-decision location, never the parent's future endpoint. No endpoint teleport. */
-export function travelToFamily(agent: Agent, cfg: SpeciesConfig, patches: Patch[], target: FamilyLocation,
+export function travelToFamily(grid: WorldGrid, agent: Agent, cfg: SpeciesConfig, patches: Patch[], target: FamilyLocation,
   goal: 'care_for_young' | 'follow_parent' | 'seek_nursing' | 'collect_pack_food' | 'deliver_pack_food',
   start: number, hours: number, log: EventLog, radius = careRadius(cfg)): CareVisit {
   agent.currentGoal = goal; agent.alternativeGoal = null; agent.goalScore = 1; agent.targetId = null;
   if (agent.journey?.goal !== goal) delete agent.journey;
-  const here = locateAgent(agent);
+  const here = locateAgent(grid, agent);
   const holdingRadius = goal === 'seek_nursing' || cfg.lifecycle.nursing && goal === 'care_for_young' ? radius * 0.5 : radius;
   if (agent.patchId === target.patchId && Math.hypot(here.x - target.position.x, here.z - target.position.z) <= holdingRadius + 1e-8) {
     delete agent.journey; agent.state = 'resting';
     return { parent: agent, arrival: start, position: { ...here } };
   }
   // Deterministic near-side slot, clamped inside the target cell; placement affects this
-  // temporary endpoint only. The real animal reaches it exclusively through navigate().
+  // temporary endpoint only. The real animal reaches it exclusively through navigate(grid, ).
   const slot = { ...agent, patchId: target.patchId };
   // A compact litter spans at most half a contact radius; this slot can reach the group
   // concurrently without changing any offspring position or enlarging the contact test.
-  placeBeside(slot, target.position, radius * 0.5);
+  placeBeside(grid, slot, target.position, radius * 0.5);
   const from = agent.patchId;
-  const travel = navigate(agent, cfg, patches, target.patchId, goal, start, hours * 3600, false, slot.position!);
+  const travel = navigate(grid, agent, cfg, patches, target.patchId, goal, start, hours * 3600, false, slot.position!);
   agent.state = travel.trace.completed ? 'resting' : travel.unreachable ? 'resting' : 'travelling';
   const event = log.append({ type: 'moved', worldTime: Math.floor(start + travel.seconds), simVersion: '',
     patchId: agent.patchId, actors: [agent.id], goal, conditions: { from, destination: target.patchId,
@@ -96,7 +96,7 @@ export function travelToFamily(agent: Agent, cfg: SpeciesConfig, patches: Patch[
     effects: { distanceM: travel.distanceM, durationSeconds: travel.seconds, sprintSeconds: 0 },
     causalParents: [], confidence: 'authoritative', movement: travel.trace });
   return { parent: agent, arrival: travel.trace.completed ? start + travel.seconds : Infinity,
-    position: { ...locateAgent(agent) }, routeId: event.id };
+    position: { ...locateAgent(grid, agent) }, routeId: event.id };
 }
 
 /** Finalize only after all actions: death, escape or another action invalidates this visit.
@@ -116,7 +116,7 @@ export function finishCare(visit: CareVisit, children: readonly Agent[], starts:
   for (const child of [...children].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)) {
     const original = starts.get(child.id), approach = youngArrivals.get(child.id);
     if (!original || !child.alive || child.lastEncounterAt === start || child.state !== 'resting'
-      || !inCareContact(parent, child, cfg)) continue;
+      || !inCareContact(log.grid, parent, child, cfg)) continue;
     // A young animal may arrive independently, but cannot consume before both routes finish.
     if (approach ? approach.parent !== child
       || child.currentGoal !== (cfg.lifecycle.nursing ? 'seek_nursing' : 'follow_parent')
@@ -130,7 +130,7 @@ export function finishCare(visit: CareVisit, children: readonly Agent[], starts:
     }
     if (!(seconds > 0)) continue;
     // A scheduled feed is to repletion (sim_0.36.0): the budget bounds contact time, not intake.
-    const provided = provisionYoung(parent, child, cfg, seconds / 3600, undefined, arrival + seconds);
+    const provided = provisionYoung(log.grid, parent, child, cfg, seconds / 3600, undefined, arrival + seconds);
     if (provided.foodEquivalentKg <= 0 && provided.waterEquivalentL <= 0) continue;
     if (cfg.id === 'boar' && child.ageDays < (cfg.lifecycle.drinkFromDays ?? cfg.lifecycle.weanDays)
       && provided.waterEquivalentL > 0) child.lastMaternalWaterAt = arrival + seconds;

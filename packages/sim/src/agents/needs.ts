@@ -1,4 +1,4 @@
-import { edibleMass, positionInPatch, type Agent, type Carcass, type GoalId, type SpeciesConfig, type WorldTime } from '@vana/shared';
+import { edibleMass, positionInPatch, type Agent, type Carcass, type GoalId, type SpeciesConfig, type WorldTime, type WorldGrid } from '@vana/shared';
 import { HUNGER_PER_DAY, THIRST_PER_DAY } from './drives.js';
 import { adultMassFor, stageConfig } from './lifecycle.js';
 import type { WorldView } from './perception.js';
@@ -113,9 +113,9 @@ export const cannotYetWalk = (agent: Agent, species: SpeciesConfig): boolean =>
   species.lifecycle.gatherFromDays !== undefined && agent.ageDays < species.lifecycle.gatherFromDays;
 
 /** Same patch is not contact. Missing/invalid legacy coordinates cannot authorize a transfer. */
-export function inCareContact(parent: Agent, child: Agent, species: SpeciesConfig): boolean {
-  return parent.patchId === child.patchId && positionInPatch(parent.position, parent.patchId)
-    && positionInPatch(child.position, child.patchId)
+export function inCareContact(grid: WorldGrid, parent: Agent, child: Agent, species: SpeciesConfig): boolean {
+  return parent.patchId === child.patchId && positionInPatch(grid, parent.position, parent.patchId)
+    && positionInPatch(grid, child.position, child.patchId)
     && Math.hypot(parent.position.x - child.position.x, parent.position.z - child.position.z) <= careRadius(species) + 1e-8;
 }
 
@@ -150,13 +150,13 @@ export function boarMaternalWaterCap(child: Agent, species: SpeciesConfig,
  * This is generic parental provisioning (also used for birds), not a milk chemistry model.
  * Per-visit capacity and donor safety margins are explicit, uncalibrated model policies.
  */
-export function provisionYoung(parent: Agent, child: Agent, species: SpeciesConfig, hours: number,
+export function provisionYoung(grid: WorldGrid, parent: Agent, child: Agent, species: SpeciesConfig, hours: number,
   remaining?: { foodDays: number; waterDays: number }, at?: WorldTime): {
   foodEquivalentKg: number; waterEquivalentL: number;
 } {
   const none = { foodEquivalentKg: 0, waterEquivalentL: 0 };
   if (!parent.alive || !child.alive || parent.id === child.id || child.dependentOn !== parent.id
-    || parent.speciesId !== child.speciesId || !inCareContact(parent, child, species)
+    || parent.speciesId !== child.speciesId || !inCareContact(grid, parent, child, species)
     || !needsProvisioning(child, species) || !Number.isFinite(hours) || !(hours > 0)) return none;
   if (remaining && [remaining.foodDays, remaining.waterDays].some(v => !Number.isFinite(v) || v < 0)) return none;
   const source = needsOf(parent, species), target = needsOf(child, species);

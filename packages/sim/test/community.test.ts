@@ -6,6 +6,7 @@ import { ISLAND_POPULATION } from '../src/forest.js';
 import { takeSnapshot, restoreSnapshot } from '../src/snapshot.js';
 import { stepCommunity } from '../src/community.js';
 import { waterBudgetResidual } from '../src/fields/drainage.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const options = { seed: 1, speciesDir: fileURLToPath(new URL('../../../config/species', import.meta.url)),
   terrainProfile: 'island_v1' as const, communityProfile: 'household_v1' as const, initialCommunityRulesVersion: 3 as const, initialAgents: {}, minPopulation: {} };
@@ -61,7 +62,7 @@ describe('persistent autonomous household', () => {
       expect(new Set(c.people.map(p => p.skills.building)).size).toBe(4);
       expect(c.stores).toEqual({ foodKg: 0, waterL: 0, timberKg: 0, fibreKg: 0, rawFishKg: 0 });
       expect(c.building.materials).toEqual({ timberKg: 0, fibreKg: 0 });
-      expect(c.people.every(p => positionInPatch(p.position, c.patchId))).toBe(true);
+      expect(c.people.every(p => positionInPatch(ISLAND_GRID, p.position, c.patchId))).toBe(true);
     }
   });
   it('spends real travel/work time before gathering, then delivers at household contact', () => {

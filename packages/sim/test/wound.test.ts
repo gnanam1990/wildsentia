@@ -10,8 +10,9 @@ import { makeAgent, speciesOf, SPECIES_DIR } from './helpers.js';
 import { buildGrid } from '../src/grid.js';
 import { executeGoal } from '../src/agents/behaviours.js';
 import { makeServices, makeView } from './helpers.js';
+import { ISLAND_GRID } from '@vana/shared';
 
-const contactInput: SpatialHuntInput = {
+const contactInput: SpatialHuntInput = { grid: ISLAND_GRID,
   predatorId: 'tiger_a', preyId: 'chital_a', patchId: 0, worldTime: 3600,
   predator: { x: 0, z: 0, heading: 0 }, prey: { x: 20, z: 0, heading: 0 },
   predatorWalkMs: 1, predatorSprintMs: 10, preySprintMs: 1, preyTrotMs: 0.5,
@@ -25,7 +26,7 @@ const contactInput: SpatialHuntInput = {
 function attemptedHunt(input: SpatialHuntInput = contactInput) {
   const outcome = resolveSpatialHunt(input, createRng(3, 'wound-contact'));
   const last = outcome.trace.samples.at(-1)!;
-  const prey = makeAgent('chital', { id: input.preyId, patchId: patchAtPosition(last.prey),
+  const prey = makeAgent('chital', { id: input.preyId, patchId: patchAtPosition(ISLAND_GRID, last.prey),
     position: { ...last.prey } });
   const log = new EventLog(3, 'sim_test');
   const hunt = log.append({ type: 'hunt', worldTime: input.worldTime + last.seconds,
@@ -46,7 +47,7 @@ function episode(overrides: Partial<Wound> = {}): Wound {
 describe('contact-grounded survivor wound', () => {
   it('wires the actual hunt behaviour to the survivor injury after its recorded contact', () => {
     const patches = buildGrid(12), patch = patches.find(candidate => candidate.habitat === 'grassland')!;
-    const centre = patchCentre(patch.id);
+    const centre = patchCentre(ISLAND_GRID, patch.id);
     const predator = makeAgent('tiger', { patchId: patch.id,
       position: { ...centre, x: centre.x - 8, heading: Math.PI / 2 } });
     const prey = makeAgent('chital', { patchId: patch.id,
@@ -73,13 +74,13 @@ describe('contact-grounded survivor wound', () => {
     const { outcome, prey, log, hunt, rng } = attemptedHunt();
     expect(outcome.stage).toBe('escaped');
     expect(outcome.trace.samples.some(sample => sample.phase === 'contact')).toBe(true);
-    expect(exposeToContactWound(prey, hunt, 7200, rng, log)).toBe(true);
+    expect(exposeToContactWound(ISLAND_GRID, prey, hunt, 7200, rng, log)).toBe(true);
     const wound = log.all().find(event => event.type === 'wounded')!;
     expect(wound.causalParents).toEqual([hunt.id]);
     expect(wound.position).toEqual(prey.position);
     expect(prey.wound).toMatchObject({ sourceHuntEventId: hunt.id,
       woundEventId: wound.id, lastUpdatedAt: 7200 });
-    expect(exposeToContactWound(prey, hunt, 7200, rng, log)).toBe(false);
+    expect(exposeToContactWound(ISLAND_GRID, prey, hunt, 7200, rng, log)).toBe(false);
     expect(log.all().filter(event => event.type === 'wounded')).toHaveLength(1);
     expect(advanceWound(prey, 7200, log)).toBeNull();
     expect(prey.wound?.recoveryRemainingHours).toBeGreaterThan(0);
@@ -92,14 +93,14 @@ describe('contact-grounded survivor wound', () => {
       { ...contactInput, contest: { ...contactInput.contest, baseSuccess: 1 } },
     ]) {
       const trial = attemptedHunt(input);
-      expect(exposeToContactWound(trial.prey, trial.hunt, 7200, trial.rng, trial.log)).toBe(false);
+      expect(exposeToContactWound(ISLAND_GRID, trial.prey, trial.hunt, 7200, trial.rng, trial.log)).toBe(false);
       expect(trial.prey.wound).toBeUndefined();
     }
     const trial = attemptedHunt();
     trial.prey.speciesId = 'hare';
-    expect(exposeToContactWound(trial.prey, trial.hunt, 7200, trial.rng, trial.log)).toBe(false);
+    expect(exposeToContactWound(ISLAND_GRID, trial.prey, trial.hunt, 7200, trial.rng, trial.log)).toBe(false);
     trial.prey.speciesId = 'chital'; trial.prey.alive = false;
-    expect(exposeToContactWound(trial.prey, trial.hunt, 7200, trial.rng, trial.log)).toBe(false);
+    expect(exposeToContactWound(ISLAND_GRID, trial.prey, trial.hunt, 7200, trial.rng, trial.log)).toBe(false);
   });
 
   it('reduces actual locomotion, heals or infects at decision end from persisted budgets', () => {

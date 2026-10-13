@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GRID_SIZE, createRng, patchCentre, treeAnchorForPatch, type Agent } from '@vana/shared';
+import { createRng, patchCentre, treeAnchorForPatch, type Agent } from '@vana/shared';
 import { createWorld, type World } from '../src/world.js';
 import { ISLAND_POPULATION, FOREST_POPULATION } from '../src/forest.js';
 import { canReachCarcass, heldByPredatorOf, perceive, threatens } from '../src/agents/perception.js';
@@ -9,10 +9,11 @@ import { executeGoal, subdueSecondsFor } from '../src/agents/behaviours.js';
 import { locomotionFactor } from '../src/agents/needs.js';
 import { targetMass } from '../src/agents/lifecycle.js';
 import { makeAgent, makeServices, makeView, SPECIES_DIR, speciesOf } from './helpers.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const leopard = speciesOf('leopard');
 // Mainland grid, seed 4: patches 210 and 211 are neighbouring land, x 10 and 11 of row 10.
-const P = 10 * GRID_SIZE + 10, Q = P + 1;
+const P = 10 * ISLAND_GRID.cols + 10, Q = P + 1;
 const calm = { hunger: 0, thirst: 0, fatigue: 0, fear: 0 };
 function scene(agents: Record<string, number>, seed = 4): { world: World; get: (species: string, i?: number) => Agent } {
   const world = createWorld({ seed, speciesDir: SPECIES_DIR, initialAgents: agents, minPopulation: {} });
@@ -20,7 +21,7 @@ function scene(agents: Record<string, number>, seed = 4): { world: World; get: (
   return { world, get: (species, i = 0) => world.agents.filter(a => a.speciesId === species)[i]! };
 }
 const place = (world: World, agent: Agent, patchId: number, dx: number, extra: Partial<Agent> = {}) => {
-  const c = patchCentre(patchId);
+  const c = patchCentre(ISLAND_GRID, patchId);
   Object.assign(agent, { patchId, position: { x: c.x + dx, z: c.z, heading: 0 }, drives: { ...calm }, ...extra });
   delete agent.gutKg;
   world.__reindexForTest();
@@ -84,7 +85,7 @@ describe('leopards keep away from tigers (intraguild avoidance)', () => {
     // The chital stand beside the tiger: not prey for a leopard that is not starving.
     expect(percept.prey).toEqual([]);
     // The same chital, the tiger gone: prey again.
-    tiger.patchId = 0; tiger.position = { ...patchCentre(0), heading: 0 }; world.__reindexForTest();
+    tiger.patchId = 0; tiger.position = { ...patchCentre(ISLAND_GRID, 0), heading: 0 }; world.__reindexForTest();
     expect(perceive(cat, leopard, world.__viewForTest()).prey.length).toBe(3);
     // A starving leopard hunts where it must.
     place(world, tiger, Q, -100);
@@ -109,7 +110,7 @@ describe('leopards keep away from tigers (intraguild avoidance)', () => {
 
   it('climbs its patch\'s tree to escape a tiger in the same patch', () => {
     const { world, get } = scene({ leopard: 1, tiger: 1 });
-    const treed = world.patches.find(p => treeAnchorForPatch(p) && p.neighbours.length === 4)!;
+    const treed = world.patches.find(p => treeAnchorForPatch(ISLAND_GRID, p) && p.neighbours.length === 4)!;
     const cat = get('leopard'), tiger = get('tiger');
     place(world, cat, treed.id, 40); place(world, tiger, treed.id, -10, { currentGoal: 'wander', state: 'travelling' });
     const view = world.__viewForTest();
@@ -255,7 +256,7 @@ describe('big cats search where their prey graze (range memory, sim_0.37.0)', ()
     const cat = get('leopard');
     place(world, cat, P, 0, { drives: { ...calm, hunger: 0.5 } });
     for (let i = 0; i < 3; i++) place(world, get('hare', i), P, 10 + i * 5);
-    const herd = P + 4 * GRID_SIZE; // four patches south, beyond its senses
+    const herd = P + 4 * ISLAND_GRID.cols; // four patches south, beyond its senses
     for (let i = 0; i < 4; i++) place(world, get('chital', i), herd, i * 5);
     const percept = perceive(cat, leopard, world.__viewForTest());
     expect(percept.prey.every(p => p.agent.speciesId === 'hare')).toBe(true);
@@ -264,7 +265,7 @@ describe('big cats search where their prey graze (range memory, sim_0.37.0)', ()
     place(world, get('chital', 0), P, 30);
     expect(perceive(cat, leopard, world.__viewForTest()).preyRange).toBeNull();
     // A hunter without a preferred size (a dhole) keeps no such memory.
-    expect(perceive(makeAgent('dhole', { patchId: P, position: { ...patchCentre(P), heading: 0 } }), speciesOf('dhole'), world.__viewForTest()).preyRange).toBeUndefined();
+    expect(perceive(makeAgent('dhole', { patchId: P, position: { ...patchCentre(ISLAND_GRID, P), heading: 0 } }), speciesOf('dhole'), world.__viewForTest()).preyRange).toBeUndefined();
   });
 
   it('a mother of cubs too young to follow hunts near them, not from range memory', () => {
@@ -273,11 +274,11 @@ describe('big cats search where their prey graze (range memory, sim_0.37.0)', ()
     place(world, mother, P, 0, { sex: 'female', drives: { ...calm, hunger: 0.5 }, offspringIds: [cub.id] });
     place(world, cub, P, 1, { dependentOn: mother.id, motherId: mother.id, ageDays: 20, lifeStage: 'newborn', massKg: 3 });
     for (let i = 0; i < 3; i++) place(world, get('hare', i), P, 10 + i * 5);
-    for (let i = 0; i < 4; i++) place(world, get('chital', i), P + 4 * GRID_SIZE, i * 5);
+    for (let i = 0; i < 4; i++) place(world, get('chital', i), P + 4 * ISLAND_GRID.cols, i * 5);
     expect(perceive(mother, leopard, world.__viewForTest()).preyRange).toBeNull();
     // Starving, she goes where she must.
     mother.drives.hunger = 0.85;
-    expect(perceive(mother, leopard, world.__viewForTest()).preyRange).toBe(P + 4 * GRID_SIZE);
+    expect(perceive(mother, leopard, world.__viewForTest()).preyRange).toBe(P + 4 * ISLAND_GRID.cols);
   });
 
   it('a solitary cat in oestrus seeks the male of her range when none is in sight', () => {
@@ -286,7 +287,7 @@ describe('big cats search where their prey graze (range memory, sim_0.37.0)', ()
       const { world, get } = scene({ leopard: 2 }, seed);
       const [female, male] = [get('leopard', 0), get('leopard', 1)];
       place(world, female, P, 0, { sex: 'female', ageDays: 2000, lastBirthAt: null, pregnantSince: null, nextOestrusAt: null });
-      place(world, male, P + 5 * GRID_SIZE, 0, { sex: 'male', ageDays: 2000 });
+      place(world, male, P + 5 * ISLAND_GRID.cols, 0, { sex: 'male', ageDays: 2000 });
       world.step(1);
       if (world.log.all().some(e => e.type === 'moved' && e.actors[0] === female.id && e.conditions.reason === 'approach_mate'
         && e.conditions.mateId === male.id)) approached++;
@@ -304,7 +305,7 @@ describe('a leopard caches its kill in a tree (Balme et al. 2017)', () => {
     let seen = false;
     for (let seed = 1; seed <= 80 && !seen; seed++) {
       const { world, get } = scene({ leopard: 2, chital: 4, boar: 2 }, seed);
-      const treed = world.patches.find(p => treeAnchorForPatch(p) && p.neighbours.length === 4)!;
+      const treed = world.patches.find(p => treeAnchorForPatch(ISLAND_GRID, p) && p.neighbours.length === 4)!;
       const [cat, cub] = [get('leopard', 0), get('leopard', 1)];
       place(world, cat, treed.id, -20, { sex: 'female', drives: { ...calm, hunger: 0.6 } });
       place(world, cub, P, 0, { dependentOn: cat.id, motherId: cat.id, ageDays: 150, lifeStage: 'juvenile', massKg: 18 });
@@ -330,7 +331,7 @@ describe('a leopard caches its kill in a tree (Balme et al. 2017)', () => {
       // A cub old enough for meat but not yet to follow her eats only where it lies: it does not
       // walk to the kill from the next patch (sim_0.37.0); once it follows her, it does.
       const next = world.patches[treed.neighbours.find(id => world.patches[id]!.habitat !== 'water')!]!;
-      const lying = { ...cub, patchId: next.id, position: { ...patchCentre(next.id), heading: 0 }, ageDays: 50, lifeStage: 'newborn' as const };
+      const lying = { ...cub, patchId: next.id, position: { ...patchCentre(ISLAND_GRID, next.id), heading: 0 }, ageDays: 50, lifeStage: 'newborn' as const };
       expect(perceive({ ...lying, patchId: carcass.patchId, position: { ...carcass.position! } }, leopard, view).carrion?.carcass.id).toBe(carcass.id);
       expect(perceive(lying, leopard, view).carrion).toBeNull();
       expect(perceive({ ...lying, ageDays: 65 }, leopard, view).carrion?.carcass.id).toBe(carcass.id);

@@ -6,6 +6,7 @@ import { selectGoal } from '../src/agents/goals.js';
 import { perceive } from '../src/agents/perception.js';
 import { restoreSnapshot, takeSnapshot, upgradeV34Snapshot } from '../src/snapshot.js';
 import { SPECIES_DIR, makeAgent, speciesOf } from './helpers.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const tiger = speciesOf('tiger');
 
@@ -37,8 +38,8 @@ describe('predator feeding calibrated to field intake (sim_0.35.0)', () => {
   it('does not start a hunt while sated or below its hunting hunger, and does above it', () => {
     const world = createWorld({ seed: 4, speciesDir: SPECIES_DIR, initialAgents: { tiger: 1, chital: 6 }, minPopulation: {} });
     const t = world.agents.find(a => a.speciesId === 'tiger')!;
-    for (const a of world.agents) { a.patchId = 210; a.position = { ...patchCentre(210), heading: 0 }; }
-    t.position = { ...patchCentre(210), x: patchCentre(210).x + 100, heading: 0 };
+    for (const a of world.agents) { a.patchId = 210; a.position = { ...patchCentre(ISLAND_GRID, 210), heading: 0 }; }
+    t.position = { ...patchCentre(ISLAND_GRID, 210), x: patchCentre(ISLAND_GRID, 210).x + 100, heading: 0 };
     world.__reindexForTest();
     const goal = (hunger: number, gutKg?: number) => {
       t.drives = { hunger, thirst: 0, fatigue: 0, fear: 0 };

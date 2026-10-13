@@ -9,6 +9,7 @@ import { executeGoal } from '../src/agents/behaviours.js';
 import { makeCarcass } from '../src/fields/decomposition.js';
 import { EventLog } from '../src/events/log.js';
 import { makeAgent, makeServices, makeView, speciesOf } from './helpers.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 function scenario(
   speciesId: string,
@@ -27,7 +28,7 @@ function scenario(
   });
   const others = (opts.others ?? []).map((o) => ({ ...o, patchId: grassland.id }));
   if (goal === 'hunt') {
-    const centre = patchCentre(grassland.id);
+    const centre = patchCentre(ISLAND_GRID, grassland.id);
     agent.position = { x: centre.x - 30, z: centre.z, heading: Math.PI / 2 };
     for (const other of others) other.position = { ...centre, heading: Math.PI / 2 };
   }
@@ -55,7 +56,7 @@ describe('hunting after travel', () => {
     for (const p of s.patches) p.habitat = 'grassland';
     const prey = s.others[0]!;
     prey.patchId = s.patches[s.agent.patchId]!.neighbours[0]!;
-    prey.position = { ...patchCentre(prey.patchId), heading: 0 };
+    prey.position = { ...patchCentre(ISLAND_GRID, prey.patchId), heading: 0 };
     s.ctx.percept = perceive(s.agent, s.ctx.species, s.ctx.view);
     s.ctx.hours = hours;
     executeGoal(s.ctx);
@@ -237,7 +238,7 @@ describe('hunting', () => {
       const s = scenario('dhole', 'hunt', { others: [makeAgent('chital', { id: 'c1' }), makeAgent('chital', { id: 'c2' })] });
       const destination = s.percept.patch.neighbours[0]!;
       s.others[1]!.patchId = destination;
-      s.others[1]!.position = { ...patchCentre(destination), heading: 0 };
+      s.others[1]!.position = { ...patchCentre(ISLAND_GRID, destination), heading: 0 };
       s.percept.prey = s.others.map((agent) => ({ agent, patchId: agent.patchId, herdSize: 1 }));
       s.agent.targetId = 'c2'; s.ctx.hours = hours;
       executeGoal(s.ctx);
@@ -336,7 +337,7 @@ describe('scavenging', () => {
   const contactScenario = () => {
     const carcass = makeCarcass('c1', 'x', 'sambar', 0, 0, 'predation', 'authoritative', 200);
     const s = scenario('jackal', 'scavenge', { drives: { hunger: 0.9, fatigue: 0 }, carcasses: [carcass] });
-    const centre = patchCentre(s.agent.patchId);
+    const centre = patchCentre(ISLAND_GRID, s.agent.patchId);
     s.agent.position = { ...centre, heading: 0 };
     s.carcasses[0]!.position = { x: centre.x + 10, z: centre.z, heading: 0 };
     s.ctx.species = structuredClone(s.ctx.species);
@@ -466,7 +467,7 @@ describe('fleeing', () => {
       // An inland patch with four walkable neighbours, so every direction is open.
       const start = s.patches.find(p => p.neighbours.length === 4
         && [p, ...p.neighbours.map(n => s.patches[n]!)].every(q => q.habitat !== 'water'))!.id;
-      const c = patchCentre(start);
+      const c = patchCentre(ISLAND_GRID, start);
       s.agent.patchId = start; s.others[0]!.patchId = start;
       s.agent.position = { x: c.x, z: c.z, heading: 0 };
       s.others[0]!.position = { x: c.x + dx, z: c.z + dz, heading: 0 };
