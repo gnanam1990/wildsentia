@@ -1,5 +1,5 @@
 import { terrainCostFor, isWorldPosition, landWalkable, patchAtPosition, patchCentre, patchIdAt, treeAnchorForPatch, waterAccessPosition, type Agent, type HabitatType, type WorldGrid } from '@vana/shared';
-import { locomotionFactor, type World } from '@vana/sim';
+import { canHunt, locomotionFactor, type World } from '@vana/sim';
 import { WorldBusyError, type AnimalView, type PatchView, type SpeciesMotion, type WorldPort } from './liveLayer.js';
 import { landRoute } from './route.js';
 
@@ -49,6 +49,11 @@ export function worldPort(world: () => World, worldId: () => string | null, play
   return {
     busy,
     terrainProfile: () => world().terrainProfile,
+    canHunt: (predatorId, preyId) => {
+      const w = world(), predator = w.animal(predatorId), prey = w.animal(preyId);
+      const predatorCfg = predator && w.species.get(predator.speciesId), preyCfg = prey && w.species.get(prey.speciesId);
+      return !!(predatorCfg && preyCfg && prey && canHunt(predatorCfg, preyCfg, prey));
+    },
     worldId,
     treeAt: (x, z) => {
       const p = patchAt(x, z);

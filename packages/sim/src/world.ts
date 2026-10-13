@@ -17,7 +17,7 @@ import { establishFloweringGuild, stepFloweringGuild } from './fields/floweringG
 import { EventLog } from './events/log.js';
 import { foundCommunity, stepCommunity } from './community.js';
 import { updateDrives } from './agents/drives.js';
-import { HUNGER_DESPERATION, perceive, perceptionRadius, type WorldView } from './agents/perception.js';
+import { HUNGER_DESPERATION, canHunt, perceive, perceptionRadius, type WorldView } from './agents/perception.js';
 import { activityAt, selectGoal } from './agents/goals.js';
 import { controlledAction, controlledFeed, descendPerchedAnimal, executeGoal, type ControlledAction, type WorldServices } from './agents/behaviours.js';
 import { foundingTraits } from './agents/genetics.js';
@@ -1053,8 +1053,9 @@ export class World {
   resolveLiveHunt(predatorId: string, preyId: string, position: WorldPosition, at: number, killed: boolean): Carcass | null {
     const predator = this.#agentsById.get(predatorId), prey = this.#agentsById.get(preyId);
     if (!predator?.alive || !prey?.alive || predator.id === prey.id) return null;
-    const cfg = this.species.get(predator.speciesId)!;
-    if (!(cfg.hunting?.preferredPrey ?? []).includes(prey.speciesId)) return null;
+    const cfg = this.species.get(predator.speciesId)!, preyCfg = this.species.get(prey.speciesId);
+    // The authority for a live kill: the same rule every hunt follows (Congo 1B).
+    if (!preyCfg || !canHunt(cfg, preyCfg, prey)) return null;
     const patchId = patchAtPosition(this.grid, position);
     if (!landWalkable(this.patches[patchId]) || !positionInPatch(this.grid, position, patchId)) return null;
     const when = Math.min(this.#time, Math.max(0, Math.floor(at)));

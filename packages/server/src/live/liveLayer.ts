@@ -41,6 +41,8 @@ export class WorldBusyError extends Error {
 export interface WorldPort {
   /** True while the world steps: nothing may change it (Congo 1A.3). */
   busy?(): boolean;
+  /** Congo 1B: whether this predator may take this animal (species, weight, life stage, within reach). */
+  canHunt?(predatorId: string, preyId: string): boolean;
   /** The world's terrain profile: it picks the calendar (Congo 1B). */
   terrainProfile?(): string;
   worldId(): string | null;
@@ -426,6 +428,7 @@ export class LiveLayer {
     const target = this.world.animal(targetId);
     if (!target?.alive || target.id === avatar.animalId) return 'no_such_animal';
     if (!me.preferredPrey.includes(target.speciesId)) return 'not_its_prey';
+    if (this.world.canHunt && !this.world.canHunt(avatar.animalId, targetId)) return 'incompatible_prey';
     const at = this.positionOf(targetId);
     if (!at || Math.hypot(at.x - avatar.x, at.z - avatar.z) > me.sightRangeM) return 'out_of_sight';
     this.#flushAction(avatar);
@@ -696,6 +699,7 @@ export class LiveLayer {
       if (!me?.preferredPrey.length) continue;
       for (const candidate of this.world.nearby(avatar.x, avatar.z, 200, 80)) {
         if (candidate.controller || this.wild.has(candidate.id) || !me.preferredPrey.includes(candidate.speciesId)) continue;
+        if (this.world.canHunt && !this.world.canHunt(avatar.animalId, candidate.id)) continue;
         if (avatar.hunt?.targetId === candidate.id) continue;
         const prey = this.world.species(candidate.speciesId);
         const at = this.world.playedPosition(candidate.id);
@@ -715,6 +719,7 @@ export class LiveLayer {
         if (candidate.controller || this.wild.has(candidate.id) || candidate.drives.hunger < 0.3) continue;
         const motion = this.world.species(candidate.speciesId);
         if (!motion?.preferredPrey.includes(avatar.speciesId)) continue;
+        if (this.world.canHunt && !this.world.canHunt(candidate.id, avatar.animalId)) continue;
         const at = this.world.playedPosition(candidate.id);
         if (!at || Math.hypot(at.x - avatar.x, at.z - avatar.z) > Math.min(motion.sightRangeM, 160)) continue;
         // It begins to stalk; the agent's animal only notices once it charges (or sees it nearby).

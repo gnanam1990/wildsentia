@@ -65,6 +65,19 @@ export function threatens(predator: SpeciesConfig | undefined, prey: SpeciesConf
   return (predator.hunting?.preferredPrey ?? []).includes(prey.id) || (prey.escape.avoids ?? []).includes(predator.id);
 }
 
+/**
+ * Congo 1B: whether this predator may take this animal at all: its prey species, within the
+ * weight it takes, at a life stage it takes, and within reach (on the ground, above water).
+ * Every hunt checks it: the sim's own, a live agent's, and the world's record of a live kill.
+ */
+export function canHunt(predator: SpeciesConfig, prey: SpeciesConfig, animal: Pick<Agent, 'massKg' | 'lifeStage' | 'altitudeM' | 'locomotionMode'>): boolean {
+  const hunting = predator.hunting;
+  if (!hunting || !hunting.preferredPrey.includes(prey.id)) return false;
+  if (animal.massKg > (hunting.maxPreyKg ?? Infinity)) return false;
+  if (hunting.preyLifeStages && !hunting.preyLifeStages.includes(animal.lifeStage)) return false;
+  return (animal.altitudeM ?? 0) <= 0 && animal.locomotionMode !== 'submerged';
+}
+
 /** What a predator is visibly doing, as prey can read it. */
 export type ThreatPosture = 'hunting' | 'moving' | 'settled';
 
@@ -233,12 +246,14 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
         // The current hunt solver is planar: it cannot make physical contact with an
         // animal on an exact tree anchor above ground. No general invulnerability is implied.
         if (!other.alive || other.id === agent.id || !preferred.has(other.speciesId)
-          || (other.altitudeM ?? 0) > 0) continue;
+          || (other.altitudeM ?? 0) > 0 || other.locomotionMode === 'submerged') continue;
         // sim_0.37.0 intraguild avoidance: a hunter does not hunt where a predator that hunts it
         // stands (leopards keep away from tigers), unless it is starving.
         if (dangerous.has(p.id) && !starving) continue;
         // sim_0.37.0: prey heavier than the hunter will take (an adult sambar for a leopard).
         if (other.massKg > (species.hunting?.maxPreyKg ?? Infinity)) continue;
+        // Congo 1B: only the life stages it takes (no island species names any).
+        if (species.hunting?.preyLifeStages && !species.hunting.preyLifeStages.includes(other.lifeStage)) continue;
         // An agent-steered animal is hunted in real time by the live layer, not by the
         // hourly solver, which cannot know where its agent will take it.
         if (other.controller) continue;

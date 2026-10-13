@@ -4,7 +4,7 @@ import { deadlineText } from './challengesModel.js';
 /** What each refusal from the live layer means, in the player's words (codes as the server sends them). */
 export const COMMAND_ERRORS: Record<string, string> = {
   not_possessing: 'You have no animal.', not_a_hunter: 'Your animal does not hunt.',
-  not_its_prey: 'That is not prey your animal hunts.', out_of_sight: 'That animal is out of sight.', too_far: 'That is too far away.',
+  not_its_prey: 'That is not prey your animal hunts.', incompatible_prey: 'Your animal cannot take that one: too big, too young or old, or out of reach.', out_of_sight: 'That animal is out of sight.', too_far: 'That is too far away.',
   no_such_animal: 'That animal is no longer here.', no_tree_here: 'There is no tree to climb here.', cannot_climb: 'Your animal cannot climb.',
   come_down_first: 'Come down from the tree first.', not_at_water: 'There is no water here: go to the shore first.',
   does_not_eat_meat: 'Your animal does not eat meat.', does_not_graze: 'Your animal eats meat, not plants: hunt or feed instead.', no_carcass_here: 'There is no carcass here.', no_such_drop: 'That find is gone.',

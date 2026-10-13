@@ -8,7 +8,8 @@ export type AgentState =
   /** Walked out of this stretch of forest into the country around it. Alive, but gone. */
   | 'emigrated';
 
-export type LocomotionMode = 'ground' | 'flight' | 'climb';
+/** Congo 1B adds 'submerged': a diver under water, unseen and out of reach until `submergedUntil`. */
+export type LocomotionMode = 'ground' | 'flight' | 'climb' | 'submerged';
 
 /** Skills an animal learns, is taught, and loses with disuse (spec §8). */
 export const SKILL_IDS = [
@@ -174,6 +175,8 @@ export interface Agent {
   position?: WorldPosition;
   /** Authoritative non-ground travel state. Absent on old/ground-only checkpoints. */
   altitudeM?: number;
+  /** Congo 1B: while `locomotionMode` is 'submerged', the world time it surfaces. */
+  submergedUntil?: number;
   locomotionMode?: LocomotionMode;
   /** Stable shared trunk identity while an arboreal animal is above ground. */
   treeAnchorId?: string;
