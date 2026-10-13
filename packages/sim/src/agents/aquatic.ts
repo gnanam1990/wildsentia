@@ -1,4 +1,4 @@
-import { cardinalNeighbours, isFlooded, waterAccessPosition, type Agent, type Patch, type Season, type WorldGrid,
+import { cardinalNeighbours, isFlooded, positionInPatch, spatialHash, waterAccessPosition, type Agent, type Patch, type Season, type WorldGrid,
   type WorldPosition } from '@vana/shared';
 
 /** How far a diver will run to reach water when a predator is on it (one patch, on the lattice). */
@@ -23,8 +23,26 @@ export function waterRefuge(grid: WorldGrid, agent: Agent, patches: readonly Pat
   return best && { patchId: best.patchId, position: best.position };
 }
 
-/** Back above water: nothing remains of the dive. */
-export function surface(agent: Agent): void {
+/** How far along the bank a diver comes up from where it went under (it swims under water). */
+export const SURFACE_SHIFT_M = { min: 15, max: 60 } as const;
+
+/**
+ * Back above water: nothing remains of the dive. Given the world (`grid`, `patches`), it comes up
+ * 15-60 m from where it went under, in a direction fixed by its id and dive, inside the same
+ * patch; at a death, where it is.
+ */
+export function surface(agent: Agent, grid?: WorldGrid, patches?: readonly Patch[]): void {
+  if (grid && patches && agent.position) {
+    const h = spatialHash(`surface:${agent.id}:${agent.submergedUntil ?? 0}`);
+    const angle = (h & 0xffff) / 0x10000 * 2 * Math.PI;
+    const reach = SURFACE_SHIFT_M.min + ((h >>> 16) & 0xffff) / 0xffff * (SURFACE_SHIFT_M.max - SURFACE_SHIFT_M.min);
+    for (const scale of [1, 0.5, 0.25]) {
+      const at = { x: agent.position.x + Math.sin(angle) * reach * scale, z: agent.position.z + Math.cos(angle) * reach * scale,
+        heading: agent.position.heading };
+      if (scale < 1 && reach * scale < SURFACE_SHIFT_M.min) break;
+      if (positionInPatch(grid, at, agent.patchId)) { agent.position = at; break; }
+    }
+  }
   delete agent.locomotionMode;
   delete agent.submergedUntil;
 }

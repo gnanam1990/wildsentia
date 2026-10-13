@@ -59,7 +59,7 @@ function partOfDay(worldTime: number): string {
 
 /** The state Jev judges: only saved facts a viewer could also read on the animal's card. */
 export function outlookState(agent: Agent, species: SpeciesFacts, worldTime: number,
-  patch: { habitat: string; waterVolume: number; grass: number } | undefined) {
+  patch: { habitat: string; waterVolume: number; grass: number } | undefined, profile?: string) {
   return {
     animal: {
       species: species.displayName, sex: agent.sex, lifeStage: agent.lifeStage,
@@ -74,7 +74,7 @@ export function outlookState(agent: Agent, species: SpeciesFacts, worldTime: num
       youngCount: agent.offspringIds.length,
     },
     surroundings: {
-      timeOfDay: partOfDay(worldTime), season: seasonAt(worldTime),
+      timeOfDay: partOfDay(worldTime), season: seasonAt(worldTime, profile),
       ...(patch ? { habitat: patch.habitat, surfaceWaterHere: patch.waterVolume > 0,
         grassHere: patch.grass > 3000 ? 'plenty' : patch.grass > 800 ? 'some' : 'little' } : {}),
     },
@@ -86,13 +86,14 @@ const HIGHLIGHT_LEVELS = [
   'Minor: a small moment worth a glance',
   'Notable: worth pointing out to someone watching',
   'Remarkable: a hunt, a birth, a death, an illness or unusual behaviour',
-  'Exceptional: a rare and dramatic moment in the life of the island',
+  'Exceptional: a rare and dramatic moment in the life of the forest',
 ];
 /** Scores at or above this (0-4) are offered as highlights. */
 export const HIGHLIGHT_MIN_SCORE = 2;
 const HIGHLIGHT_BATCH = 12;
 
-const speciesOfActor = (id: string) => id.split('_')[0] ?? id;
+/** An animal's species from its id (`blue_duiker_00ab` → `blue_duiker`): all but the last part. */
+const speciesOfActor = (id: string) => id.lastIndexOf('_') > 0 ? id.slice(0, id.lastIndexOf('_')) : id;
 
 /** One entry per kind of moment: the newest of a dozen identical carcass visits stands for them all. */
 export function distinctEvents(events: readonly WorldEvent[], limit = HIGHLIGHT_BATCH): WorldEvent[] {
@@ -106,13 +107,14 @@ export function distinctEvents(events: readonly WorldEvent[], limit = HIGHLIGHT_
   return result;
 }
 
-export function highlightState(events: readonly WorldEvent[], speciesName: (id: string) => string) {
+export function highlightState(events: readonly WorldEvent[], speciesName: (id: string) => string, profile?: string) {
   return {
-    island: 'A simulated tropical island forest with wild animals and one small village',
+    island: profile === 'congo_v1' ? 'A simulated forest inspired by the Congo Basin, with a great river and wild animals'
+      : 'A simulated tropical island forest with wild animals and one small village',
     events: Object.fromEntries(events.map((e, i) => [`e${i}`, {
       what: e.type.replaceAll('_', ' '), outcome: e.outcome,
       who: e.actors.slice(0, 2).map((id) => id.startsWith('person_') ? 'villager' : speciesName(speciesOfActor(id))),
-      when: formatWorldTime(e.worldTime),
+      when: formatWorldTime(e.worldTime, profile),
     }])),
   };
 }
@@ -125,6 +127,9 @@ export class Insights {
 
   constructor(private readonly systemOne: SystemOne | null, private readonly dailyCalls = 1000,
     private readonly now: () => number = Date.now) {}
+
+  /** The world's terrain profile (its calendar and its description); set by the server (Congo 1B). */
+  profile: string | undefined;
 
   get configured(): boolean { return this.systemOne !== null; }
   get callsToday(): number { this.#rollDay(); return this.#calls; }
@@ -169,7 +174,7 @@ export class Insights {
         instructions: 'Given this wild animal\'s current needs and surroundings, what is it most likely to do over the next hour?',
         criteria: Object.fromEntries(goals.map((g) => [g, GOAL_LABELS[g]!])),
       };
-      const result = await ask(outlookState(agent, species, worldTime, patch), { next: question });
+      const result = await ask(outlookState(agent, species, worldTime, patch, this.profile), { next: question });
       const answer = result.answers.next!;
       if (answer.type !== 'choice') throw new Error('unexpected answer');
       const choices = goals.map((goal) => ({ goal, label: GOAL_LABELS[goal]!, probability: answer.probabilities[goal] ?? 0 }))
@@ -188,7 +193,7 @@ export class Insights {
         instructions: `How remarkable is event \`events.e${i}\` for someone watching this island's wildlife?`,
         criteria: HIGHLIGHT_LEVELS,
       }]));
-      const result = await ask(highlightState(batch, speciesName), questions);
+      const result = await ask(highlightState(batch, speciesName, this.profile), questions);
       const highlights = batch.map((event, i) => {
         const answer = result.answers[`e${i}`]!;
         return answer.type === 'score' ? { event, score: answer.score, confidence: answer.confidence } : null;

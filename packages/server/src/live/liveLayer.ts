@@ -17,6 +17,8 @@ export interface AnimalView {
   id: string; speciesId: string; alive: boolean; controller?: string | undefined;
   position: { x: number; z: number; heading: number }; patchId: number; state: string; lifeStage: string;
   drives: { hunger: number; thirst: number; fatigue: number; fear: number };
+  /** Congo 1B: under water (a diving chevrotain): out of sight and out of reach. */
+  submerged?: boolean;
 }
 export interface SpeciesMotion {
   displayName: string; walkMs: number; trotMs: number; sprintMs: number; sprintStaminaS: number; predator: boolean;
@@ -538,6 +540,7 @@ export class LiveLayer {
     if (!at || !target) return stop('Your prey is gone.');
     if (this.#avatarOf(targetId)?.perched) return stop('It climbed out of reach.');
     if (this.#avatarOf(targetId)?.flying) return stop('It took to the air.');
+    if (target.submerged) return stop('It dived out of reach.');
     const gap = Math.hypot(at.x - avatar.x, at.z - avatar.z);
     if (gap > motion.sightRangeM * 1.5) return stop('You lost sight of it.');
     const prey = this.world.species(target.speciesId)!;

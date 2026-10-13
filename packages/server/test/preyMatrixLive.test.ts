@@ -24,4 +24,23 @@ describe('an agent hunting under the prey rule', () => {
     duiker.massKg = 4.6;
     expect(live.hunt('a1', duiker.id)).toBeNull();
   }, 60_000);
+
+  it('neither shows a diver to a player nor lets a live chase continue after it dives (1B review)', () => {
+    const world = createWorld({ seed: 7, speciesDir: fileURLToPath(new URL('../../../config/species-congo', import.meta.url)),
+      terrainProfile: 'congo_v1', initialAgents: { african_leopard: 2, water_chevrotain: 5 }, minPopulation: {} });
+    const port = worldPort(() => world, () => 'w1');
+    const live = new LiveLayer(port, null);
+    const leopard = world.agents.find((a) => a.speciesId === 'african_leopard')!;
+    expect(live.possess('a1', 'Ana', { animalId: leopard.id }).ok).toBe(true);
+    const avatar = live.avatars.get('a1')!;
+    const chevrotain = world.agents.find((a) => a.speciesId === 'water_chevrotain')!;
+    chevrotain.position = { x: avatar.x + 30, z: avatar.z, heading: 0 }; chevrotain.patchId = leopard.patchId;
+    expect(port.nearby(avatar.x, avatar.z, 200, 30).some((a) => a.id === chevrotain.id)).toBe(true);
+    expect(live.hunt('a1', chevrotain.id)).toBeNull();
+    chevrotain.locomotionMode = 'submerged'; chevrotain.submergedUntil = world.now() + 240;
+    expect(port.nearby(avatar.x, avatar.z, 200, 30).some((a) => a.id === chevrotain.id)).toBe(false);
+    for (let i = 0; i < 30; i++) live.tick(0.1);
+    expect(live.avatars.get('a1')!.hunt).toBeFalsy();
+    expect(live.notices('a1').map((n) => n.text).join(' ')).toMatch(/dived/);
+  }, 60_000);
 });

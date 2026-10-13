@@ -5,7 +5,7 @@ import { landRoute } from './route.js';
 
 const view = (grid: WorldGrid, a: Agent): AnimalView => ({ id: a.id, speciesId: a.speciesId, alive: a.alive, controller: a.controller,
   position: { ...(a.position ?? { ...patchCentre(grid, a.patchId), heading: 0 }) }, patchId: a.patchId, state: a.state,
-  lifeStage: a.lifeStage, drives: { ...a.drives } });
+  lifeStage: a.lifeStage, drives: { ...a.drives }, ...(a.locomotionMode === 'submerged' ? { submerged: true } : {}) });
 
 const inWorld = (grid: WorldGrid, x: number, z: number) => isWorldPosition(grid, { x, z, heading: 0 });
 
@@ -109,7 +109,8 @@ export function worldPort(world: () => World, worldId: () => string | null, play
         const id = patchIdAt(grid, cx + dx, cy + dy);
         if (id === null) continue;
         for (const a of byPatch.get(id) ?? []) {
-          if (!a.alive || !a.position) continue;
+          // A diver under water is out of sight (Congo 1B).
+          if (!a.alive || !a.position || a.locomotionMode === 'submerged') continue;
           const ox = a.position.x - x, oz = a.position.z - z, d = ox * ox + oz * oz;
           if (d <= r2) found.push({ d, a });
         }

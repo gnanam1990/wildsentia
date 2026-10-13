@@ -49,6 +49,10 @@ describe('the water chevrotain dives to escape (1B)', () => {
     const saved = takeSnapshot(world);
     const back = restoreSnapshot(saved, { seed: 7, speciesDir: CONGO_DIR, terrainProfile: 'congo_v1', initialAgents: {}, minPopulation: {} });
     expect(back.animal(chevrotain.id)!.locomotionMode).toBe('submerged');
+    const backLeopard = back.animal(leopard.id)!;
+    backLeopard.patchId = 0; backLeopard.position = { x: 0, z: 0, heading: 0 }; delete backLeopard.journey;
+    back.step(1);
+    expect(back.animal(chevrotain.id)!.locomotionMode).toBeUndefined(); // the restored world surfaces it too
     world.step(1);
     expect(chevrotain.locomotionMode).toBeUndefined();
     expect(chevrotain.submergedUntil).toBeUndefined();
@@ -59,5 +63,22 @@ describe('the water chevrotain dives to escape (1B)', () => {
     world.step(48);
     expect(world.log.all().some((e) => e.conditions.escape === 'dive')).toBe(false);
     expect(world.agents.some((a) => a.locomotionMode === 'submerged')).toBe(false);
+  }, 120_000);
+
+  it('comes up within 60 m of where it went under, still in its patch, the same way every time (1B review)', async () => {
+    const { surface } = await import('../src/agents/aquatic.js');
+    const world = congo(), { chevrotain } = stage(world);
+    world.step(1);
+    expect(chevrotain.locomotionMode).toBe('submerged');
+    const at = { ...chevrotain.position! }, patchId = chevrotain.patchId;
+    const twin = structuredClone(chevrotain);
+    surface(chevrotain, world.grid, world.patches);
+    surface(twin, world.grid, world.patches);
+    expect(chevrotain.locomotionMode).toBeUndefined();
+    expect(chevrotain.position).toEqual(twin.position);
+    const moved = Math.hypot(chevrotain.position!.x - at.x, chevrotain.position!.z - at.z);
+    expect(moved).toBeGreaterThanOrEqual(10); // not where a waiting leopard last saw it
+    expect(moved).toBeLessThanOrEqual(60 + 1e-6);
+    expect(chevrotain.patchId).toBe(patchId);
   }, 120_000);
 });

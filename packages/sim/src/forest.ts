@@ -98,9 +98,11 @@ export const ISLAND_V2_POPULATION: Record<string, number> = {
  * - water chevrotain 10/km² (7.7-28) along the ~184 km² of flooded forest and river margin;
  * - African leopard 2/100 km², one male to two females. Field densities run 2.7-12.1 (hunted
  *   Gabon forest to Ivindo's core), but there the leopard lives mostly on red duikers and red
- *   river hogs, which the Phase 1 roster lacks. Duikers and chevrotains alone replace about
- *   14,000 a year; at 6/100 km² the 30-day soak's leopards took 4,000 a month and the duikers fell
- *   15%. 2/100 km² (~46) at 2.5 kg a day takes about 9,000 a year. A Phase 1 assumption.
+ *   river hogs, which the Phase 1 roster lacks. At 6/100 km² the leopards killed ~130 duikers a
+ *   day and the duikers fell 15% in 30 days. At 2/100 km² (2.5 kg a day) the 120-day soak still
+ *   measured ~37 kills a day (~13,800 a year) while the leopards bred from 46 to 76: about what the
+ *   duikers can replace, before their natural deaths. The evidence so far points to a slow
+ *   decline; the one-year soak decides. A Phase 1 assumption.
  */
 export const CONGO_POPULATION: Record<string, number> = {
   blue_duiker: 27_600, water_chevrotain: 1_840, african_leopard: 46,

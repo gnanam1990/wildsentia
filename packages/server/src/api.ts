@@ -466,6 +466,7 @@ export function buildApi({ host, pool, narrator, insights: insightDeps, live, re
   // Observer insights: estimates from TypeSafe AI's Jev about saved state, shown to viewers
   // and never read by the simulation. Absent unless a key is configured.
   const insights = insightDeps ?? new Insights(null);
+  insights.profile = host.world?.terrainProfile;
   const speciesFacts = (id: string) => {
     const config = host.world.species.get(id);
     return { displayName: config?.displayName ?? id, hunts: config?.hunting !== undefined, scavenges: config?.diet.canScavenge ?? false };

@@ -212,3 +212,16 @@ maybe('insight routes', () => {
     expect((await api.inject(`/events?limit=50&until=${latest}&notable=yes`)).statusCode).toBe(400);
   });
 });
+
+describe('narration in the Congo forest (1B review)', () => {
+  it('names Congo species whole and uses the Congo calendar', async () => {
+    const { highlightState } = await import('../src/insights/insights.js');
+    const event = { id: 'e', type: 'hunt', worldTime: 0, patchId: 0, actors: ['african_leopard_002a', 'blue_duiker_00ab'],
+      conditions: {}, outcome: 'success', effects: {}, causalParents: [], confidence: 'authoritative', simVersion: 's' } as never;
+    const state = highlightState([event], (id) => `<${id}>`, 'congo_v1');
+    expect(state.events.e0!.who).toEqual(['<african_leopard>', '<blue_duiker>']);
+    expect(state.island).toMatch(/Congo/);
+    expect(highlightState([event], (id) => id).events.e0!.who).toEqual(['african_leopard', 'blue_duiker']);
+    expect(state.events.e0!.when).toContain('-monsoon-');
+  });
+});

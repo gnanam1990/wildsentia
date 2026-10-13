@@ -80,7 +80,8 @@ export class World {
   #landCache: Patch[] | null = null;
   #dryLandCache: Patch[] | null = null;
   #waterMarginCache: Patch[] | null = null;
-  /** Congo 1B: single-member pair groups waiting for a mate, by `species:sex`, oldest first. */
+  /** Congo 1B: single-member pair groups waiting for a mate, by `species:sex`, oldest first. Filled only by
+   * founding (#spawn); not restored from checkpoints, which is safe because Congo is closed (no later founders). */
   readonly #openPairs = new Map<string, string[]>();
   /** Living animals only. The dead move to `deceased` so they leave every per-tick loop. */
   readonly agents: Agent[] = [];
@@ -562,6 +563,34 @@ export class World {
     if (open) open.push(groupId); else this.#openPairs.set(key, [groupId]);
   }
 
+  /** Leaves its group (a group left empty is gone). */
+  #leaveGroup(agent: Agent): void {
+    if (agent.groupId == null) return;
+    const group = this.#groups.get(agent.groupId);
+    if (group) {
+      group.memberIds = group.memberIds.filter((id) => id !== agent.id);
+      if (!group.memberIds.length) this.#groups.delete(agent.groupId);
+    }
+    agent.groupId = null;
+  }
+
+  /** Congo 1B: a female and male who conceived together and have no pair-mate of their own become a pair. */
+  #bond(female: Agent, male: Agent, cfg: SpeciesConfig): void {
+    if (!male.alive || female.id === male.id) return;
+    const members = (a: Agent) => (a.groupId == null ? [] : this.#groups.get(a.groupId)?.memberIds ?? [])
+      .map((id) => this.#agentsById.get(id)).filter((x): x is Agent => x !== undefined);
+    const kin = (a: Agent, b: Agent) => assessMate(a, b, this.pedigree) === null;
+    if (pairMateFor(female, cfg, members(female), kin) || pairMateFor(male, cfg, members(male), kin)) return;
+    this.#leaveGroup(male);
+    if (female.groupId == null) {
+      const groupId = `${female.speciesId}_grp_${(this.#groupSeq++).toString(16)}`;
+      this.#groups.set(groupId, { speciesId: female.speciesId, memberIds: [female.id] });
+      female.groupId = groupId;
+    }
+    this.#groups.get(female.groupId)!.memberIds.push(male.id);
+    male.groupId = female.groupId;
+  }
+
   #reindex(): void {
     this.#agentsByPatch.clear();
     this.#filedPatch.clear();
@@ -799,11 +828,14 @@ export class World {
     // Use the recorded start location, never a mate's future end-of-decision position.
     let best: ReturnType<typeof assessMate> = null;
     const pairMate = pairMateFor(agent, cfg, (agent.groupId == null ? [] : this.#groups.get(agent.groupId)?.memberIds ?? [])
-      .map((id) => this.#agentsById.get(id)).filter((a): a is Agent => a !== undefined));
+      .map((id) => this.#agentsById.get(id)).filter((a): a is Agent => a !== undefined),
+      (a, b) => assessMate(a, b, this.pedigree) === null);
     const here = locateAgent(this.grid, agent), senseRange = Math.max(cfg.senses.sightRangeM, cfg.senses.hearingRangeM, cfg.senses.smellRangeM);
     for (const patchId of [agent.patchId, ...this.patches[agent.patchId]!.neighbours]) {
       for (const other of view.agentsInPatch(patchId)) {
         if (!other.alive || other.speciesId !== agent.speciesId || (other.altitudeM ?? 0) > 0) continue;
+        // Congo 1B: nothing courts an animal under water.
+        if (other.locomotionMode === 'submerged') continue;
         // Congo 1B: a paired animal courts only its pair-mate while that mate lives.
         if (pairMate && other.id !== pairMate.id) continue;
         // An agent-steered animal is not led off by a wild suitor's plan.
@@ -1382,6 +1414,8 @@ export class World {
           });
         } else if (agent.ageDays >= cfg.lifecycle.dispersalDays) {
           agent.dependentOn = null;
+          // Congo 1B: a bonded pair's young leaves its parents' group, free to find its own mate.
+          if (cfg.social.pairBond) this.#leaveGroup(agent);
           this.log.append({
             type: 'dispersed', worldTime: this.#time, simVersion: SIM_VERSION,
             patchId: agent.patchId, actors: [agent.id, mother.id],
@@ -1418,7 +1452,7 @@ export class World {
       // Congo 1B: a diver stays under until its dive ends, then surfaces and decides as usual.
       if (agent.locomotionMode === 'submerged') {
         if ((agent.submergedUntil ?? 0) > this.#time) { agent.state = 'resting'; continue; }
-        surface(agent);
+        surface(agent, this.grid, this.patches);
       }
 
       // A perched animal cannot take a ground-only action. Stay at the fixed trunk while
@@ -1682,8 +1716,11 @@ export class World {
       const density = local.reduce((sum, id) => sum + (counts?.get(id) ?? 0), 0);
       const cfg = this.species.get(visit.female.speciesId)!;
       // Earlier completed visits may have conceived during this same tick. Recheck admission.
+      const wasPregnant = visit.female.pregnantSince !== null;
       finishCourtship(this.grid, visit, cfg, this.#time, this.#time + hours * 3600, density, this.#rng, this.log,
         this.#packAllowsBreeding(visit.female, cfg));
+      // Congo 1B: a bonded pair forms when an unpaired female conceives with an unpaired male.
+      if (cfg.social.pairBond && !wasPregnant && visit.female.pregnantSince !== null) this.#bond(visit.female, visit.male, cfg);
     }
     yield;
     this.#exchangeWithLandscape(hours);
@@ -1754,10 +1791,11 @@ export class World {
  * Congo 1B: a pair species' living, grown pair-mate (the other sex in its group), or null: a
  * paired animal courts only it; a widow, or one never paired, may court any.
  */
-export function pairMateFor(agent: Agent, cfg: SpeciesConfig, members: readonly Agent[]): Agent | null {
+export function pairMateFor(agent: Agent, cfg: SpeciesConfig, members: readonly Agent[],
+  kin: (a: Agent, b: Agent) => boolean = () => false): Agent | null {
   if (!cfg.social.pairBond || agent.groupId == null) return null;
   return members.find((a) => a.alive && a.groupId === agent.groupId && a.id !== agent.id && a.sex !== agent.sex
-    && a.lifeStage !== 'newborn' && a.lifeStage !== 'juvenile') ?? null;
+    && a.lifeStage !== 'newborn' && a.lifeStage !== 'juvenile' && !kin(agent, a)) ?? null;
 }
 
 export function createWorld(options: WorldOptions): World {

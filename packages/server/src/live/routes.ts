@@ -462,7 +462,7 @@ function rosterRules(congo: boolean): string {
   after you: observe shows who is chasing you, and running (gait run) uses your breath. If your
   animal dies, wait two minutes and take over another. If no animal of a species is free,
   possess puts you in line for it.
-- Blue duikers live in pairs and hold still before they run; a water chevrotain dives when a
+- Blue duikers live in pairs; a water chevrotain dives when a
   leopard is on it, and one under water can be neither seen nor caught until it surfaces;
   leopards can climb their patch's tree. In the rains the flooded forest stands in water.`;
   return `- Most animals stay wild. You may take an independent adult non-predator (chital, sambar, gaur,

@@ -7,7 +7,7 @@ These are the measurements for sub-project 1A of the Congo Phase 1 design. The b
 - **Command:** `npm run bench:congo -w @vana/runner` (`packages/runner/src/congoBench.ts`).
 - **CI check:** `packages/runner/test/congoBench.test.ts` steps the full stand-in population for 3 hours, in about 8 s, and fails if any hour takes over 2 s. A slower host may set `VANA_CONGO_HOUR_BUDGET_MS`.
 - **World:** a `congo_v1` world, seed 7, 48 × 48 km (160 × 160 patches of 300 m), terrain `congo_terrain_v1`.
-- **Founders, stand-ins only:** the Congo species do not exist yet, so the benchmark founds animals of the same count from the island roster. Stand-ins are used only here, never in a served world.
+- **Founders:** these measurements used stand-ins from the island roster, before the Congo species existed. Since 1B, `bench:congo` founds the real Congo species (see the 1B section below).
 
   | Stand-in | Count | Standing in for |
   |---|---|---|
@@ -81,7 +81,10 @@ Before this, the step held the server for about 850 ms and the checkpoint for ab
 | One world hour, p95 / max | 864 / 1,514 ms | 868 / 1,340 ms |
 
 **What this shows**
-- **Over-predation at field density.** At 6/100 km² the leopards killed about 130 duikers a day, and the duikers fell 15% in a month. In real Congo forests most of a leopard's food is red duikers and red river hogs, which the Phase 1 roster lacks. At 2/100 km² they kill about 37 a day.
+- **The two runs differ in three ways,** not one: leopard density (6 → 2 per 100 km²), intake (3.0 → 2.5 kg a day), and the chase fix that keeps animals out of the deep river.
+- **Over-predation at field density.** At 6/100 km² the leopards killed about 130 duikers a day, and the duikers fell 15% in a month. In real Congo forests most of a leopard's food is red duikers and red river hogs, which the Phase 1 roster lacks.
+- **Below the field range.** 2/100 km² is under the 2.7–12.1 measured in Gabon and Congo forests. It is a Phase 1 assumption, and leopards kill about 37 a day at that density.
+- **Probably still too many leopards.** About 37 kills a day is about 13,800 a year, roughly what duikers can replace before their natural deaths, and the leopards are breeding (46 → 76). So the evidence points to a slow decline unless the one-year soak shows births catching up.
 - **Duikers still decline at first.** They lose about 20% over 120 days, before their first births. A blue duiker's gestation is 207 days, so the first young of the founding pairs arrive around day 207.
 - **Balance is not yet shown.** Predation against births can only be judged over a year or more, and the leopards are also breeding. The one-year soak is the next measurement.
 - **The budget holds.** Every hour stayed under 2 s.

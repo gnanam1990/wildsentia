@@ -65,6 +65,16 @@ describe('blue duikers live in pairs (1B)', () => {
     expect(pairMateFor(f, chitalCfg, [f, mate])).toBeNull();
   });
 
+  it('never name kin as the pair-mate: a grown daughter is not her fathers mate, a widow not her sons (1B review)', () => {
+    const cfg = loadSpeciesDir(CONGO_DIR).get('blue_duiker')!;
+    const mk = (id: string, sex: 'female' | 'male', lifeStage = 'adult' as const) => ({ ...makeAgent('chital', { id, sex, lifeStage }), speciesId: 'blue_duiker', groupId: 'g1' });
+    const daughter = mk('d', 'female'), father = mk('f', 'male'), mother = mk('m', 'female'), son = mk('s', 'male', 'subadult');
+    const kin = (a: { id: string }, b: { id: string }) => new Set(['d|f', 'f|d', 'm|s', 's|m']).has(`${a.id}|${b.id}`);
+    expect(pairMateFor(daughter, cfg, [daughter, father, mother], kin)).toBeNull();
+    expect(pairMateFor(mother, cfg, [mother, son], kin)).toBeNull();
+    expect(pairMateFor(mother, cfg, [mother, father, son], kin)?.id).toBe('f');
+  });
+
   it('leave island species ungrouped as before', () => {
     const island = createWorld({ seed: 3, speciesDir: SPECIES_DIR, terrainProfile: 'island_v2', initialAgents: islandPopulation('island_v2'), minPopulation: {} });
     expect(island.agents.filter((a) => island.species.get(a.speciesId)!.social.structure === 'solitary').every((a) => a.groupId == null)).toBe(true);
