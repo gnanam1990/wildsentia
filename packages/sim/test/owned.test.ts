@@ -32,6 +32,11 @@ describe('owned animals', () => {
     for (const a of world.possessionCandidates('blue_duiker', 1000)) world.possess(a.id, `ag_${a.id}`);
     expect(world.possess(duiker.id, 'owner:acct', { owner: true })).toBeNull();
     expect(world.animal(duiker.id)!.controller).toBe('owner:acct');
+    // Whether another holder could take it, setting aside who holds it now.
+    expect(world.possessionBlock(duiker.id, { owner: true })).toBe('already_controlled');
+    expect(world.possessionBlock(duiker.id, { owner: true, ignoreController: true })).toBeNull();
+    duiker.altitudeM = 3;
+    expect(world.possessionBlock(duiker.id, { owner: true, ignoreController: true })).toBe('off_the_ground');
   });
   it('find safe spawn patches: habitat the species founds on, with no hunter of it nearby', () => {
     const world = congo();
@@ -41,7 +46,8 @@ describe('owned animals', () => {
     for (const id of safe.slice(0, 200)) {
       const c = patchCentre(world.grid, id), patch = world.patches[id]!;
       expect(patch.habitat).not.toBe('water');
-      for (const l of leopards) expect(Math.hypot(l.position!.x - c.x, l.position!.z - c.z)).toBeGreaterThan(300 - 213);
+      // Wherever in the patch the animal is placed (up to 0.4 of a patch from its centre on each axis), no hunter is within 300 m.
+      for (const l of leopards) expect(Math.hypot(l.position!.x - c.x, l.position!.z - c.z)).toBeGreaterThan(300 + 300 * 0.4 * Math.SQRT2);
     }
   });
   it('keep their asset through a snapshot; an island world refuses owned animals', () => {

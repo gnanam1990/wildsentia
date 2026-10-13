@@ -241,6 +241,13 @@ export class LiveLayer {
     this.#notices.set(agentId, list);
   }
 
+  /** Why this agent could not take any animal now (it holds one, or its last one died moments ago), or null. */
+  possessBlock(agentId: string): string | null {
+    if (this.avatars.has(agentId)) return 'already_possessing';
+    if ((this.#cooldowns.get(agentId) ?? 0) > this.clock()) return 'cooldown';
+    return null;
+  }
+
   /** Takes over an animal: a named one, or any free one of a species. */
   /** `owner`: the caller has already shown it may steer this owned animal (Congo 1C). */
   possess(agentId: string, agentName: string, choice: { animalId?: string; speciesId?: string; owner?: boolean }, queueIfNone = true): { ok: true; avatar: Avatar } | { ok: false; reason: string } {

@@ -29,7 +29,7 @@ const ORIGIN = 'https://wildsentia.test';
 let host: SimHost, app: FastifyInstance, live: LiveLayer;
 const owned = (): OwnedDeps => {
   const store = new OwnershipStore(pool!, 'w1');
-  return { store, config, shop: new SimulatedPurchaseAdapter(store, config), lives: new LifeService(store, host, config), control: new ControlService(store, live, (id) => host.world.animal(id)?.assetId) };
+  return { store, config, shop: new SimulatedPurchaseAdapter(store, config), lives: new LifeService(store, host, config), control: new ControlService(store, live, { assetOf: (id) => host.world.animal(id)?.assetId, block: (id) => host.world.possessionBlock(id, { owner: true, ignoreController: true }), exclusive: (work) => host.exclusive(work) }) };
 };
 let deps: OwnedDeps, owner: { accountId: string; agentId: string; wallet: string };
 

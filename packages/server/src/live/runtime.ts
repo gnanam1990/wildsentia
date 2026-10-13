@@ -75,8 +75,10 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
   const owned: OwnedDeps | null = isCongoProfile(host.world.terrainProfile) ? (() => {
     const config = loadOwnershipConfig(env.VANA_OWNERSHIP_CONFIG ?? fileURLToPath(new URL('../../../../config/ownership-congo.json', import.meta.url)));
     const ownership = new OwnershipStore(pool, host.worldId ?? 'unknown');
-    return { store: ownership, config, shop: new SimulatedPurchaseAdapter(ownership, config), lives: new LifeService(ownership, host, config),
-      control: new ControlService(ownership, live, (id) => host.world.animal(id)?.assetId) };
+    return { store: ownership, config, shop: new SimulatedPurchaseAdapter(ownership, config),
+      lives: new LifeService(ownership, host, config, () => host.snapshotNow()),
+      control: new ControlService(ownership, live, { assetOf: (id) => host.world.animal(id)?.assetId,
+        block: (id) => host.world.possessionBlock(id, { owner: true, ignoreController: true }), exclusive: (work) => host.exclusive(work) }) };
   })() : null;
   live.onEnded = (life) => {
     void store.recordLife(life).catch((e) => console.error('[live] life record failed', e));
@@ -109,7 +111,8 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
       await host.exclusive(async () => {
         if (id) for (const saved of await store.loadPossessions(id)) {
           const isOwned = host.world.animal(saved.animalId)?.assetId !== undefined;
-          if (isOwned && leased.get(saved.animalId) !== saved.agentId) continue;
+          // On Congo only owned animals are steered, and only by their lease's holder.
+          if (owned && (!isOwned || leased.get(saved.animalId) !== saved.agentId)) continue;
           if (live.restore(saved, isOwned)) restored.add(saved.animalId);
         }
         // An animal still marked as steered, with no saved possession, goes back to the wild.

@@ -342,6 +342,8 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
       scope.post<{ Params: { id: string } }>(`${prefix}/challenges/:id/accept`, async (req, reply) => {
         const ctx = await resolve(req, reply, commands); if (!ctx) return reply;
         if (!deps.challenges) return reply.code(503).send({ error: 'challenges_not_configured' });
+        // Congo 1C: a challenge takes a wild animal, and only owned animals are steered here.
+        if (deps.owned) return reply.code(409).send({ error: 'owned_only' });
         if (!/^[0-9]{1,15}$/.test(req.params.id)) return reply.code(404).send({ error: 'not_found' });
         // A person's X account must be at least 30 days old to play for a prize (spec §6).
         if (ctx.xAccountDays !== undefined && ctx.xAccountDays < MIN_X_ACCOUNT_DAYS) return reply.code(403).send({ error: 'x_account_too_new' });

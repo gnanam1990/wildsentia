@@ -42,7 +42,7 @@ export interface Owner { accountId: string; wallet: string | null }
 export type BuyResult = { ok: true; asset: Asset; purchase: Purchase; replayed: boolean; simulated: true }
   | { ok: false; reason: 'no_wallet' | 'unknown_species' | 'bad_key' };
 export type SellResult = { ok: true; purchase: Purchase; simulated: true }
-  | { ok: false; reason: 'no_wallet' | 'bad_key' | 'not_owner' | 'not_active' | 'alive' | 'controlled' };
+  | { ok: false; reason: 'no_wallet' | 'bad_key' | 'not_owner' | 'not_active' | 'alive' | 'unknown_species' };
 
 export interface PurchaseAdapter {
   quote(speciesId: string): Quote | null;
@@ -56,8 +56,13 @@ const KEY = /^[A-Za-z0-9_-]{8,80}$/;
 export class SimulatedPurchaseAdapter implements PurchaseAdapter {
   constructor(private readonly store: OwnershipStore, readonly config: OwnershipConfig) {}
 
+  /** The species' price, only if the config itself names it (never an inherited key). */
+  #price(speciesId: string): string | undefined {
+    return Object.hasOwn(this.config.prices, speciesId) ? this.config.prices[speciesId] : undefined;
+  }
+
   quote(speciesId: string): Quote | null {
-    const price = this.config.prices[speciesId];
+    const price = this.#price(speciesId);
     if (price === undefined) return null;
     return { speciesId, priceAtomic: price, feeAtomic: splitFee(BigInt(price), this.config.buyFeeBps).fee.toString(), decimals: this.config.decimals,
       token: this.config.token, pricingVersion: this.config.pricingVersion, simulated: true };
@@ -67,7 +72,7 @@ export class SimulatedPurchaseAdapter implements PurchaseAdapter {
   async buy(owner: Owner, speciesId: string, idempotencyKey: string): Promise<BuyResult> {
     if (!owner.wallet || !WALLET.test(owner.wallet)) return { ok: false, reason: 'no_wallet' };
     if (!KEY.test(idempotencyKey)) return { ok: false, reason: 'bad_key' };
-    const price = this.config.prices[speciesId];
+    const price = this.#price(speciesId);
     if (price === undefined) return { ok: false, reason: 'unknown_species' };
     const split = splitFee(BigInt(price), this.config.buyFeeBps), decimals = this.config.decimals, wallet = owner.wallet;
     return this.store.tx(async (db) => {
@@ -96,15 +101,19 @@ export class SimulatedPurchaseAdapter implements PurchaseAdapter {
       const asset = (await db.query('select * from animal_assets where asset_id=$1 for update', [assetId])).rows[0];
       if (!asset || asset.owner_account_id !== owner.accountId) return { ok: false, reason: 'not_owner' } as const;
       const replay = (await db.query('select * from sim_purchases where owner_account_id=$1 and idempotency_key=$2', [owner.accountId, idempotencyKey])).rows[0];
+      // A key already used is honoured only for this same sale; any other use of it is refused.
+      if (replay && (replay.kind !== 'sell' || replay.asset_id !== assetId)) return { ok: false, reason: 'bad_key' } as const;
       if (asset.status !== 'active' && !replay) return { ok: false, reason: 'not_active' } as const;
       if ((await db.query("select 1 from animal_lives where asset_id=$1 and status='alive'", [assetId])).rows.length) return { ok: false, reason: 'alive' } as const;
-      const price = BigInt(this.config.prices[asset.species_id] ?? '0'), split = splitFee(price, this.config.sellFeeBps), decimals = this.config.decimals;
+      const listed = this.#price(asset.species_id);
+      if (listed === undefined) return { ok: false, reason: 'unknown_species' } as const;
+      const price = BigInt(listed), split = splitFee(price, this.config.sellFeeBps), decimals = this.config.decimals;
       const purchase = await this.store.recordPurchase({ idempotencyKey, ownerAccountId: owner.accountId, ownerWallet: wallet, kind: 'sell',
-        speciesId: asset.species_id, priceAtomic: price, feeAtomic: split.fee, decimals, pricingVersion: this.config.pricingVersion }, [
+        speciesId: asset.species_id, priceAtomic: price, feeAtomic: split.fee, decimals, pricingVersion: this.config.pricingVersion, assetId }, [
         { category: 'proceeds', amountAtomic: -split.proceeds, decimals, ref: `sell:${assetId}` },
         { category: 'burn_obligation', amountAtomic: split.fee, decimals, ref: `sell:${assetId}` },
       ], db);
-      await this.store.setAssetStatus(assetId, 'retired', db);
+      if (!purchase.replayed) await this.store.setAssetStatus(assetId, 'retired', db);
       return { ok: true, purchase, simulated: true } as const;
     });
   }

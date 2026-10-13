@@ -1028,9 +1028,9 @@ export class World {
   animal(id: string): Agent | undefined { return this.#agentsById.get(id); }
 
   /** Why this animal cannot be taken over now, or null if it can. `owner`: its owner's side is asking. */
-  possessionBlock(id: string, opts: { owner?: boolean } = {}): string | null {
+  possessionBlock(id: string, opts: { owner?: boolean; ignoreController?: boolean } = {}): string | null {
     const agent = this.#agentsById.get(id);
-    return agent ? this.#blockFor(agent, this.#possessionFacts(), opts.owner === true) : 'not_alive';
+    return agent ? this.#blockFor(agent, this.#possessionFacts(), opts.owner === true, opts.ignoreController === true) : 'not_alive';
   }
 
   /**
@@ -1045,9 +1045,11 @@ export class World {
     const hunters = this.agents.filter((a) => a.alive && a.position && canHunt(this.species.get(a.speciesId)!, cfg, prey))
       .map((a) => a.position!);
     const eligible = cfg.locomotion.swims ? this.#waterMarginPatches : this.#dryLandPatches;
+    // An animal is placed up to 0.4 of a patch from its centre on each axis: keep the distance from there too.
+    const reach = minPredatorDistanceM + this.grid.patchM * 0.4 * Math.SQRT2;
     return eligible.filter((p) => {
       const c = patchCentre(this.grid, p.id);
-      return hunters.every((h) => Math.hypot(h.x - c.x, h.z - c.z) > minPredatorDistanceM);
+      return hunters.every((h) => Math.hypot(h.x - c.x, h.z - c.z) > reach);
     }).map((p) => p.id);
   }
 
@@ -1087,10 +1089,10 @@ export class World {
     return { parents, held };
   }
 
-  #blockFor(agent: Agent, facts: { parents: Set<string>; held: Map<string, number> }, owner = false): string | null {
+  #blockFor(agent: Agent, facts: { parents: Set<string>; held: Map<string, number> }, owner = false, ignoreController = false): string | null {
     if (!agent.alive) return 'not_alive';
     if (agent.assetId !== undefined && !owner) return 'owned';
-    if (agent.controller) return 'already_controlled';
+    if (agent.controller && !ignoreController) return 'already_controlled';
     const cfg = this.species.get(agent.speciesId)!;
     if (agent.lifeStage !== 'adult' && agent.lifeStage !== 'elder') return 'not_adult';
     if (agent.dependentOn !== null) return 'dependent';

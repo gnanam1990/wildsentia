@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { fileURLToPath } from 'node:url';
-import { patchCentre } from '@vana/shared';
 import { createPool } from '../src/db/pool.js';
 import { migrate } from '../src/db/migrate.js';
 import { SimHost } from '../src/simHost.js';
@@ -33,8 +32,10 @@ maybe('owned lives', () => {
   beforeEach(async () => {
     await pool!.query('truncate control_leases, asset_agent_grants, animal_lives, animal_assets, sim_ledger, sim_purchases, accounts, live_agents cascade');
     store = new OwnershipStore(pool!, 'world-test');
-    lives = new LifeService(store, host, config);
+    checkpoints = 0;
+    lives = new LifeService(store, host, config, async () => { checkpoints++; });
   });
+  let checkpoints = 0;
 
   it('spawns an owned animal on safe ground, away from its hunters, up to the owner\'s limit', async () => {
     const owner = await person(pool!, 1);
@@ -43,9 +44,9 @@ maybe('owned lives', () => {
     if (!first.ok) throw new Error(first.reason);
     const animal = host.world.animal(first.animalId)!;
     expect(animal.assetId).toBe(assets[0]);
-    const c = patchCentre(host.world.grid, animal.patchId);
     for (const l of host.world.agents.filter((a) => a.alive && a.speciesId === 'african_leopard'))
-      expect(Math.hypot(l.position!.x - c.x, l.position!.z - c.z)).toBeGreaterThan(config.spawnPredatorDistanceM - 213);
+      expect(Math.hypot(l.position!.x - animal.position!.x, l.position!.z - animal.position!.z)).toBeGreaterThan(config.spawnPredatorDistanceM);
+    expect(checkpoints).toBe(1);
     expect((await store.life(first.lifeId))!.animalId).toBe(first.animalId);
     expect((await lives.spawn(owner.accountId, assets[1]!)).ok).toBe(true);
     expect(await lives.spawn(owner.accountId, assets[2]!)).toEqual({ ok: false, reason: 'alive_limit' });
@@ -81,5 +82,11 @@ maybe('owned lives', () => {
     const orphan = await host.exclusive(async () => host.world.spawnOwned('blue_duiker', host.world.safeSpawnPatches('blue_duiker', 300)[0]!, other));
     expect(await lives.reconcile(new Date())).toEqual([{ lifeId: gone.lifeId, animalId: 'blue_duiker_ffff', cause: 'lost' }]);
     expect(host.world.animal(orphan.id)!.assetId).toBeUndefined();
+  });
+  it('ends as lost a life left alive in another world, so its asset can live again here', async () => {
+    const owner = await person(pool!, 1), assetId = await ownedAsset(store, owner);
+    await pool!.query("insert into animal_lives (life_id, asset_id, animal_id, world_id, status) values (gen_random_uuid(), $1, 'blue_duiker_0001', 'old-world', 'alive')", [assetId]);
+    await lives.reconcile(new Date());
+    expect((await store.livesOf(assetId))[0]).toMatchObject({ status: 'cooldown', deathCause: 'lost' });
   });
 });

@@ -24,7 +24,12 @@ export type SpawnResult = { ok: true; lifeId: string; animalId: string; patchId:
 export class LifeService {
   #queue: Promise<unknown> = Promise.resolve();
 
-  constructor(private readonly store: OwnershipStore, private readonly host: OwnedWorldHost, private readonly config: OwnershipConfig) {}
+  /**
+   * `checkpoint` saves the world after a spawn, so a crash cannot roll the new animal back (and
+   * hand its id to a later animal).
+   */
+  constructor(private readonly store: OwnershipStore, private readonly host: OwnedWorldHost, private readonly config: OwnershipConfig,
+    private readonly checkpoint: () => Promise<void> = async () => undefined) {}
 
   #serial<T>(work: () => Promise<T>): Promise<T> {
     const next = this.#queue.then(work, work);
@@ -55,7 +60,15 @@ export class LifeService {
         if (!placed) await this.store.discardLife(reserved.lifeId);
       }
       if (!placed) return { ok: false, reason: 'no_safe_ground' } as const;
-      await this.store.attachAnimal(reserved.lifeId, placed.animalId, placed.patchId, placed.worldTime);
+      try {
+        await this.store.attachAnimal(reserved.lifeId, placed.animalId, placed.patchId, placed.worldTime);
+      } catch (error) {
+        // Never an owned animal without its life, nor a life without its animal.
+        await this.store.discardLife(reserved.lifeId);
+        await this.host.exclusive(async () => this.host.world.disown(placed!.animalId));
+        throw error;
+      }
+      await this.checkpoint().catch((e) => console.error('[owned] checkpoint after spawn failed', e));
       return { ok: true, lifeId: reserved.lifeId, ...placed } as const;
     });
   }
@@ -67,6 +80,12 @@ export class LifeService {
   reconcile(now: Date = new Date()): Promise<Array<{ lifeId: string; animalId: string | null; cause: string }>> {
     return this.#serial(async () => {
       const ended: Array<{ lifeId: string; animalId: string | null; cause: string }> = [];
+      // Lives left alive by an earlier world (founded again since) are lost: their assets may live here.
+      for (const life of await this.store.aliveLivesElsewhere()) {
+        const asset = await this.store.asset(life.assetId);
+        if (await this.store.endLife(life.lifeId, { cause: 'lost', killerAnimalId: null, worldTime: null, cooldownMs: this.cooldownMs(asset?.speciesId ?? ''), now }))
+          ended.push({ lifeId: life.lifeId, animalId: life.animalId, cause: 'lost' });
+      }
       const alive = await this.store.aliveLives(), held = new Set<string>();
       for (const life of alive) {
         if (life.animalId === null) {

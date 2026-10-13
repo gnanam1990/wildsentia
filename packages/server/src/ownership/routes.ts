@@ -76,6 +76,7 @@ export function installOwnershipRoutes(scope: FastifyInstance, owned: OwnedDeps,
     if (!UUID.test(req.params.id)) return reply.code(404).send({ error: 'not_owner' });
     const account = await ownerOf(ctx.agent), asset = await store.asset(req.params.id);
     if (!account || !asset || asset.ownerAccountId !== account.accountId) return reply.code(404).send({ error: 'not_owner' });
+    if (asset.status === 'retired') return reply.code(409).send({ error: 'not_active' });
     const agentId = typeof ctx.json.agentId === 'string' ? ctx.json.agentId : '';
     if (!AGENT.test(agentId)) return reply.code(400).send({ error: 'bad_agent' });
     if (ctx.json.grant === false) return { revoked: await control.revoke(account.accountId, asset.assetId, agentId) };

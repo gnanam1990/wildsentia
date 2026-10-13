@@ -82,4 +82,19 @@ maybe('the simulated store (Congo 1C)', () => {
       expect(sold.ok && life.ok).toBe(false);
     }
   });
+  it('refuses a sale replayed under another purchase\'s key, and species that are not priced', async () => {
+    const owner = await person(pool!, 1), o = { accountId: owner.accountId, wallet: owner.wallet }, buyKey = randomUUID();
+    const bought = await shop.buy(o, 'blue_duiker', buyKey);
+    if (!bought.ok) throw new Error('buy failed');
+    expect(await shop.sell(o, bought.asset.assetId, buyKey)).toEqual({ ok: false, reason: 'bad_key' });
+    expect((await store.asset(bought.asset.assetId))!.status).toBe('active');
+    const other = await shop.buy(o, 'blue_duiker', randomUUID()), sellKey = randomUUID();
+    if (!other.ok) throw new Error('buy failed');
+    expect((await shop.sell(o, other.asset.assetId, sellKey)).ok).toBe(true);
+    expect(await shop.sell(o, bought.asset.assetId, sellKey)).toEqual({ ok: false, reason: 'bad_key' });
+    expect((await store.asset(bought.asset.assetId))!.status).toBe('active');
+    expect((await shop.sell(o, other.asset.assetId, sellKey)).ok).toBe(true); // the same sale, replayed
+    expect(await shop.buy(o, 'constructor', randomUUID())).toEqual({ ok: false, reason: 'unknown_species' });
+    expect(shop.quote('toString')).toBeNull();
+  });
 });

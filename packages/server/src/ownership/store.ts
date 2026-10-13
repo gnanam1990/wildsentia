@@ -28,7 +28,7 @@ export interface PurchaseInput {
   idempotencyKey: string; ownerAccountId: string; ownerWallet: string; kind: 'buy' | 'sell'; speciesId: string;
   priceAtomic: bigint; feeAtomic: bigint; decimals: number; pricingVersion: string;
 }
-export interface Purchase extends PurchaseInput { purchaseId: string; createdAt: Date }
+export interface Purchase extends PurchaseInput { purchaseId: string; createdAt: Date; assetId: string | null }
 
 const asset = (r: Record<string, unknown>): Asset => ({ assetId: r.asset_id as string, ownerAccountId: r.owner_account_id as string,
   ownerWallet: r.owner_wallet as string, speciesId: r.species_id as string, variantId: r.variant_id as string,
@@ -41,7 +41,7 @@ const life = (r: Record<string, unknown>): Life => ({ lifeId: r.life_id as strin
 const purchase = (r: Record<string, unknown>): Purchase => ({ purchaseId: r.purchase_id as string, idempotencyKey: r.idempotency_key as string,
   ownerAccountId: r.owner_account_id as string, ownerWallet: r.owner_wallet as string, kind: r.kind as 'buy' | 'sell', speciesId: r.species_id as string,
   priceAtomic: BigInt(r.price_atomic as string), feeAtomic: BigInt(r.fee_atomic as string), decimals: r.decimals as number,
-  pricingVersion: r.pricing_version as string, createdAt: r.created_at as Date });
+  pricingVersion: r.pricing_version as string, createdAt: r.created_at as Date, assetId: (r.asset_id as string | null) ?? null });
 /** A transaction-scoped advisory lock key for one owner. */
 const ownerLock = (accountId: string) => createHash('sha256').update(`owner:${accountId}`).digest().readBigInt64BE(0).toString();
 
@@ -65,12 +65,14 @@ export class OwnershipStore {
   // ---- The simulated store ----------------------------------------------------------------
 
   /** Records a purchase and its ledger rows once per owner and key; a repeat returns the first, with `replayed`. */
-  async recordPurchase(p: PurchaseInput, rows: readonly LedgerRow[], db?: Database): Promise<Purchase & { replayed: boolean }> {
+  /** `assetId`: for a sale, the asset sold. */
+  async recordPurchase(p: PurchaseInput & { assetId?: string }, rows: readonly LedgerRow[], db?: Database): Promise<Purchase & { replayed: boolean }> {
     const run = async (q: Database) => {
       const inserted = (await q.query(`insert into sim_purchases (purchase_id, idempotency_key, owner_account_id, owner_wallet, kind, species_id,
-          price_atomic, fee_atomic, decimals, pricing_version) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+          price_atomic, fee_atomic, decimals, pricing_version, asset_id) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
         on conflict (owner_account_id, idempotency_key) do nothing returning *`,
-        [randomUUID(), p.idempotencyKey, p.ownerAccountId, p.ownerWallet, p.kind, p.speciesId, p.priceAtomic.toString(), p.feeAtomic.toString(), p.decimals, p.pricingVersion])).rows[0];
+        [randomUUID(), p.idempotencyKey, p.ownerAccountId, p.ownerWallet, p.kind, p.speciesId, p.priceAtomic.toString(), p.feeAtomic.toString(), p.decimals,
+          p.pricingVersion, p.assetId ?? null])).rows[0];
       if (!inserted) {
         const existing = (await q.query('select * from sim_purchases where owner_account_id=$1 and idempotency_key=$2', [p.ownerAccountId, p.idempotencyKey])).rows[0];
         return { ...purchase(existing), replayed: true };
@@ -198,6 +200,11 @@ export class OwnershipStore {
 
   async livesOf(assetId: string): Promise<Life[]> {
     return (await this.pool.query('select * from animal_lives where asset_id=$1 order by spawned_at', [assetId])).rows.map(life);
+  }
+
+  /** Lives still marked alive in other worlds (a world founded again leaves them behind). */
+  async aliveLivesElsewhere(): Promise<Life[]> {
+    return (await this.pool.query("select * from animal_lives where status='alive' and world_id<>$1", [this.worldId])).rows.map(life);
   }
 
   /** Every life alive in this world. */

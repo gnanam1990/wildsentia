@@ -49,7 +49,7 @@ maybe('who steers an owned animal', () => {
     store = new OwnershipStore(pool!, 'world-test');
     live = new LiveLayer(worldPort(() => host.world, () => 'world-test', undefined, () => host.busy), null);
     lives = new LifeService(store, host, config);
-    control = new ControlService(store, live, (id) => host.world.animal(id)?.assetId);
+    control = new ControlService(store, live, { assetOf: (id) => host.world.animal(id)?.assetId, block: (id) => host.world.possessionBlock(id, { owner: true, ignoreController: true }), exclusive: (work) => host.exclusive(work) });
     live.onEnded = (life) => { void control.ended(life); };
   });
 
@@ -108,6 +108,26 @@ maybe('who steers an owned animal', () => {
     const before = Date.now() - 60_000;
     expect((await control.take(human(owner), animalId)).ok).toBe(true);
     await control.ended({ agentId: owner.agentId, animalId, speciesId: 'blue_duiker', since: before - 1000, endedAt: before, how: 'released' });
+    expect(await holders(lifeId, animalId)).toBe(owner.agentId);
+  });
+  it('takes and revokes correctly while the world is stepping', async () => {
+    const { owner, assetId, lifeId, animalId } = await ownedLife(), bot = await person(pool!, 3);
+    await store.grant(assetId, bot.agentId);
+    const [, took] = await Promise.all([host.advance(1), control.take(agent(bot), animalId)]);
+    expect(took.ok).toBe(true);
+    expect(await holders(lifeId, animalId)).toBe(bot.agentId);
+    const [, revoked] = await Promise.all([host.advance(1), control.revoke(owner.accountId, assetId, bot.agentId)]);
+    expect(revoked).toBe(true);
+    expect(await holders(lifeId, animalId)).toBeNull();
+  });
+
+  it('leaves the owner in control when an agent\'s take would fail', async () => {
+    const { owner, assetId, lifeId, animalId } = await ownedLife(), bot = await person(pool!, 3);
+    await store.grant(assetId, bot.agentId);
+    expect((await control.take(human(owner), animalId)).ok).toBe(true);
+    host.world.animal(animalId)!.altitudeM = 3;
+    expect(await control.take(agent(bot), animalId)).toEqual({ ok: false, reason: 'off_the_ground' });
+    delete host.world.animal(animalId)!.altitudeM;
     expect(await holders(lifeId, animalId)).toBe(owner.agentId);
   });
 });

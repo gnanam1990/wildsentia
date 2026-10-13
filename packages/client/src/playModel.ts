@@ -16,6 +16,10 @@ export const COMMAND_ERRORS: Record<string, string> = {
   no_free_animal: 'No animal of that species is free.', already_controlled: 'Someone else is steering that animal.',
   species_cap: 'Enough of that species are being steered already; most stay wild.', not_adult: 'Only adults can be taken.',
   dependent: 'That animal is still a dependent youngster.', raising_young: 'That animal is raising young.',
+  owned: 'That animal belongs to someone; only its owner or an agent they choose may steer it.',
+  owned_only: 'In this forest you steer an animal you own: choose one of yours.',
+  not_owned: 'That animal is not owned by anyone here.',
+  not_authorised: 'Only its owner, or an agent they have authorised, may steer that animal.',
   off_the_ground: 'That animal is up off the ground.', not_alive: 'That animal is no longer alive.', under_water: 'That animal is under water right now; try again in a few minutes.',
 };
 
