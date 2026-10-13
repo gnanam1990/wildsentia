@@ -5,7 +5,7 @@ import { migrate } from '../src/db/migrate.js';
 import { EventStore } from '../src/db/eventStore.js';
 import { LifeStore, ROUTINE_EVENT_TYPES } from '../src/db/lifeStore.js';
 import { testDatabaseUrl } from './testDatabase.js';
-import { ISLAND_GRID } from '@vana/shared';
+import { CONGO_GRID, ISLAND_GRID } from '@vana/shared';
 
 const url = testDatabaseUrl();
 const maybe = url ? describe : describe.skip;
@@ -32,6 +32,14 @@ maybe('LifeStore', () => {
     expect((await events.byActorSince('dhole_child', 0, 10))[0]).toEqual(care);
     await life.pruneRoutine(300);
     expect(await events.byActorSince('dhole_child', 0, 10)).toEqual([loss]);
+  });
+
+  it('stores a Congo track 30 km into the forest (1A.4)', async () => {
+    const store = new LifeStore(pool!, CONGO_GRID);
+    const point = { id: 'blue_duiker_0000', worldTime: 72_000, patchId: 16_352, state: 'grazing', goal: 'find_food',
+      drives: { hunger: 0.2, thirst: 0.02, fatigue: 0.17, fear: 0 }, position: { x: 9583.4, z: 30629.8, heading: 3.0 } };
+    await store.appendTracks([point]);
+    expect((await store.trackOf(point.id))[0]!.position).toEqual(point.position);
   });
 
   it('round-trips precise positions while retaining unknown precision for legacy tracks', async () => {
