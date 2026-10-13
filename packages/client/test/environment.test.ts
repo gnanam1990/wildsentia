@@ -72,3 +72,20 @@ describe('monsoon rain', () => {
     expect(observerLights(noon.daylight, noon.sunIntensity, 3000).sun).toBeCloseTo(noon.sunIntensity);
   });
 });
+
+describe('the Congo haze (1A.5)', () => {
+  it('closes the view at the forest floor into a grey-green humid haze, and leaves the island air alone', () => {
+    const fogAt = (haze: number) => {
+      const scene = new THREE.Scene(); scene.background = new THREE.Color(); scene.fog = new THREE.Fog(0, 200, 2600);
+      const atmosphere = new Atmosphere(scene, new THREE.DirectionalLight());
+      atmosphere.haze = haze;
+      atmosphere.update(10 * 3600, 'transition', 3, new THREE.Vector3(), false, 20);
+      return scene.fog as THREE.Fog;
+    };
+    const clear = fogAt(0), humid = fogAt(1);
+    expect(humid.far).toBeLessThan(clear.far);
+    expect(humid.near).toBeLessThan(clear.near);
+    const hsl = humid.color.getHSL({ h: 0, s: 0, l: 0 });
+    expect(hsl.h).toBeGreaterThan(0.2); expect(hsl.h).toBeLessThan(0.45); // toward green
+  });
+});

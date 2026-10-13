@@ -46,11 +46,15 @@ export function observerLights(daylight: number, sunIntensity: number, viewDista
   return { sun: sunIntensity * dim, sky: (0.85 + d * 0.45) * dim };
 }
 
+const HAZE = new THREE.Color(0x9ea67c);
+
 export class Atmosphere {
   readonly rain: THREE.LineSegments;
   readonly #positions = new Float32Array(600 * 6);
   readonly #sky = new THREE.Color();
   readonly dome = new SkyDome();
+  /** Congo 1A.5: 0 for the island's clear air, 1 for the rainforest's humid haze. */
+  haze = 0;
 
   constructor(private readonly scene: THREE.Scene, private readonly sun: THREE.DirectionalLight) {
     const geometry = new THREE.BufferGeometry();
@@ -74,8 +78,10 @@ export class Atmosphere {
       this.scene.fog.color.copy(this.#sky);
       // Weather thins the view near the ground; from high above the whole island stays visible.
       const far = 2600 - state.rain * 1000;
-      this.scene.fog.far = Math.max(far, viewDistance * 2.4);
-      this.scene.fog.near = Math.max(200, viewDistance * 0.9);
+      this.scene.fog.far = Math.max(far * (1 - 0.35 * this.haze), viewDistance * 2.4);
+      this.scene.fog.near = Math.max(200 - 120 * this.haze, viewDistance * 0.9);
+      // Congo 1A.5: the rainforest's humid air, a grey-green haze (dimmed with the daylight).
+      if (this.haze > 0) this.scene.fog.color.lerp(HAZE.clone().multiplyScalar(0.25 + 0.75 * state.daylight), 0.6 * this.haze);
     }
     const lights = observerLights(state.daylight, state.sunIntensity, viewDistance);
     this.sun.intensity = lights.sun;

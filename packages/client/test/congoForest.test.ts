@@ -58,8 +58,12 @@ describe('the Congo forest layer', () => {
       if (Math.abs(x - bai.x) < 100 && Math.abs(z - bai.z) < 100) expect(above).toBeLessThan(0.5);
       if (Math.abs(x - deep.x) < 100 && Math.abs(z - deep.z) < 100) expect(Math.abs(above - CANOPY_HEIGHT_M.terra_firme)).toBeLessThanOrEqual(5);
     }
-    forest.update(new THREE.Vector3(deep.x, 0, deep.z));
+    const floor = ground(deep.x, deep.z);
+    forest.update(new THREE.Vector3(deep.x, 0, deep.z), new THREE.Vector3(deep.x, floor + 12, deep.z));
     expect(forest.canopyHole).toEqual({ x: deep.x, z: deep.z, radius: KIND_RADIUS_M.canopy - 40 });
+    // From above the canopy the forest is seen whole: no cut-away.
+    forest.update(new THREE.Vector3(deep.x + 500, 0, deep.z), new THREE.Vector3(deep.x + 500, floor + 400, deep.z));
+    expect(forest.canopyHole.radius).toBe(0);
   });
   it('draws the rivers, and the flood only in a flooding season', () => {
     setWorldGrid(CONGO_GRID);

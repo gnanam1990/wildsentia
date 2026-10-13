@@ -8,6 +8,7 @@ import { NEAR_RADIUS_M, TREE_DETAIL_RADIUS_M, NearVegetation } from './vegetatio
 import { InsightPanel } from './insights.js';
 import { LiveAgents, activityOf, isLiveMessage, isRosterMessage, rosterActivity, usdc } from './liveAgents.js';
 import { COVER_RADIUS_M, GroundCover } from './groundCover.js';
+import { CongoForest } from './congoForest.js';
 import { AnimalLayer } from './animals.js';
 import { FollowCamera, followDistanceFor, viewMessage } from './camera.js';
 import { nearestOnScreen } from './picking.js';
@@ -483,6 +484,8 @@ function loadNature(patches: ConstructorParameters<typeof NearVegetation>[0]): v
 }
 let groundCover: GroundCover | null = null;
 let terrainRoot: THREE.Object3D | null = null;
+/** Congo 1A.5: the rainforest of the loaded regions, in place of the island's vegetation. */
+let congoForest: CongoForest | null = null;
 const graphics = document.querySelector<HTMLSelectElement>('#render-quality')!;
 const graphicsStatus = document.querySelector<HTMLOutputElement>('#render-quality-status')!;
 let savedQuality: unknown;
@@ -508,7 +511,7 @@ document.addEventListener('visibilitychange', () => {
 addEventListener('pagehide', (event) => {
   ambientAudio.stop(); setAmbientUi('Sound off.');
   // Preserve resources if the browser keeps this document alive in its back/forward cache.
-  if (!(event as PageTransitionEvent).persisted) { nature?.dispose(); natureLoading?.dispose(); natureLoading = null; groundCover?.dispose(); microEcology.dispose(); communityLayer.dispose(); terrainCheckpoints.dispose(); }
+  if (!(event as PageTransitionEvent).persisted) { congoForest?.dispose(); nature?.dispose(); natureLoading?.dispose(); natureLoading = null; groundCover?.dispose(); microEcology.dispose(); communityLayer.dispose(); terrainCheckpoints.dispose(); }
 });
 const carcasses = new Map<string, AnimalState>();
 const sceneStatus = document.querySelector<HTMLElement>('#scene-status')!;
@@ -519,7 +522,10 @@ const sceneUpdates = new SceneUpdates<{
   async prepare(environment) {
     const terrain = terrainCheckpoints.prepare(environment.patches);
     let cover: GroundCover | null = null;
+    // Congo 1A.5: the Congo forest layer draws its own plants, rivers and canopy.
+    const congo = environment.patches[0]?.congoSeed !== undefined;
     try {
+      if (congo) return { terrain, cover };
       if (groundCover === null) cover = new GroundCover(environment.patches, (x, z) => animals.groundHeightAt(x, z));
       // Detailed trees and rocks are most of a first visit's bytes. The terrain's fallback
       // trunks and canopies show the forest meanwhile, so they load after the scene appears.
@@ -545,6 +551,12 @@ const sceneUpdates = new SceneUpdates<{
       else groundCover?.setPatches(update.environment.patches);
       groundCover?.setQuality(quality.tier);
       nature?.setPatches(update.environment.patches);
+      const congoSeed = update.environment.patches[0]?.congoSeed;
+      if (congoSeed !== undefined) {
+        if (congoForest === null) { congoForest = new CongoForest(); scene.add(congoForest.root); }
+        congoForest.setScene(update.environment.patches, congoSeed, update.environment.patches.some((p) => p.flooded === true));
+        atmosphere.haze = 1;
+      }
       const ground = waterGround(update.environment.patches);
       animals.pools = update.environment.patches.flatMap((patch) => { const pool = islandPool(patch, ground); return pool ? [pool] : []; });
       microEcology.sync(update.environment.microEcology, update.environment.patches, prepared.terrain.height);
@@ -797,6 +809,7 @@ function renderFrame(dt: number, now: number): void {
     nature.setDistantLight(store.world ? atmosphereAt(liveWorldTime(now)!, store.world.season).daylight : 1);
   }
   groundCover?.update(camera.position, 2);
+  congoForest?.update(follow.target, camera.position);
   communityLayer.update(dt, camera.position, quality.tier, reducedMotion.matches, now, followedPersonId);
   const communityText = communityLayer.playbackNotice(now, reducedMotion.matches);
   if (communityMotionNotice.textContent !== communityText) communityMotionNotice.textContent = communityText;

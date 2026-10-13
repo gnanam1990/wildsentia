@@ -52,9 +52,9 @@ const grassFraction = (patch: GroundPatch): number => Math.max(0, Math.min(1, pa
  * floods or stays wet, and sedge and mud in a bai, never the island's grassland greens.
  */
 const CONGO_FLOOR: Record<string, { near: THREE.Color; far: THREE.Color }> = {
-  terra_firme: { near: hex(0xb08a62), far: hex(0x4a3a28) },
-  flooded_forest: { near: hex(0x9a7e5c), far: hex(0x3d3424) },
-  swamp_forest: { near: hex(0x948660), far: hex(0x3e3a26) },
+  terra_firme: { near: hex(0x6e5a46), far: hex(0x3a2f22) },
+  flooded_forest: { near: hex(0x6a5844), far: hex(0x382f22) },
+  swamp_forest: { near: hex(0x66603f), far: hex(0x37341f) },
 };
 const CONGO_BAI = { lush: { near: hex(0xc6d08a), far: hex(0x6f8a3e) }, mud: { near: hex(0xb49a74), far: hex(0x6a5a3c) } };
 const isCongoHabitat = (habitat: string): boolean => habitat in HABITAT_ANALOGUE;
@@ -120,8 +120,9 @@ export function groundLayers(patch: GroundPatch, season: string): GroundLayers {
     const forest = patch.habitat === 'terra_firme', wetForest = patch.habitat !== 'bai' && !forest;
     return {
       litter: round(patch.habitat === 'bai' ? 0 : forest ? 0.85 + 0.1 * leafFall : 0.5),
-      bare: round(patch.habitat === 'bai' ? 0.3 : forest ? 0.2 : 0.1),
-      moss: round(wetForest ? 0.5 + 0.3 * wet : 0.15 + 0.15 * wet),
+      bare: round(patch.habitat === 'bai' ? 0.3 : forest ? 0.1 : 0.05),
+      // Low: the stand pattern spreads it in tens-of-metres blocks over 48 km, which reads as tiles.
+      moss: round(wetForest ? 0.15 + 0.1 * wet : 0.05),
     };
   }
   return {

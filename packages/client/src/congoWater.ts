@@ -15,7 +15,7 @@ export const FLOOD_DEPTH_M = 0.6;
 /** River courses past the loaded ground's edge are drawn this far, so a river never ends at a seam. */
 const MARGIN_M = 1500;
 
-const COLOURS = { main: 0x6e5536, tributary: 0x3b2d1d, flood: 0x2f2617 } as const;
+const COLOURS = { main: 0x7d6444, tributary: 0x4a3a26, flood: 0x6b5a3e } as const;
 
 let riverCache: { seed: number; rivers: RiverPath[]; near: ReturnType<typeof riverIndex> } | null = null;
 function riversOf(seed: number): NonNullable<typeof riverCache> {
@@ -24,7 +24,7 @@ function riversOf(seed: number): NonNullable<typeof riverCache> {
 }
 
 function waterMaterial(colour: number, opacity: number): THREE.MeshStandardMaterial {
-  return new THREE.MeshStandardMaterial({ color: colour, roughness: 0.12, metalness: 0.05, transparent: opacity < 1, opacity, depthWrite: opacity >= 1 });
+  return new THREE.MeshStandardMaterial({ color: colour, roughness: 0.06, metalness: 0.25, transparent: opacity < 1, opacity, depthWrite: opacity >= 1 });
 }
 
 /** One river's course within the bounds, as a ribbon as wide as its channel at the river's own level. */
@@ -96,7 +96,7 @@ export function buildCongoWater(seed: number, bounds: GroundBounds, flooded: boo
   if (flooded) {
     const geometry = floodSheet(seed, bounds);
     if (geometry) {
-      const mesh = new THREE.Mesh(geometry, waterMaterial(COLOURS.flood, 0.86));
+      const mesh = new THREE.Mesh(geometry, waterMaterial(COLOURS.flood, 0.62));
       mesh.name = 'flood'; mesh.receiveShadow = true;
       group.add(mesh);
     }

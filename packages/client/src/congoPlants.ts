@@ -11,7 +11,7 @@ import type { PatchView } from './terrain.js';
  * - Swamps grow Raphia palms; flooded forest a lower canopy with palms; bais are open sedge.
  * - Rocks lie only along river banks; fallen logs on the forest floor.
  */
-export const CONGO_KINDS = ['emergent', 'canopy', 'midstory', 'sapling', 'raphia', 'marantaceae', 'sedge', 'log', 'rock'] as const;
+export const CONGO_KINDS = ['emergent', 'canopy', 'midstory', 'sapling', 'raphia', 'marantaceae', 'herb', 'sedge', 'log', 'rock'] as const;
 export type CongoKind = typeof CONGO_KINDS[number];
 
 /** The parts of a plant, each drawn with its own material: bark and wood, textured leaf clusters, solid blades. */
@@ -19,9 +19,9 @@ export interface PlantParts { wood?: THREE.BufferGeometry; leaves?: THREE.Buffer
 
 /** Plants per 300 m patch (9 ha) of each habitat, near the camera. */
 const PER_PATCH: Record<string, Partial<Record<CongoKind, number>>> = {
-  terra_firme: { emergent: 9, canopy: 100, midstory: 150, sapling: 220, marantaceae: 700, log: 5 },
-  flooded_forest: { canopy: 80, midstory: 110, raphia: 12, sapling: 90, marantaceae: 150, log: 3 },
-  swamp_forest: { raphia: 140, canopy: 30, midstory: 60, sapling: 60, marantaceae: 200 },
+  terra_firme: { emergent: 12, canopy: 190, midstory: 280, sapling: 600, marantaceae: 3500, herb: 14000, log: 6 },
+  flooded_forest: { canopy: 150, midstory: 200, raphia: 20, sapling: 260, marantaceae: 900, herb: 3000, log: 4 },
+  swamp_forest: { raphia: 200, canopy: 50, midstory: 100, sapling: 160, marantaceae: 1200, herb: 6000 },
   bai: { sedge: 1200, log: 2 },
 };
 /** Bank rocks tried per patch beside a river; kept only within this distance of the channel's edge. */
@@ -139,12 +139,12 @@ function plantParts(kind: CongoKind): PlantParts {
   switch (kind) {
     case 'emergent':
       return { wood: merge([trunk(44, 0.95, 0.5, 0xb7a990, random), ...buttresses(5, 5, 3.4, 0xa89a80, random), ...limbs(5, 37, 9, 0.35, 0x9a8c72, random)]),
-        leaves: crown(34, 7, 46, 10, 3, random) };
+        leaves: crown(56, 8, 46, 12, 3.2, random) };
     case 'canopy':
       return { wood: merge([trunk(28, 0.6, 0.32, 0x8c7c64, random), ...buttresses(3, 2.6, 1.8, 0x7e6f58, random), ...limbs(4, 23, 6, 0.22, 0x7a6a52, random)]),
-        leaves: crown(24, 5.5, 30, 6.5, 3.2, random) };
+        leaves: crown(52, 7, 30, 8.5, 3.6, random) };
     case 'midstory':
-      return { wood: trunk(14, 0.26, 0.14, 0x6e604c, random), leaves: crown(14, 3.4, 14, 3, 3, random) };
+      return { wood: trunk(14, 0.26, 0.14, 0x6e604c, random), leaves: crown(26, 4, 14, 4.2, 3, random) };
     case 'sapling':
       return { wood: trunk(3.6, 0.06, 0.03, 0x5e5240, random), leaves: crown(6, 1.4, 3.2, 0.9, 0.8, random) };
     case 'raphia': {
@@ -168,14 +168,24 @@ function plantParts(kind: CongoKind): PlantParts {
     case 'marantaceae': {
       // Broad paddle leaves on long stalks, 1-2.5 m tall: the Congo forest's understory.
       const leaves: THREE.BufferGeometry[] = [], stalks: THREE.BufferGeometry[] = [];
-      for (let k = 0; k < 6; k++) {
-        const yaw = random() * Math.PI * 2, height = 1 + random() * 1.4, lean = 0.15 + random() * 0.25;
+      for (let k = 0; k < 9; k++) {
+        const yaw = random() * Math.PI * 2, height = 0.8 + random() * 1.6, lean = 0.15 + random() * 0.25;
         stalks.push(finish(new THREE.CylinderGeometry(0.012, 0.02, height, 4).translate(0, height / 2, 0).rotateZ(lean).rotateY(yaw), () => new THREE.Color(0x4d6b2a)));
         const tip = new THREE.Vector3(0, height, 0).applyAxisAngle(new THREE.Vector3(0, 0, 1), lean).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
         const tint = GREENS[2 + Math.floor(random() * 3)]!.clone().multiplyScalar(1.1);
         leaves.push(finish(blade(0.9 + random() * 0.4, 0.4).rotateX(-1.1 + random() * 0.4).rotateY(yaw).translate(tip.x, tip.y, tip.z), () => tint));
       }
       return { wood: merge(stalks), blades: merge(leaves) };
+    }
+    case 'herb': {
+      // Seedlings and small herbs carpeting the floor between the larger plants.
+      const leaves: THREE.BufferGeometry[] = [];
+      for (let k = 0; k < 5; k++) {
+        const yaw = random() * Math.PI * 2, h = 0.2 + random() * 0.45, tint = GREENS[1 + Math.floor(random() * 4)]!.clone();
+        leaves.push(finish(blade(0.35 + random() * 0.25, 0.16).rotateX(-0.9 + random() * 0.6).rotateY(yaw)
+          .translate((random() - 0.5) * 0.3, h, (random() - 0.5) * 0.3), () => tint));
+      }
+      return { blades: merge(leaves) };
     }
     case 'sedge': {
       const blades: THREE.BufferGeometry[] = [];
@@ -237,13 +247,23 @@ function leafTexture(): THREE.Texture | null {
 }
 
 let materials: Record<keyof PlantParts, THREE.Material> | null = null;
+let leafDepth: THREE.MeshDepthMaterial | null = null;
+/**
+ * The leaf clusters' shadow: cut by the same leaf texture, so a crown casts dappled shade, not
+ * the solid squares of its cards.
+ */
+export function congoLeafDepthMaterial(): THREE.MeshDepthMaterial {
+  const map = (congoPlantMaterials().leaves as THREE.MeshStandardMaterial).map;
+  return leafDepth ??= new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, ...(map ? { map, alphaTest: 0.45 } : {}) });
+}
 export function congoPlantMaterials(): Record<keyof PlantParts, THREE.Material> {
   if (materials) return materials;
   const map = leafTexture();
   materials = {
     wood: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }),
-    leaves: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide, ...(map ? { map, alphaTest: 0.45 } : {}) }),
-    blades: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, side: THREE.DoubleSide }),
+    // A faint green glow stands in for light through the leaves, so a crown's underside is not black.
+    leaves: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide, emissive: 0x16300c, ...(map ? { map, alphaTest: 0.45 } : {}) }),
+    blades: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, side: THREE.DoubleSide, emissive: 0x0e2208 }),
   };
   return materials;
 }
