@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { runCongoBench } from '../src/congoBench.js';
+import { CONGO_HOUR_BUDGET_MS, CONGO_STAND_IN, runCongoBench } from '../src/congoBench.js';
 
 describe('congo budget benchmark', () => {
   it('measures founding, hourly steps, memory and snapshot size', () => {
@@ -11,9 +11,11 @@ describe('congo budget benchmark', () => {
     expect(r.snapshotMb).toBeGreaterThan(0);
   }, 300_000);
 
-  it('keeps a scaled Congo hour inside its share of the 2 s budget', () => {
-    const r = runCongoBench({ seed: 7, warmHours: 2, measureHours: 4, population: { hare: 4_500, chital: 300, leopard: 15 } });
-    // A tenth of the population gets a tenth of the budget; the full-size check is the CLI.
-    expect(r.hourMs.p95).toBeLessThan(Number(process.env.VANA_CONGO_TENTH_BUDGET_MS ?? 200));
+  it('steps the full Congo founding population within the 2 s budget', () => {
+    // The spec's budget at its real size (a tenth of the animals is not a tenth of the work: the
+    // 25,600 patches cost the same at any population). A slower host may set its own budget.
+    const r = runCongoBench({ seed: 7, warmHours: 2, measureHours: 3, population: { ...CONGO_STAND_IN } });
+    expect(r.animals).toBeGreaterThan(45_000);
+    expect(r.hourMs.max).toBeLessThan(Number(process.env.VANA_CONGO_HOUR_BUDGET_MS ?? CONGO_HOUR_BUDGET_MS));
   }, 300_000);
 });

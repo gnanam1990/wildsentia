@@ -5,6 +5,7 @@ These are the measurements for sub-project 1A of the Congo Phase 1 design. The b
 ## How it was measured
 
 - **Command:** `npm run bench:congo -w @vana/runner` (`packages/runner/src/congoBench.ts`).
+- **CI check:** `packages/runner/test/congoBench.test.ts` steps the full stand-in population for 3 hours, in about 8 s, and fails if any hour takes over 2 s. A slower host may set `VANA_CONGO_HOUR_BUDGET_MS`.
 - **World:** a `congo_v1` world, seed 7, 48 × 48 km (160 × 160 patches of 300 m), terrain `congo_terrain_v1`.
 - **Founders, stand-ins only:** the Congo species do not exist yet, so the benchmark founds animals of the same count from the island roster. Stand-ins are used only here, never in a served world.
 
