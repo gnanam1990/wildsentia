@@ -12,6 +12,8 @@ export interface RiverPath { kind: 'main' | 'tributary'; widthM: number; floodBe
 
 const MAIN_LEVEL_WEST_M = 340, MAIN_LEVEL_EAST_M = 310, TRIBUTARY_RISE_M_PER_KM = 2.5;
 const TRIBUTARY_ATTEMPTS = 6;
+/** Main half-width, a tributary channel's half-width on the lattice and one patch: 450 + 225 + 300 m. */
+const MAIN_CLEARANCE_M = 975;
 
 /** Chaikin corner cutting, keeping both ends: a smooth bend from a coarse walk. */
 function chaikin(points: Array<{ x: number; z: number }>, rounds: number): Array<{ x: number; z: number }> {
@@ -64,6 +66,9 @@ export function congoRivers(seed: number, grid: WorldGrid): RiverPath[] {
         if (nx < e.min + margin || nx >= e.maxX - margin || nz < e.min + margin || nz >= e.maxZ - margin) break;
         // Never fold back toward the main river: each step must take it further away.
         if (Math.abs(nz - root.z) <= Math.abs(last.z - root.z)) { heading = north ? 0 : Math.PI; continue; }
+        // Past its first two reaches, a tributary that comes back within reach of the main
+        // channel (where the main river meanders toward it) ends there rather than rejoining it.
+        if (walk.length >= 2 && nearestRiver([main], nx, nz).distanceM < MAIN_CLEARANCE_M) break;
         walk.push({ x: nx, z: nz });
       }
       if (walk.length < 8) continue;

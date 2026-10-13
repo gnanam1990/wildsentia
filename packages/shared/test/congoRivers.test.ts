@@ -40,4 +40,19 @@ describe('congo_terrain_v1 rivers', () => {
   it('refuses a grid too small for a river network', () => {
     expect(() => congoRivers(7, ISLAND_GRID)).toThrow('too small');
   });
+
+  it('stops a tributary before it runs back into the main river (seeds 0-1999, incl. 290 and 748)', () => {
+    for (let seed = 0; seed < 2_000; seed++) {
+      const network = congoRivers(seed, CONGO_GRID), main = network[0]!;
+      for (const t of network.slice(1)) {
+        let along = 0;
+        for (let i = 1; i < t.points.length; i++) {
+          along += Math.hypot(t.points[i]!.x - t.points[i - 1]!.x, t.points[i]!.z - t.points[i - 1]!.z);
+          if (along < 2_000) continue;
+          const gap = nearestRiver([main], t.points[i]!.x, t.points[i]!.z).distanceM;
+          expect(gap, `seed ${seed}`).toBeGreaterThanOrEqual(900);
+        }
+      }
+    }
+  }, 120_000);
 });
