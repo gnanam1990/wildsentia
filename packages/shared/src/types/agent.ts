@@ -1,5 +1,6 @@
 import type { PatchId } from './patch.js';
 import type { WorldTime } from '../time.js';
+import type { DeathCause } from './carcass.js';
 import type { WorldPosition } from '../spatial.js';
 
 export type AgentState =
@@ -176,6 +177,8 @@ export interface Agent {
    * animal lives wild when unsteered, and only its owner's side may steer it.
    */
   assetId?: string;
+  /** Congo 1C: how an owned animal died, kept on its record for its owner's life history. */
+  ownedDeath?: { cause: DeathCause; killerId: string | null; at: WorldTime };
   /** Optional only for legacy snapshots; initialized deterministically by the simulation. */
   position?: WorldPosition;
   /** Authoritative non-ground travel state. Absent on old/ground-only checkpoints. */

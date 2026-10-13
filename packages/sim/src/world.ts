@@ -771,6 +771,7 @@ export class World {
     agent.alive = false;
     agent.state = 'dead';
     agent.departedAt = at;
+    if (agent.assetId !== undefined) agent.ownedDeath = { cause, killerId, at };
     this.#livingBySpecies.set(
       agent.speciesId, Math.max(0, (this.#livingBySpecies.get(agent.speciesId) ?? 1) - 1),
     );
@@ -1117,6 +1118,12 @@ export class World {
     agent.targetId = null; agent.state = 'resting'; delete agent.journey;
     locateAgent(this.grid, agent);
     return null;
+  }
+
+  /** Congo 1C: an owned animal whose life has ended elsewhere (a restart's rollback) lives on as wild. */
+  disown(id: string): void {
+    const agent = this.#agentsById.get(id);
+    if (agent) { delete agent.assetId; delete agent.controller; }
   }
 
   /** Returns the animal to the wild where it stands. */

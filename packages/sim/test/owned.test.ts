@@ -55,4 +55,18 @@ describe('owned animals', () => {
     const island = createWorld({ seed: 3, speciesDir: SPECIES_DIR, terrainProfile: 'island_v1', initialAgents: {}, minPopulation: {} });
     expect(() => island.spawnOwned('chital', 210, 'x')).toThrow();
   });
+  it('remember how they died, and can be returned to the wild', () => {
+    const world = congo();
+    const duiker = world.spawnOwned('blue_duiker', world.safeSpawnPatches('blue_duiker', 300)[0]!, 'asset-1');
+    duiker.drives.hunger = 1.2;
+    world.step(1);
+    expect(world.animal(duiker.id)!.alive).toBe(false);
+    expect(world.animal(duiker.id)!.ownedDeath).toEqual({ cause: 'starvation', killerId: null, at: world.animal(duiker.id)!.departedAt });
+    const wild = world.agents.find((a) => a.alive && a.speciesId === 'blue_duiker' && !a.assetId)!;
+    expect(wild.ownedDeath).toBeUndefined();
+    const other = world.spawnOwned('blue_duiker', world.safeSpawnPatches('blue_duiker', 300)[0]!, 'asset-2');
+    world.disown(other.id);
+    expect(world.animal(other.id)!.assetId).toBeUndefined();
+    expect(world.possessionBlock(other.id)).not.toBe('owned');
+  });
 });
