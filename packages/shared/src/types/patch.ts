@@ -53,6 +53,8 @@ export interface Patch {
   congoSeed?: number;
   /** Congo 1B: flooded forest under the season's flood (set each hour by the world); absent elsewhere. */
   flooded?: boolean;
+  /** Congo 1B: the deep middle of the great river (no dry ground beside it): no land animal walks it. */
+  deepWater?: boolean;
   surface?: 'land' | 'coast' | 'ocean';
   habitat: HabitatType;
   canopyCover: number;

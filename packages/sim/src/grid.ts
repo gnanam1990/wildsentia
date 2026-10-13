@@ -89,8 +89,14 @@ function buildCongoPatches(seed: number, grid: WorldGrid): Patch[] {
         : habitat === 'flooded_forest' ? 20_000 : habitat === 'swamp_forest' ? 12_000 : soilMoisture * 600,
       neighbours: cardinalNeighbours(grid, id),
     };
+  }).map((patch, _i, all) => {
+    // The great river's deep middle: water with no dry ground beside it.
+    if (patch.habitat === 'water' && patch.neighbours.every((n) => terrainHabitat(all, n) === 'water')) patch.deepWater = true;
+    return patch;
   });
 }
+
+const terrainHabitat = (patches: readonly Patch[], id: number): string | undefined => patches[id]?.habitat;
 
 export function buildGrid(seed: number, profile: TerrainProfile = 'mainland', grid: WorldGrid = gridForProfile(profile)): Patch[] {
   if (profile === 'congo_v1') return buildCongoPatches(seed, grid);

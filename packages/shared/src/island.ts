@@ -90,8 +90,8 @@ export function islandPatchSurface(seed: number, id: number): 'land' | 'coast' |
   return min >= 2 ? 'land' : max <= 0 ? 'ocean' : 'coast';
 }
 
-export const landWalkable = (patch: Pick<Patch, 'surface'> | undefined): boolean => !!patch
-  && patch.surface !== 'ocean' && patch.surface !== 'coast';
+export const landWalkable = (patch: Pick<Patch, 'surface' | 'deepWater'> | undefined): boolean => !!patch
+  && patch.surface !== 'ocean' && patch.surface !== 'coast' && patch.deepWater !== true;
 
 /** Exact grid-boundary ray traversal. Stops just inside the last permitted land cell. */
 export function landRayDistance(patches: readonly Patch[], origin: WorldPosition, heading: number): number {
