@@ -1,3 +1,4 @@
+import { ISLAND_GRID } from '@vana/shared';
 import { describe, expect, it } from 'vitest';
 import { islandHeightAt, islandVertexHeight, islandPatchSurface, ISLAND_SEGMENTS, landWalkable, landRayDistance,
   patchCentre, patchAtPosition, createRng } from '@vana/shared';
@@ -126,7 +127,7 @@ describe('authoritative island geography', () => {
     const result = resolveSpatialHunt({ grid: ISLAND_GRID, predatorId: 'tiger_a', preyId: 'chital_b', patchId: p.id, worldTime: 0,
       predator, prey, predatorWalkMs: 1, predatorSprintMs: 10, preySprintMs: 1, preyTrotMs: 1,
       predatorSprintSeconds: 25, preySprintSeconds: 40, contactRadiusM: 1, secondsAvailable: 3600, chaseStaminaCost: 0.3,
-      landBoundaryM: (position, heading) => landRayDistance(patches, position, heading),
+      landBoundaryM: (position, heading) => landRayDistance(ISLAND_GRID, patches, position, heading),
       contest: { baseSuccess: 1, stalkConcealment: 1, canopyCover: 1, predatorStamina: 1, predatorCondition: 1,
         preyEvasiveness: 0, preyCondition: 1, preyAlert: false, herdSize: 1, commitDistanceM: 10 } }, createRng(3, 'hunt'));
     expect(result.stage).toBe('boundary_escape'); expect(result.killed).toBe(false);

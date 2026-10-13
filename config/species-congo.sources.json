@@ -9,7 +9,7 @@
     "locomotion.climbsTrees": "[1]",
     "locomotion.terrainCost/floodedTerrainCost": "assumption: wades and swims short distances; never chases into water [1],[7]",
     "senses": "assumption: dense understorey limits sight to 20-40 m",
-    "diet.dailyIntakeKg": "[8]: 1.6-4.9 kg/day",
+    "diet.dailyIntakeKg": "[8]: 1.6-4.9 kg/day; 2.5 kg chosen (assumption) with the Phase 1 density so two small prey species can sustain the leopards",
     "hunting.preferredPrey": "[4],[6]: duikers and chevrotains are taken; Phase 1 has only these two prey",
     "hunting.maxPreyKg/preferredPreyKg": "[1],[4]: prefers 10-40 kg; mean forest prey 19.7-31.6 kg; Phase 1 prey are 4-12 kg",
     "hunting.baseSuccess": "assumption: sim-tuned contest parameter, as the island leopard's; forest attack success 15-25% [9]",
@@ -38,5 +38,6 @@
     "social": "[19]: solitary, not territorial; female 13-14 ha, male 20-30 ha",
     "activity": "[19]: strictly nocturnal 18:00-06:00",
     "lifecycle": "[18],[19]: gestation 188-272 d, 1 young, weaned 90-180 d, mature 270-790 d, max 13-14 y, ~12 months between births"
-  }
+  },
+  "_population": "CONGO_POPULATION (packages/sim/src/forest.ts): duiker 16/km\u00b2 [15]; chevrotain 10/km\u00b2 [18],[19]; leopard 2/100 km\u00b2 \u2014 below field 2.7-12.1 [4],[7] because the Phase 1 roster lacks the red duikers and hogs that feed most forest leopards (assumption; see the 30-day soak in docs/2026-10-13-congo-measurements.md)"
 }

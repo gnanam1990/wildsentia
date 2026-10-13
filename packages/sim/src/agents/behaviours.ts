@@ -453,7 +453,9 @@ function hunt(ctx: BehaviourContext): void {
   const preyCondition = Math.max(0.15, 1 - victim.drives.fatigue * 0.5) * preyScale;
   const outcome = resolveSpatialHunt({
     grid: ctx.view.grid,
-    ...(ctx.percept.patch.islandSeed === undefined ? {} : { landBoundaryM: (p: WorldPosition, heading: number) => landRayDistance(ctx.patches, p, heading) }),
+    // A chase ends at the sea on an island, and (Congo 1B) at the great river's deep middle.
+    ...(ctx.percept.patch.islandSeed === undefined && ctx.percept.patch.congoSeed === undefined ? {}
+      : { landBoundaryM: (p: WorldPosition, heading: number) => landRayDistance(ctx.view.grid, ctx.patches, p, heading) }),
     predatorId: ctx.agent.id, preyId: victim.id, patchId: ctx.agent.patchId, worldTime: ctx.worldTime,
     predator: locateAgent(ctx.view.grid, ctx.agent), prey: locateAgent(ctx.view.grid, victim),
     predatorWalkMs: ctx.species.locomotion.walkMs * predatorScale * 0.45 / predatorTerrainCost,

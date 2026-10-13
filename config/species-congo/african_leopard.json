@@ -52,7 +52,7 @@
         "preference": 1.0
       }
     ],
-    "dailyIntakeKg": 3.0,
+    "dailyIntakeKg": 2.5,
     "gutCapacityBodyFraction": 0.14,
     "waterNeedLPerDay": 3,
     "canScavenge": true,

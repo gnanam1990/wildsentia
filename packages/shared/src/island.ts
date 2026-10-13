@@ -1,6 +1,6 @@
 import type { Patch } from './types/patch.js';
 import { spatialHash } from './spatial.js';
-import { ISLAND_GRID, patchCentre, isWorldPosition, type WorldPosition } from './grid.js';
+import { ISLAND_GRID, patchCentre, isWorldPosition, type WorldGrid, type WorldPosition } from './grid.js';
 
 // Island geometry is defined on the 20 × 20 island lattice.
 const ISLAND_COLS = ISLAND_GRID.cols, ISLAND_PATCH_M = ISLAND_GRID.patchM;
@@ -93,21 +93,22 @@ export function islandPatchSurface(seed: number, id: number): 'land' | 'coast' |
 export const landWalkable = (patch: Pick<Patch, 'surface' | 'deepWater'> | undefined): boolean => !!patch
   && patch.surface !== 'ocean' && patch.surface !== 'coast' && patch.deepWater !== true;
 
-/** Exact grid-boundary ray traversal. Stops just inside the last permitted land cell. */
-export function landRayDistance(patches: readonly Patch[], origin: WorldPosition, heading: number): number {
-  if (!isWorldPosition(ISLAND_GRID, origin) || !Number.isFinite(heading)) throw new Error('invalid land ray');
-  const vx = Math.sin(heading), vz = Math.cos(heading);
-  let col = Math.floor((origin.x + ISLAND_PATCH_M / 2) / ISLAND_PATCH_M);
-  let row = Math.floor((origin.z + ISLAND_PATCH_M / 2) / ISLAND_PATCH_M);
-  if (!landWalkable(patches[row * ISLAND_COLS + col])) return 0;
-  for (let n = 0; n <= ISLAND_COLS * 2; n++) {
-    const c = patchCentre(ISLAND_GRID, row * ISLAND_COLS + col);
-    const tx = Math.abs(vx) < 1e-12 ? Infinity : (c.x + Math.sign(vx) * ISLAND_PATCH_M / 2 - origin.x) / vx;
-    const tz = Math.abs(vz) < 1e-12 ? Infinity : (c.z + Math.sign(vz) * ISLAND_PATCH_M / 2 - origin.z) / vz;
+/** Exact grid-boundary ray traversal. Stops just inside the last permitted land cell (the sea's
+ * edge on an island; Congo 1B: the great river's deep middle). */
+export function landRayDistance(grid: WorldGrid, patches: readonly Patch[], origin: WorldPosition, heading: number): number {
+  if (!isWorldPosition(grid, origin) || !Number.isFinite(heading)) throw new Error('invalid land ray');
+  const vx = Math.sin(heading), vz = Math.cos(heading), size = grid.patchM;
+  let col = Math.floor((origin.x + size / 2) / size);
+  let row = Math.floor((origin.z + size / 2) / size);
+  if (!landWalkable(patches[row * grid.cols + col])) return 0;
+  for (let n = 0; n <= (grid.cols + grid.rows) * 2; n++) {
+    const c = patchCentre(grid, row * grid.cols + col);
+    const tx = Math.abs(vx) < 1e-12 ? Infinity : (c.x + Math.sign(vx) * size / 2 - origin.x) / vx;
+    const tz = Math.abs(vz) < 1e-12 ? Infinity : (c.z + Math.sign(vz) * size / 2 - origin.z) / vz;
     const next = Math.min(tx, tz);
     if (tx <= next + 1e-8) col += Math.sign(vx);
     if (tz <= next + 1e-8) row += Math.sign(vz);
-    if (col < 0 || row < 0 || col >= ISLAND_COLS || row >= ISLAND_COLS || !landWalkable(patches[row * ISLAND_COLS + col]))
+    if (col < 0 || row < 0 || col >= grid.cols || row >= grid.rows || !landWalkable(patches[row * grid.cols + col]))
       return Math.max(0, next - 0.01);
   }
   throw new Error('land ray failed to leave bounded grid');
