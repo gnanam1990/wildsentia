@@ -24,7 +24,7 @@ maybe('durable lifecycle map locations', () => {
     await first.snapshotNow();
     const cutoff = first.checkpointEventSequence, time = first.checkpointTime!;
     await first.advance(1);
-    const store = new EventStore(pool!);
+    const store = new EventStore(pool!, ISLAND_GRID);
     const original = (await store.byActor(dying.id, 100)).find((e) => e.type === 'died')!;
     expect(original.worldTime).toBe(time);
     expect(await store.countAfter(time, cutoff)).toBeGreaterThan(await store.countAfter(time));
@@ -44,7 +44,7 @@ maybe('durable lifecycle map locations', () => {
     mother!.drives = { hunger: 0, thirst: 0, fatigue: 1, fear: 0 };
     dying!.drives.hunger = 1; const deathPosition = { ...dying!.position! };
     await first.advance(1);
-    const events = await new EventStore(pool!).mapEvents(first.world.now());
+    const events = await new EventStore(pool!, ISLAND_GRID).mapEvents(first.world.now());
     const birth = events.find((e) => e.type === 'born')!, death = events.find((e) => e.type === 'died' && e.actors[0] === dying!.id)!;
     expect(birth.position).toBeDefined(); expect(death.position).toEqual(deathPosition);
     const api = buildApi({ host: first, pool: pool! });

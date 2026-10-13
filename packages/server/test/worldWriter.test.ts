@@ -10,6 +10,7 @@ import { testDatabaseUrl } from './testDatabase.js';
 import { Gateway } from '../src/gateway.js';
 import { startServer } from '../src/index.js';
 import { createServer } from 'node:http';
+import { ISLAND_GRID } from '@vana/shared';
 
 const url = testDatabaseUrl(), pool = url ? createPool(url) : null;
 const maybe = url ? describe : describe.skip;
@@ -48,7 +49,7 @@ maybe('exclusive durable world writer', () => {
     const winner = a.isWriterActive ? a : b, loser = a.isWriterActive ? b : a;
     expect(String((results.find((r) => r.status === 'rejected') as PromiseRejectedResult).reason)).toContain('already owns');
     await expect(loser.flush()).rejects.toThrow('writer');
-    const count = await new EventStore(pool!).total();
+    const count = await new EventStore(pool!, ISLAND_GRID).total();
     expect(count).toBe(10);
     expect((await pool!.query('select count(*)::int as n from snapshots')).rows[0].n).toBe(1);
     await winner.advance(2); await winner.stop();
@@ -60,11 +61,11 @@ maybe('exclusive durable world writer', () => {
 
   it('a rejected contender cannot roll back a live owner or overwrite its history', async () => {
     const a = new SimHost(options()); await a.boot(); await a.advance(3);
-    const count = await new EventStore(pool!).total();
+    const count = await new EventStore(pool!, ISLAND_GRID).total();
     const before = await new SnapshotStore(pool!).loadLatest();
     await expect(new SimHost(options()).boot()).rejects.toThrow('already owns');
     await expect(migrate(pool!)).rejects.toThrow('already owns');
-    expect(await new EventStore(pool!).total()).toBe(count);
+    expect(await new EventStore(pool!, ISLAND_GRID).total()).toBe(count);
     expect(await new SnapshotStore(pool!).loadLatest()).toEqual(before);
     await a.advance(1); expect(a.world.now()).toBe(14400);
   });
@@ -94,12 +95,12 @@ maybe('exclusive durable world writer', () => {
       const time = old.world.now();
       const replacement = new SimHost(options());
       expect((await replacement.boot()).restoredFrom).toBe(24 * 3600);
-      const count = await new EventStore(pool!).total();
+      const count = await new EventStore(pool!, ISLAND_GRID).total();
       await expect(old.advance(1)).rejects.toThrow('writer');
       await expect(old.flush()).rejects.toThrow('writer');
       await expect(old.snapshotNow()).rejects.toThrow('writer');
       expect(old.world.now()).toBe(time);
-      expect(await new EventStore(pool!).total()).toBe(count);
+      expect(await new EventStore(pool!, ISLAND_GRID).total()).toBe(count);
       await replacement.advance(1);
       expect(replacement.world.now()).toBe(25 * 3600);
     } finally { gateway.close(); await api.close(); }

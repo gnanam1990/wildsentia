@@ -1,4 +1,4 @@
-import { ISLAND_GRID, positionInPatch, type WorldEvent, type WorldGrid } from '@vana/shared';
+import { positionInPatch, type WorldEvent, type WorldGrid } from '@vana/shared';
 import { isRecordedTreeClimb } from '../liveEncounters.js';
 import type { Database } from './pool.js';
 
@@ -47,7 +47,9 @@ export function eventSequence(id: string): number | null {
 
 export class EventStore {
   /** `grid`: the lattice of the world these events belong to (the island unless told otherwise). */
-  constructor(private readonly pool: Database, private readonly grid: WorldGrid = ISLAND_GRID) {}
+  constructor(private readonly pool: Database, private readonly grid: WorldGrid) {
+    if (!grid) throw new Error('an event store needs the grid of the world it serves');
+  }
 
   /** Primary-key lookup remains actor scoped and checkpoint bounded; guessing an ID cannot
    * expose a volatile event or another animal's encounter. */

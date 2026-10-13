@@ -8,6 +8,7 @@ import { migrate } from '../src/db/migrate.js';
 import { SnapshotStore } from '../src/db/snapshotStore.js';
 import { SimHost } from './trackedHost.js';
 import { testDatabaseUrl } from './testDatabase.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const url = testDatabaseUrl(), pool = url ? createPool(url) : null, maybe = url ? describe : describe.skip;
 const worldOptions = { seed: 1, speciesDir: fileURLToPath(new URL('../../../config/species', import.meta.url)),
@@ -36,7 +37,7 @@ maybe('checkpointed v7 family observer', () => {
     mother.pregnancy = { fatherId: father.id, conceivedAt: 0, dueAt: 3600, fetusKg: prenatalKg,
       conceivedEventId: conception.id };
     const baseline = seed.totalNutrients();
-    await new EventStore(pool!).appendBatch(seed.log.take());
+    await new EventStore(pool!, ISLAND_GRID).appendBatch(seed.log.take());
     await new SnapshotStore(pool!).save(takeSnapshot(seed));
 
     const host = new SimHost(options()); await host.boot();
@@ -104,7 +105,7 @@ maybe('checkpointed v7 family observer', () => {
     seed.patches[mother.patchId]!.plant.grass -= 1;
     mother.pregnancy = { fatherId: father.id, conceivedAt: 0, dueAt: 3600, fetusKg: 1,
       conceivedEventId: conception.id };
-    await new EventStore(pool!).appendBatch(seed.log.take());
+    await new EventStore(pool!, ISLAND_GRID).appendBatch(seed.log.take());
     await new SnapshotStore(pool!).save(takeSnapshot(seed));
     const host = new SimHost(options()); await host.boot();
     const api = buildApi({ host, pool: pool! });

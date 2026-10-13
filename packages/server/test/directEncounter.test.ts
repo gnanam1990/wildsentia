@@ -10,6 +10,7 @@ import { buildApi } from '../src/api.js';
 import { testDatabaseUrl } from './testDatabase.js';
 import { loadSelectedEncounter } from '../../client/src/lifeHistory.js';
 import { HistoryPager } from '../../client/src/history.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const url = testDatabaseUrl(), pool = url ? createPool(url) : null, maybe = url ? describe : describe.skip;
 const options = () => ({ pool: pool!, seed: 44, speciesDir: fileURLToPath(new URL('../../../config/species', import.meta.url)),
@@ -82,7 +83,7 @@ maybe('direct durable encounter retrieval', () => {
       const path = `/animals/${prey.id}/encounters/${event.id}`;
       expect((await api.inject(path)).json()).toMatchObject({ alive: true, asOfWorldTime: 0 });
       expect(prey.alive).toBe(false); spy.mockRestore();
-      await new LifeStore(pool!).archive([prey]);
+      await new LifeStore(pool!, ISLAND_GRID).archive([prey]);
       // Hourly deaths can remain in agents until the next compaction. Model archival from
       // either collection explicitly; never remove an unrelated final item with splice(-1).
       for (const collection of [host.world.agents, host.world.deceased]) {

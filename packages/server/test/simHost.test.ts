@@ -12,6 +12,7 @@ import { isLiveEncounterFrame, LiveEncounterPlayer } from '../../client/src/live
 import { Gateway } from '../src/gateway.js';
 import { islandGeometrySeed, type LiveEncounterFrame } from '@vana/shared';
 import { asLegacySnapshot, stripV37State } from '../../sim/test/legacySnapshot.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const url = testDatabaseUrl();
 const maybe = url ? describe : describe.skip;
@@ -46,7 +47,7 @@ maybe('SimHost', () => {
       agent.sex = 'male'; agent.drives = { hunger: 0, thirst: 0, fatigue: 0, fear: 0 };
     }
     await host.advance(1);
-    const routes = (await new EventStore(pool!).recent(100)).filter((e) => e.movement);
+    const routes = (await new EventStore(pool!, ISLAND_GRID).recent(100)).filter((e) => e.movement);
     expect(routes.length).toBeGreaterThan(0);
     const frame = host.liveEncounterFrame()!;
     expect(isLiveEncounterFrame(frame)).toBe(true);
@@ -71,7 +72,7 @@ maybe('SimHost', () => {
     const restored = new SimHost(config); await restored.boot();
     expect(takeSnapshot(restored.world)).toEqual(before);
     expect(restored.liveEncounterFrame()).toBeNull();
-    expect((await new EventStore(pool!).recent(100)).filter((e) => e.movement)).toEqual(routes);
+    expect((await new EventStore(pool!, ISLAND_GRID).recent(100)).filter((e) => e.movement)).toEqual(routes);
   });
 
   it('withholds ordinary route publication until the matching world snapshot succeeds', async () => {
@@ -79,7 +80,7 @@ maybe('SimHost', () => {
     await host.boot();
     for (const a of host.world.agents) { a.sex = 'male'; a.drives = { hunger: 0, thirst: 0, fatigue: 0, fear: 0 }; }
     await host.advance(1);
-    const route = (await new EventStore(pool!).recent(100)).find((e) => e.movement)!;
+    const route = (await new EventStore(pool!, ISLAND_GRID).recent(100)).find((e) => e.movement)!;
     expect(route).toBeDefined();
     expect(host.liveEncounterFrame()).toBeNull();
     expect(host.liveEncounterFrame(route.movement!.actorId)).toBeNull();
@@ -95,7 +96,7 @@ maybe('SimHost', () => {
     const ordinary = host.liveEncounterFrame()!;
     expect(ordinary.movements).toHaveLength(2048);
     const shown = new Set(ordinary.movements!.map((m) => m.actor.id));
-    const overflow = (await new EventStore(pool!).recent(20_000)).find((e) => e.movement && !shown.has(e.movement.actorId))!;
+    const overflow = (await new EventStore(pool!, ISLAND_GRID).recent(20_000)).find((e) => e.movement && !shown.has(e.movement.actorId))!;
     expect(overflow).toBeDefined();
     const id = overflow.movement!.actorId;
     const before = takeSnapshot(host.world);
@@ -137,7 +138,7 @@ maybe('SimHost', () => {
     expect(frame.movements!.length).toBeGreaterThan(0);
     expect(frame.endWorldTime).toBe((await new SnapshotStore(pool!).loadLatest())!.worldTime);
     for (const e of frame.encounters) {
-      const stored = (await new EventStore(pool!).byActor(e.predator.id, 100)).find((x) => x.id === e.eventId)!;
+      const stored = (await new EventStore(pool!, ISLAND_GRID).byActor(e.predator.id, 100)).find((x) => x.id === e.eventId)!;
       expect(stored.encounter).toEqual(e.trace);
       expect(stored.outcome).toBe(e.outcome);
       expect(e.prey.id).toBe(e.trace.preyId);
@@ -157,13 +158,13 @@ maybe('SimHost', () => {
     const upgraded = new SimHost({ ...options(), allowV5Upgrade: from === 'sim_0.5.0', allowV6Upgrade: from === 'sim_0.6.0', allowV7Upgrade: from === 'sim_0.7.0', allowV8Upgrade: from === 'sim_0.8.0', allowV9Upgrade: from === 'sim_0.9.0', allowV10Upgrade: from === 'sim_0.10.0', allowV11Upgrade: from === 'sim_0.11.0', allowV12Upgrade: from === 'sim_0.12.0' }); await upgraded.boot();
     expect(upgraded.world.agents).toEqual(first.world.agents);
     expect((await new SnapshotStore(pool!).loadLatest())!.simVersion).toBe(SIM_VERSION);
-    const events = await new EventStore(pool!).recent(100);
+    const events = await new EventStore(pool!, ISLAND_GRID).recent(100);
     expect(events.filter((e) => e.conditions.reason === 'explicit_rules_upgrade')).toHaveLength(1);
     const original = await pool!.query('select count(*) from snapshots where sim_version = $1', [from]);
     expect(Number(original.rows[0].count)).toBe(1);
     await upgraded.abort();
     await new SimHost(options()).boot();
-    expect((await new EventStore(pool!).recent(100)).filter((e) => e.conditions.reason === 'explicit_rules_upgrade')).toHaveLength(1);
+    expect((await new EventStore(pool!, ISLAND_GRID).recent(100)).filter((e) => e.conditions.reason === 'explicit_rules_upgrade')).toHaveLength(1);
   });
 
   it.each(['sim_0.17.0', 'sim_0.18.0'])('requires explicit %s opt-in and zeroes absent aquatic producer history', async (from) => {
@@ -179,7 +180,7 @@ maybe('SimHost', () => {
     await upgraded.boot();
     expect(upgraded.world.microEcology.patches.every(patch => patch.aquaticProducerBiomassKg === 0)).toBe(true);
     expect((await new SnapshotStore(pool!).loadLatest())!.simVersion).toBe(SIM_VERSION);
-    expect((await new EventStore(pool!).recent(100)).filter(e => e.conditions.reason === 'explicit_rules_upgrade')).toHaveLength(1);
+    expect((await new EventStore(pool!, ISLAND_GRID).recent(100)).filter(e => e.conditions.reason === 'explicit_rules_upgrade')).toHaveLength(1);
     await upgraded.abort();
     const restored = new SimHost(options()); await restored.boot();
     expect(restored.world.microEcology).toEqual(upgraded.world.microEcology);
@@ -249,7 +250,7 @@ maybe('SimHost', () => {
     expect(upgraded.world.patches.filter(p => p.surface === 'land' && p.habitat === 'water')).toHaveLength(2);
     for (const id of basinIds) expect(upgraded.world.patches[id]!.waterVolume).toBe(813);
     expect((await new SnapshotStore(pool!).loadLatest())!.simVersion).toBe(SIM_VERSION);
-    expect((await new EventStore(pool!).recent(100)).filter(e =>
+    expect((await new EventStore(pool!, ISLAND_GRID).recent(100)).filter(e =>
       e.conditions.reason === 'explicit_rules_upgrade')).toHaveLength(1);
     await upgraded.abort();
     const restarted = new SimHost(island); await restarted.boot();
@@ -265,7 +266,7 @@ maybe('SimHost', () => {
     const upgraded = new SimHost({ ...options(), allowV20Upgrade: true }); await upgraded.boot();
     expect(upgraded.world.agents.every(a => a.illness === undefined)).toBe(true);
     expect((await new SnapshotStore(pool!).loadLatest())!.simVersion).toBe(SIM_VERSION);
-    expect((await new EventStore(pool!).recent(100)).filter(e =>
+    expect((await new EventStore(pool!, ISLAND_GRID).recent(100)).filter(e =>
       e.conditions.reason === 'explicit_rules_upgrade')).toHaveLength(1);
     await upgraded.abort();
     const restarted = new SimHost(options()); await restarted.boot();
@@ -287,7 +288,7 @@ maybe('SimHost', () => {
     expect(upgraded.world.agents[0]!.lastMaternalWaterAt).toBe(old.worldTime);
     expect(upgraded.world.agents[0]!.drives).toEqual(old.agents[0]!.drives);
     expect((await new SnapshotStore(pool!).loadLatest())!.simVersion).toBe(SIM_VERSION);
-    expect((await new EventStore(pool!).recent(100)).filter(e =>
+    expect((await new EventStore(pool!, ISLAND_GRID).recent(100)).filter(e =>
       e.conditions.reason === 'explicit_rules_upgrade')).toHaveLength(1);
     await upgraded.abort();
     const restarted = new SimHost(config); await restarted.boot();
@@ -308,7 +309,7 @@ maybe('SimHost', () => {
     expect(upgraded.world.agents[0]!.drives.thirst).toBe(0.8);
     expect(upgraded.world.agents[0]!.position).toEqual(old.agents[0]!.position);
     expect((await new SnapshotStore(pool!).loadLatest())!.simVersion).toBe(SIM_VERSION);
-    expect((await new EventStore(pool!).recent(100)).filter(e =>
+    expect((await new EventStore(pool!, ISLAND_GRID).recent(100)).filter(e =>
       e.conditions.reason === 'explicit_rules_upgrade')).toHaveLength(1);
     await upgraded.abort();
     const restarted = new SimHost(config); await restarted.boot();
@@ -329,7 +330,7 @@ maybe('SimHost', () => {
     expect(upgraded.world.agents[0]!.drives.hunger).toBe(0.8);
     expect(upgraded.world.agents[0]!.position).toEqual(old.agents[0]!.position);
     expect((await new SnapshotStore(pool!).loadLatest())!.simVersion).toBe(SIM_VERSION);
-    expect((await new EventStore(pool!).recent(100)).filter(e =>
+    expect((await new EventStore(pool!, ISLAND_GRID).recent(100)).filter(e =>
       e.conditions.reason === 'explicit_rules_upgrade')).toHaveLength(1);
     await upgraded.abort();
     const restarted = new SimHost(config); await restarted.boot();
@@ -346,7 +347,7 @@ maybe('SimHost', () => {
     const upgraded = new SimHost({ ...config, allowV24Upgrade: true }); await upgraded.boot();
     expect(upgraded.world.agents).toEqual(old.agents);
     expect((await new SnapshotStore(pool!).loadLatest())!.simVersion).toBe(SIM_VERSION);
-    expect((await new EventStore(pool!).recent(100)).filter(e =>
+    expect((await new EventStore(pool!, ISLAND_GRID).recent(100)).filter(e =>
       e.conditions.reason === 'explicit_rules_upgrade')).toHaveLength(1);
     await upgraded.abort();
     const restarted = new SimHost(config); await restarted.boot();
@@ -363,7 +364,7 @@ maybe('SimHost', () => {
     const upgraded = new SimHost({ ...config, allowV25Upgrade: true }); await upgraded.boot();
     expect(upgraded.world.agents).toEqual(old.agents);
     expect((await new SnapshotStore(pool!).loadLatest())!.simVersion).toBe(SIM_VERSION);
-    expect((await new EventStore(pool!).recent(100)).filter(e =>
+    expect((await new EventStore(pool!, ISLAND_GRID).recent(100)).filter(e =>
       e.conditions.reason === 'explicit_rules_upgrade')).toHaveLength(1);
     await upgraded.abort();
     const restarted = new SimHost(config); await restarted.boot();
@@ -487,7 +488,7 @@ maybe('SimHost', () => {
     await host.boot();
     await host.advance(13);
     const id = host.world.agents[0]!.id;
-    const track = await new LifeStore(pool!).trackOf(id);
+    const track = await new LifeStore(pool!, ISLAND_GRID).trackOf(id);
     expect(track.map((p) => p.worldTime)).toEqual([6 * 3600, 12 * 3600]);
     expect(track[1]!.patchId).toBeGreaterThanOrEqual(0);
   });
@@ -517,14 +518,14 @@ maybe('SimHost', () => {
     const { rows } = await pool!.query<{ id: string }>('select id from animal_archive');
     expect(rows.length).toBeGreaterThan(0);
     for (const { id } of rows) expect(host.world.deceased.some((a) => a.id === id)).toBe(false);
-    expect((await new LifeStore(pool!).archived(rows[0]!.id))?.alive).toBe(false);
+    expect((await new LifeStore(pool!, ISLAND_GRID).archived(rows[0]!.id))?.alive).toBe(false);
   });
 
   it('persists events as the world advances', async () => {
     const host = new SimHost(options());
     await host.boot();
     await host.advance(48);
-    expect(await new EventStore(pool!).total()).toBeGreaterThan(0);
+    expect(await new EventStore(pool!, ISLAND_GRID).total()).toBeGreaterThan(0);
   });
 
   it('resumes from the newest snapshot after a restart', async () => {
@@ -550,13 +551,13 @@ maybe('SimHost', () => {
     await first.abort();
     const second = new SimHost(options());
     await second.boot();
-    const count = await new EventStore(pool!).total();
+    const count = await new EventStore(pool!, ISLAND_GRID).total();
     const start = second.world.log.exportSequence();
     // Avoid housekeeping retention so the row-count invariant measures inserts alone.
     for (let i = 0; i < 10; i++) second.world.step(1);
     const emitted = second.world.log.exportSequence() - start;
     await second.flush();
-    expect(await new EventStore(pool!).total()).toBe(count + emitted);
+    expect(await new EventStore(pool!, ISLAND_GRID).total()).toBe(count + emitted);
   });
 
   it('continues deterministically from the restored state', async () => {
@@ -585,7 +586,7 @@ maybe('SimHost', () => {
     await host.advance(6);
     await host.flush();
 
-    const store = new EventStore(pool!);
+    const store = new EventStore(pool!, ISLAND_GRID);
     expect(await store.countAfter(snapshotTime)).toBeGreaterThan(0);
     await host.abort();
 

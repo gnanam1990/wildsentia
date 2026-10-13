@@ -30,7 +30,7 @@ maybe('durable water contact evidence', () => {
     const frame = JSON.parse(JSON.stringify(host.liveEncounterFrame()!));
     const player = new LiveEncounterPlayer();
     expect(player.apply({ ...frame, elapsedWorldSeconds: 0 }, 0)).toBe(true);
-    const events = new EventStore(pool!), history = await events.recent(1000), drinks = history.filter((e) => e.type === 'drank');
+    const events = new EventStore(pool!, ISLAND_GRID), history = await events.recent(1000), drinks = history.filter((e) => e.type === 'drank');
     expect(drinks.length).toBeGreaterThan(0);
     for (const drink of drinks) {
       expect(atWaterAccess(ISLAND_GRID, drink.position!, drink.patchId)).toBe(true);
@@ -72,7 +72,7 @@ maybe('durable water contact evidence', () => {
       makeThirsty(); await host.snapshotNow(); await host.advance(1);
       const frame = host.liveEncounterFrame()!;
       expect(frame.startWorldTime).toBe(hour * 3600);
-      const history = await new EventStore(pool!).recent(1000);
+      const history = await new EventStore(pool!, ISLAND_GRID).recent(1000);
       const drinks = history.filter(e => e.type === 'drank' && e.conditions.arrivalWorldTime === hour * 3600);
       expect(drinks.length).toBeGreaterThan(0);
       for (const drink of drinks) {

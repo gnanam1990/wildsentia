@@ -1,4 +1,4 @@
-import { ISLAND_GRID, positionInPatch, type Agent, type Drives, type WorldGrid, type WorldPosition } from '@vana/shared';
+import { positionInPatch, type Agent, type Drives, type WorldGrid, type WorldPosition } from '@vana/shared';
 import type { Database } from './pool.js';
 
 /**
@@ -30,7 +30,9 @@ interface TrackRow {
 
 /** Where animals were, and the records of those long gone. */
 export class LifeStore {
-  constructor(private readonly pool: Database, private readonly grid: WorldGrid = ISLAND_GRID) {}
+  constructor(private readonly pool: Database, private readonly grid: WorldGrid) {
+    if (!grid) throw new Error('a life store needs the grid of the world it serves');
+  }
 
   async appendTracks(points: readonly TrackPoint[]): Promise<void> {
     if (points.length === 0) return;

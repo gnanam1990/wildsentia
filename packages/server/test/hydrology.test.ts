@@ -9,6 +9,7 @@ import { SimHost } from './trackedHost.js';
 import { buildApi } from '../src/api.js';
 import { testDatabaseUrl } from './testDatabase.js';
 import { asLegacySnapshot } from '../../sim/test/legacySnapshot.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const url = testDatabaseUrl(), pool = url ? createPool(url) : null, maybe = url ? describe : describe.skip;
 const options = () => ({ pool: pool!, seed: 1, speciesDir: fileURLToPath(new URL('../../../config/species', import.meta.url)),
@@ -58,6 +59,6 @@ maybe('durable surface hydrology', () => {
     expect((await new SnapshotStore(pool!).loadLatest())!.simVersion).toBe(SIM_VERSION);
     await upgraded.abort(); const resumed = new SimHost(options()); await resumed.boot();
     expect(resumed.world.waterBudget).toEqual(upgraded.world.waterBudget);
-    expect((await new EventStore(pool!).recent(100)).filter(e => e.conditions.reason === 'explicit_rules_upgrade')).toHaveLength(1);
+    expect((await new EventStore(pool!, ISLAND_GRID).recent(100)).filter(e => e.conditions.reason === 'explicit_rules_upgrade')).toHaveLength(1);
   });
 });

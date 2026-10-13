@@ -45,13 +45,13 @@ maybe('durable pack food delivery', () => {
       await host.advance(1);
       expect((await api.inject(path)).json().events.some((e: { type: string }) => e.type === 'pack_food_delivered')).toBe(false);
       expect(host.world.totalNutrients()).toBeCloseTo(baseline, 7);
-      const unsaved = (await new EventStore(pool!).recent(1000)).find(e => e.type === 'pack_food_delivered')!;
+      const unsaved = (await new EventStore(pool!, ISLAND_GRID).recent(1000)).find(e => e.type === 'pack_food_delivered')!;
       expect(unsaved).toBeDefined();
       await host.abort();
       const resumed = new SimHost(options()); await resumed.boot();
       expect(resumed.world.agents.find(a => a.id === donor!.id)!.packFood).toEqual(saved.packFood);
       expect(resumed.liveEncounterFrame()).toBeNull();
-      expect((await new EventStore(pool!).recent(1000)).some(e => e.type === 'pack_food_delivered')).toBe(false);
+      expect((await new EventStore(pool!, ISLAND_GRID).recent(1000)).some(e => e.type === 'pack_food_delivered')).toBe(false);
       await resumed.advance(1); await resumed.snapshotNow();
       const publicApi = buildApi({ host: resumed, pool: pool! }); await publicApi.ready();
       try {
@@ -59,7 +59,7 @@ maybe('durable pack food delivery', () => {
         const deliveries = events.filter((e: { type: string }) => e.type === 'pack_food_delivered');
         expect(deliveries).toEqual([unsaved]);
         expect(resumed.world.totalNutrients()).toBeCloseTo(baseline, 7);
-        const all = await new EventStore(pool!).recent(1000), route = all.find(e => e.id === unsaved.causalParents[1])!;
+        const all = await new EventStore(pool!, ISLAND_GRID).recent(1000), route = all.find(e => e.id === unsaved.causalParents[1])!;
         expect(isMovementTrace(ISLAND_GRID, route.movement)).toBe(true);
         expect(route.movement!.goal).toBe('deliver_pack_food');
         expect(unsaved.causalParents[0]).toBe(saved.packFood!.sourceEventId);

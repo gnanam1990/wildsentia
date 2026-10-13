@@ -76,7 +76,7 @@ maybe('direct retained tree-route retrieval', () => {
       expect(fetcher).toHaveBeenCalledTimes(1); expect(pages).not.toHaveBeenCalled(); expect(tracks).not.toHaveBeenCalled();
       expect(loaded.track).toEqual([]); expect(loaded.climbs?.[0]).toMatchObject({ trace });
 
-      await new LifeStore(pool!).pruneRoutine(100);
+      await new LifeStore(pool!, ISLAND_GRID).pruneRoutine(100);
       expect((await api.inject(path)).statusCode).toBe(200); // Significant climb survives routine pruning.
       host.lastError = 'private-error';
       const failed = await api.inject(path); expect(failed.statusCode).toBe(503); expect(failed.body).not.toContain('private');

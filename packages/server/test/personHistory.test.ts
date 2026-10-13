@@ -9,6 +9,7 @@ import { testDatabaseUrl } from './testDatabase.js';
 import { HistoryPager } from '../../client/src/history.js';
 import { communityEventText } from '../../client/src/communityObserver.js';
 import { isPersonHistoryPage, personHistorySource, type PersonHistoryPage } from '../../client/src/personHistory.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const url = testDatabaseUrl(), pool = url ? createPool(url) : null, maybe = url ? describe : describe.skip;
 const options = () => ({ pool: pool!, seed: 1, speciesDir: fileURLToPath(new URL('../../../config/species', import.meta.url)),
@@ -72,7 +73,7 @@ maybe('checkpoint-pinned person history end to end', () => {
         id: death.id, type: 'human_died', actorId: 'person_0001', label: 'Human death',
         precision: 'recorded', position: { x: death.position!.x, z: death.position!.z },
       }));
-      await new LifeStore(pool!).pruneRoutine(first.world.now() + 1);
+      await new LifeStore(pool!, ISLAND_GRID).pruneRoutine(first.world.now() + 1);
       const pruned = (await api.inject('/people/person_0001/events?limit=25')).json<PersonHistoryPage>();
       expect(pruned.events.some(e => e.id === death.id)).toBe(true);
       expect(pruned.events.every(e => e.type !== 'human_task_started' && e.type !== 'human_task_finished')).toBe(true);

@@ -6,6 +6,7 @@ import { EventStore } from '../src/db/eventStore.js';
 import { SimHost } from './trackedHost.js';
 import { Gateway, type GatewaySocket } from '../src/gateway.js';
 import { testDatabaseUrl } from './testDatabase.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const url = testDatabaseUrl();
 const maybe = url ? describe : describe.skip;
@@ -38,7 +39,7 @@ maybe('M2 gate', () => {
     const first = new SimHost(opts());
     await first.boot();
     await first.advance(72);
-    const eventsBefore = await new EventStore(pool!).total();
+    const eventsBefore = await new EventStore(pool!, ISLAND_GRID).total();
     const timeBefore = first.world.now();
     await first.stop();
 
@@ -48,7 +49,7 @@ maybe('M2 gate', () => {
     const boot = await second.boot();
     expect(boot.restoredFrom).toBe(timeBefore);
 
-    const eventsAfter = await new EventStore(pool!).total();
+    const eventsAfter = await new EventStore(pool!, ISLAND_GRID).total();
     expect(eventsAfter).toBeGreaterThanOrEqual(eventsBefore - boot.rolledBackEvents);
 
     const gateway = new Gateway(second);

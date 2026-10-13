@@ -31,7 +31,7 @@ export function installExperiences(
   service: ExperienceService,
 ): void {
   const { config, store, host } = service,
-    events = new EventStore(store.pool);
+    events = new EventStore(store.pool, host.grid);
   const mutations = new NetworkRateLimit(120),
     voices = new NetworkRateLimit(2),
     queries = new NetworkRateLimit(30);
