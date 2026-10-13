@@ -88,3 +88,33 @@ Before this, the step held the server for about 850 ms and the checkpoint for ab
 - **Duikers still decline at first.** They lose about 20% over 120 days, before their first births. A blue duiker's gestation is 207 days, so the first young of the founding pairs arrive around day 207.
 - **Balance is not yet shown.** Predation against births can only be judged over a year or more, and the leopards are also breeding. The one-year soak is the next measurement.
 - **The budget holds.** Every hour stayed under 2 s.
+
+## The Congo forest in the browser (plan 1A.4, 13 October)
+
+**Setup:** a local Congo server (`VANA_TERRAIN_PROFILE=congo_v1`, seed 7, its own local database) and the Vite client, in the desktop app's browser pane: 1138 × 994 px, device pixel ratio 1, graphics on Auto (it chose *balanced*). World time Day 2, 10–11 am, monsoon.
+
+| | |
+|---|---|
+| Scene for one region (20 × 20 patches, ~470 animals) | 642 KB of JSON, 83 KB deflated |
+| Scene for four regions (a view across a region corner) | 2.7 MB of JSON, 342 KB deflated |
+| A scene arriving after a `view` message | 13 ms for the first; 0.73 s for a switch to four regions |
+| The camera crossing into a new region, to new ground drawn | 0.81 s (when the 10 s switching rule allows it) |
+| `/regions/:id`, eight regions fetched one after another | 2.7 MB in 98 ms |
+| Frame rate: aerial view, in a bai, 25 m from the ground in forest | 75, 75, 75 fps (the pane's refresh rate) |
+| JavaScript heap | 194 MB |
+
+Screenshots: [flooded forest in the monsoon](2026-10-13-congo-screens/flooded-forest-monsoon.jpg), [the flood from the air](2026-10-13-congo-screens/aerial-flood.jpg), [the river](2026-10-13-congo-screens/river.jpg), [a bai](2026-10-13-congo-screens/bai.jpg).
+
+**What the running build found.** Each is now fixed with a test that failed first:
+- **The ground kept the old region.** The browser redrew terrain only on a new checkpoint, so a region switch within the hour moved the animals and left the ground behind.
+- **A far corner loaded first.** Before the first scene, the camera sat at its default spot (0, 0) and told the server so; the server loaded region r0_0, then switched back 10 s later.
+- **No trees.** Each patch's trees were planned from the island's centre with a 4.5 km reach, so nothing was planted 24 km away.
+- **The server stopped stepping at 1 pm on day 1.** The tracks table's position check (migration 004) bounded positions to the 6 km island. Migration 026 widens it to the 48 km forest, `not valid`, so startup does not scan the table.
+- **No flood reached the browser.** Neither patch view sent `flooded` or `deepWater`.
+- **Flood water was buried.** Each flood plane stood 0.5 m above its patch's centre, while the ground in a patch varies by up to 20 m. The water also did not redraw when the forest flooded or drained.
+- **The Congo ground was untinted tan.** The tint textures were sized for the island's 20 × 20 patches and skipped every Congo patch; one shader program also shared the island's 6 km span.
+
+**Still temporary.**
+- **The canopy is too open.** The forest uses the island's plant mixes and a budget of about 300 trees a patch, far fewer than a rainforest's.
+- **Water edges are square.** Rivers and floods are drawn one 300 m square at a time, which shows from the air.
+- **Placeholder models.** The species are on the temporary rigs, labelled so in the model status.
