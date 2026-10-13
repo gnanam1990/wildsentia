@@ -8,7 +8,7 @@ import {
   createWorld, restoreSnapshot, snapshotJson, takeSnapshot, takeSnapshotSlices, totalNutrients, upgradeV5Snapshot, upgradeV6Snapshot, upgradeV7Snapshot, upgradeV8Snapshot, upgradeV9Snapshot, upgradeV10Snapshot, upgradeV11Snapshot, upgradeV12Snapshot, upgradeV13Snapshot, upgradeV14Snapshot, upgradeV15Snapshot, type Snapshot, type World, type WorldOptions,
 } from '@vana/sim';
 import type { Pool } from './db/pool.js';
-import { gridForProfile, isIslandProfile, type WorldGrid } from '@vana/shared';
+import { gridForProfile, isIslandProfile, regionIds, regionOfPatch, type WorldGrid } from '@vana/shared';
 import { EventStore } from './db/eventStore.js';
 import { SnapshotStore } from './db/snapshotStore.js';
 import { LifeStore } from './db/lifeStore.js';
@@ -135,7 +135,15 @@ export interface CheckpointObservation {
   waterBudget(): WaterBudget | null;
   microEcology(): MicroEcologyState;
   summary(): { population: Record<string, number>; patches: number; totalNutrients: number };
+  /** Congo 1A.3: the world's regions, and detached copies of one region's part of this checkpoint. */
+  regionIds(): string[];
+  regionPatches(id: string): Patch[];
+  regionAnimals(id: string): Agent[];
+  regionCarcasses(id: string): Carcass[];
+  regionMicroEcology(id: string): MicroEcologyState;
 }
+
+interface RegionSlice { patches: Patch[]; living: Agent[]; carcasses: Carcass[]; micro: MicroEcologyState['patches'] }
 
 export class SimHost {
   world!: World;
@@ -175,6 +183,7 @@ export class SimHost {
   #worldId: string | null = null;
   #checkpointAnimals = new Map<string, Agent>();
   #checkpointEnvironment: Pick<Snapshot, 'patches' | 'carcasses'> = { patches: [], carcasses: [] };
+  #checkpointRegions = new Map<string, RegionSlice>();
   #checkpointSummary = { population: {} as Record<string, number>, patches: 0, totalNutrients: 0 };
   #checkpointLiving: Agent[] = [];
   #checkpointWaterBudget: WaterBudget | null = null;
@@ -214,6 +223,7 @@ export class SimHost {
     const waterBudget = this.#checkpointWaterBudget;
     const community = this.#checkpointCommunity;
     const microEcology = this.#checkpointMicroEcology;
+    const regions = this.#checkpointRegions;
     return { id: `${this.#streamId}:${this.#checkpointRevision}`, worldTime: this.#checkpointTime, nextSequence: this.#checkpointEventSequence,
       livingAnimals: () => structuredClone(living),
       patches: () => structuredClone(environment.patches),
@@ -222,6 +232,11 @@ export class SimHost {
       community: () => structuredClone(community),
       microEcology: () => structuredClone(microEcology),
       summary: () => structuredClone(summary),
+      regionIds: () => [...regions.keys()],
+      regionPatches: (id) => structuredClone(regions.get(id)?.patches ?? []),
+      regionAnimals: (id) => structuredClone(regions.get(id)?.living ?? []),
+      regionCarcasses: (id) => structuredClone(regions.get(id)?.carcasses ?? []),
+      regionMicroEcology: (id) => ({ updatedAt: microEcology.updatedAt, patches: structuredClone(regions.get(id)?.micro ?? []) }),
       animal(id) { const a = animals.get(id); return a === undefined ? undefined : structuredClone(a); } };
   }
 
@@ -262,6 +277,7 @@ export class SimHost {
     this.#checkpointAnimals = new Map([...snapshot.deceased, ...snapshot.agents].map((a) => [a.id, a]));
     this.#checkpointLiving = snapshot.agents.filter((a) => a.alive);
     this.#checkpointEnvironment = { patches: snapshot.patches, carcasses: snapshot.carcasses };
+    this.#checkpointRegions = this.#regionSlices(snapshot);
     this.#checkpointWaterBudget = snapshot.waterBudget ? structuredClone(snapshot.waterBudget) : null;
     this.#checkpointCommunity = snapshot.community ? structuredClone(snapshot.community) : null;
     this.#checkpointMicroEcology = structuredClone(snapshot.microEcology ?? { updatedAt: snapshot.worldTime, patches: [] });
@@ -272,6 +288,17 @@ export class SimHost {
     this.#rewardSubjects = new Map(snapshot.agents.filter((a) => a.alive)
       .map((a) => [a.id, { alive: true, carcass: false }]));
     for (const c of snapshot.carcasses) this.#rewardSubjects.set(c.originId, { alive: false, carcass: true });
+  }
+
+  /** The checkpoint's observer copy, filed by region (references, not copies). */
+  #regionSlices(snapshot: Snapshot): Map<string, RegionSlice> {
+    const slices = new Map<string, RegionSlice>(regionIds(this.grid).map((id) => [id, { patches: [], living: [], carcasses: [], micro: [] }]));
+    const of = (patchId: number): RegionSlice | undefined => slices.get(regionOfPatch(this.grid, patchId));
+    for (const p of snapshot.patches) of(p.id)?.patches.push(p);
+    for (const a of snapshot.agents) if (a.alive) of(a.patchId)?.living.push(a);
+    for (const c of snapshot.carcasses) of(c.patchId)?.carcasses.push(c);
+    for (const m of snapshot.microEcology?.patches ?? []) of(m.patchId)?.micro.push(m);
+    return slices;
   }
 
   #serial<T>(operation: () => Promise<T>): Promise<T> {
