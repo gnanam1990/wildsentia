@@ -35,6 +35,10 @@ export interface SpeciesConfig {
      * giant squirrel, leopard). Omitted: a ground animal.
      */
     climbsTrees?: boolean;
+    /** Congo 1B: swims, and dives to escape, staying under for up to `diveSeconds`. Omitted: never swims. */
+    swims?: { swimMs: number; diveSeconds: number };
+    /** Congo 1B: what crossing water or flooded forest costs while it is flooded, where not `terrainCost`. */
+    floodedTerrainCost?: { water?: number; flooded_forest?: number };
   };
   senses: { sightRangeM: number; hearingRangeM: number; smellRangeM: number };
   escape: {
@@ -44,6 +48,8 @@ export interface SpeciesConfig {
      * though they do not hunt it (leopards avoid tigers: Odden et al. 2010; Harihar et al. 2011).
      */
     avoids?: string[];
+    /** Congo 1B: holds still first when a predator has not yet seen it (duikers, chevrotains). */
+    freezeFirst?: boolean;
   };
   diet: {
     eats: Array<{
@@ -114,6 +120,8 @@ export interface SpeciesConfig {
      * scavengers and other predators (leopards: Balme et al. 2017).
      */
     cachesKills?: boolean;
+    /** Congo 1B: the life stages of prey it takes; omitted: every stage. */
+    preyLifeStages?: LifeStage[];
     /**
      * sim_0.37.0: the heaviest individual prey (kg) this hunter goes for, by the prey's own mass,
      * so a leopard takes sambar fawns and wild pig piglets but not an adult sambar stag.
