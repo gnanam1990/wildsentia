@@ -171,6 +171,11 @@ export interface Agent {
    * does come from the live layer. Absent for every wild animal.
    */
   controller?: string;
+  /**
+   * Congo 1C: the owned asset this animal is a life of. Absent for every wild animal. An owned
+   * animal lives wild when unsteered, and only its owner's side may steer it.
+   */
+  assetId?: string;
   /** Optional only for legacy snapshots; initialized deterministically by the simulation. */
   position?: WorldPosition;
   /** Authoritative non-ground travel state. Absent on old/ground-only checkpoints. */

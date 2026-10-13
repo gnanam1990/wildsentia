@@ -1,5 +1,5 @@
 import {
-  NUTRIENT_PER_KG_BIOMASS, gridForProfile, patchCount, type WorldGrid, WORLD_SECONDS_PER_DAY, WORLD_SECONDS_PER_HOUR,
+  NUTRIENT_PER_KG_BIOMASS, gridForProfile, patchCentre, patchCount, type WorldGrid, WORLD_SECONDS_PER_DAY, WORLD_SECONDS_PER_HOUR,
   createRng, isClosedProfile, isCongoProfile, isFlooded, isIslandProfile, seasonAt, carcassMass, edibleMass, landWalkable, spatialHash, treeAnchorForPatch, patchAtPosition, positionInPatch, isWorldPosition, type TerrainProfile,
   type WorldPosition, type MovementTrace,
   type Agent, type Carcass, type DeathCause, type Patch, type Rng, type SkillId,
@@ -1026,10 +1026,44 @@ export class World {
   /** A living or recently departed animal by id: the record itself, for read-only adapters. */
   animal(id: string): Agent | undefined { return this.#agentsById.get(id); }
 
-  /** Why this animal cannot be taken over now, or null if it can. */
-  possessionBlock(id: string): string | null {
+  /** Why this animal cannot be taken over now, or null if it can. `owner`: its owner's side is asking. */
+  possessionBlock(id: string, opts: { owner?: boolean } = {}): string | null {
     const agent = this.#agentsById.get(id);
-    return agent ? this.#blockFor(agent, this.#possessionFacts()) : 'not_alive';
+    return agent ? this.#blockFor(agent, this.#possessionFacts(), opts.owner === true) : 'not_alive';
+  }
+
+  /**
+   * Congo 1C: patches where an owned animal of this species may be placed: ground its kind founds
+   * on (dry land, or the water margin for a swimmer), with no living animal that hunts it within
+   * `minPredatorDistanceM` of the patch centre.
+   */
+  safeSpawnPatches(speciesId: string, minPredatorDistanceM: number): number[] {
+    const cfg = this.species.get(speciesId);
+    if (!cfg || !isCongoProfile(this.terrainProfile)) return [];
+    const prey = { massKg: cfg.body.adultMassKg, lifeStage: 'adult' as const, altitudeM: 0, locomotionMode: 'ground' as const };
+    const hunters = this.agents.filter((a) => a.alive && a.position && canHunt(this.species.get(a.speciesId)!, cfg, prey))
+      .map((a) => a.position!);
+    const eligible = cfg.locomotion.swims ? this.#waterMarginPatches : this.#dryLandPatches;
+    return eligible.filter((p) => {
+      const c = patchCentre(this.grid, p.id);
+      return hunters.every((h) => Math.hypot(h.x - c.x, h.z - c.z) > minPredatorDistanceM);
+    }).map((p) => p.id);
+  }
+
+  /**
+   * Congo 1C: a new life of an owned asset, an adult placed in `patchId` (ground its kind may
+   * found on), logged as spawned with `owned: 1`. It then lives as any animal of its kind.
+   */
+  spawnOwned(speciesId: string, patchId: number, assetId: string): Agent {
+    if (!isCongoProfile(this.terrainProfile)) throw new Error('owned animals live only in the Congo world');
+    const cfg = this.species.get(speciesId);
+    if (!cfg) throw new Error(`unknown species: ${speciesId}`);
+    if (!assetId) throw new Error('asset id required');
+    const eligible = cfg.locomotion.swims ? this.#waterMarginPatches : this.#dryLandPatches;
+    if (!eligible.some((p) => p.id === patchId)) throw new Error(`${speciesId} cannot be placed on patch ${patchId}`);
+    const agent = this.#spawn(speciesId, false, false, { patchId, at: this.#time, conditions: { owned: 1 } });
+    agent.assetId = assetId;
+    return agent;
   }
 
   /** Up to `limit` animals an agent could take now, in one pass over the population. */
@@ -1052,8 +1086,9 @@ export class World {
     return { parents, held };
   }
 
-  #blockFor(agent: Agent, facts: { parents: Set<string>; held: Map<string, number> }): string | null {
+  #blockFor(agent: Agent, facts: { parents: Set<string>; held: Map<string, number> }, owner = false): string | null {
     if (!agent.alive) return 'not_alive';
+    if (agent.assetId !== undefined && !owner) return 'owned';
     if (agent.controller) return 'already_controlled';
     const cfg = this.species.get(agent.speciesId)!;
     if (agent.lifeStage !== 'adult' && agent.lifeStage !== 'elder') return 'not_adult';
@@ -1063,6 +1098,8 @@ export class World {
     if (agent.locomotionMode === 'submerged') return 'under_water';
     // Most of every species stays wild: a fifth at most, and one once there are two (so of
     // the island's two tigers one may be steered and one always stays wild).
+    // An owner steering their own animal is not taking one of the wild.
+    if (owner) return null;
     const living = this.livingCount(agent.speciesId);
     const cap = living >= 2 ? Math.max(1, Math.floor(living * 0.2)) : 0;
     if ((facts.held.get(agent.speciesId) ?? 0) >= cap) return 'species_cap';
@@ -1070,9 +1107,9 @@ export class World {
   }
 
   /** Hands the animal to an outside agent. Its body stays in the ecology; its choices do not. */
-  possess(id: string, controller: string): string | null {
+  possess(id: string, controller: string, opts: { owner?: boolean } = {}): string | null {
     if (!controller) throw new Error('controller required');
-    const block = this.possessionBlock(id);
+    const block = this.possessionBlock(id, opts);
     if (block) return block;
     const agent = this.#agentsById.get(id)!;
     agent.controller = controller;

@@ -241,6 +241,9 @@ export function restoreSnapshot(snapshot: Snapshot, options: WorldOptions): Worl
   world.waterBudget = snapshot.waterBudget ? structuredClone(snapshot.waterBudget) : newWaterBudget(world.patches, snapshot.worldTime);
   world.agents.length = 0;
   world.agents.push(...structuredClone(snapshot.agents));
+  // Congo 1C: an owned animal names its asset, and only the Congo world holds owned animals.
+  if (world.agents.some((a) => a.assetId !== undefined && (typeof a.assetId !== 'string' || !a.assetId || !isCongoProfile(world.terrainProfile))))
+    throw new Error('invalid owned animal in checkpoint');
   world.carcasses.length = 0;
   world.carcasses.push(...structuredClone(snapshot.carcasses ?? []));
   if (world.carcasses.some(c => c.cachedBy !== undefined && (typeof c.cachedBy !== 'string' || !c.cachedBy || c.cause !== 'predation')))
