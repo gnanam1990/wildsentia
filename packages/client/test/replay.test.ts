@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { climbMoment, isRecordedClimb, momentsBetween, pointAt, replayDurationMs, trackPrecision, type LifeTrackPoint } from '../src/replay.js';
 import { treeAnchorGeometry } from '@vana/shared';
 import { patchCentre, subPatchOffset } from '../src/space.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const drives = { hunger: 0.2, thirst: 0.1, fatigue: 0.3, fear: 0 };
 const track: LifeTrackPoint[] = [
@@ -47,14 +48,14 @@ describe('pointAt', () => {
     expect(pointAt(unknown, 'langur', 50).moving).toBe(false);
   });
   it('eases between recorded places, and never puts the animal anywhere the record did not', () => {
-    const offset = subPatchOffset('chital_0001');
+    const offset = subPatchOffset(ISLAND_GRID, 'chital_0001');
     const start = pointAt(track, 'chital_0001', 0);
-    expect(start.x).toBeCloseTo(patchCentre(0).x + offset.x);
+    expect(start.x).toBeCloseTo(patchCentre(ISLAND_GRID, 0).x + offset.x);
     const halfway = pointAt(track, 'chital_0001', 50);
     expect(halfway.x).toBeGreaterThan(start.x);
-    expect(halfway.x).toBeLessThan(patchCentre(1).x + offset.x);
+    expect(halfway.x).toBeLessThan(patchCentre(ISLAND_GRID, 1).x + offset.x);
     const end = pointAt(track, 'chital_0001', 999);
-    expect(end.z).toBeCloseTo(patchCentre(21).z + offset.z);
+    expect(end.z).toBeCloseTo(patchCentre(ISLAND_GRID, 21).z + offset.z);
   });
 
   it('reports the state and drives recorded at the sample it last passed', () => {
@@ -75,7 +76,7 @@ describe('momentsBetween', () => {
 
 describe('selected retained tree route', () => {
   const climb = () => {
-    const anchor = treeAnchorGeometry(210)!, ground = { x: anchor.x - 2, z: anchor.z, heading: 0 };
+    const anchor = treeAnchorGeometry(ISLAND_GRID, 210)!, ground = { x: anchor.x - 2, z: anchor.z, heading: 0 };
     return { eventId: 'tree_1', outcome: 'success' as const, direction: 'ascend' as const,
       reason: 'local_threat', treeAnchorId: anchor.id, verticalDistanceM: 6,
       trace: { version: 1 as const, actorId: 'langur_1', startWorldTime: 0, destinationPatchId: 210,

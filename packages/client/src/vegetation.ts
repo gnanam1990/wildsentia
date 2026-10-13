@@ -1,7 +1,8 @@
+import { worldGrid } from './worldGrid.js';
 import * as THREE from 'three';
 import { ObstacleField, obstaclesFrom } from './obstacles.js';
-import { GRID_SIZE, treeAnchorForPatch, treeAnchorRemnantForPatch } from '@vana/shared';
-import { PATCH_METRES, patchCentre } from './space.js';
+import { treeAnchorForPatch, treeAnchorRemnantForPatch } from '@vana/shared';
+import { patchCentre } from './space.js';
 import { terrainHeightKey, type HeightSampler, type PatchView } from './terrain.js';
 import { addTreeDetailFade, bakeTreeAtlas, treeFadeRangeFor, TREE_FADE_END_M, TREE_PLAN_MARGIN_M, type TreeAtlas } from './treeLod.js';
 import { addCameraInteriorFade } from './observerVisibility.js';
@@ -108,9 +109,9 @@ const canopyFactor = (patch: PatchView | undefined): number =>
 export function canopyField(patches: readonly PatchView[]): (x: number, z: number) => number {
   const byId = new Map(patches.map((p) => [p.id, p]));
   const at = (col: number, row: number): number =>
-    col < 0 || row < 0 || col >= GRID_SIZE || row >= GRID_SIZE ? 0 : canopyFactor(byId.get(row * GRID_SIZE + col));
+    col < 0 || row < 0 || col >= worldGrid().cols || row >= worldGrid().cols ? 0 : canopyFactor(byId.get(row * worldGrid().cols + col));
   return (x, z) => {
-    const gx = x / PATCH_METRES, gz = z / PATCH_METRES;
+    const gx = x / worldGrid().patchM, gz = z / worldGrid().patchM;
     const col = Math.floor(gx), row = Math.floor(gz), fx = gx - col, fz = gz - row;
     return (at(col, row) * (1 - fx) + at(col + 1, row) * fx) * (1 - fz)
       + (at(col, row + 1) * (1 - fx) + at(col + 1, row + 1) * fx) * fz;
@@ -214,17 +215,17 @@ export function planVegetation(
   const boost = options.boost ?? 1;
   const salt = options.salt ?? 0;
   const plan = new Map<string, PlacedPlant[]>();
-  const reach = radiusM + PATCH_METRES;
+  const reach = radiusM + worldGrid().patchM;
   for (const patch of patches) {
     if (patch.surface === 'ocean' || patch.surface === 'coast') continue;
-    const centre = patchCentre(patch.id);
-    const anchor = treeAnchorForPatch(patch);
+    const centre = patchCentre(worldGrid(), patch.id);
+    const anchor = treeAnchorForPatch(worldGrid(), patch);
     if (Math.abs(centre.x - focus.x) > reach || Math.abs(centre.z - focus.z) > reach) continue;
     // The nearest point of this 300 m square gives a conservative no-placement test.
     // Skip thousands of deterministic RNG iterations when a tighter near-kind radius
     // cannot intersect this patch at all; remaining patch/kind seeds are independent.
-    const nearX = Math.max(0, Math.abs(centre.x - focus.x) - PATCH_METRES / 2);
-    const nearZ = Math.max(0, Math.abs(centre.z - focus.z) - PATCH_METRES / 2);
+    const nearX = Math.max(0, Math.abs(centre.x - focus.x) - worldGrid().patchM / 2);
+    const nearZ = Math.max(0, Math.abs(centre.z - focus.z) - worldGrid().patchM / 2);
     const nearestInPatch = Math.hypot(nearX, nearZ);
     const mix = HABITAT_MIX[patch.habitat] ?? [];
     mix.forEach(([kind, perPatch, driver], k) => {
@@ -243,7 +244,7 @@ export function planVegetation(
       // its simulated count, only where each plant stands and how old a tree looks change.
       const preference = preferenceFor(kind, patch.habitat);
       for (let i = 0; i < count; i++) {
-        const spot = standSpot(random, centre, PATCH_METRES, preference);
+        const spot = standSpot(random, centre, worldGrid().patchM, preference);
         const plannedX = spot.x;
         const plannedZ = spot.z;
         const rotY = random() * Math.PI * 2;
@@ -265,7 +266,7 @@ export function planVegetation(
       }
       plan.set(kind, list);
     });
-    const remnant = treeAnchorRemnantForPatch(patch);
+    const remnant = treeAnchorRemnantForPatch(worldGrid(), patch);
     const remnantRadius = Math.min(radiusM, options.radiusForKind?.('DeadTree_2') ?? radiusM);
     if (remnant && (options.only === undefined || options.only('DeadTree_2'))
       && Math.hypot(remnant.x - focus.x, remnant.z - focus.z) <= radiusM) {
@@ -313,11 +314,11 @@ export class TreePlacementCache {
       ids.add(patch.id);
       const counts = (HABITAT_MIX[patch.habitat] ?? []).filter(([kind]) => isTree(kind))
         .map(([kind, perPatch, driver]) => [kind, placementCount(patch, perPatch, driver)]);
-      const col = patch.id % GRID_SIZE, row = Math.floor(patch.id / GRID_SIZE);
+      const col = patch.id % worldGrid().cols, row = Math.floor(patch.id / worldGrid().cols);
       const neighbours = [-1, 0, 1].flatMap((dr) => [-1, 0, 1].map((dc) =>
-        col + dc < 0 || col + dc >= GRID_SIZE ? 0 : canopyFactor(byId.get((row + dr) * GRID_SIZE + col + dc))));
+        col + dc < 0 || col + dc >= worldGrid().cols ? 0 : canopyFactor(byId.get((row + dr) * worldGrid().cols + col + dc))));
       const key = JSON.stringify([patch.id, patch.habitat, patch.surface ?? 'land', counts,
-        treeAnchorRemnantForPatch(patch) !== null, neighbours]);
+        treeAnchorRemnantForPatch(worldGrid(), patch) !== null, neighbours]);
       let entry = this.#patches.get(patch.id);
       if (!entry || entry.key !== key) {
         entry = { key, plan: planVegetation([patch], { x: 2850, z: 2850 }, 4500, groundAt, { only: isTree, canopyAt }) };
@@ -352,7 +353,7 @@ const REPLAN_STEP_M = 20;
 
 /** The densest even forest the planner ever made: a full-canopy shola patch's trees per m². */
 export const TREE_DETAIL_DENSITY_CAP = HABITAT_MIX.shola!.filter(([kind]) => isTree(kind))
-  .reduce((sum, [, perPatch]) => sum + perPatch, 0) * 1.3 / PATCH_METRES ** 2;
+  .reduce((sum, [, perPatch]) => sum + perPatch, 0) * 1.3 / worldGrid().patchM ** 2;
 /** Never pull detailed trees in closer than this share of the tier's fade distances. */
 export const MIN_CLUMP_DETAIL_SCALE = 0.6;
 

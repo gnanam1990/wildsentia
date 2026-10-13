@@ -1,3 +1,4 @@
+import { worldGrid } from './worldGrid.js';
 import { positionInPatch } from '@vana/shared';
 import { withTimeout } from './abortSignals.js';
 import { isRecordedEncounter, type RecordedEncounter } from './encounterReplay.js';
@@ -51,9 +52,9 @@ function trackPoint(v: unknown, until: number): v is LifeTrackPoint {
     || typeof v.state !== 'string' || typeof v.goal !== 'string' || !record(v.drives)) return false;
   return ['hunger', 'thirst', 'fear', 'fatigue'].every(k => typeof (v.drives as Record<string, unknown>)[k] === 'number'
     && Number.isFinite((v.drives as Record<string, number>)[k]))
-    && (v.position === undefined || positionInPatch(v.position, v.patchId))
+    && (v.position === undefined || positionInPatch(worldGrid(), v.position, v.patchId))
     && (v.altitudeM === undefined || typeof v.altitudeM === 'number' && Number.isFinite(v.altitudeM)
-      && v.altitudeM >= 0 && v.altitudeM <= 2_000 && positionInPatch(v.position, v.patchId));
+      && v.altitudeM >= 0 && v.altitudeM <= 2_000 && positionInPatch(worldGrid(), v.position, v.patchId));
 }
 
 /** All moment pages must succeed before replay can start. Trace memory stays bounded to recent

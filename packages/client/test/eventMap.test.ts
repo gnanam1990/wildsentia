@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { GRID_SIZE, PATCH_METRES } from '@vana/shared';
+
 import { readFileSync } from 'node:fs';
 import { afterEach, vi } from 'vitest';
 import { EventMap, mapMarkerGlyph, mapMarkerPersonHistory, mapMarkerSubject, mapPercent, type MapMarker } from '../src/eventMap.js';
+import { ISLAND_GRID } from '@vana/shared';
 afterEach(() => vi.unstubAllGlobals());
 class NodeFixture {
   children: NodeFixture[] = [];
@@ -85,8 +86,8 @@ describe('event map projection', () => {
     expect(watch).not.toHaveBeenCalled();
   });
   it('shares simulation extent and x/z orientation, including non-square-looking coast presentation', () => {
-    expect(mapPercent({ x: -PATCH_METRES / 2, z: -PATCH_METRES / 2 })).toEqual({ left: 0, top: 0 });
-    const centre = (GRID_SIZE - 1) * PATCH_METRES / 2;
+    expect(mapPercent({ x: -ISLAND_GRID.patchM / 2, z: -ISLAND_GRID.patchM / 2 })).toEqual({ left: 0, top: 0 });
+    const centre = (ISLAND_GRID.cols - 1) * ISLAND_GRID.patchM / 2;
     expect(mapPercent({ x: centre, z: centre })).toEqual({ left: 50, top: 50 });
     expect(mapPercent({ x: -100000, z: 100000 })).toEqual({ left: 0, top: 100 });
   });

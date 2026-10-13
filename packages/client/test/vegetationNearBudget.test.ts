@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { canopyField, NEAR_RADIUS_M, TREE_DETAIL_RADIUS_M, nearPlan, planVegetation,
   type PlacedPlant } from '../src/vegetation.js';
 import type { PatchView } from '../src/terrain.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 const patch = (id: number, habitat: string, canopyCover = .8): PatchView => ({
   id, x: id % 20, y: Math.floor(id / 20), habitat, grass: 6000, browse: 3000,
@@ -37,7 +38,7 @@ describe('near vegetation work before terrain seating', () => {
     expect(afterSamples).toBeLessThan(beforeSamples * .5);
 
     shola[210]!.canopyCover = 0; // saved perch remnant is not dropped by an early patch cull.
-    const trunk = treeAnchorGeometry(210)!;
+    const trunk = treeAnchorGeometry(ISLAND_GRID, 210)!;
     for (const here of [focus, { x: trunk.x, z: trunk.z }, { x: 3150, z: 3000 }]) {
       expect(digest(nearPlan(shola, here, () => 10))).toBe(digest(legacyNear(shola, here, () => 10)));
     }

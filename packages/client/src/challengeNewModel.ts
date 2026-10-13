@@ -1,4 +1,5 @@
-import { GRID_SIZE, PATCH_METRES } from '@vana/shared';
+import { worldGrid } from './worldGrid.js';
+
 
 /** The create flow's logic, kept apart from the page so it can be tested (spec §8, §13, §14). */
 export interface FormValues {
@@ -16,8 +17,8 @@ export function termsFrom(f: FormValues): Record<string, unknown> {
   return { template: f.template, speciesId: f.speciesId, ...goal, rules, briefing: f.briefing.trim() };
 }
 
-/** The island: GRID_SIZE patches of PATCH_METRES a side, the first centred on 0. */
-const SPAN = GRID_SIZE * PATCH_METRES, EDGE = -PATCH_METRES / 2;
+/** The island: worldGrid().cols patches of worldGrid().patchM a side, the first centred on 0. */
+const SPAN = worldGrid().cols * worldGrid().patchM, EDGE = -worldGrid().patchM / 2;
 export function toMetres(px: number, py: number, size: number): { x: number; z: number } {
   return { x: Math.round(EDGE + px / size * SPAN), z: Math.round(EDGE + py / size * SPAN) };
 }

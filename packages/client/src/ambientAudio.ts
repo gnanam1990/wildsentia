@@ -1,3 +1,4 @@
+import { worldGrid } from './worldGrid.js';
 import * as THREE from 'three';
 import { atmosphereAt } from './environment.js';
 import { patchCentre } from './space.js';
@@ -19,7 +20,7 @@ export function ambientLevels(season: string, patches: readonly PatchView[], vie
   const rain = atmosphereAt(0, season).seasonRain;
   let water = 0;
   for (const patch of patches) {
-    const { x, z } = patchCentre(patch.id);
+    const { x, z } = patchCentre(worldGrid(), patch.id);
     const distance = Math.hypot(x - view.x, z - view.z);
     if (distance >= 450 || !view.visible(patch)) continue;
     const proximity = Math.max(0, 1 - distance / 450);
@@ -218,7 +219,7 @@ export class AmbientAudio {
     const levels = ambientLevels(season, patches, {
       x: camera.position.x, z: camera.position.z,
       visible: (patch) => {
-        const centre = patchCentre(patch.id);
+        const centre = patchCentre(worldGrid(), patch.id);
         point.set(centre.x, patch.surface === 'ocean' ? 0 : heightAt(centre.x, centre.z) + 0.2, centre.z).project(camera);
         return point.z >= -1 && point.z <= 1 && Math.abs(point.x) <= 1.08 && Math.abs(point.y) <= 1.08;
       },

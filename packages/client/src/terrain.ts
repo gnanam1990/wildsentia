@@ -1,10 +1,11 @@
+import { worldGrid } from './worldGrid.js';
 import * as THREE from 'three';
 import { ISLAND_SEGMENTS, treeAnchorForPatch, treeAnchorRemnantForPatch } from '@vana/shared';
 import { islandHeightField } from './islandHeightField.js';
 import { groundTint } from './groundTint.js';
 import { BANK_CLEAR_M, insidePool, islandPool, waterGround, type Pool } from './pools.js';
 import { buildPools, poolPlane } from './poolScene.js';
-import { PATCH_METRES, patchCentre } from './space.js';
+import { patchCentre } from './space.js';
 
 export interface PatchView {
   id: number;
@@ -96,8 +97,8 @@ export function makeHeightSampler(patches: readonly PatchView[]): HeightSampler 
 
   return (x, z) => {
     // Corner (col, row) sits at (col·300 − 150, row·300 − 150): the patch centres are cell centres.
-    const gx = Math.min(GRID - 1e-9, Math.max(0, (x + PATCH_METRES / 2) / PATCH_METRES));
-    const gz = Math.min(GRID - 1e-9, Math.max(0, (z + PATCH_METRES / 2) / PATCH_METRES));
+    const gx = Math.min(GRID - 1e-9, Math.max(0, (x + worldGrid().patchM / 2) / worldGrid().patchM));
+    const gz = Math.min(GRID - 1e-9, Math.max(0, (z + worldGrid().patchM / 2) / worldGrid().patchM));
     const col = Math.floor(gx);
     const row = Math.floor(gz);
     const fx = gx - col;
@@ -168,7 +169,7 @@ function buildDrainageFlow(patches: readonly PatchView[], groundAt: HeightSample
   const waterfallIndices: number[] = [];
   let riverVertex = 0;
   let waterfallVertex = 0;
-  const point = (patch: PatchView): { x: number; z: number } => patchCentre(patch.id);
+  const point = (patch: PatchView): { x: number; z: number } => patchCentre(worldGrid(), patch.id);
   const surfaceHeight = (patch: PatchView): number => {
     const p = point(patch);
     return patch.surface === 'ocean' ? 0 : groundAt(p.x, p.z);
@@ -254,7 +255,7 @@ export function scannedGroundMaps(): Pick<THREE.MeshStandardMaterialParameters, 
   const load = (suffix: string, colour: boolean): THREE.Texture => {
     const texture = loader.load(`/assets/ground/forest_ground_04_${suffix}_1k.jpg`);
     texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-    texture.repeat.set(GRID * PATCH_METRES / 3.2, GRID * PATCH_METRES / 3.2);
+    texture.repeat.set(GRID * worldGrid().patchM / 3.2, GRID * worldGrid().patchM / 3.2);
     texture.anisotropy = 8;
     texture.colorSpace = colour ? THREE.SRGBColorSpace : THREE.NoColorSpace;
     return texture;
@@ -264,9 +265,9 @@ export function scannedGroundMaps(): Pick<THREE.MeshStandardMaterialParameters, 
 
 function buildGroundMesh(patches: readonly PatchView[]): THREE.Mesh {
   if (patches[0]?.islandSeed !== undefined) return buildIslandGround(patches, patches[0].islandSeed);
-  const span = GRID * PATCH_METRES;
+  const span = GRID * worldGrid().patchM;
   const geometry = new THREE.PlaneGeometry(span, span, GRID, GRID).rotateX(-Math.PI / 2);
-  geometry.translate(span / 2 - PATCH_METRES / 2, 0, span / 2 - PATCH_METRES / 2);
+  geometry.translate(span / 2 - worldGrid().patchM / 2, 0, span / 2 - worldGrid().patchM / 2);
 
   const position = geometry.attributes.position!;
   const colours = new Float32Array(position.count * 3);
@@ -293,9 +294,9 @@ function buildGroundMesh(patches: readonly PatchView[]): THREE.Mesh {
 
 function buildIslandGround(patches: readonly PatchView[], seed: number): THREE.Mesh {
   const field = islandHeightField(seed);
-  const span = GRID * PATCH_METRES;
+  const span = GRID * worldGrid().patchM;
   const geometry = new THREE.PlaneGeometry(span, span, ISLAND_SEGMENTS, ISLAND_SEGMENTS).rotateX(-Math.PI / 2);
-  geometry.translate(span / 2 - PATCH_METRES / 2, 0, span / 2 - PATCH_METRES / 2);
+  geometry.translate(span / 2 - worldGrid().patchM / 2, 0, span / 2 - worldGrid().patchM / 2);
   const positions = geometry.attributes.position!, colours = new Float32Array(positions.count * 3);
   void patches;
   for (let i = 0; i < positions.count; i++) {
@@ -350,7 +351,7 @@ export function buildTerrain(patches: readonly PatchView[], layers?: ReadonlySet
   ) : null;
   // The island's pools are drawn as waterholes (poolScene.ts) once the ground can be sampled.
   const water = wanted('water') && !island ? instanced(
-    new THREE.PlaneGeometry(PATCH_METRES, PATCH_METRES).rotateX(-Math.PI / 2),
+    new THREE.PlaneGeometry(worldGrid().patchM, worldGrid().patchM).rotateX(-Math.PI / 2),
     new THREE.MeshStandardMaterial({
       color: 0x2f6f86, roughness: 0.15, metalness: 0.3, transparent: true, opacity: 0.85,
     }),
@@ -366,9 +367,9 @@ export function buildTerrain(patches: readonly PatchView[], layers?: ReadonlySet
 
   // Trees go where the simulation reports canopy, not where they would look nice.
   const woodedPatches = patches.filter((p) => land(p) && ((p.canopyCover ?? 0) >= 0.3
-    || treeAnchorRemnantForPatch(p) !== null));
-  const treeCount = woodedPatches.reduce((sum, patch) => sum + (treeAnchorRemnantForPatch(patch) ? 1 : TREES_PER_PATCH), 0);
-  const liveTreeCount = woodedPatches.filter((patch) => !treeAnchorRemnantForPatch(patch)).length * TREES_PER_PATCH;
+    || treeAnchorRemnantForPatch(worldGrid(), p) !== null));
+  const treeCount = woodedPatches.reduce((sum, patch) => sum + (treeAnchorRemnantForPatch(worldGrid(), patch) ? 1 : TREES_PER_PATCH), 0);
+  const liveTreeCount = woodedPatches.filter((patch) => !treeAnchorRemnantForPatch(worldGrid(), patch)).length * TREES_PER_PATCH;
   const trunk = wanted('trunk') ? instanced(
     new THREE.CylinderGeometry(0.22, 0.4, 7, 6).translate(0, 3.5, 0),
     new THREE.MeshStandardMaterial({ color: 0x4a3626, roughness: 1 }),
@@ -392,7 +393,7 @@ export function buildTerrain(patches: readonly PatchView[], layers?: ReadonlySet
 
   let g = 0;
   for (const patch of grass ? grassPatches : []) {
-    const centre = patchCentre(patch.id);
+    const centre = patchCentre(worldGrid(), patch.id);
     const density = Math.min(1, patch.grass / 6000);
     const pool = island ? islandPool(patch, shores) : null;
     let seed = patch.id * 2654435761;
@@ -402,8 +403,8 @@ export function buildTerrain(patches: readonly PatchView[], layers?: ReadonlySet
     };
     for (let i = 0; i < tuftsPerPatch; i++) {
       matrix.makeScale(1, 0.5 + density, 1);
-      const gx = centre.x + (random() - 0.5) * PATCH_METRES;
-      const gz = centre.z + (random() - 0.5) * PATCH_METRES;
+      const gx = centre.x + (random() - 0.5) * worldGrid().patchM;
+      const gz = centre.z + (random() - 0.5) * worldGrid().patchM;
       // A tuft that would stand in the pool is sunk out of sight; the instance count stays fixed.
       const wet = pool !== null && insidePool(pool, gx, gz, BANK_CLEAR_M(pool));
       if (wet) matrix.makeScale(0, 0, 0);
@@ -414,14 +415,14 @@ export function buildTerrain(patches: readonly PatchView[], layers?: ReadonlySet
 
   (water ? waterPatches : []).forEach((patch, index) => {
     // The mainland's legacy full-patch water; island pools are drawn by buildPools.
-    const centre = patchCentre(patch.id);
+    const centre = patchCentre(worldGrid(), patch.id);
     matrix.makeTranslation(centre.x, patchHeight(patch) + 0.4, centre.z);
     water!.setMatrixAt(index, matrix);
   });
 
   let r = 0;
   for (const patch of rock ? rockPatches : []) {
-    const centre = patchCentre(patch.id);
+    const centre = patchCentre(worldGrid(), patch.id);
     for (let i = 0; i < 3; i++) {
       matrix.makeScale(1 + i * 0.3, 0.7, 1 + i * 0.2);
       const rx = centre.x + (i - 1) * 70;
@@ -433,17 +434,17 @@ export function buildTerrain(patches: readonly PatchView[], layers?: ReadonlySet
 
   let t = 0, c = 0;
   for (const patch of trunk || canopy ? woodedPatches : []) {
-    const centre = patchCentre(patch.id);
-    const anchor = treeAnchorForPatch(patch);
-    const remnant = treeAnchorRemnantForPatch(patch);
+    const centre = patchCentre(worldGrid(), patch.id);
+    const anchor = treeAnchorForPatch(worldGrid(), patch);
+    const remnant = treeAnchorRemnantForPatch(worldGrid(), patch);
     let seed = (patch.id + 7919) * 2246822519;
     const random = (): number => {
       seed = (seed * 1664525 + 1013904223) >>> 0;
       return seed / 4294967296;
     };
     for (let i = 0; i < (remnant ? 1 : TREES_PER_PATCH); i++) {
-      const plannedX = centre.x + (random() - 0.5) * PATCH_METRES * 0.94;
-      const plannedZ = centre.z + (random() - 0.5) * PATCH_METRES * 0.94;
+      const plannedX = centre.x + (random() - 0.5) * worldGrid().patchM * 0.94;
+      const plannedZ = centre.z + (random() - 0.5) * worldGrid().patchM * 0.94;
       const plannedScale = 0.7 + random() * 0.9;
       const tx = i === 0 && (anchor || remnant) ? (anchor ?? remnant)!.x : plannedX;
       const tz = i === 0 && (anchor || remnant) ? (anchor ?? remnant)!.z : plannedZ;
@@ -480,7 +481,7 @@ export function buildTerrain(patches: readonly PatchView[], layers?: ReadonlySet
   if (island && wanted('ocean')) {
     const ocean = new THREE.Mesh(new THREE.PlaneGeometry(60_000, 60_000).rotateX(-Math.PI / 2),
       new THREE.MeshStandardMaterial({ color: 0x235667, roughness: 0.38, metalness: 0.05 }));
-    ocean.name = 'ocean'; ocean.position.set((GRID - 1) * PATCH_METRES / 2, 0, (GRID - 1) * PATCH_METRES / 2);
+    ocean.name = 'ocean'; ocean.position.set((GRID - 1) * worldGrid().patchM / 2, 0, (GRID - 1) * worldGrid().patchM / 2);
     group.add(ocean);
   }
   return group;

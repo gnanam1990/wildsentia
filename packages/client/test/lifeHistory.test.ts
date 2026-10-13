@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadLifeHistory, loadSelectedClimb, loadSelectedEncounter } from '../src/lifeHistory.js';
 import { treeAnchorGeometry } from '@vana/shared';
 import { momentAt } from '../src/replay.js';
+import { ISLAND_GRID } from '@vana/shared';
 afterEach(() => vi.unstubAllGlobals());
 const meta = { id: 'a', asOfWorldTime: 3600, nextEventSequence: 900, source: 'checkpoint' };
 const point = { worldTime: 0, patchId: 0, state: 'resting', goal: 'rest', drives: { hunger: 0, thirst: 0, fear: 0, fatigue: 0 } };
@@ -43,7 +44,7 @@ describe('direct selected encounter loader', () => {
 });
 describe('direct selected tree-route loader', () => {
   const selectedClimb = () => {
-    const anchor = treeAnchorGeometry(210)!;
+    const anchor = treeAnchorGeometry(ISLAND_GRID, 210)!;
     return { ...meta, id: 'langur_1', scope: 'movement', speciesId: 'langur', alive: true, bornAt: 0, departedAt: null,
       movement: { eventId: 'tree_1', outcome: 'success', direction: 'ascend', reason: 'local_threat',
         treeAnchorId: anchor.id, verticalDistanceM: 6,

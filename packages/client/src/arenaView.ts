@@ -1,3 +1,4 @@
+import { worldGrid } from './worldGrid.js';
 import * as THREE from "three";
 import { AnimalLayer } from "./animals.js";
 import type { AnimalState } from "./protocol.js";
@@ -88,7 +89,7 @@ export class ArenaView {
       map.set(p.id, {
         id: p.id,
         speciesId: p.speciesId,
-        patchId: patchAtPosition(position),
+        patchId: patchAtPosition(worldGrid(), position),
         position,
         state:
           p.state === "chase"

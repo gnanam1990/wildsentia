@@ -1,5 +1,6 @@
+import { worldGrid } from './worldGrid.js';
 import * as THREE from 'three';
-import { GRID_SIZE, PATCH_METRES } from '@vana/shared';
+
 import { standDensity } from './forestStructure.js';
 
 /**
@@ -105,10 +106,10 @@ const round = (v: number) => Math.round(v * 50) / 50;
 /** The stand pattern baked for the GPU: one texel per ~11.7 m across the 6 km island. */
 export const STAND_TEXELS = 512;
 export function bakeStandTexture(size = STAND_TEXELS): THREE.DataTexture {
-  const span = GRID_SIZE * PATCH_METRES, data = new Uint8Array(size * size);
+  const span = worldGrid().cols * worldGrid().patchM, data = new Uint8Array(size * size);
   for (let row = 0; row < size; row++) for (let col = 0; col < size; col++) {
-    data[row * size + col] = channel(standDensity((col + 0.5) / size * span - PATCH_METRES / 2,
-      (row + 0.5) / size * span - PATCH_METRES / 2));
+    data[row * size + col] = channel(standDensity((col + 0.5) / size * span - worldGrid().patchM / 2,
+      (row + 0.5) / size * span - worldGrid().patchM / 2));
   }
   const texture = new THREE.DataTexture(data, size, size, THREE.RedFormat, THREE.UnsignedByteType);
   texture.magFilter = texture.minFilter = THREE.LinearFilter;
@@ -134,7 +135,7 @@ export class GroundTint {
   readonly farRange = { value: new THREE.Vector2(220, 1100) };
   #key = '';
 
-  constructor(readonly size = GRID_SIZE) {
+  constructor(readonly size = worldGrid().cols) {
     const make = () => {
       const texture = new THREE.DataTexture(new Uint8Array(size * size * 4).fill(255), size, size, THREE.RGBAFormat);
       texture.magFilter = texture.minFilter = THREE.LinearFilter;
@@ -175,7 +176,7 @@ export class GroundTint {
    * the island's beaches (white inland).
    */
   apply(material: THREE.MeshStandardMaterial): void {
-    const span = GRID_SIZE * PATCH_METRES;
+    const span = worldGrid().cols * worldGrid().patchM;
     material.onBeforeCompile = (shader) => {
       shader.uniforms.groundNear = { value: this.near };
       shader.uniforms.groundFar = { value: this.far };
@@ -197,7 +198,7 @@ float groundNoise(vec2 p) {
   return mix(mix(groundHash(i), groundHash(i + vec2(1.0, 0.0)), u.x),
     mix(groundHash(i + vec2(0.0, 1.0)), groundHash(i + vec2(1.0, 1.0)), u.x), u.y);
 }\n` + shader.fragmentShader.replace('#include <color_fragment>', `
-        vec2 groundUv = (vGroundWorld.xz + ${(PATCH_METRES / 2).toFixed(1)}) / ${span.toFixed(1)};
+        vec2 groundUv = (vGroundWorld.xz + ${(worldGrid().patchM / 2).toFixed(1)}) / ${span.toFixed(1)};
         vec3 nearTint = texture2D(groundNear, groundUv).rgb;
         vec3 farColour = texture2D(groundFar, groundUv).rgb;
         // Litter, bare soil and moss shares for this patch, laid out by the trees' stand pattern

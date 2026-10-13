@@ -1,5 +1,6 @@
+import { worldGrid } from './worldGrid.js';
 import { initialPosition, positionInPatch, subPatchOffset, type WorldPosition } from '@vana/shared';
-export { GRID_SIZE, PATCH_METRES, patchCentre, subPatchOffset } from '@vana/shared';
+export { patchCentre, subPatchOffset } from '@vana/shared';
 
 /** Recorded server endpoints when available; interpolation is presentation, not physics. */
 /** One world hour at the default live speed of 12x: five real minutes. */
@@ -50,7 +51,7 @@ export class PositionTracker {
   update(id: string, patchId: number, nowMs: number, position?: WorldPosition, altitudeM?: number): void {
     const existing = this.#tracks.get(id);
     // Never add a client offset to a precise position. Old data retains the legacy fallback.
-    const to = positionInPatch(position, patchId) ? position : initialPosition(id, patchId);
+    const to = positionInPatch(worldGrid(), position, patchId) ? position : initialPosition(worldGrid(), id, patchId);
 
     if (existing === undefined) {
       // A newly seen animal appears where it is, rather than sliding in from the last patch.
@@ -88,7 +89,7 @@ export class PositionTracker {
   positionAt(id: string, nowMs: number): RenderPosition {
     const track = this.#tracks.get(id);
     if (track === undefined) {
-      const offset = subPatchOffset(id);
+      const offset = subPatchOffset(worldGrid(), id);
       return { x: offset.x, z: offset.z, heading: 0, moving: false };
     }
 

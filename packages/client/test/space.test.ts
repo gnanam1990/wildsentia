@@ -1,29 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import { HOP_DURATION_MS, PositionTracker, patchCentre, subPatchOffset } from '../src/space.js';
+import { ISLAND_GRID } from '@vana/shared';
 
 describe('patchCentre', () => {
   it('spaces neighbouring patches by the patch size', () => {
-    const a = patchCentre(0);
-    const b = patchCentre(1);
+    const a = patchCentre(ISLAND_GRID, 0);
+    const b = patchCentre(ISLAND_GRID, 1);
     expect(Math.hypot(b.x - a.x, b.z - a.z)).toBeCloseTo(300, 5);
   });
 
   it('moves one row for a full grid width', () => {
-    expect(patchCentre(20).z - patchCentre(0).z).toBeCloseTo(300, 5);
+    expect(patchCentre(ISLAND_GRID, 20).z - patchCentre(ISLAND_GRID, 0).z).toBeCloseTo(300, 5);
   });
 });
 
 describe('subPatchOffset', () => {
   it('is stable for an agent id', () => {
-    expect(subPatchOffset('sambar_0001')).toEqual(subPatchOffset('sambar_0001'));
+    expect(subPatchOffset(ISLAND_GRID, 'sambar_0001')).toEqual(subPatchOffset(ISLAND_GRID, 'sambar_0001'));
   });
 
   it('differs between agents', () => {
-    expect(subPatchOffset('sambar_0001')).not.toEqual(subPatchOffset('sambar_0002'));
+    expect(subPatchOffset(ISLAND_GRID, 'sambar_0001')).not.toEqual(subPatchOffset(ISLAND_GRID, 'sambar_0002'));
   });
 
   it('spreads sequential herd IDs across both axes instead of drawing a line', () => {
-    const offsets = Array.from({ length: 8 }, (_, i) => subPatchOffset(`elephant_${(0xf82 + i).toString(16)}`));
+    const offsets = Array.from({ length: 8 }, (_, i) => subPatchOffset(ISLAND_GRID, `elephant_${(0xf82 + i).toString(16)}`));
     for (const axis of ['x', 'z'] as const) {
       const values = offsets.map((p) => p[axis]);
       expect(Math.max(...values) - Math.min(...values)).toBeGreaterThan(100);
@@ -32,7 +33,7 @@ describe('subPatchOffset', () => {
 
   it('stays inside the patch', () => {
     for (const id of ['a', 'b', 'c', 'd', 'e', 'f']) {
-      const o = subPatchOffset(id);
+      const o = subPatchOffset(ISLAND_GRID, id);
       expect(Math.abs(o.x)).toBeLessThan(150);
       expect(Math.abs(o.z)).toBeLessThan(150);
     }
@@ -74,14 +75,14 @@ describe('PositionTracker', () => {
   it('falls back only for missing/invalid server coordinates', () => {
     const t = new PositionTracker();
     t.update('a', 0, 0, { x: NaN, z: 0, heading: 0 });
-    expect(t.positionAt('a', 0).x).toBe(subPatchOffset('a').x);
+    expect(t.positionAt('a', 0).x).toBe(subPatchOffset(ISLAND_GRID, 'a').x);
   });
   it('places a newly seen agent immediately, without a slide from the origin', () => {
     const t = new PositionTracker();
     t.update('a', 42, 0);
     const p = t.positionAt('a', 0);
-    const centre = patchCentre(42);
-    const offset = subPatchOffset('a');
+    const centre = patchCentre(ISLAND_GRID, 42);
+    const offset = subPatchOffset(ISLAND_GRID, 'a');
     expect(p.x).toBeCloseTo(centre.x + offset.x, 5);
     expect(p.z).toBeCloseTo(centre.z + offset.z, 5);
     expect(p.moving).toBe(false);
@@ -107,8 +108,8 @@ describe('PositionTracker', () => {
     t.update('a', 0, 0);
     t.update('a', 1, 0);
     const far = t.positionAt('a', HOP_DURATION_MS * 5);
-    const target = patchCentre(1);
-    const offset = subPatchOffset('a');
+    const target = patchCentre(ISLAND_GRID, 1);
+    const offset = subPatchOffset(ISLAND_GRID, 'a');
     expect(far.x).toBeCloseTo(target.x + offset.x, 5);
   });
 

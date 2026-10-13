@@ -1,3 +1,4 @@
+import { worldGrid } from './worldGrid.js';
 import { humanMotionAt, isWorldPosition, MAX_HUMAN_MOTION_SAMPLES, type HumanMotionSample } from '@vana/shared';
 import { withTimeout } from './abortSignals.js';
 
@@ -18,7 +19,7 @@ const validSample = (v: unknown): v is HumanMotionSample => {
   if (!v || typeof v !== 'object') return false;
   const s = v as HumanMotionSample;
   return typeof s.seconds === 'number' && Number.isFinite(s.seconds) && s.seconds >= 0
-    && isWorldPosition(s.position) && typeof s.alive === 'boolean'
+    && isWorldPosition(worldGrid(), s.position) && typeof s.alive === 'boolean'
     && (s.action === null || typeof s.action === 'string' && ['gather_food', 'collect_water', 'gather_timber',
       'gather_fibre', 'deliver', 'eat', 'drink', 'sleep', 'build', 'rest', 'fish', 'cook', 'repair',
       'seek_resources', 'hunt', 'care_child'].includes(s.action))

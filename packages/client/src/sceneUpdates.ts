@@ -1,3 +1,4 @@
+import { parseWorldGrid, setWorldGrid } from './worldGrid.js';
 import { isCommunityState, type CommunityState, type LiveEncounterFrame, type MicroEcologyState } from '@vana/shared';
 import { WorldStore, type AnimalState, type WorldState } from './protocol.js';
 import { isLiveEncounterFrame } from './liveEncounters.js';
@@ -98,6 +99,8 @@ export class SceneUpdates<Prepared> {
       || !record(message.world) || !integer(message.world.worldTime) || !integer(message.world.nextEventSequence)
       || !record(message.world.population) || !Object.values(message.world.population).every(integer)
       || !finite(message.world.worldHoursPerRealHour) || message.world.worldHoursPerRealHour <= 0) return false;
+    // The lattice comes first: every position below is checked against it.
+    setWorldGrid(parseWorldGrid(message.world.grid));
     const previous = this.#received?.checkpointId === message.checkpointId ? this.#received : null;
     // Ordered WebSocket messages may repeat a checkpoint, never roll back within a connection.
     if (this.#received && message.world.worldTime < this.#received.world.worldTime) return false;

@@ -1,5 +1,6 @@
+import { worldGrid } from './worldGrid.js';
 import * as THREE from 'three';
-import { GRID_SIZE, PATCH_METRES, spatialHash } from '@vana/shared';
+import { spatialHash } from '@vana/shared';
 import type { HeightSampler, PatchView } from './terrain.js';
 import { RENDER_BUDGETS, type RenderTier } from './renderQuality.js';
 import { BANK_CLEAR_M, insidePool, islandPool, waterGround } from './pools.js';
@@ -68,10 +69,10 @@ function* visitGroundCover(
         // Preserve a dense foreground in every mode. Else retain a stable subset of
         // world cells (not random plants per frame), with no extra terrain height queries.
         if (distance > FULL_FOREGROUND_M && !keep) continue;
-        const col = Math.floor((x + PATCH_METRES / 2) / PATCH_METRES);
-        const row = Math.floor((z + PATCH_METRES / 2) / PATCH_METRES);
-        if (col < 0 || col >= GRID_SIZE || row < 0 || row >= GRID_SIZE) continue;
-        const patch = byId.get(row * GRID_SIZE + col);
+        const col = Math.floor((x + worldGrid().patchM / 2) / worldGrid().patchM);
+        const row = Math.floor((z + worldGrid().patchM / 2) / worldGrid().patchM);
+        if (col < 0 || col >= worldGrid().cols || row < 0 || row >= worldGrid().cols) continue;
+        const patch = byId.get(row * worldGrid().cols + col);
         if (!patch || patch.surface === 'ocean' || patch.surface === 'coast' || patch.habitat === 'water' || patch.grass <= 0) continue;
         // An island patch's water is its pool, not the whole patch as on the mainland plane.
         const pool = pools.get(patch.id);

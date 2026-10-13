@@ -1,6 +1,5 @@
-import { patchAtPosition, isMovementTrace, isDrinkingActivity, movementAt, treeAnchorGeometry,
-  MAX_LIVE_MOVEMENTS, MAX_LIVE_MOVEMENT_SAMPLES, LIFE_STAGES,
-  type EncounterAppearance, type LiveEncounterFrame } from '@vana/shared';
+import { worldGrid } from './worldGrid.js';
+import { patchAtPosition, isMovementTrace, isDrinkingActivity, movementAt, treeAnchorGeometry, MAX_LIVE_MOVEMENTS, MAX_LIVE_MOVEMENT_SAMPLES, LIFE_STAGES, type EncounterAppearance, type LiveEncounterFrame } from '@vana/shared';
 import { encounterAt, isRecordedEncounter } from './encounterReplay.js';
 import type { AnimalState } from './protocol.js';
 import type { RenderPosition } from './space.js';
@@ -30,7 +29,7 @@ export function recordedFlightPhase(trace: MovementTrace, seconds: number): Flig
 /** Only adjacent saved altitude samples at the shared trunk can authorize a climb pose. */
 export function recordedClimbPhase(trace: MovementTrace, seconds: number): ClimbVisualPhase | null {
   if (!Number.isFinite(seconds) || seconds >= trace.samples.at(-1)!.seconds) return null;
-  const anchor = treeAnchorGeometry(trace.destinationPatchId);
+  const anchor = treeAnchorGeometry(worldGrid(), trace.destinationPatchId);
   if (!anchor) return null;
   for (let i = 0; i < trace.samples.length - 1; i++) {
     const a = trace.samples[i]!, b = trace.samples[i + 1]!;
@@ -79,14 +78,14 @@ export function isLiveEncounterFrame(value: unknown): value is LiveEncounterFram
     let routeSamples = 0;
     for (const m of value.movements) {
       if (!record(m) || typeof m.eventId !== 'string' || !m.eventId || events.has(m.eventId)
-        || !isMovementTrace(m.trace) || m.trace.startWorldTime !== value.startWorldTime
+        || !isMovementTrace(worldGrid(), m.trace) || m.trace.startWorldTime !== value.startWorldTime
         || !record(m.actor) || typeof m.actor.speciesId !== 'string' || !m.actor.speciesId
         || !appearance(m.actor, m.trace.actorId, m.actor.speciesId) || ids.has(m.trace.actorId)) return false;
       ids.add(m.trace.actorId); events.add(m.eventId);
       if (m.stationary !== undefined && m.stationary !== true) return false;
       if (m.activity !== undefined) {
         const activity = m.activity;
-        if (!isDrinkingActivity(activity) || !m.trace.completed || m.trace.goal !== 'find_water') return false;
+        if (!isDrinkingActivity(worldGrid(), activity) || !m.trace.completed || m.trace.goal !== 'find_water') return false;
         const last = m.trace.samples.at(-1)!;
         if (Math.hypot(last.position.x - activity.position.x, last.position.z - activity.position.z) > 1e-6
           || Math.abs(last.seconds - activity.startSeconds) > 1e-6) return false;
@@ -218,7 +217,7 @@ export class LiveEncounterPlayer {
         ? { ...at.predator, heading: Math.atan2(at.prey.x - at.predator.x, at.prey.z - at.predator.z) } : at.predator;
       const add = (body: EncounterAppearance, position: RenderPosition, act: { state: string; act?: number; weight?: number },
         partnerId: string): void => {
-        result.set(body.id, { animal: { ...body, patchId: patchAtPosition(position), position,
+        result.set(body.id, { animal: { ...body, patchId: patchAtPosition(worldGrid(), position), position,
           state: act.state, currentGoal: '', drives: { hunger: 0, thirst: 0, fatigue: 0, fear: 0 } },
           position, seconds: Math.min(seconds, e.trace.samples.at(-1)!.seconds), clipSeconds, partnerId,
           ...(act.act === undefined ? {} : { act: act.act }), ...(act.weight === undefined ? {} : { actWeight: act.weight }),
@@ -242,7 +241,7 @@ export class LiveEncounterPlayer {
         ? recordedClimbPhase(m.trace, seconds) : null;
       // Only explicitly recorded drinking gets an action window. Other endpoints stay
       // neutral rather than displaying the newer checkpoint's unrecorded action early.
-      result.set(m.actor.id, { kind: 'movement', animal: { ...m.actor, patchId: patchAtPosition(position), position,
+      result.set(m.actor.id, { kind: 'movement', animal: { ...m.actor, patchId: patchAtPosition(worldGrid(), position), position,
         state: drinking ? 'drinking' : position.moving ? m.trace.goal === 'flee' ? 'fleeing' : 'travelling' : 'resting',
         currentGoal: m.trace.goal, drives: { hunger: 0, thirst: 0, fatigue: 0, fear: 0 } },
         position, seconds: Math.min(seconds, activity?.endSeconds ?? m.trace.samples.at(-1)!.seconds), clipSeconds,
