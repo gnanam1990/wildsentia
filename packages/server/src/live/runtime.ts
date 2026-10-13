@@ -81,6 +81,7 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
     const config = loadOwnershipConfig(env.VANA_OWNERSHIP_CONFIG ?? fileURLToPath(new URL('../../../../config/ownership-congo.json', import.meta.url)));
     const ownership = new OwnershipStore(pool, host.worldId ?? 'unknown');
     return { store: ownership, config, shop: new SimulatedPurchaseAdapter(ownership, config),
+      animalOf: (id: string) => { const a = host.world.animal(id); return a?.alive ? { state: a.state, steered: live.avatars.byAnimal(id) !== undefined } : null; },
       lives: new LifeService(ownership, host, config, () => host.snapshotNow()),
       control: new ControlService(ownership, live, { assetOf: (id) => host.world.animal(id)?.assetId,
         block: (id) => host.world.possessionBlock(id, { owner: true, ignoreController: true }), exclusive: (work) => host.exclusive(work) }) };
@@ -98,6 +99,7 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
     const played = () => { const f = host.liveEncounterFrame(); return f ? f.startWorldTime + f.elapsedWorldSeconds : host.world.now(); };
     const engine = new BountyEngine(store, owned.store, host, new DevSettlementAdapter(store), () => host.worldHoursPerRealHour, eventsOf, played);
     owned.bountyActive = async (lifeId) => (await store.activeOnLife(lifeId)) !== null;
+    owned.lastBounty = (assetId) => store.lastDecidedOnAsset(assetId);
     return { store, engine, discovery: new BountyDiscovery(store, () => host.worldId ?? 'unknown'), adminToken: env.VANA_BOUNTY_ADMIN_TOKEN?.trim() || null,
       now: played };
   })() : null;

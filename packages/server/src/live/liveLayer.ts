@@ -246,7 +246,9 @@ export class LiveLayer {
     this.#held();
     const avatar = this.avatars.get(agentId);
     if (!avatar) return 'not_possessing';
-    avatar.gait = gait;
+    avatar.gait = gait; avatar.lastCommand = this.clock();
+    // Recorded like every other command, for attempt logs and replay.
+    this.#command(agentId, 'gait', { gait });
     return null;
   }
 

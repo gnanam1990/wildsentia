@@ -92,6 +92,13 @@ export class BountyStore {
     return (await this.pool.query("select * from bounties where world_id<>$1 and status in ('active','on_hold')", [this.worldId])).rows.map(bounty);
   }
 
+  /** An asset's most recently decided bounty and its payout, for its owner's pages. */
+  async lastDecidedOnAsset(assetId: string): Promise<{ outcome: Outcome; payout: { status: 'intent' | 'recorded' } | null } | null> {
+    const row = (await this.pool.query(`select b.outcome, s.status as payout from bounties b left join bounty_settlements s using (bounty_id)
+      where b.target_asset_id=$1 and b.outcome is not null order by b.adjudicated_at desc limit 1`, [assetId])).rows[0];
+    return row ? { outcome: row.outcome as Outcome, payout: row.payout ? { status: row.payout as 'intent' | 'recorded' } : null } : null;
+  }
+
   /** The active bounty on a life, if any. */
   async activeOnLife(lifeId: string): Promise<Bounty | null> {
     const row = (await this.pool.query("select * from bounties where target_life_id=$1 and status in ('active','on_hold')", [lifeId])).rows[0];

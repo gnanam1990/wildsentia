@@ -29,7 +29,9 @@ const ORIGIN = 'https://wildsentia.test';
 let host: SimHost, app: FastifyInstance, live: LiveLayer;
 const owned = (): OwnedDeps => {
   const store = new OwnershipStore(pool!, 'w1');
-  return { store, config, shop: new SimulatedPurchaseAdapter(store, config), lives: new LifeService(store, host, config), control: new ControlService(store, live, { assetOf: (id) => host.world.animal(id)?.assetId, block: (id) => host.world.possessionBlock(id, { owner: true, ignoreController: true }), exclusive: (work) => host.exclusive(work) }) };
+  return { store, config, shop: new SimulatedPurchaseAdapter(store, config), lives: new LifeService(store, host, config),
+    animalOf: (id: string) => { const a = host.world.animal(id); return a?.alive ? { state: a.state, steered: live.avatars.byAnimal(id) !== undefined } : null; },
+    control: new ControlService(store, live, { assetOf: (id) => host.world.animal(id)?.assetId, block: (id) => host.world.possessionBlock(id, { owner: true, ignoreController: true }), exclusive: (work) => host.exclusive(work) }) };
 };
 let deps: OwnedDeps, owner: { accountId: string; agentId: string; wallet: string };
 
@@ -86,6 +88,7 @@ maybe('the Congo ownership journey', () => {
     expect(host.world.animal(first.animalId)!.controller).toBe(registered.agentId);
     let mine = (await asOwner('GET', '/congo/assets')).json().assets[0];
     expect(mine.life.controller).toEqual({ kind: 'agent', id: registered.agentId });
+    expect(mine.animal).toEqual({ state: expect.any(String), steered: true });
 
     // It dies (starved in the hourly step): the agent loses it, the life ends with its cause.
     host.world.animal(first.animalId)!.drives.hunger = 1.2;

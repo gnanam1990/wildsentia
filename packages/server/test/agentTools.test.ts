@@ -25,6 +25,7 @@ const pool = url ? createPool(url) : null;
 const speciesDir = fileURLToPath(new URL('../../../config/species-congo', import.meta.url));
 const config = loadOwnershipConfig(fileURLToPath(new URL('../../../config/ownership-congo.json', import.meta.url)));
 
+const commands: Array<{ agentId: string; command: string; args: Record<string, unknown> }> = [];
 let host: SimHost, app: FastifyInstance, live: LiveLayer, ownership: OwnershipStore, lives: LifeService, engine: BountyEngine, discovery: BountyDiscovery;
 beforeAll(async () => {
   if (!url) return;
@@ -35,6 +36,7 @@ beforeAll(async () => {
     initialAgents: { african_leopard: 46, blue_duiker: 200, water_chevrotain: 20 }, minPopulation: {}, landscape: null });
   await host.boot();
   live = new LiveLayer(worldPort(() => host.world, () => 'w1', undefined, () => host.busy), null);
+  live.onCommand = (record) => { commands.push(record); };
   ownership = new OwnershipStore(pool!, 'w1');
   lives = new LifeService(ownership, host, config);
   const control = new ControlService(ownership, live, { assetOf: (id) => host.world.animal(id)?.assetId,
@@ -81,6 +83,7 @@ maybe('agent tools', () => {
     expect((await asAgent('bot', 'POST', '/agents/me/gait', { gait: 'trot' })).json()).toEqual({ ok: true, gait: 'trot' });
     expect((await asAgent('bot', 'POST', '/agents/me/gait', { gait: 'fly' })).statusCode).toBe(400);
     expect(live.avatars.get(bot.agentId)!.gait).toBe('trot');
+    expect(commands).toContainEqual(expect.objectContaining({ agentId: bot.agentId, command: 'gait', args: { gait: 'trot' } }));
 
     const d = await engine.draft({ targetAnimalId: duiker.animalId, preset: 'standard' });
     if (!d.ok) throw new Error(d.reason);

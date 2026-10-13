@@ -75,6 +75,9 @@ maybe('bounty scenarios', () => {
     expect((await ledger()).filter((r) => r.category === 'payout')).toEqual([{ category: 'payout', a: '10000000', ref: `bounty:${b.bountyId}:payout:${hunter.wallet}` }]);
     expect((await ownership.asset(duiker.assetId))!.status).toBe('active');
     expect((await bounties.record(b.bountyId))!.sha256).toMatch(/^[0-9a-f]{64}$/);
+    // The owner's pages show each asset's last decided bounty and its payout.
+    expect(await bounties.lastDecidedOnAsset(duiker.assetId)).toEqual({ outcome: 'predator', payout: { status: 'recorded' } });
+    expect(await bounties.lastDecidedOnAsset(leopard.assetId)).toBeNull();
   });
 
   it('pays the target\'s owner at publication when it is alive at the deadline', async () => {

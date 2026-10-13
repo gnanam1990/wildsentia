@@ -10,6 +10,10 @@ export interface OwnedDeps {
   store: OwnershipStore; shop: PurchaseAdapter; lives: LifeService; control: ControlService; config: OwnershipConfig;
   /** Congo 1D: whether a bounty is active on a life (shown only to its owner). */
   bountyActive?: (lifeId: string) => Promise<boolean>;
+  /** Congo 1D: an asset's last decided bounty and its payout (shown only to its owner). */
+  lastBounty?: (assetId: string) => Promise<{ outcome: string; payout: { status: string } | null } | null>;
+  /** Congo 1E: an alive animal's state now, and whether anyone is steering it. */
+  animalOf?: (animalId: string) => { state: string; steered: boolean } | null;
 }
 type Person = (req: FastifyRequest, reply: FastifyReply) => Promise<{ agent: AgentRecord; json: Record<string, unknown> } | null>;
 
@@ -57,6 +61,8 @@ export function installOwnershipRoutes(scope: FastifyInstance, owned: OwnedDeps,
       const life = (await store.livesOf(a.assetId)).at(-1) ?? null, lease = life ? await store.openLeaseOf(life.lifeId) : null;
       return { assetId: a.assetId, speciesId: a.speciesId, status: a.status, pricingVersion: a.pricingVersion,
         agents: await store.grantsOf(a.assetId),
+        animal: life?.status === 'alive' && life.animalId && owned.animalOf ? owned.animalOf(life.animalId) : null,
+        bounty: owned.lastBounty ? await owned.lastBounty(a.assetId) : null,
         life: life ? { lifeId: life.lifeId, animalId: life.animalId, status: life.status, spawnedAt: life.spawnedAt, diedAt: life.diedAt,
           deathCause: life.deathCause, killerAnimalId: life.killerAnimalId, cooldownUntil: life.cooldownUntil,
           controller: lease ? { kind: lease.holderKind, id: lease.holderId } : null,
