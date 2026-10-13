@@ -17,13 +17,15 @@ export function termsFrom(f: FormValues): Record<string, unknown> {
   return { template: f.template, speciesId: f.speciesId, ...goal, rules, briefing: f.briefing.trim() };
 }
 
-/** The island: worldGrid().cols patches of worldGrid().patchM a side, the first centred on 0. */
-const SPAN = worldGrid().cols * worldGrid().patchM, EDGE = -worldGrid().patchM / 2;
+/** The world's map: its grid's patches, the first centred on 0. */
+const extent = () => { const g = worldGrid(); return { edge: -g.patchM / 2, spanX: g.cols * g.patchM, spanZ: g.rows * g.patchM }; };
 export function toMetres(px: number, py: number, size: number): { x: number; z: number } {
-  return { x: Math.round(EDGE + px / size * SPAN), z: Math.round(EDGE + py / size * SPAN) };
+  const { edge, spanX, spanZ } = extent();
+  return { x: Math.round(edge + px / size * spanX), z: Math.round(edge + py / size * spanZ) };
 }
 export function toPixel(x: number, z: number, size: number): { px: number; py: number } {
-  return { px: (x - EDGE) / SPAN * size, py: (z - EDGE) / SPAN * size };
+  const { edge, spanX, spanZ } = extent();
+  return { px: (x - edge) / spanX * size, py: (z - edge) / spanZ * size };
 }
 
 interface TypedData { domain: Record<string, unknown>; types?: Record<string, unknown>; primaryType: string; message: Record<string, unknown> }

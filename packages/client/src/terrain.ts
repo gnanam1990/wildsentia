@@ -1,3 +1,4 @@
+import { ISLAND_GRID } from '@vana/shared';
 import { worldGrid } from './worldGrid.js';
 import * as THREE from 'three';
 import { ISLAND_SEGMENTS, treeAnchorForPatch, treeAnchorRemnantForPatch } from '@vana/shared';
@@ -54,28 +55,29 @@ export function terrainHeightKey(patches: readonly PatchView[]): string {
 }
 
 /**
- * Heights of the (GRID+1)² ground-mesh corners: each the average of the patches that meet there.
+ * Heights of the (cols+1) × (rows+1) ground-mesh corners: each the average of the patches that meet there.
  * The drawn ground and the height sampler both read these, so they cannot disagree.
  */
 function cornerHeights(patches: readonly PatchView[]): { heights: Float64Array; present: Uint8Array } {
   const byId = new Map<number, PatchView>();
   for (const patch of patches) byId.set(patch.id, patch);
-  const heights = new Float64Array((GRID + 1) * (GRID + 1));
-  const present = new Uint8Array((GRID + 1) * (GRID + 1));
-  for (let row = 0; row <= GRID; row++) {
-    for (let col = 0; col <= GRID; col++) {
+  const { cols, rows } = worldGrid();
+  const heights = new Float64Array((cols + 1) * (rows + 1));
+  const present = new Uint8Array((cols + 1) * (rows + 1));
+  for (let row = 0; row <= rows; row++) {
+    for (let col = 0; col <= cols; col++) {
       let sum = 0;
       let n = 0;
       for (const [dc, dr] of [[-1, -1], [0, -1], [-1, 0], [0, 0]] as const) {
         const c = col + dc;
         const r = row + dr;
-        if (c < 0 || r < 0 || c >= GRID || r >= GRID) continue;
-        const patch = byId.get(r * GRID + c);
+        if (c < 0 || r < 0 || c >= cols || r >= rows) continue;
+        const patch = byId.get(r * cols + c);
         if (patch === undefined) continue;
         sum += patchHeight(patch);
         n++;
       }
-      const i = row * (GRID + 1) + col;
+      const i = row * (cols + 1) + col;
       heights[i] = n > 0 ? sum / n : 0;
       present[i] = n > 0 ? 1 : 0;
     }
@@ -93,12 +95,13 @@ export function makeHeightSampler(patches: readonly PatchView[]): HeightSampler 
   const islandSeed = patches[0]?.islandSeed;
   if (islandSeed !== undefined) return islandHeightField(islandSeed).sample;
   const { heights } = cornerHeights(patches);
-  const at = (col: number, row: number): number => heights[row * (GRID + 1) + col]!;
+  const { cols, rows, patchM } = worldGrid();
+  const at = (col: number, row: number): number => heights[row * (cols + 1) + col]!;
 
   return (x, z) => {
     // Corner (col, row) sits at (col·300 − 150, row·300 − 150): the patch centres are cell centres.
-    const gx = Math.min(GRID - 1e-9, Math.max(0, (x + worldGrid().patchM / 2) / worldGrid().patchM));
-    const gz = Math.min(GRID - 1e-9, Math.max(0, (z + worldGrid().patchM / 2) / worldGrid().patchM));
+    const gx = Math.min(cols - 1e-9, Math.max(0, (x + patchM / 2) / patchM));
+    const gz = Math.min(rows - 1e-9, Math.max(0, (z + patchM / 2) / patchM));
     const col = Math.floor(gx);
     const row = Math.floor(gz);
     const fx = gx - col;
@@ -240,7 +243,6 @@ function buildDrainageFlow(patches: readonly PatchView[], groundAt: HeightSample
  * planes and rock. That is four draw calls for the terrain, against 400+ if each patch were
  * its own mesh.
  */
-const GRID = 20;
 
 /**
  * A single 21x21-vertex plane displaced by the elevation the simulation reports, coloured per
@@ -255,7 +257,7 @@ export function scannedGroundMaps(): Pick<THREE.MeshStandardMaterialParameters, 
   const load = (suffix: string, colour: boolean): THREE.Texture => {
     const texture = loader.load(`/assets/ground/forest_ground_04_${suffix}_1k.jpg`);
     texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-    texture.repeat.set(GRID * worldGrid().patchM / 3.2, GRID * worldGrid().patchM / 3.2);
+    texture.repeat.set(worldGrid().cols * worldGrid().patchM / 3.2, worldGrid().rows * worldGrid().patchM / 3.2);
     texture.anisotropy = 8;
     texture.colorSpace = colour ? THREE.SRGBColorSpace : THREE.NoColorSpace;
     return texture;
@@ -265,9 +267,9 @@ export function scannedGroundMaps(): Pick<THREE.MeshStandardMaterialParameters, 
 
 function buildGroundMesh(patches: readonly PatchView[]): THREE.Mesh {
   if (patches[0]?.islandSeed !== undefined) return buildIslandGround(patches, patches[0].islandSeed);
-  const span = GRID * worldGrid().patchM;
-  const geometry = new THREE.PlaneGeometry(span, span, GRID, GRID).rotateX(-Math.PI / 2);
-  geometry.translate(span / 2 - worldGrid().patchM / 2, 0, span / 2 - worldGrid().patchM / 2);
+  const { cols, rows, patchM } = worldGrid(), spanX = cols * patchM, spanZ = rows * patchM;
+  const geometry = new THREE.PlaneGeometry(spanX, spanZ, cols, rows).rotateX(-Math.PI / 2);
+  geometry.translate(spanX / 2 - patchM / 2, 0, spanZ / 2 - patchM / 2);
 
   const position = geometry.attributes.position!;
   const colours = new Float32Array(position.count * 3);
@@ -294,9 +296,10 @@ function buildGroundMesh(patches: readonly PatchView[]): THREE.Mesh {
 
 function buildIslandGround(patches: readonly PatchView[], seed: number): THREE.Mesh {
   const field = islandHeightField(seed);
-  const span = GRID * worldGrid().patchM;
+  // Island geometry is defined on the 20 × 20 island lattice.
+  const span = ISLAND_GRID.cols * ISLAND_GRID.patchM;
   const geometry = new THREE.PlaneGeometry(span, span, ISLAND_SEGMENTS, ISLAND_SEGMENTS).rotateX(-Math.PI / 2);
-  geometry.translate(span / 2 - worldGrid().patchM / 2, 0, span / 2 - worldGrid().patchM / 2);
+  geometry.translate(span / 2 - ISLAND_GRID.patchM / 2, 0, span / 2 - ISLAND_GRID.patchM / 2);
   const positions = geometry.attributes.position!, colours = new Float32Array(positions.count * 3);
   void patches;
   for (let i = 0; i < positions.count; i++) {
@@ -481,7 +484,7 @@ export function buildTerrain(patches: readonly PatchView[], layers?: ReadonlySet
   if (island && wanted('ocean')) {
     const ocean = new THREE.Mesh(new THREE.PlaneGeometry(60_000, 60_000).rotateX(-Math.PI / 2),
       new THREE.MeshStandardMaterial({ color: 0x235667, roughness: 0.38, metalness: 0.05 }));
-    ocean.name = 'ocean'; ocean.position.set((GRID - 1) * worldGrid().patchM / 2, 0, (GRID - 1) * worldGrid().patchM / 2);
+    ocean.name = 'ocean'; ocean.position.set((ISLAND_GRID.cols - 1) * ISLAND_GRID.patchM / 2, 0, (ISLAND_GRID.rows - 1) * ISLAND_GRID.patchM / 2);
     group.add(ocean);
   }
   return group;

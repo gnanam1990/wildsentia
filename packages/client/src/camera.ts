@@ -1,3 +1,4 @@
+import { worldExtentM } from '@vana/shared';
 import { worldGrid } from './worldGrid.js';
 import * as THREE from 'three';
 
@@ -17,14 +18,12 @@ export const MIN_DISTANCE = 1;
 /** Far enough to take in the whole island from above. */
 export const MAX_DISTANCE = 5000;
 
-/** The island's ground, from the first patch's west edge to the last patch's east edge. */
-const WORLD_MIN = -worldGrid().patchM / 2;
-const WORLD_MAX = worldGrid().cols * worldGrid().patchM - worldGrid().patchM / 2;
-
 /** Keeps an explored point over the island, with a margin so its coast stays in view. */
 export function clampToIsland(target: THREE.Vector3, margin = worldGrid().patchM): THREE.Vector3 {
-  target.x = Math.min(WORLD_MAX + margin, Math.max(WORLD_MIN - margin, target.x));
-  target.z = Math.min(WORLD_MAX + margin, Math.max(WORLD_MIN - margin, target.z));
+  // The world's ground, from the first patch's west edge to the last patch's east edge.
+  const e = worldExtentM(worldGrid());
+  target.x = Math.min(e.maxX + margin, Math.max(e.min - margin, target.x));
+  target.z = Math.min(e.maxZ + margin, Math.max(e.min - margin, target.z));
   return target;
 }
 
