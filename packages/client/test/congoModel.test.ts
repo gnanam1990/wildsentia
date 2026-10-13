@@ -25,6 +25,10 @@ describe('the Congo player pages', () => {
     // The target's owner sees the outcome, not someone else's payout.
     expect(assetState(asset({ life: life({ status: 'dead' }), bounty: { outcome: 'predator', role: 'target', payout: { status: 'recorded' }, paidToOwner: false } }), now))
       .toMatchObject({ label: 'Outcome verified', detail: 'Taken by a predator: the reward went to its owner' });
+    // While its cooldown runs, that is what the owner sees (it cannot respawn yet), with the outcome alongside.
+    expect(assetState(asset({ life: life({ status: 'cooldown', diedAt: '2026-10-13T11:50:00Z', cooldownUntil: '2026-10-13T13:50:00Z', deathCause: 'predation' }),
+      bounty: { outcome: 'predator', role: 'target', payout: { status: 'recorded' }, paidToOwner: false } }), now))
+      .toMatchObject({ label: 'Cooldown', detail: 'Can respawn in 1 h 50 min · taken by a predator: the reward went to its owner' });
   });
   it('writes amounts in exact units, always marked SIMULATED, and times left plainly', () => {
     expect(simAmount('10000000', 6, 'SIM-USDC')).toBe('10.00 SIM-USDC (SIMULATED)');

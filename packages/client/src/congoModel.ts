@@ -38,20 +38,20 @@ export function simAmount(atomic: string, decimals: number, token: string): stri
 
 /** The one state a person sees for an animal, most important first. */
 export function assetState(a: AssetView, now: number): { label: string; tone: Tone; detail?: string } {
+  const taken = a.bounty?.role === 'target' && a.bounty.outcome === 'predator' ? 'taken by a predator: the reward went to its owner' : null;
+  const cooling = a.life?.status === 'cooldown' && a.life.cooldownUntil ? Date.parse(a.life.cooldownUntil) - now : 0;
   if (a.bounty && (!a.life || a.life.status !== 'alive' || !a.life.bountyActive)) {
     // Only a payout to this owner is theirs to see as pending or recorded.
     if (a.bounty.paidToOwner && a.bounty.payout?.status === 'recorded') return { label: 'Payout recorded (SIMULATED)', tone: 'ok' };
     if (a.bounty.paidToOwner && a.bounty.payout?.status === 'intent') return { label: 'Payout pending (SIMULATED)', tone: 'warn' };
-    if (a.bounty.role === 'target' && a.bounty.outcome === 'predator' && (!a.life || a.life.status !== 'alive' || !a.life.cooldownUntil || Date.parse(a.life.cooldownUntil) <= now))
-      return { label: 'Outcome verified', tone: 'muted', detail: 'Taken by a predator: the reward went to its owner' };
-    if (!a.life || a.life.status === 'alive') return { label: 'Outcome verified', tone: 'muted' };
+    // While a cooldown runs it leads (the animal cannot respawn yet), with the outcome alongside.
+    if (taken && cooling <= 0) return { label: 'Outcome verified', tone: 'muted', detail: `${taken[0]!.toUpperCase()}${taken.slice(1)}` };
+    if (!taken && (!a.life || a.life.status === 'alive')) return { label: 'Outcome verified', tone: 'muted' };
   }
   const life = a.life;
   if (!life) return { label: 'Not yet spawned', tone: 'muted' };
-  if (life.status === 'cooldown' && life.cooldownUntil) {
-    const left = Date.parse(life.cooldownUntil) - now;
-    if (left > 0) return { label: 'Cooldown', tone: 'muted', detail: `Can respawn in ${countdown(left)}${life.deathCause ? ` · died of ${life.deathCause}` : ''}` };
-  }
+  if (cooling > 0) return { label: 'Cooldown', tone: 'muted',
+    detail: `Can respawn in ${countdown(cooling)}${taken ? ` · ${taken}` : life.deathCause ? ` · died of ${life.deathCause}` : ''}` };
   if (life.status !== 'alive') return { label: 'Ready to respawn', tone: 'ok' };
   if (life.bountyActive) return { label: 'Bounty active', tone: 'warn' };
   if (life.controller && a.animal && a.animal.steered === false) return { label: 'Disconnected', tone: 'bad', detail: 'Its controller is not steering it now' };
