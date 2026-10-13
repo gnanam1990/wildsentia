@@ -416,6 +416,9 @@ export class SimHost {
     return agent?.alive && agent.position ? { ...agent.position } : null;
   }
 
+  /** Whether `id` moved in the hour being played (so following it could change a frame's selection). */
+  hasLiveMovement(id: string): boolean { return this.#movementIndex.has(id); }
+
   /**
    * Congo 1A.4: given `regions`, the frame holds only the encounters and movements that end in
    * those regions, chosen under the same caps from every movement of the hour, so a viewer of one

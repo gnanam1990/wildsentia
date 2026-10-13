@@ -136,6 +136,18 @@ maybe('a world served by region', () => {
     } finally { clock.mockRestore(); }
   });
 
+  it('builds one regional recording for viewers following ids it has no movement for (1A.4)', () => {
+    const gateway = new Gateway(host), sockets = Array.from({ length: 20 }, () => new FakeSocket());
+    for (const [i, socket] of sockets.entries()) { gateway.handle(socket); gateway.receive(socket, { type: 'watch', actorId: `nobody-${i}` }); }
+    const spy = vi.spyOn(host, 'liveEncounterFrame');
+    gateway.broadcast();
+    // The whole frame once, and the shared regional selection once: never one per viewer.
+    expect(spy.mock.calls.length).toBeLessThanOrEqual(2);
+    expect(sockets.every((s) => s.scenes().length === 2)).toBe(true);
+    spy.mockRestore();
+    for (const socket of sockets) gateway.disconnect(socket);
+  });
+
   it('sends a regional viewer only the movements in its regions (1A.4)', () => {
     const gateway = new Gateway(host), socket = new FakeSocket();
     gateway.handle(socket);

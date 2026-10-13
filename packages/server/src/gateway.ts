@@ -232,7 +232,7 @@ export class Gateway {
     // viewer due the same scene is handed the same Buffer. Building and converting a ~1.6 MB
     // string per viewer held the event loop for ~1.9 s at 500 viewers (load test, 5 October).
     // Encoded once per (region set, fresh or not): viewers looking at the same regions share a Buffer.
-    type Recording = { payload: string; id: string | null; encoded: Map<string, Buffer> };
+    type Recording = { payload: string; id: string | null; encoded: Map<string, Buffer>; actors?: Set<string> };
     const recordings = new Map<string | null, Recording>();
     let custom = 0;
     for (const session of this.#sessions.values()) {
@@ -255,14 +255,26 @@ export class Gateway {
       // region set, shared by every viewer of it who follows no one outside it.
       const regionKey = session.regions?.join(',') ?? null;
       if (regionKey !== null) {
-        const key = `${session.watching ?? ''}|${regionKey}`;
-        let recording = recordings.get(key);
-        if (!recording) {
-          const selected = this.host.liveEncounterFrame(session.watching, new Set(session.regions!));
+        const build = (watching: string | null, key: string): Recording => {
+          const selected = this.host.liveEncounterFrame(watching, new Set(session.regions!));
           const timed = selected && frame && selected.id === frame.id
             ? { ...selected, elapsedWorldSeconds: frame.elapsedWorldSeconds } : selected;
-          recording = { payload: JSON.stringify(timed), id: timed?.id ?? null, encoded: new Map() };
-          if (session.watching === null || custom++ < 8) recordings.set(key, recording);
+          const recording = { payload: JSON.stringify(timed), id: timed?.id ?? null, encoded: new Map(),
+            actors: new Set((timed?.movements ?? []).map((m) => m.actor.id)) };
+          recordings.set(key, recording);
+          return recording;
+        };
+        const sharedKey = `|${regionKey}`;
+        const shared = recordings.get(sharedKey) ?? build(null, sharedKey);
+        // A followed animal gets its own selection only if it moved this hour and the shared one
+        // left it out, and only for eight such viewers a broadcast: ids that name nothing, or more
+        // followers than that, share the regional recording.
+        const watching = session.watching;
+        let recording = shared;
+        if (watching !== null && !shared.actors!.has(watching) && this.host.hasLiveMovement(watching)) {
+          const own = recordings.get(`${watching}|${regionKey}`);
+          if (own) recording = own;
+          else if (custom < 8) { custom++; recording = build(watching, `${watching}|${regionKey}`); }
         }
         this.#sendRecording(session, recording, view, freshCheckpoint, moved, scene);
         continue;
