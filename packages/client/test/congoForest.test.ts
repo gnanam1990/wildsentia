@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { CONGO_GRID, ISLAND_GRID, patchCentre } from '@vana/shared';
+import { CONGO_GRID, ISLAND_GRID, congoChannelHalfM, congoRivers, patchCentre, riverIndex } from '@vana/shared';
 import { setWorldGrid } from '../src/worldGrid.js';
 import { congoLattice, type PatchView } from '../src/terrain.js';
 import { CANOPY_HEIGHT_M, CongoForest, KIND_RADIUS_M } from '../src/congoForest.js';
@@ -74,5 +74,36 @@ describe('the Congo forest layer', () => {
     expect(forest.root.getObjectByName('congo-water')).toBeDefined();
     forest.setScene([...region(3, 3)], 7, false);
     expect(forest.root.getObjectByName('flood')).toBeUndefined();
+  });
+  it('plants nothing while the eye looks down from above the canopy, and keeps a bounded memory of plans', () => {
+    setWorldGrid(CONGO_GRID);
+    const forest = new CongoForest(), patches = [...region(1, 1), ...region(2, 1)], floor = congoLattice(7).sample;
+    forest.setScene(patches, 7, false);
+    const at = (x: number, z: number, high: boolean) => forest.update(new THREE.Vector3(x, 0, z), new THREE.Vector3(x, floor(x, z) + (high ? 900 : 10), z));
+    expect(at(9000, 9000, true)).toBe(false);
+    expect(forest.plannedPatches).toBe(0);
+    for (let x = 6200; x < 17800; x += 400) at(x, 9000, false);
+    expect(forest.plannedPatches).toBeLessThanOrEqual(96);
+    expect(at(9000, 9000, true)).toBe(false);
+    let shown = 0;
+    forest.root.traverse((o) => { if ((o as THREE.InstancedMesh).isInstancedMesh && o.visible) shown++; });
+    expect(shown).toBe(0);
+  });
+  it('opens the canopy over the river channel itself, and closes it over a river patch\'s dry edge', () => {
+    setWorldGrid(CONGO_GRID);
+    const rivers = congoRivers(7, CONGO_GRID), near = riverIndex(rivers), main = rivers[0]!, mid = main.points[Math.floor(main.points.length / 2)]!;
+    const rc = Math.floor((mid.x + 150) / 6000), rr = Math.floor((mid.z + 150) / 6000), floor = congoLattice(7).sample;
+    const patches = region(rc, rr, (id) => { const c = patchCentre(CONGO_GRID, id), a = near(c.x, c.z); return a.distanceM <= congoChannelHalfM(a.river, CONGO_GRID) ? 'water' : 'flooded_forest'; });
+    const forest = new CongoForest();
+    forest.setScene(patches, 7, false);
+    const p = (forest.root.getObjectByName('canopy-shell') as THREE.Mesh).geometry.attributes.position!;
+    let dryEdgeLifted = 0;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), z = p.getZ(i), a = near(x, z), half = congoChannelHalfM(a.river, CONGO_GRID), above = p.getY(i) - floor(x, z);
+      if (a.distanceM <= half) expect(above).toBeLessThan(0.5);
+      const id = Math.floor((z + 150) / 300) * 160 + Math.floor((x + 150) / 300);
+      if (patches.find((q) => q.id === id)?.habitat === 'water' && a.distanceM > half + 60 && above > 10) dryEdgeLifted++;
+    }
+    expect(dryEdgeLifted).toBeGreaterThan(0);
   });
 });

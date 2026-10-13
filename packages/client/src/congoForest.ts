@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { patchCentre, spatialHash } from '@vana/shared';
+import { congoChannelHalfM, congoRivers, patchCentre, riverIndex, spatialHash } from '@vana/shared';
 import { worldGrid } from './worldGrid.js';
 import { CONGO_STEP_M, congoLattice, type PatchView } from './terrain.js';
 import { CONGO_KINDS, congoLeafDepthMaterial, congoPlantMaterials, congoPlantParts, planCongoPatch, type CongoKind, type PlacedPlant, type PlantParts } from './congoPlants.js';
-import { buildCongoWater } from './congoWater.js';
+import { buildCongoWater, type LoadedGround } from './congoWater.js';
 
 /** How far from the camera's focus each kind of plant is drawn one by one (metres). */
 export const KIND_RADIUS_M: Record<CongoKind, number> = {
@@ -20,6 +20,8 @@ const UNDER_CANOPY_FROM_M = 12, UNDER_CANOPY_TO_M = 45;
 /** Trees stand a little into the ground, so a buttress never floats on a slope. */
 const TREE_SINK_M = 0.3;
 const TREES = new Set<CongoKind>(['emergent', 'canopy', 'midstory', 'raphia', 'sapling']);
+/** Plans kept for this many patches (the most recently used): about a kilometre around the camera. */
+const PLAN_CACHE_PATCHES = 96;
 
 /**
  * Congo 1A.5: the forest of the loaded regions.
@@ -34,7 +36,8 @@ export class CongoForest {
   canopyHole = { x: 0, z: 0, radius: KIND_RADIUS_M.canopy - 40 };
   #patches: readonly PatchView[] = [];
   #seed = 0;
-  #plans = new Map<number, PlacedPlant[]>();
+  /** Each patch's plants, by kind, planned when first needed; least recently used dropped first. */
+  #plans = new Map<number, Map<CongoKind, PlacedPlant[]>>();
   #meshes = new Map<string, THREE.InstancedMesh>();
   #focus: THREE.Vector3 | null = null;
   #shell: THREE.Mesh | null = null;
@@ -46,13 +49,17 @@ export class CongoForest {
 
   constructor() { this.root.name = 'congo-forest'; }
 
+  /** How many patches' plans are held. */
+  get plannedPatches(): number { return this.#plans.size; }
+
   /** A new region set or season: new canopy surface and water; the near plants are planted again on the next update. */
   setScene(patches: readonly PatchView[], seed: number, flooded: boolean): void {
     this.#patches = patches; this.#seed = seed; this.#focus = null;
-    for (const id of [...this.#plans.keys()]) if (!patches.some((p) => p.id === id)) this.#plans.delete(id);
-    const bounds = boundsOf(patches);
+    const ids = new Set(patches.map((p) => p.id));
+    for (const id of [...this.#plans.keys()]) if (!ids.has(id)) this.#plans.delete(id);
+    const ground = loadedGround(patches);
     this.#replace('shell', this.#buildShell(patches, seed));
-    this.#replace('water', bounds ? buildCongoWater(seed, bounds, flooded) : null);
+    this.#replace('water', ground ? buildCongoWater(seed, ground, flooded) : null);
   }
 
   /**
@@ -65,11 +72,16 @@ export class CongoForest {
     const t = Math.max(0, Math.min(1, (above - HOLE_CLOSES_FROM_M) / (HOLE_CLOSED_AT_M - HOLE_CLOSES_FROM_M)));
     const radius = Math.round((KIND_RADIUS_M.canopy - 40) * (1 - t * t * (3 - 2 * t)));
     this.#hole.radius.value = radius;
+    const u = Math.max(0, Math.min(1, (above - UNDER_CANOPY_FROM_M) / (UNDER_CANOPY_TO_M - UNDER_CANOPY_FROM_M)));
+    this.underCanopy = 1 - u * u * (3 - 2 * u);
+    // From above the canopy the near plants would be under its surface: none are planted or drawn,
+    // and none are planned, however fast the view pans.
+    const near = radius > 0;
+    for (const mesh of this.#meshes.values()) mesh.visible = near;
+    if (!near) { this.#focus = null; this.canopyHole = { x: focus.x, z: focus.z, radius }; return false; }
     const moved = !this.#focus || Math.hypot(focus.x - this.#focus.x, focus.z - this.#focus.z) >= REFILL_MOVE_M;
     if (moved) { this.#focus = focus.clone(); this.#hole.centre.value.set(focus.x, focus.z); this.#plant(focus); }
     this.canopyHole = { x: this.#focus!.x, z: this.#focus!.z, radius };
-    const u = Math.max(0, Math.min(1, (above - UNDER_CANOPY_FROM_M) / (UNDER_CANOPY_TO_M - UNDER_CANOPY_FROM_M)));
-    this.underCanopy = 1 - u * u * (3 - 2 * u);
     return moved;
   }
 
@@ -90,19 +102,30 @@ export class CongoForest {
   }
 
   #plant(focus: THREE.Vector3): void {
-    const grid = worldGrid(), ground = congoLattice(this.#seed).sample, reach = Math.max(...Object.values(KIND_RADIUS_M)) + grid.patchM * 0.71;
+    const grid = worldGrid(), ground = congoLattice(this.#seed).sample, corner = grid.patchM * Math.SQRT1_2;
+    const reach = Math.max(...Object.values(KIND_RADIUS_M)) + corner;
     const chosen = new Map<CongoKind, PlacedPlant[]>();
     for (const patch of this.#patches) {
-      const c = patchCentre(grid, patch.id);
-      if (Math.hypot(c.x - focus.x, c.z - focus.z) > reach) continue;
-      let plan = this.#plans.get(patch.id);
-      if (!plan) { plan = planCongoPatch(patch, this.#seed); this.#plans.set(patch.id, plan); }
-      for (const plant of plan) {
-        if (Math.hypot(plant.x - focus.x, plant.z - focus.z) > KIND_RADIUS_M[plant.kind]) continue;
-        const list = chosen.get(plant.kind) ?? [];
-        list.push(plant); chosen.set(plant.kind, list);
+      const c = patchCentre(grid, patch.id), d = Math.hypot(c.x - focus.x, c.z - focus.z);
+      if (d > reach) continue;
+      // Only the kinds that reach this far are planned for the patch (herbs only next to the camera).
+      const kinds = CONGO_KINDS.filter((k) => d <= KIND_RADIUS_M[k] + corner);
+      let byKind = this.#plans.get(patch.id);
+      if (byKind) this.#plans.delete(patch.id); else byKind = new Map();
+      this.#plans.set(patch.id, byKind);
+      const missing = new Set(kinds.filter((k) => !byKind!.has(k)));
+      if (missing.size) {
+        const planned = planCongoPatch(patch, this.#seed, missing);
+        for (const k of missing) byKind.set(k, []);
+        for (const plant of planned) byKind.get(plant.kind)!.push(plant);
+      }
+      for (const kind of kinds) for (const plant of byKind.get(kind)!) {
+        if (Math.hypot(plant.x - focus.x, plant.z - focus.z) > KIND_RADIUS_M[kind]) continue;
+        const list = chosen.get(kind) ?? [];
+        list.push(plant); chosen.set(kind, list);
       }
     }
+    while (this.#plans.size > PLAN_CACHE_PATCHES) this.#plans.delete(this.#plans.keys().next().value!);
     const matrix = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0), tint = new THREE.Color();
     const materials = congoPlantMaterials();
     for (const kind of CONGO_KINDS) {
@@ -149,10 +172,14 @@ export class CongoForest {
     const grid = worldGrid(), lattice = congoLattice(seed), origin = -grid.patchM / 2, byId = new Map(patches.map((p) => [p.id, p]));
     const c0 = Math.round((bounds.minX - origin) / CONGO_STEP_M), r0 = Math.round((bounds.minZ - origin) / CONGO_STEP_M);
     const cols = Math.round((bounds.maxX - bounds.minX) / CONGO_STEP_M), rows = Math.round((bounds.maxZ - bounds.minZ) / CONGO_STEP_M);
+    const near = riversNear(seed);
+    // Open over the river's own channel, wherever it runs; a river patch's dry edge is flooded forest.
     const canopyAt = (x: number, z: number): number => {
+      const at = near(x, z);
+      if (at.distanceM <= congoChannelHalfM(at.river, grid) + 5) return 0;
       const col = Math.floor((x - origin) / grid.patchM), row = Math.floor((z - origin) / grid.patchM);
       const patch = col >= 0 && row >= 0 && col < grid.cols && row < grid.rows ? byId.get(row * grid.cols + col) : undefined;
-      return patch ? CANOPY_HEIGHT_M[patch.habitat] ?? 0 : 0;
+      return patch ? CANOPY_HEIGHT_M[patch.habitat === 'water' ? 'flooded_forest' : patch.habitat] ?? 0 : 0;
     };
     const positions = new Float32Array((cols + 1) * (rows + 1) * 3), colours = new Float32Array((cols + 1) * (rows + 1) * 3), lifted = new Uint8Array((cols + 1) * (rows + 1));
     const light = new THREE.Color(0x4f7a32), dark = new THREE.Color(0x24451c), c = new THREE.Color();
@@ -214,7 +241,7 @@ vec2 shellCrowns(vec2 p) {
 ` + shader.fragmentShader.replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
         // Cut away where the plants themselves stand, with a dithered edge.
         float holeEdge = (distance(vShellWorld.xz, holeCentre) - holeRadius) / 60.0;
-        if (holeEdge < shellHash(floor(vShellWorld.xz))) discard;`).replace('#include <color_fragment>', `#include <color_fragment>
+        if (holeRadius > 0.0 && holeEdge < shellHash(floor(vShellWorld.xz))) discard;`).replace('#include <color_fragment>', `#include <color_fragment>
         // Treetops: canopy crowns about 16 m across and emergents about 34 m, each domed (lit top,
         // shaded rim, dark gaps between) and each its own green: deep, olive, yellow, a few reddish
         // flushes of new leaves.
@@ -230,6 +257,20 @@ vec2 shellCrowns(vec2 p) {
     mesh.name = 'canopy-shell'; mesh.receiveShadow = false; mesh.castShadow = false;
     return mesh;
   }
+}
+
+let riverCache: { seed: number; near: ReturnType<typeof riverIndex> } | null = null;
+function riversNear(seed: number): ReturnType<typeof riverIndex> {
+  if (riverCache?.seed !== seed) riverCache = { seed, near: riverIndex(congoRivers(seed, worldGrid())) };
+  return riverCache.near;
+}
+
+/** The loaded regions, and their bounding box: where the ground is drawn. */
+function loadedGround(patches: readonly PatchView[]): LoadedGround | null {
+  const bounds = boundsOf(patches);
+  if (!bounds) return null;
+  const side = worldGrid().regionPatches;
+  return { ...bounds, regions: new Set(patches.map((p) => `${Math.floor(p.x / side)},${Math.floor(p.y / side)}`)) };
 }
 
 /** The loaded regions' bounding box in world metres (the ground mesh's extent). */

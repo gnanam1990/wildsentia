@@ -62,6 +62,12 @@ describe('Congo plants', () => {
     expect(edge).toBeGreaterThanOrEqual(0);
     expect(planCongoPatch(patch(edge, 'water'), 7).filter((p) => p.kind === 'canopy').length).toBeGreaterThan(0);
   });
+  it('plan one kind alone exactly as it stands in the whole plan', () => {
+    setWorldGrid(CONGO_GRID);
+    const whole = planCongoPatch(patch(12_880, 'terra_firme'), 7);
+    const trees = planCongoPatch(patch(12_880, 'terra_firme'), 7, new Set(['canopy', 'emergent'] as CongoKind[]));
+    expect(trees).toEqual(whole.filter((p) => p.kind === 'canopy' || p.kind === 'emergent'));
+  });
   it('build tall buttressed emergents, Raphia fronds and broad-leaved understory', () => {
     const box = (k: CongoKind) => new THREE.Box3().setFromBufferAttribute(congoPlantGeometry(k).getAttribute('position') as THREE.BufferAttribute);
     expect(box('emergent').max.y).toBeGreaterThan(40);

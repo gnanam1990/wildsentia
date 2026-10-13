@@ -5,6 +5,11 @@ import { CONGO_BASE_M, CONGO_STEP_M, congoLattice } from './terrain.js';
 
 /** The loaded ground, in world metres. */
 export interface GroundBounds { minX: number; minZ: number; maxX: number; maxZ: number }
+/** The loaded ground: its bounding box and its regions (`col,row`), which need not fill the box. */
+export interface LoadedGround extends GroundBounds { regions: ReadonlySet<string> }
+
+/** Water is drawn in this order whatever the camera does: the flood, then tributaries, then the main river over them. */
+const RENDER_ORDER = { flood: 1, tributary: 2, main: 3 } as const;
 
 /** A ribbon reaches this far under each bank, so no seam shows where the bed meets the bank. */
 const RIVER_TUCK_M = 20;
@@ -12,8 +17,6 @@ const RIVER_TUCK_M = 20;
 const RIVER_BELOW_LEVEL_M = 0.4;
 /** Flood water over the flooded forest's floor in the rains. */
 export const FLOOD_DEPTH_M = 0.6;
-/** River courses past the loaded ground's edge are drawn this far, so a river never ends at a seam. */
-const MARGIN_M = 1500;
 
 const COLOURS = { main: 0x7d6444, tributary: 0x4a3a26, flood: 0x3a3020 } as const;
 
@@ -59,15 +62,18 @@ function worldUv(geometry: THREE.BufferGeometry): void {
 }
 
 /** One river's course within the bounds, as a ribbon as wide as its channel at the river's own level. */
-function riverRibbon(river: RiverPath, bounds: GroundBounds, half: number): THREE.BufferGeometry | null {
-  const inside = (p: { x: number; z: number }) => p.x >= bounds.minX - MARGIN_M && p.x <= bounds.maxX + MARGIN_M
-    && p.z >= bounds.minZ - MARGIN_M && p.z <= bounds.maxZ + MARGIN_M;
+function riverRibbon(river: RiverPath, ground: LoadedGround, half: number): THREE.BufferGeometry | null {
+  const loaded = (x: number, z: number) => ground.regions.has(regionKey(x, z));
   const positions: number[] = [], index: number[] = [];
   const pts = river.points;
+  // A course point is drawn when it, or a neighbour, stands on loaded ground: the ribbon reaches
+  // the ground's edge and ends one point (some 200 m) past it, never over unloaded regions.
+  const kept = pts.map((p, i) => loaded(p.x, p.z) || (i > 0 && loaded(pts[i - 1]!.x, pts[i - 1]!.z))
+    || (i < pts.length - 1 && loaded(pts[i + 1]!.x, pts[i + 1]!.z)));
   let previousKept = false;
   for (let i = 0; i < pts.length; i++) {
     const p = pts[i]!;
-    if (!inside(p)) { previousKept = false; continue; }
+    if (!kept[i]) { previousKept = false; continue; }
     const a = pts[Math.max(0, i - 1)]!, b = pts[Math.min(pts.length - 1, i + 1)]!;
     const len = Math.hypot(b.x - a.x, b.z - a.z) || 1, nx = -(b.z - a.z) / len, nz = (b.x - a.x) / len;
     const w = half + RIVER_TUCK_M, y = p.levelM - RIVER_BELOW_LEVEL_M - CONGO_BASE_M;
@@ -89,7 +95,7 @@ function riverRibbon(river: RiverPath, bounds: GroundBounds, half: number): THRE
  * The flood over the flooded forest in the rains: a sheet just over the ground on the 50 m
  * lattice, in the cells within each river's flood belt. Its edge follows the river's course.
  */
-function floodSheet(seed: number, bounds: GroundBounds): THREE.BufferGeometry | null {
+function floodSheet(seed: number, bounds: LoadedGround): THREE.BufferGeometry | null {
   const grid = worldGrid(), { near } = riversOf(seed), lattice = congoLattice(seed), origin = -grid.patchM / 2;
   const c0 = Math.round((bounds.minX - origin) / CONGO_STEP_M), r0 = Math.round((bounds.minZ - origin) / CONGO_STEP_M);
   const cols = Math.round((bounds.maxX - bounds.minX) / CONGO_STEP_M), rows = Math.round((bounds.maxZ - bounds.minZ) / CONGO_STEP_M);
@@ -102,8 +108,8 @@ function floodSheet(seed: number, bounds: GroundBounds): THREE.BufferGeometry | 
   for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++) {
     const x = origin + (c0 + col + 0.5) * CONGO_STEP_M, z = origin + (r0 + row + 0.5) * CONGO_STEP_M;
     const at = near(x, z), half = congoChannelHalfM(at.river, grid);
-    // The channel itself carries the river ribbon; the flood stands on the belt beside it.
-    if (at.distanceM <= half - CONGO_STEP_M || at.distanceM > half + at.river.floodBeltM) continue;
+    // The channel itself carries the river ribbon; the flood stands on the belt beside it, on loaded ground.
+    if (at.distanceM <= half || at.distanceM > half + at.river.floodBeltM || !bounds.regions.has(regionKey(x, z))) continue;
     const a = row * (cols + 1) + col, b = a + cols + 1;
     for (const v of [a, a + 1, b, b + 1]) wetCorners[v]!++;
     index.push(a, b, a + 1, b, b + 1, a + 1);
@@ -121,23 +127,29 @@ function floodSheet(seed: number, bounds: GroundBounds): THREE.BufferGeometry | 
 }
 
 /** Congo 1A.5: the rivers within (and just beyond) the loaded ground, and the flood when `flooded`. */
-export function buildCongoWater(seed: number, bounds: GroundBounds, flooded: boolean): THREE.Group {
+export function buildCongoWater(seed: number, bounds: LoadedGround, flooded: boolean): THREE.Group {
   const group = new THREE.Group();
   group.name = 'congo-water';
   riversOf(seed).rivers.forEach((river, i) => {
     const geometry = riverRibbon(river, bounds, congoChannelHalfM(river, worldGrid()));
     if (!geometry) return;
     const mesh = new THREE.Mesh(geometry, waterMaterial(COLOURS[river.kind], 0.94));
-    mesh.name = `river:${i}`; mesh.receiveShadow = true;
+    mesh.name = `river:${i}`; mesh.receiveShadow = true; mesh.renderOrder = RENDER_ORDER[river.kind];
     group.add(mesh);
   });
   if (flooded) {
     const geometry = floodSheet(seed, bounds);
     if (geometry) {
       const mesh = new THREE.Mesh(geometry, waterMaterial(COLOURS.flood, 0.5));
-      mesh.name = 'flood'; mesh.receiveShadow = true;
+      mesh.name = 'flood'; mesh.receiveShadow = true; mesh.renderOrder = RENDER_ORDER.flood;
       group.add(mesh);
     }
   }
   return group;
+}
+
+/** The region (`col,row`) a point lies in. */
+function regionKey(x: number, z: number): string {
+  const grid = worldGrid(), span = grid.regionPatches * grid.patchM, origin = -grid.patchM / 2;
+  return `${Math.floor((x - origin) / span)},${Math.floor((z - origin) / span)}`;
 }

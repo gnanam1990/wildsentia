@@ -9,6 +9,7 @@ import { InsightPanel } from './insights.js';
 import { LiveAgents, activityOf, isLiveMessage, isRosterMessage, rosterActivity, usdc } from './liveAgents.js';
 import { COVER_RADIUS_M, GroundCover } from './groundCover.js';
 import { CongoForest } from './congoForest.js';
+import { congoPlantMaterials } from './congoPlants.js';
 import { AnimalLayer } from './animals.js';
 import { FollowCamera, followDistanceFor, viewMessage } from './camera.js';
 import { nearestOnScreen } from './picking.js';
@@ -553,7 +554,11 @@ const sceneUpdates = new SceneUpdates<{
       nature?.setPatches(update.environment.patches);
       const congoSeed = update.environment.patches[0]?.congoSeed;
       if (congoSeed !== undefined) {
-        if (congoForest === null) { congoForest = new CongoForest(); scene.add(congoForest.root); }
+        if (congoForest === null) {
+          congoForest = new CongoForest(); scene.add(congoForest.root);
+          // Plants between the camera and a followed animal are cut away, as the island's trees are.
+          for (const material of Object.values(congoPlantMaterials())) observerVisibility.patch(material);
+        }
         congoForest.setScene(update.environment.patches, congoSeed, update.environment.patches.some((p) => p.flooded === true));
         atmosphere.haze = 1;
       }

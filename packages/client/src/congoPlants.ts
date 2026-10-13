@@ -34,34 +34,47 @@ function rng(seed: number): () => number {
   return () => { s = (s + 0x6d2b79f5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296; };
 }
 
-let rivers: { seed: number; list: RiverPath[]; near: ReturnType<typeof riverIndex> } | null = null;
+let rivers: { seed: number; list: RiverPath[]; near: ReturnType<typeof riverIndex>; widestHalf: number } | null = null;
 function riversOf(seed: number) {
-  if (rivers?.seed !== seed) { const list = congoRivers(seed, worldGrid()); rivers = { seed, list, near: riverIndex(list) }; }
+  if (rivers?.seed !== seed) {
+    const list = congoRivers(seed, worldGrid());
+    rivers = { seed, list, near: riverIndex(list), widestHalf: Math.max(...list.map((r) => congoChannelHalfM(r, worldGrid()))) };
+  }
   return rivers;
 }
 
-/** What grows in one patch: the same plants, in the same places, every time. */
-export function planCongoPatch(patch: Pick<PatchView, 'id' | 'habitat'>, seed: number): PlacedPlant[] {
+/**
+ * What grows in one patch: the same plants, in the same places, every time. `kinds` plans only
+ * those kinds, each exactly as it stands in the whole plan (each kind draws from its own sequence).
+ */
+export function planCongoPatch(patch: Pick<PatchView, 'id' | 'habitat'>, seed: number, kinds?: ReadonlySet<CongoKind>): PlacedPlant[] {
   // A river patch is water only where its channel runs; its dry edge grows the flooded forest's plants.
   const counts = PER_PATCH[patch.habitat === 'water' ? 'flooded_forest' : patch.habitat];
   if (!counts) return [];
-  const grid = worldGrid(), centre = patchCentre(grid, patch.id), half = grid.patchM / 2, { near } = riversOf(seed);
-  const random = rng(spatialHash(`congo-plants:${seed}:${patch.id}`));
+  const grid = worldGrid(), centre = patchCentre(grid, patch.id), half = grid.patchM / 2, { near, widestHalf } = riversOf(seed);
+  // Most patches lie far from every river: then no plant can stand in a channel, and none needs a lookup.
+  const fromRiver = near(centre.x, centre.z).distanceM - half * Math.SQRT2;
+  const inChannel = fromRiver > widestHalf + 3 ? () => false
+    : (x: number, z: number) => { const at = near(x, z); return at.distanceM <= congoChannelHalfM(at.river, grid) + 3; };
   const out: PlacedPlant[] = [];
-  const inChannel = (x: number, z: number) => { const at = near(x, z); return at.distanceM <= congoChannelHalfM(at.river, grid) + 3; };
   for (const kind of CONGO_KINDS) {
-    const n = counts[kind] ?? 0;
+    const n = kind === 'rock' ? 0 : counts[kind] ?? 0;
+    if (n === 0 || (kinds && !kinds.has(kind))) continue;
+    const random = rng(spatialHash(`congo-plants:${seed}:${patch.id}:${kind}`));
+    const tree = kind === 'emergent' || kind === 'canopy' || kind === 'midstory';
     for (let i = 0; i < n; i++) {
       const x = centre.x + (random() * 2 - 1) * half, z = centre.z + (random() * 2 - 1) * half;
-      const scale = kind === 'emergent' || kind === 'canopy' || kind === 'midstory' ? 0.8 + random() * 0.35 : 0.7 + random() * 0.6;
-      const rotY = random() * Math.PI * 2;
+      const scale = tree ? 0.8 + random() * 0.35 : 0.7 + random() * 0.6, rotY = random() * Math.PI * 2;
       if (!inChannel(x, z)) out.push({ kind, x, z, scale, rotY });
     }
   }
-  if (patch.habitat !== 'bai') for (let i = 0; i < ROCK_TRIES; i++) {
-    const x = centre.x + (random() * 2 - 1) * half, z = centre.z + (random() * 2 - 1) * half, scale = 0.5 + random() * 1.2, rotY = random() * Math.PI * 2;
-    const at = near(x, z), edge = congoChannelHalfM(at.river, grid);
-    if (at.distanceM > edge + 3 && at.distanceM <= edge + ROCK_BANK_M) out.push({ kind: 'rock', x, z, scale, rotY });
+  if (patch.habitat !== 'bai' && (!kinds || kinds.has('rock')) && fromRiver <= widestHalf + ROCK_BANK_M) {
+    const random = rng(spatialHash(`congo-plants:${seed}:${patch.id}:rock`));
+    for (let i = 0; i < ROCK_TRIES; i++) {
+      const x = centre.x + (random() * 2 - 1) * half, z = centre.z + (random() * 2 - 1) * half, scale = 0.5 + random() * 1.2, rotY = random() * Math.PI * 2;
+      const at = near(x, z), edge = congoChannelHalfM(at.river, grid);
+      if (at.distanceM > edge + 3 && at.distanceM <= edge + ROCK_BANK_M) out.push({ kind: 'rock', x, z, scale, rotY });
+    }
   }
   return out;
 }
