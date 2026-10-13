@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { ISLAND_GRID } from '@vana/shared';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { buildApi } from '../src/api.js';
 import { ConnectionCaps, GENERAL_LIMIT_DEFAULTS, NetworkRateLimit, WindowRateLimit, generalLimits } from '../src/limits.js';
@@ -12,7 +13,7 @@ import type { SimHost } from '../src/simHost.js';
  * checkpoint, so observation routes answer 503, which is still not a 429.
  */
 
-const host = { worldId: null, rewardSubject: () => null, observation: () => null, isWriterActive: true,
+const host = { grid: ISLAND_GRID, worldId: null, rewardSubject: () => null, observation: () => null, isWriterActive: true,
   lastError: null, hasFreshCheckpoint: true, checkpointTime: 0 } as unknown as SimHost;
 const pool = { query: async () => ({ rows: [] }) } as unknown as Pool;
 

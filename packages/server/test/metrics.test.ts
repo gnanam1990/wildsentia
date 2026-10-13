@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { ISLAND_GRID } from '@vana/shared';
 import { readFileSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
@@ -12,7 +13,7 @@ import { testDatabaseUrl } from './testDatabase.js';
 
 /** Workstream D: the operator's /metrics, on its own internal port and never through Caddy. */
 
-const standInHost = { worldId: null, rewardSubject: () => null, observation: () => null, isWriterActive: true,
+const standInHost = { grid: ISLAND_GRID, worldId: null, rewardSubject: () => null, observation: () => null, isWriterActive: true,
   lastError: null, hasFreshCheckpoint: true, checkpointTime: 7200 } as unknown as Parameters<typeof buildApi>[0]['host'];
 const standInPool = { query: async () => ({ rows: [] }) } as unknown as Pool;
 

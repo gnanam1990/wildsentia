@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { ISLAND_GRID } from '@vana/shared';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
@@ -14,7 +15,7 @@ import type { SimHost } from '../src/simHost.js';
  */
 
 const adminToken = 'security-review-fixture-'.repeat(2);
-const host = { worldId: null, rewardSubject: () => null, observation: () => null } as unknown as SimHost;
+const host = { grid: ISLAND_GRID, worldId: null, rewardSubject: () => null, observation: () => null } as unknown as SimHost;
 const failingPool = {
   query: async () => { throw new Error('connect ECONNREFUSED 10.1.2.3:5432 (database vana)'); },
   connect: async () => { throw new Error('connect ECONNREFUSED 10.1.2.3:5432 (database vana)'); },
