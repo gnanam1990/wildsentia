@@ -72,7 +72,7 @@ async function load(): Promise<void> {
     if (!res.ok) throw new Error(String(res.status));
     info = await res.json() as AgentInfo;
   } catch {
-    status.textContent = 'Agents are not open on this island right now. The forest itself stays open to watch.';
+    status.textContent = 'Agents are not open in this world right now. The forest itself stays open to watch.';
     return;
   }
   const free = Math.max(0, info.slots - info.registered);
@@ -86,7 +86,7 @@ async function load(): Promise<void> {
     document.querySelector<HTMLElement>('#llm-step')!.hidden = false;
   }
   if (info.holding) {
-    document.querySelector('#holding-text')!.textContent = `On this island an agent must hold at least ${info.holding.minAtomic} atomic units of token ${info.holding.tokenAddress} (chain ${info.holding.chainId}) to register, and still hold them to take an animal. One agent per wallet. Register with a signed wallet instead:`;
+    document.querySelector('#holding-text')!.textContent = `Here an agent must hold at least ${info.holding.minAtomic} atomic units of token ${info.holding.tokenAddress} (chain ${info.holding.chainId}) to register, and still hold them to take an animal. One agent per wallet. Register with a signed wallet instead:`;
     document.querySelector<HTMLElement>('[data-code="register"]')!.hidden = true;
     document.querySelector<HTMLElement>('#holding-note')!.hidden = false;
   }
