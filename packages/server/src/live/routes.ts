@@ -1,3 +1,4 @@
+import { WorldBusyError } from './worldPort.js';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -26,6 +27,8 @@ import { MIN_X_ACCOUNT_DAYS } from '../accounts/store.js';
 export interface HoldingGate { minAtomic: bigint; tokenAddress: string; chainId: number; balance(wallet: `0x${string}`): Promise<bigint> }
 
 export interface LiveRouteDeps {
+  /** True while the world steps (in slices): commands are refused with world_busy until it ends. */
+  busy?: (() => boolean) | undefined;
   live: LiveLayer;
   world: WorldPort;
   store: AgentStore;
@@ -115,6 +118,11 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
   const networkHash = (req: FastifyRequest) => createHash('sha256').update(`live-network:${deps.networkSecret}:${networkKey(req.ip)}`).digest('hex');
 
   app.register(async (scope) => {
+    // A command that got past the check and then reached the world after a step began.
+    scope.setErrorHandler((error, _req, reply) => {
+      if (error instanceof WorldBusyError) return reply.code(503).header('Retry-After', '1').send({ error: 'world_busy', retryAfterMs: 250 });
+      throw error;
+    });
     // The signature covers the exact body bytes, so keep them.
     scope.addContentTypeParser('application/json', { parseAs: 'string', bodyLimit: 8192 }, (_req, body, done) => {
       try { done(null, { raw: body as string, json: body === '' ? {} : JSON.parse(body as string) }); }
@@ -228,7 +236,15 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
      * The commands an animal is steered with. Agents send them signed to /agents/me/*; people send
      * them from the play page to /play/*, with their session cookie.
      */
-    const commandRoutes = (prefix: string, resolve: Resolve) => {
+    const commandRoutes = (prefix: string, resolveAny: Resolve) => {
+      // A command (not an observation) waits while the world steps: the agent retries shortly.
+      const resolve: Resolve = async (req, reply, bucket) => {
+        if (bucket === commands && deps.busy?.()) {
+          reply.code(503).header('Retry-After', '1').send({ error: 'world_busy', retryAfterMs: 250 });
+          return null;
+        }
+        return resolveAny(req, reply, bucket);
+      };
       scope.get(`${prefix}/observe`, async (req, reply) => {
         const ctx = await resolve(req, reply, observes); if (!ctx) return reply;
         return observation(ctx.agent);

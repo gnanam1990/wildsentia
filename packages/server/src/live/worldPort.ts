@@ -36,7 +36,13 @@ export interface PlayedClock {
   rate?(): number;
 }
 
-export function worldPort(world: () => World, worldId: () => string | null, played?: PlayedClock): WorldPort {
+/** The world is stepping (in slices): it may not be changed until the step ends. */
+export class WorldBusyError extends Error {
+  constructor() { super('world_busy'); this.name = 'WorldBusyError'; }
+}
+
+export function worldPort(world: () => World, worldId: () => string | null, played?: PlayedClock, busy: () => boolean = () => false): WorldPort {
+  const held = (): void => { if (busy()) throw new WorldBusyError(); };
   const patchAt = (x: number, z: number) => {
     const grid = world().grid;
     if (!inWorld(grid, x, z)) return null;
@@ -69,10 +75,10 @@ export function worldPort(world: () => World, worldId: () => string | null, play
         climbs: cfg.locomotion.climbsTrees === true, flies: cfg.id === 'vulture' };
     },
     possessionBlock: (id) => world().possessionBlock(id),
-    possess: (id, controller) => world().possess(id, controller),
-    release: (id) => world().release(id),
-    place: (id, position) => world().placeControlled(id, position),
-    act: (id, action, seconds) => world().applyControlledAction(id, action, seconds),
+    possess: (id, controller) => { held(); return world().possess(id, controller); },
+    release: (id) => { held(); return world().release(id); },
+    place: (id, position) => { held(); return world().placeControlled(id, position); },
+    act: (id, action, seconds) => { held(); return world().applyControlledAction(id, action, seconds); },
     speedFactor: (id, x, z) => {
       const w = world(), agent = w.animal(id), patch = patchAt(x, z);
       const cfg = agent && w.species.get(agent.speciesId);
@@ -123,8 +129,8 @@ export function worldPort(world: () => World, worldId: () => string | null, play
       return a?.alive && a.position ? { ...a.position } : null;
     },
     playedTime: () => played?.time() ?? world().now(),
-    resolveHunt: (predatorId, preyId, at, time, killed) => world().resolveLiveHunt(predatorId, preyId, at, time, killed) !== null,
-    feed: (id, seconds) => world().feedControlled(id, seconds),
+    resolveHunt: (predatorId, preyId, at, time, killed) => { held(); return world().resolveLiveHunt(predatorId, preyId, at, time, killed) !== null; },
+    feed: (id, seconds) => { held(); return world().feedControlled(id, seconds); },
     carcassNear: (x, z, radius) => {
       let best: { id: string; x: number; z: number } | null = null, bestGap = radius;
       for (const c of world().carcasses) {
@@ -134,7 +140,7 @@ export function worldPort(world: () => World, worldId: () => string | null, play
       }
       return best;
     },
-    placeWild: (id, position) => world().placeWild(id, position),
+    placeWild: (id, position) => { held(); return world().placeWild(id, position); },
   };
 }
 

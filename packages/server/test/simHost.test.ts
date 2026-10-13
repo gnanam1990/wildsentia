@@ -33,6 +33,20 @@ maybe('SimHost', () => {
     await pool!.query('truncate events, snapshots, human_motion, follows, viewers, tracks, animal_archive cascade');
   });
 
+  it('steps in slices: other work runs and the host is busy only while it steps (Congo 1A.3)', async () => {
+    const host = new SimHost({ ...options(), sliceMs: 0 }); await host.boot();
+    expect(host.busy).toBe(false);
+    let turns = 0, sawBusy = false, running = true;
+    const spin = (): void => { if (!running) return; turns++; sawBusy ||= host.busy; setImmediate(spin); };
+    setImmediate(spin);
+    await host.advance(2);
+    running = false;
+    expect(turns).toBeGreaterThan(10);
+    expect(sawBusy).toBe(true);
+    expect(host.busy).toBe(false);
+    await host.abort();
+  });
+
   it('boots a fresh world when there is no snapshot', async () => {
     const host = new SimHost(options());
     const result = await host.boot();

@@ -93,6 +93,11 @@ export interface SimHostOptions {
   worldHoursPerRealHour?: number;
   /** How long boot waits for another writer to let go of the world (0: refuse at once). */
   writerWaitMs?: number;
+  /**
+   * Congo 1A.3: the longest the world steps before letting other work run (default 25 ms). While
+   * it steps the host is `busy`, and nothing may change the world.
+   */
+  sliceMs?: number;
   snapshotEveryWorldHours?: number;
   /** How often every animal's position and drives are sampled for life replay. */
   trackEveryWorldHours?: number;
@@ -136,6 +141,9 @@ export class SimHost {
   world!: World;
   /** The world's patch lattice, fixed by its terrain profile; known before the world starts. */
   readonly grid: WorldGrid;
+  #busy = false;
+  /** True while the world is stepping: commands wait, and the live tick holds still. */
+  get busy(): boolean { return this.#busy; }
 
   readonly #events: EventStore;
   readonly #snapshots: SnapshotStore;
@@ -312,6 +320,7 @@ export class SimHost {
       allowV13Upgrade: false,
       worldHoursPerRealHour: 12,
       writerWaitMs: 0,
+      sliceMs: 25,
       snapshotEveryWorldHours: 1,
       trackEveryWorldHours: 6,
       housekeepingEveryWorldHours: 24,
@@ -631,7 +640,7 @@ export class SimHost {
         encounterAppearance(a, this.world.species.get(a.speciesId)!.body.adultMassKg)]));
       const startPositions = new Map(this.world.agents.filter((a) => a.alive && a.position)
         .map((a) => [a.id, { ...a.position! }]));
-      this.world.step(1);
+      await this.#stepInSlices();
       const community = this.world.community;
       if (community?.motion) this.#pendingHumanMotion.push({ community: structuredClone(community), motion: structuredClone(community.motion) });
       this.#pendingMovementIndex = indexLiveMovements(this.world.grid, this.world.log.all(), appearances, start, this.world.agents, startPositions);
@@ -647,6 +656,22 @@ export class SimHost {
       await this.#settlePeriodicWork();
     }
     await this.#flush();
+  }
+
+  /** One world hour, letting other work run every `sliceMs`; nothing changes the world meanwhile. */
+  async #stepInSlices(): Promise<void> {
+    const sliceMs = this.#options.sliceMs;
+    this.#busy = true;
+    try {
+      let started = performance.now();
+      for (const _ of this.world.stepSlices(1)) {
+        if (performance.now() - started < sliceMs) continue;
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        started = performance.now();
+      }
+    } finally {
+      this.#busy = false;
+    }
   }
 
   /** A failed track/archive/checkpoint is retried at the same world time, before another step. */

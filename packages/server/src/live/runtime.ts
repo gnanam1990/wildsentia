@@ -57,7 +57,7 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
     position: (id) => host.playedPosition(id),
     time: () => { const f = host.liveEncounterFrame(); return f ? f.startWorldTime + f.elapsedWorldSeconds : host.world.now(); },
     rate: () => host.worldHoursPerRealHour,
-  });
+  }, () => host.busy);
   const port: typeof inner = { ...inner,
     resolveHunt: (...args) => { huntPending = true; changedAt = Date.now(); return inner.resolveHunt(...args); },
     act: (...args) => { changedAt = Date.now(); return inner.act(...args); },
@@ -71,7 +71,7 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
   const save = async () => { const id = host.worldId; if (id) await store.savePossessions(id, live.avatars.values()); };
   const holding = holdingGate(env);
   const routes: LiveRouteDeps = {
-    live, world: port, store, ledger, ...(holding ? { holding } : {}),
+    live, world: port, store, ledger, ...(holding ? { holding } : {}), busy: () => host.busy,
     limits: { slots: positiveSetting(env, 'VANA_AGENT_SLOTS', 500), perNetworkPerDay: positiveSetting(env, 'VANA_AGENT_REGISTRATIONS_PER_NETWORK', 5) },
     networkSecret: env.VANA_LIVE_SECRET?.trim() || rewards?.adminToken || randomBytes(32).toString('hex'),
     clientScriptPath: fileURLToPath(new URL('../../agent-client/client.mjs', import.meta.url)),
@@ -90,6 +90,8 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
       timers.push(setInterval(() => {
         const now = performance.now();
         tickLag.record(Math.max(0, (now - last) / 1000 - 1 / TICK_HZ));
+        // While the world steps nothing may move it: the tick holds, and the next one catches up.
+        if (host.busy) return;
         try { live.tick((now - last) / 1000); } catch (e) { console.error('[live] tick failed', e); }
         last = now;
       }, 1000 / TICK_HZ));
