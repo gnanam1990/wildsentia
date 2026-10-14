@@ -229,6 +229,19 @@ export class BountyStore {
       on conflict do nothing`, [bountyId, agentId, animalId, worldTime])).rowCount ?? 0) > 0;
   }
 
+  /** Adds a sample to a bounty target's track log and prunes what is older than six world hours. */
+  async saveTrack(s: { bountyId: string; x: number; z: number; state: string; worldTime: number }): Promise<void> {
+    await this.pool.query(`insert into bounty_tracks (bounty_id, world_time, x, z, state) values ($1,$2,$3,$4,$5) on conflict do nothing`,
+      [s.bountyId, s.worldTime, s.x, s.z, s.state]);
+    await this.pool.query('delete from bounty_tracks where bounty_id=$1 and world_time < $2', [s.bountyId, s.worldTime - 6 * 3600]);
+  }
+
+  /** A bounty target's track log since a world time, oldest first. */
+  async tracks(bountyId: string, since: number): Promise<Array<{ bountyId: string; x: number; z: number; state: string; worldTime: number }>> {
+    return (await this.pool.query('select * from bounty_tracks where bounty_id=$1 and world_time >= $2 order by world_time', [bountyId, since])).rows
+      .map((r) => ({ bountyId: r.bounty_id as string, x: Number(r.x), z: Number(r.z), state: r.state as string, worldTime: Number(r.world_time) }));
+  }
+
   async entrants(bountyId: string): Promise<Array<{ agentId: string; animalId: string; firstSeenWorldTime: number }>> {
     return (await this.pool.query('select * from bounty_entrants where bounty_id=$1 order by first_seen_world_time', [bountyId])).rows
       .map((r) => ({ agentId: r.agent_id as string, animalId: r.animal_id as string, firstSeenWorldTime: Number(r.first_seen_world_time) }));

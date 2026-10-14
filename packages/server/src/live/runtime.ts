@@ -173,7 +173,7 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
       if (bounties) {
         // A payout decided before a stop is recorded now; then deaths and deadlines are checked every 10 s.
         await bounties.engine.settlePending().catch((e) => console.error('[bounty] settle failed', e));
-        await bounties.discovery.refresh().catch(() => undefined);
+        await bounties.discovery.refresh(bounties.now()).catch(() => undefined);
         timers.push(setInterval(() => { void bounties.engine.adjudicate().catch((e) => console.error('[bounty] adjudicate failed', e)); }, 10_000));
         // Every two seconds: the active bounties, and where each target is and what it is doing, for
         // the track log its clues come from.
@@ -184,7 +184,7 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
           return { x: at.x, z: at.z, state: targetState(animal, live.wild.get(id), live.avatars.byAnimal(id)) };
         };
         timers.push(setInterval(() => {
-          void bounties.discovery.refresh().then(() => bounties.discovery.sample(doing, bounties.now())).catch(() => undefined);
+          void bounties.discovery.refresh(bounties.now()).then(() => bounties.discovery.sample(doing, bounties.now())).catch(() => undefined);
         }, 2000));
       }
       // Four times a second, filtered per viewer by the gateway; the roster every two seconds.
