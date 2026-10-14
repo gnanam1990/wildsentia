@@ -23,6 +23,8 @@ hare     Rabbit   Hare          -                        Idle,Gallop,Jump,Restin
 langur   Langur   GreyLangur    -                        Idle,Walk,Run,Eating,Drinking,Death
 squirrel Squirrel GiantSquirrel -                        Idle,Walk,Run,Eating,Drinking,Death
 vulture  Vulture  WhiteRumpedVulture -                   Idle,Walk,Flap,Glide,Eating,Death
+duiker   Deer     BlueDuiker    -                        Idle,Walk,Eating,Gallop,Idle_Headlow,Death
+chevrotain Deer   WaterChevrotain -                      Idle,Walk,Eating,Gallop,Idle_Headlow,Death
 '
 wanted="$*"
 echo "$table" | while read -r species rig out nodeform clips fit; do

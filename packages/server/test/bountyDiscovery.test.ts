@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BountyDiscovery, motionOf } from '../src/bounties/discovery.js';
+import { BountyDiscovery, motionOf, targetState } from '../src/bounties/discovery.js';
 
 const bounty = { bountyId: 'b1', targetAnimalId: 'blue_duiker_0001', amountAtomic: 10_000_000n, decimals: 6, deadlineWorldTime: 90_000 };
 
@@ -50,5 +50,108 @@ describe('bounty discovery', () => {
     const crowd = Array.from({ length: 40 }, (_, i) => ({ id: `blue_duiker_${100 + i}`, x: 0, z: 5 + i, moving: false, running: false }));
     const seen = discovery.view('ag_9', leopard, [...crowd, { id: 'blue_duiker_0001', x: 0, z: 90, moving: false, running: false }], open);
     expect(seen.nearby[0]!.id).toBe('blue_duiker_0001');
+  });
+});
+
+// Spec §6 Clues: only real activity, from a sampled track log of each active bounty's target —
+// fresh tracks near the agent's animal, calls it can hear, disturbance in the patch it stands in.
+// A clue names the bounty and species, never the animal.
+describe('bounty clues', () => {
+  const duiker = { ...bounty, speciesId: 'blue_duiker' };
+  const setup = (active = [duiker]) => {
+    let live = active;
+    const discovery = new BountyDiscovery({ active: async () => live, recordEntrant: async () => true }, () => 'w1');
+    return { discovery, end: () => { live = []; } };
+  };
+  const leopard = { animalId: 'african_leopard_0002', speciesId: 'african_leopard', x: 0, z: 0 };
+  const noon = 12 * 3600;
+  const at = (worldTime: number, patch = (x: number, z: number) => Math.floor(x / 50) * 1000 + Math.floor(z / 50)) =>
+    ({ canopyAt: () => 0.9, worldTime, patchIdAt: patch });
+  // The target's real path: walking north along x = 20 an hour before noon, out of sense by noon.
+  const walk = (discovery: BountyDiscovery, state = 'travelling', from = noon - 3600) => {
+    for (let i = 0; i <= 12; i++) {
+      const t = from + i * 60;
+      discovery.sample((id) => (id === 'blue_duiker_0001' ? { x: 20, z: -60 + i * 10, state } : null), t);
+    }
+  };
+
+  it('finds fresh tracks near the animal: where, how old and which way the target went, never which animal', async () => {
+    const { discovery } = setup();
+    await discovery.refresh();
+    walk(discovery);
+    const seen = discovery.view('ag_1', leopard, [], at(noon));
+    const tracks = seen.clues.filter((c) => c.kind === 'tracks');
+    expect(tracks).toHaveLength(1);
+    expect(tracks[0]).toMatchObject({ kind: 'tracks', bountyId: 'b1', speciesId: 'blue_duiker', x: 20 });
+    expect(Math.hypot(tracks[0]!.x!, tracks[0]!.z!)).toBeLessThanOrEqual(30);
+    expect(tracks[0]!.ageWorldSeconds).toBeGreaterThanOrEqual(3600 - 12 * 60);
+    expect(tracks[0]!.headingDeg).toBe(0); // north: +z
+    expect(JSON.stringify(seen.clues)).not.toContain('blue_duiker_0001');
+  });
+
+  it('lets tracks fade: none older than four world hours, none far from the animal', async () => {
+    const { discovery } = setup();
+    await discovery.refresh();
+    walk(discovery, 'travelling', noon - 5 * 3600);
+    expect(discovery.view('ag_1', leopard, [], at(noon)).clues.filter((c) => c.kind === 'tracks')).toEqual([]);
+    walk(discovery);
+    expect(discovery.view('ag_1', { ...leopard, x: 300, z: 300 }, [], at(noon)).clues.filter((c) => c.kind === 'tracks')).toEqual([]);
+  });
+
+  it('hears a call (a fleeing target\'s alarm) as a bearing and a rough distance, only while it is recent and within earshot', async () => {
+    const { discovery } = setup();
+    await discovery.refresh();
+    discovery.sample((id) => (id === 'blue_duiker_0001' ? { x: 200, z: 0, state: 'fleeing' } : null), noon - 300);
+    const call = discovery.view('ag_1', leopard, [], at(noon)).clues.find((c) => c.kind === 'call');
+    expect(call).toMatchObject({ kind: 'call', bountyId: 'b1', speciesId: 'blue_duiker', bearingDeg: 90, distance: 'far' });
+    expect(call!.x).toBeUndefined();
+    expect(discovery.view('ag_1', leopard, [], at(noon + 3600)).clues.find((c) => c.kind === 'call')).toBeUndefined();
+    expect(discovery.view('ag_1', { ...leopard, x: -500 }, [], at(noon)).clues.find((c) => c.kind === 'call')).toBeUndefined();
+  });
+
+  it('notices disturbance in the patch the animal stands in when the target crossed it lately', async () => {
+    const { discovery } = setup();
+    await discovery.refresh();
+    walk(discovery);
+    const here = discovery.view('ag_1', { ...leopard, x: 30, z: 10 }, [], at(noon)).clues.find((c) => c.kind === 'disturbance');
+    expect(here).toMatchObject({ kind: 'disturbance', bountyId: 'b1', speciesId: 'blue_duiker' });
+    expect(discovery.view('ag_1', { ...leopard, x: 400, z: 400 }, [], at(noon)).clues.find((c) => c.kind === 'disturbance')).toBeUndefined();
+  });
+
+  it('gives no clue for a target it senses now (that is flagged), and forgets a bounty that ends', async () => {
+    const { discovery, end } = setup();
+    await discovery.refresh();
+    walk(discovery);
+    const sensing = discovery.view('ag_1', leopard, [{ id: 'blue_duiker_0001', x: 20, z: 60, moving: true, running: false }], { ...at(noon), canopyAt: () => 0 });
+    expect(sensing.nearby[0]!.bounty).toBeDefined();
+    expect(sensing.clues).toEqual([]);
+    end();
+    await discovery.refresh();
+    expect(discovery.view('ag_2', leopard, [], at(noon)).clues).toEqual([]);
+  });
+
+  it('never turns where the target is now into a clue: a target lying unseen in cover nearby leaves no track or disturbance pointing at it', async () => {
+    const { discovery } = setup();
+    await discovery.refresh();
+    // It walked in and lay down 10 m away, in deep cover at night; the animal does not sense it.
+    discovery.sample((id) => (id === 'blue_duiker_0001' ? { x: 10, z: 40, state: 'travelling' } : null), noon - 1800);
+    discovery.sample((id) => (id === 'blue_duiker_0001' ? { x: 10, z: 0, state: 'resting' } : null), noon - 20);
+    const night = { canopyAt: () => 0.95, worldTime: noon, patchIdAt: () => 7 };
+    const seen = discovery.view('ag_1', leopard, [], night);
+    expect(seen.clues.find((c) => c.kind === 'tracks' && c.x === 10 && c.z === 0)).toBeUndefined();
+    expect(seen.clues.find((c) => c.kind === 'disturbance' && c.ageWorldSeconds < 60)).toBeUndefined();
+    // The trail it left on the way in is fair: older, and somewhere it no longer is.
+    expect(seen.clues.find((c) => c.kind === 'tracks')).toBeUndefined(); // (10, 40) is beyond 30 m
+  });
+
+  it('logs what a target is doing: a live chase or flight, a steered sprint (prey flee, a leopard chases), else its own state', () => {
+    const duiker = { speciesId: 'blue_duiker', state: 'grazing' }, cat = { speciesId: 'african_leopard', state: 'resting' };
+    expect(targetState(duiker, { mode: 'flee' }, null)).toBe('fleeing');
+    expect(targetState(cat, { mode: 'chase' }, null)).toBe('chasing');
+    expect(targetState(duiker, null, { moving: true, gait: 'run' })).toBe('fleeing');
+    expect(targetState(cat, null, { moving: true, gait: 'run' })).toBe('chasing');
+    expect(targetState(duiker, null, { moving: true, gait: 'walk' })).toBe('travelling');
+    expect(targetState(duiker, null, { moving: false, gait: 'run' })).toBe('resting');
+    expect(targetState(duiker, { mode: 'idle' }, null)).toBe('grazing');
   });
 });

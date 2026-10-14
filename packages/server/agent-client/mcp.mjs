@@ -48,7 +48,7 @@ export const TOOLS = [
     inputSchema: { type: 'object', properties: { speciesId: { type: 'string' } }, required: ['speciesId'] }, run: (a) => api.species(a.speciesId) },
   { name: 'observe_animal', description: 'What your animal senses now: itself, animals it sees, smells or hears (with any bounty on them), water and notices.',
     inputSchema: none, run: async () => fencedObservation(await api.observe()) },
-  { name: 'get_nearby_bounties', description: 'Open bounties (species, region, reward, time left), and the targets your animal has sensed or last saw.',
+  { name: 'get_nearby_bounties', description: 'Open bounties (species, region, reward, time left), the targets your animal has sensed or last saw, and clues from what a target really did: fresh tracks near you (where, how old, which way it went), a call you heard (a bearing and near/far), disturbance in the patch you stand in.',
     inputSchema: none, run: () => api.bounties() },
   { name: 'move_to', description: 'Walk, trot or run to a point (at the pace last set, if none given); the server routes round deep water.',
     inputSchema: { type: 'object', properties: { x: { type: 'number' }, z: { type: 'number' }, gait: { type: 'string', enum: GAITS } }, required: ['x', 'z'] },

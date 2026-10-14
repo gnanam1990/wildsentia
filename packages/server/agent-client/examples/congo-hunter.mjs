@@ -50,6 +50,24 @@ export function mcpClient(env = process.env) {
 }
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+/** The Congo prey a leopard hunts: clues to any other bounty are not worth its time. */
+const prey = (clues = []) => clues.filter((c) => c.speciesId === 'blue_duiker' || c.speciesId === 'water_chevrotain');
+
+/**
+ * Where a clue points (spec §6): past fresh tracks the way the target went, or toward a call it
+ * heard. The freshest clue leads; disturbance says only "it was here", so it points nowhere.
+ */
+export function followClue(at, clues = []) {
+  const clue = clues.filter((c) => c.kind === 'tracks' || c.kind === 'call').sort((a, b) => a.ageWorldSeconds - b.ageWorldSeconds)[0];
+  if (!clue) return null;
+  const toward = (from, degrees, metres) => {
+    const r = degrees * Math.PI / 180;
+    return { x: Math.round(from.x + Math.sin(r) * metres) + 0, z: Math.round(from.z + Math.cos(r) * metres) + 0 };
+  };
+  if (clue.kind === 'tracks')
+    return clue.headingDeg === undefined ? { x: clue.x, z: clue.z, gait: 'walk' } : { ...toward(clue, clue.headingDeg, 40), gait: 'walk' };
+  return { ...toward(at, clue.bearingDeg, clue.distance === 'near' ? 50 : 120), gait: 'trot' };
+}
 /** A leopard charges from about this close; nearer than that the hunt command closes the gap. */
 const CHARGE_M = 30;
 
@@ -89,6 +107,11 @@ export async function hunt(mcp, { log = console.log, tick = () => wait(2000), ma
       const last = board.lastSeen[0];
       log(`heading for where bounty ${last.bountyId} was last seen`);
       await move({ x: last.x, z: last.z, gait: 'trot' });
+    } else if (followClue(seen.animal.position, prey(board.clues))) {
+      // Fresh tracks or a call of prey a leopard hunts: follow where they lead.
+      const to = followClue(seen.animal.position, prey(board.clues));
+      log(`following a clue to (${to.x}, ${to.z})`);
+      await move(to);
     } else {
       // Range: a widening spiral round where the hunt began, so its senses sweep new ground.
       const a = step * 0.9, r = 80 + step * 20;

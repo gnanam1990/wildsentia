@@ -6,9 +6,9 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const tool = fileURLToPath(new URL('../../../tools/assets/bake_character_review.mjs', import.meta.url));
-const source = fileURLToPath(new URL('../public/assets/animals/TigerRigged.glb', import.meta.url));
+const source = fileURLToPath(new URL('../public/assets/animals/TigerCat.glb', import.meta.url));
 const run = (out: string, clip = 'Walk', time = '0') => spawnSync(process.execPath,
-  [tool, source, out, 'TigerRiggedMesh', clip, time], { encoding: 'utf8' });
+  [tool, source, out, 'TigerCat', clip, time], { encoding: 'utf8' });
 const manifest = (bytes: Buffer) => JSON.parse(bytes.subarray(20, 20 + bytes.readUInt32LE(12)).toString());
 
 describe('character art review tools', () => {

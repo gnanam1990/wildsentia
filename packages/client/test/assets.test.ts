@@ -1,6 +1,6 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { modelStatus } from '../src/species.js';
+import { modelStatus, visualFor } from '../src/species.js';
 
 function manifest(file: string) {
   const buffer = readFileSync(new URL(`../public/assets/animals/${file}`, import.meta.url));
@@ -22,6 +22,7 @@ describe('generated species replacements', () => {
     ['Dhole', [...quadruped, 'Idle_2_HeadLow']], ['Jackal', [...quadruped, 'Idle_2_HeadLow']],
     ['ChitalHind', [...quadruped, 'Idle_Headlow']], ['Hare', ['Idle', 'Gallop', 'Jump', 'Resting', 'Death']],
     ['GreyLangur', small], ['GiantSquirrel', small], ['WhiteRumpedVulture', ['Idle', 'Walk', 'Eating', 'Drinking', 'Death']],
+    ['BlueDuiker', [...quadruped, 'Idle_Headlow']], ['WaterChevrotain', [...quadruped, 'Idle_Headlow']],
   ] as const)('%s keeps the rig clips the observer plays and stays within its byte budget', (name, clips) => {
     const gltf = manifest(`${name}.glb`);
     expect(gltf.skins).toHaveLength(1);
@@ -31,7 +32,7 @@ describe('generated species replacements', () => {
 });
 
 describe('free local character assets', () => {
-  it.each(['TigerRigged', 'LeopardRigged', 'ElephantWalking', 'Langur', 'Squirrel', 'Vulture', 'WildBoar', 'Chital', 'Sambar', 'Gaur', 'Dhole', 'Jackal', 'GreyLangur', 'GiantSquirrel', 'WhiteRumpedVulture', 'ChitalHind', 'Hare'])('%s contains finite, normalized skin weights and actual changing motion', (name) => {
+  it.each(['TigerCat', 'ElephantWalking', 'Langur', 'Squirrel', 'Vulture', 'WildBoar', 'Chital', 'Sambar', 'Gaur', 'Dhole', 'Jackal', 'GreyLangur', 'GiantSquirrel', 'WhiteRumpedVulture', 'ChitalHind', 'Hare', 'BlueDuiker', 'WaterChevrotain', 'AfricanLeopard'])('%s contains finite, normalized skin weights and actual changing motion', (name) => {
     const buffer = readFileSync(new URL(`../public/assets/animals/${name}.glb`, import.meta.url));
     const jsonLength = buffer.readUInt32LE(12);
     const gltf = JSON.parse(buffer.subarray(20, 20 + jsonLength).toString());
@@ -125,21 +126,32 @@ describe('free local character assets', () => {
     for (const unavailable of ['Takeoff', 'Landing'])
       expect(gltf.animations.some((animation: { name: string }) => animation.name === unavailable)).toBe(false);
   });
-  it('preserves the static tiger source and ships an explicitly local rig, not the blocked download', () => {
+  it('keeps the static tiger source and ships the tiger on the big-cat rig, with every gait, act and rest', () => {
     expect(manifest('Tiger.glb').skins?.length ?? 0).toBe(0);
-    const gltf = manifest('TigerRigged.glb');
-    expect(gltf.skins?.length).toBeGreaterThan(0);
+    const gltf = manifest('TigerCat.glb');
+    expect(gltf.skins).toHaveLength(1);
+    expect(gltf.skins![0]!.joints.length).toBeGreaterThanOrEqual(30);
     expect(gltf.images?.length).toBeGreaterThan(0);
-    for (const name of ['Idle', 'Walk', 'Run', 'Gallop', 'Pounce', 'Bite', 'Sneak', 'Eating', 'Drinking', 'Death']) expect(gltf.animations?.find((a) => a.name === name)?.channels.length).toBeGreaterThan(0);
-    expect(modelStatus('tiger')).toContain('Local tiger rig');
-    expect(modelStatus('tiger')).toContain('polish pending');
-  });
-  it('ships an interim leopard on the same big-cat rig, with every hunting and feeding clip, and says so', () => {
-    const gltf = manifest('LeopardRigged.glb');
-    expect(gltf.skins?.length).toBeGreaterThan(0);
-    expect(gltf.images?.length).toBeGreaterThan(0);
-    for (const name of ['Idle', 'Walk', 'Run', 'Gallop', 'Pounce', 'Bite', 'Sneak', 'Eating', 'Drinking', 'Death'])
+    for (const name of ['Idle', 'Walk', 'Run', 'Gallop', 'Sneak', 'Pounce', 'Bite', 'Eating', 'Drinking', 'Resting', 'Death'])
       expect(gltf.animations?.find((a) => a.name === name)?.channels.length).toBeGreaterThan(0);
-    expect(modelStatus('leopard')).toContain('Interim leopard');
+    expect(readFileSync(new URL('../public/assets/animals/TigerCat.glb', import.meta.url)).length).toBeLessThan(2_000_000);
+    expect(visualFor('tiger').model?.file).toBe('/assets/animals/TigerCat.glb');
+    expect(existsSync(new URL('../public/assets/animals/TigerRigged.glb', import.meta.url))).toBe(false);
+    expect(modelStatus('tiger')).toMatch(/^Generated tiger on its own big-cat rig/);
+  });
+  it('ships the African leopard on a big-cat rig of its own, with every gait, act and rest the observer plays', () => {
+    // tools/art/rig_big_cat.py; review in docs/art-review/congo-2026-10-14.
+    const gltf = manifest('AfricanLeopard.glb');
+    expect(gltf.skins).toHaveLength(1);
+    expect(gltf.skins![0]!.joints.length).toBeGreaterThanOrEqual(30);
+    expect(gltf.images?.length).toBeGreaterThan(0);
+    for (const name of ['Idle', 'Walk', 'Run', 'Gallop', 'Sneak', 'Pounce', 'Bite', 'Eating', 'Drinking', 'Resting', 'Death'])
+      expect(gltf.animations?.find((a) => a.name === name)?.channels.length).toBeGreaterThan(0);
+    expect(readFileSync(new URL('../public/assets/animals/AfricanLeopard.glb', import.meta.url)).length).toBeLessThan(2_000_000);
+  });
+  it('draws the island leopard with the same leopard model and rig (one species), and says so', () => {
+    expect(visualFor('leopard').model?.file).toBe('/assets/animals/AfricanLeopard.glb');
+    expect(existsSync(new URL('../public/assets/animals/LeopardRigged.glb', import.meta.url))).toBe(false);
+    expect(modelStatus('leopard')).toMatch(/^Generated leopard on its own big-cat rig/);
   });
 });

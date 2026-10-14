@@ -137,6 +137,11 @@ blender -b --factory-startup --disable-autoexec --python-exit-code 1 --python to
   `node tools/assets/big_cat_gaits.mjs IN.glb OUT.glb`. `packages/client/test/bigCatGait.test.ts`
   measures the result by forward kinematics.
   Further manual skin-weight, shoulder and paw-contact refinement is required.
+  The leopard no longer uses this path: since 14 October 2026 both leopards are
+  `AfricanLeopard.glb`, and the tiger is `TigerCat.glb`, both built by `tools/art/rig_big_cat.py`
+  (a big-cat skeleton of their own, planted-paw IK strides baked to keys); `rig_local_tiger.py`,
+  `big_cat_gaits.mjs` and `leopard_from_tiger.py` are kept for the record; they read and write the
+  retired `TigerRigged.glb` / `LeopardRigged.glb`, which are in the git history (before 14 October 2026).
 - `extend_elephant.py`: preserves five source clips and adds Walk. Source GLB is not overwritten.
 - Export with `--python-exit-code 1`: Blender otherwise can return zero after a Python failure.
 - Draco is not installed in the conversion container; these exports are uncompressed GLBs.

@@ -104,3 +104,22 @@ maybe('the example agent', () => {
     } finally { mcp.close(); }
   });
 });
+
+// Spec §6 Clues: with nothing sensed and no last sighting, the example agent follows a clue.
+describe('the example agent reads clues', () => {
+  it('follows fresh tracks the way the target went, walks toward a call\'s bearing, and prefers the fresher', async () => {
+    const { followClue } = await import('../agent-client/examples/congo-hunter.mjs');
+    const at = { x: 0, z: 0 };
+    // Tracks at (10, 0) heading north (+z): past them, 40 m on.
+    expect(followClue(at, [{ kind: 'tracks', bountyId: 'b', x: 10, z: 0, headingDeg: 0, ageWorldSeconds: 600 }])).toEqual({ x: 10, z: 40, gait: 'walk' });
+    // A far call due east: 120 m that way, at a trot.
+    expect(followClue(at, [{ kind: 'call', bountyId: 'b', bearingDeg: 90, distance: 'far', ageWorldSeconds: 60 }])).toEqual({ x: 120, z: 0, gait: 'trot' });
+    // Tracks with no direction: go to them.
+    expect(followClue(at, [{ kind: 'tracks', bountyId: 'b', x: 5, z: 5, ageWorldSeconds: 60 }])).toEqual({ x: 5, z: 5, gait: 'walk' });
+    // The fresher clue leads; disturbance alone gives no direction.
+    expect(followClue(at, [{ kind: 'tracks', bountyId: 'b', x: 10, z: 0, headingDeg: 0, ageWorldSeconds: 3000 },
+      { kind: 'call', bountyId: 'b', bearingDeg: 180, distance: 'near', ageWorldSeconds: 30 }])).toEqual({ x: 0, z: -50, gait: 'trot' });
+    expect(followClue(at, [{ kind: 'disturbance', bountyId: 'b', ageWorldSeconds: 30 }])).toBeNull();
+    expect(followClue(at, [])).toBeNull();
+  });
+});

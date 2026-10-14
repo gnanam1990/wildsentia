@@ -144,7 +144,9 @@ export function struggleClip(death: THREE.AnimationClip, gait: THREE.AnimationCl
     const values = new Float32Array(times.length * width);
     const bone = track.name.split('.').slice(0, -1).join('.');
     const swing = track instanceof THREE.QuaternionKeyframeTrack ? gaitTracks.get(track.name) : undefined;
-    const limb = /leg|paw|foot|thigh|shin|arm|front\.|back\./i.test(bone) && !/ik|pole/i.test(bone);
+    // Limb bones of every rig: the Quaternius legs, the old big-cat 'front.'/'back.' chain, and the
+    // big-cat rig's own (tools/art/rig_big_cat.py), named as three.js loads them, without dots.
+    const limb = /leg|paw|foot|thigh|shin|arm|hand|finger|toe|scapula|front\.|back\./i.test(bone) && !/ik|pole/i.test(bone);
     const lifts = /neck|head/i.test(bone) && !/ik/i.test(bone);
     const axis = swing && (limb || lifts) ? swingAxis(swing) : null;
     const base = new THREE.Quaternion().fromArray(last), q = new THREE.Quaternion(), turn = new THREE.Quaternion();
