@@ -4,7 +4,10 @@ import { assetState, simAmount, timeLeft, type AssetView } from './congoModel.js
 
 /** Congo 1E (spec §7): the owner's store, inventory, control panel and bounty board. */
 const $ = <T extends HTMLElement>(id: string) => document.querySelector<T>(`#${id}`)!;
-const SPECIES: Record<string, string> = { african_leopard: 'African leopard', blue_duiker: 'Blue duiker', water_chevrotain: 'Water chevrotain' };
+const SPECIES: Record<string, string> = { african_leopard: 'African leopard', blue_duiker: 'Blue duiker', water_chevrotain: 'Water chevrotain',
+  bay_duiker: 'Bay duiker', peters_duiker: 'Peters\'s duiker', red_river_hog: 'Red river hog', forest_buffalo: 'Forest buffalo', sitatunga: 'Sitatunga',
+  african_golden_cat: 'African golden cat', forest_elephant: 'Forest elephant', agile_mangabey: 'Agile mangabey', crowned_eagle: 'Crowned eagle',
+  dwarf_crocodile: 'Dwarf crocodile' };
 const name = (id: string) => SPECIES[id] ?? id;
 const ERRORS: Record<string, string> = {
   signed_out: 'Sign in first.', no_account: 'Sign in first.', no_wallet: 'Link a wallet to your account first: it is where SIMULATED rewards are recorded.',
@@ -146,8 +149,14 @@ $('congo-status-form').addEventListener('submit', async (event) => {
     const b = await api<{ speciesId: string; region: string; amountAtomic: string; decimals: number; status: string; timeLeftWorldSeconds: number; outcome?: string }>(`/congo/bounties/${encodeURIComponent(id)}`);
     out.textContent = [`${name(b.speciesId)} in ${b.region}`, `Reward ${simAmount(b.amountAtomic, b.decimals, store?.token ?? 'SIM-USDC')}`, `Status: ${b.status}`,
       b.status === 'active' ? `Time left: ${timeLeft(b.timeLeftWorldSeconds)}` : '', b.outcome ? `Outcome: ${b.outcome}` : ''].filter(Boolean).join('\n');
+    // A settled bounty can be watched again in the forest, from its record.
+    $('congo-bounty-replay').hidden = b.status !== 'settled';
+    $<HTMLAnchorElement>('congo-bounty-replay').href = `/#bounty=${encodeURIComponent(id)}`;
   }
-  catch (e) { out.textContent = (e as Error).message === 'not_found' ? 'No published bounty has that id.' : `Unavailable (${(e as Error).message}).`; }
+  catch (e) {
+    out.textContent = (e as Error).message === 'not_found' ? 'No published bounty has that id.' : `Unavailable (${(e as Error).message}).`;
+    $('congo-bounty-replay').hidden = true;
+  }
   out.hidden = false;
 });
 

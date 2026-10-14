@@ -61,6 +61,11 @@ const CAPACITY_BY_HABITAT: Record<HabitatType, { grass: number; browse: number }
   bai:            { grass: 8000, browse: 600 },
 };
 
+/** A habitat's browse carrying capacity before any guild takes its share. */
+export function habitatBrowseCapacity(habitat: HabitatType): number {
+  return CAPACITY_BY_HABITAT[habitat].browse;
+}
+
 function habitatFor(elevation: number, moisture: number): HabitatType {
   if (moisture > 0.62) return 'water';
   if (moisture > 0.57) return 'marsh';

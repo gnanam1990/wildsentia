@@ -10,6 +10,7 @@ import {
   type ArenaFrame,
   type LeagueRequest,
   type LeaguePlayer,
+  type LeagueWorld,
   type LabRequest,
   type LabSample,
   type LabResult,
@@ -30,6 +31,8 @@ export interface LeagueWorkerInput {
   request: LeagueRequest;
   player: LeaguePlayer;
   speciesDir: string;
+  /** The server's world: a match is played among its own animals (island when absent). */
+  world?: LeagueWorld;
 }
 export interface LabWorkerInput {
   kind: "lab";
@@ -47,7 +50,8 @@ export function experimentSnapshot(
   const snapshot = structuredClone(source);
   let removed = 0;
   if (scenario === "fewer_predators") {
-    const names = new Set(["tiger", "leopard", "dhole", "jackal"]);
+    // The island's predators, and the Congo forest's.
+    const names = new Set(["tiger", "leopard", "dhole", "jackal", "african_leopard", "african_golden_cat"]);
     const bySpecies = new Map<string, number>();
     const gone = new Set<string>();
     for (const a of snapshot.agents)
@@ -178,6 +182,11 @@ export function applyArenaCommand(
   if (c.action === "hunt") return live.hunt(id, c.preyId);
   return c.action === "stop" ? live.stop(id) : live.act(id, c.action);
 }
+const ISLAND_LEAGUE_ANIMALS = { tiger: 6, leopard: 6, chital: 14, hare: 14, boar: 8, sambar: 8, dhole: 6, langur: 6 };
+const CONGO_LEAGUE_ANIMALS = {
+  african_leopard: 6, african_golden_cat: 4, blue_duiker: 14, bay_duiker: 6, peters_duiker: 6,
+  red_river_hog: 8, water_chevrotain: 6, sitatunga: 4, forest_buffalo: 4,
+};
 async function league(input: LeagueWorkerInput) {
   const { request, player } = input;
   const rng = createRng(request.seed, "league-live");
@@ -185,27 +194,22 @@ async function league(input: LeagueWorkerInput) {
   const w = createWorld({
     seed: request.seed,
     speciesDir: input.speciesDir,
-    terrainProfile: "island_v2",
-    initialAgents: {
-      tiger: 6,
-      leopard: 6,
-      chital: 14,
-      hare: 14,
-      boar: 8,
-      sambar: 8,
-      dhole: 6,
-      langur: 6,
-    },
+    ...(input.world === "congo"
+      ? { terrainProfile: "congo_v1" as const, initialAgents: CONGO_LEAGUE_ANIMALS }
+      : { terrainProfile: "island_v2" as const, initialAgents: ISLAND_LEAGUE_ANIMALS }),
     minPopulation: {},
     retainEvents: 500,
   });
   const candidate = w.possessionCandidates(request.species, 20)[0];
   if (!candidate) throw new Error("arena_animal_unavailable");
+  // In the Congo forest, every patch holds water; a match starts in flooded forest, by a river.
   const home = w.patches
-    .filter((p) => landWalkable(p) && p.waterVolume > 20)
+    .filter((p) => landWalkable(p) && p.waterVolume > 20 && (input.world !== "congo" || p.habitat === "flooded_forest"))
     .sort((a, b) => a.id - b.id)[0];
   if (!home) throw new Error("arena_water_unavailable");
-  const at = patchCentre(w.grid, home.id);
+  // A Congo patch's water is at its river edge, often far from the patch centre: start beside it,
+  // as an island match starts beside its pool.
+  const at = input.world === "congo" ? waterAccessPosition(w.grid, home.id, w.patches) : patchCentre(w.grid, home.id);
   for (const a of w.agents) {
     const x = at.x + rng.range(-90, 90),
       z = at.z + rng.range(-90, 90);

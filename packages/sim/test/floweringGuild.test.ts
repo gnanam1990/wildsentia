@@ -103,6 +103,26 @@ describe('finite insect-visited flowering guild', () => {
     expect(patch.soilNutrients).toBe(soil);
   });
 
+  // The Congo forest's understory flowers too: in the drier spell its insect-visited plants bloom,
+  // and their seed germinates with the long rains. Open bais (grass) and channels do not.
+  it('runs in the Congo forest\'s terra firme and flooded forest, from each habitat\'s own browse', () => {
+    const congo = buildGrid(7, 'congo_v1');
+    const eligible = new Set(congo.filter(floweringEligible).map((p) => p.habitat));
+    expect([...eligible].sort()).toEqual(['flooded_forest', 'swamp_forest', 'terra_firme']);
+    for (const habitat of ['terra_firme', 'flooded_forest', 'swamp_forest']) {
+      const patch = structuredClone(congo.find((p) => p.habitat === habitat)!);
+      patch.id = 0; patch.soilMoisture = 1; patch.canopyCover = 0.5;
+      const micro = emptyMicroEcology([patch], 0);
+      establishFloweringGuild([patch], 0);
+      micro.patches[0]!.pollinatorBiomassKg = 1;
+      const before = matter(patch);
+      const events = advance(patch, micro, 279 * D - H, 305 * D);
+      expect(events.some((e) => e.type === 'seeds_matured'), habitat).toBe(true);
+      expect(() => validateFloweringGuild(patch, 305 * D), habitat).not.toThrow();
+      expect(matter(patch)).toBeCloseTo(before, 7);
+    }
+  });
+
   it('settles real island patch events without an observer or animal inventing a visit', () => {
     const world = createWorld({ seed: 7, terrainProfile: 'island_v1', speciesDir: SPECIES_DIR,
       initialAgents: {}, minPopulation: {} });

@@ -1,3 +1,4 @@
+import { worldGrid } from './worldGrid.js';
 import { HOME_STAGES, HOME_SHELTER_THRESHOLD, homeCondition, isCommunityState, type CommunityState, type Person, type WorldPosition } from '@vana/shared';
 import { withTimeout } from './abortSignals.js';
 
@@ -27,7 +28,7 @@ export function isCommunityPage(value: unknown): value is CommunityPage {
   const p = value as CommunityPage;
   return p.source === 'checkpoint' && Number.isSafeInteger(p.asOfWorldTime) && p.asOfWorldTime >= 0
     && Number.isSafeInteger(p.nextEventSequence) && p.nextEventSequence >= 0
-    && (p.community === null || isCommunityState(p.community) && p.community.updatedAt === p.asOfWorldTime)
+    && (p.community === null || isCommunityState(p.community, worldGrid()) && p.community.updatedAt === p.asOfWorldTime)
     && typeof p.notice === 'string' && p.notice.length <= 2000
     && Array.isArray(p.events) && p.events.length <= 25 && (p.community !== null || p.events.length === 0)
     && p.events.every(e => isCommunityEvent(e, p.asOfWorldTime, p.community!.id));

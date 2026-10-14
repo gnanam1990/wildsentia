@@ -14,19 +14,23 @@
     "hunting.maxPreyKg/preferredPreyKg": "[1],[4]: prefers 10-40 kg; mean forest prey 19.7-31.6 kg; Phase 1 prey are 4-12 kg",
     "hunting.baseSuccess": "assumption: sim-tuned contest parameter, as the island leopard's; forest attack success 15-25% [9]",
     "hunting.cachesKills": "[2],[10]: no forest study reports caching; no kleptoparasites in rainforest",
-    "social.territory": "[4]: Ta\u00ef male 86 km\u00b2, females 22-29 km\u00b2 (assumption: Gabon F 25, M 80)",
+    "social.territory": "[4]: Taï male 86 km², females 22-29 km² (assumption: Gabon F 25, M 80)",
     "activity": "[2],[7]: diurnal and crepuscular in forest",
-    "lifecycle": "[1]: gestation 96 d, litter 2-3, weaned ~90 d, mature ~771-937 d, max 17 y, 15-24 months between litters"
+    "lifecycle": "[1]: gestation 96 d, litter 2-3, weaned ~90 d, mature ~771-937 d, max 17 y, 15-24 months between litters",
+    "hunting.preferredPrey/preyPreference (2A)": "[3],[4],[23]: Lopé diet: ungulates 59% of biomass, red river hog 20%, buffalo 13% (calves and young), mean prey 29.2 kg; 10-40 kg preferred; weights are assumptions from these shares; golden cat taken rarely (intraguild) [6]",
+    "diet/offRosterShare": "[23] Henschel et al. 2005 (Lopé, 196 scats): by biomass 59% ungulates, 18% diurnal primates, 17% large rodents (cane rat 13%); 0.3 = primates other than the simulated agile mangabey, and large rodents (assumption for the mangabey's share)",
+    "hunting.agile_mangabey (Phase B)": "Phase B research [12],[20],[21]: leopards take primates at Taï and Lopé (diurnal primates 18% of biomass at Lopé, most of them other species); preference 0.5 is an assumption"
   },
   "blue_duiker": {
     "body": "[11],[12],[4]: 3.5-9 kg, typically 4-5 kg; shoulder 0.32-0.41 m",
     "locomotion": "assumption: small antelope: walk 0.6-0.9, trot 2-3, zig-zag dash 8-10 m/s for 2-5 s",
     "senses/escape": "assumption: sight 15-25 m, FID 10-20 m; freezes first [12],[13]",
     "diet": "[11],[12],[13]: ~3/4 fruit (modelled as fallen fruit and seed, 'roots') and browse; water mostly from food (assumption)",
-    "diet.dailyIntakeKg": "assumption: ~0.15 kg dry matter \u2248 0.45 kg fresh",
+    "diet.dailyIntakeKg": "assumption: ~0.15 kg dry matter ≈ 0.45 kg fresh",
     "social": "[11],[12],[13],[14]: monogamous pairs on 2.5-4 ha",
     "activity": "[12],[14]: diurnal",
-    "lifecycle": "[12],[14]: gestation 196-216 d, 1 young, weaned 70-90 d, mature 270-540 d, max 12 y, ~265 d between births"
+    "lifecycle": "[12],[14]: gestation 196-216 d, 1 young, weaned 70-90 d, mature 270-540 d, max 12 y, ~265 d between births",
+    "density (2C)": "[11],[12]: field densities run to 16/km² (Moukalaba-Doudou 16.4); 22,000 (12.7/km² over ~1,730 km²) is as many as the hour's 2 s budget holds with the Phase B species, up from the 18,000 the Phase 2A budget had cut to (the predators outran that prey base)"
   },
   "water_chevrotain": {
     "body": "[18],[19]: F ~12 kg, M ~9.7 kg; shoulder 0.30-0.40 m",
@@ -34,10 +38,98 @@
     "locomotion.swims": "[19],[20]: dives and swims underwater, up to ~4 min; swim speed assumption 0.7 m/s",
     "senses/escape": "assumption: nocturnal: sight 10-20 m; freezes first, then to water [19]",
     "diet": "[19]: fruit 68.7%, stems 20.5%, leaves 9.9% (fruit modelled as 'roots')",
-    "diet.dailyIntakeKg": "assumption: ~0.3 kg dry matter \u2248 0.9 kg fresh",
+    "diet.dailyIntakeKg": "assumption: ~0.3 kg dry matter ≈ 0.9 kg fresh",
     "social": "[19]: solitary, not territorial; female 13-14 ha, male 20-30 ha",
     "activity": "[19]: strictly nocturnal 18:00-06:00",
     "lifecycle": "[18],[19]: gestation 188-272 d, 1 young, weaned 90-180 d, mature 270-790 d, max 13-14 y, ~12 months between births"
   },
-  "_population": "CONGO_POPULATION (packages/sim/src/forest.ts): duiker 16/km\u00b2 [15]; chevrotain 10/km\u00b2 [18],[19]; leopard 2/100 km\u00b2 \u2014 below field 2.7-12.1 [4],[7] because the Phase 1 roster lacks the red duikers and hogs that feed most forest leopards (assumption; see the 30-day soak in docs/2026-10-13-congo-measurements.md)"
+  "_population": "CONGO_POPULATION (packages/sim/src/forest.ts), over 2,304 km2: blue duiker 18,000 (field 16/km2 in its habitat [15], lowered for the budget now that red duikers share the floor); chevrotain 10/km2 of its habitat [18],[19]; bay and Peters's duikers 2/km2 each (field 0.6-15.5 [21],[22]); red river hog 1/km2 (field 1-6 [26]); forest buffalo 0.2/km2 (Lopé 5/km2 locally [27], far lower forest-wide: assumption); sitatunga 0.2/km2 (swamps only: assumption); golden cat 6/100 km2 (field 3.8-16.2 [30]); leopard 4/100 km2 (field 2.7-12.1 [4],[7]), now that the mid-sized prey that feeds forest leopards is present",
+  "bay_duiker": {
+    "body": "[21]: 18-24 kg, shoulder 0.45-0.52 m; sexes alike (assumption: females slightly larger, as in most duikers)",
+    "locomotion/senses/escape": "assumption: as the blue duiker, scaled to a 20 kg duiker",
+    "diet": "[21]: frugivore (fruit and seed, modelled as 'roots') plus leaves; intake and water are assumptions",
+    "social": "[21]: solitary; female range 0.2-0.4 km2",
+    "activity": "[21]: nocturnal",
+    "lifecycle": "[21]: gestation ~240 d, 1 young, female maturity ~18 months, up to 17 y in captivity (assumption: 12 y wild, ~300 d between births)"
+  },
+  "peters_duiker": {
+    "body": "[22]: 15-24 kg (mean 20.1; 16.5 in the Central African Republic), shoulder 0.45-0.60 m",
+    "locomotion/senses/escape": "assumption: as the bay duiker",
+    "diet": "[22]: frugivore",
+    "social": "[22]: solitary, one male overlapping several females; female range ~0.4 km2",
+    "activity": "[22]: diurnal",
+    "lifecycle": "[22]: gestation ~240 d, 1 young, maturity ~18 months (assumption: as the bay duiker otherwise)"
+  },
+  "red_river_hog": {
+    "body": "[24],[25]: 54-81 kg (46-130 kg reported), shoulder 0.55-0.80 m",
+    "locomotion": "assumption: from the island wild boar; good swimmer [24] but placed on land",
+    "diet": "[24],[26]: omnivore: roots, fruit, fungi, invertebrates, carrion (modelled as the boar's roots diet)",
+    "social": "[24],[26]: sounders of 6-20 with one boar; aggregations over 60",
+    "activity": "[24]: mostly nocturnal",
+    "lifecycle": "[24],[25]: gestation 120-127 d, litter 1-6 (mean 3-4), one litter a year; maturity assumption 2 y; 15-20 y"
+  },
+  "forest_buffalo": {
+    "body": "assumption [25]: ~265-320 kg (Kingdon), shoulder ~1.2 m",
+    "locomotion": "assumption: from the gaur, favouring bais and grassland",
+    "diet": "[27]: grazer of bais and clearings, some browse",
+    "social": "[27]: stable mixed herds averaging 12 (3-24); female range 4.6 km2 at Lopé",
+    "lifecycle": "[25]: gestation ~340 d, 1 calf, maturity 3.5-5 y (assumption: 20 y, ~600 d between calves)",
+    "predation": "[3],[27]: leopards take calves and young; adults are above the leopard's maxPreyKg"
+  },
+  "sitatunga": {
+    "body": "[28]: 40-120 kg, males about twice females; shoulder 0.75-1.25 m",
+    "locomotion": "[28]: excellent swimmer, submerges to the nostrils (dive 120 s, assumption); land speeds assumption",
+    "diet": "[28]: browse, reeds and grasses of marsh and swamp forest",
+    "social": "[28]: solitary or small groups of females",
+    "activity": "[28]: crepuscular",
+    "lifecycle": "[28]: gestation ~7-7.5 months, 1 young, maturity 1-2 y (female); up to 19 y (assumption: 12 y wild)"
+  },
+  "african_golden_cat": {
+    "body": "[29],[30]: ~5.5-16 kg, males larger (assumption: female 7, male 11); shoulder ~0.4 m",
+    "locomotion": "[29]: climbs; speeds are assumptions for a 9 kg cat",
+    "diet/hunting": "[30],[6]: mainly rodents, also small duikers and primates; the sim has no rodents, so blue duikers and the young of larger prey stand in (assumption); max prey 8 kg (assumption)",
+    "escape": "[6]: highest trophic overlap with the leopard of any pair; avoids leopards",
+    "social": "[29],[30]: solitary; 16.2 per 100 km2 unhunted, 3.8 where snared; territory sizes are assumptions from that density",
+    "lifecycle": "assumption: gestation 75 d (as other Caracal), 1-2 kittens, mature 18 months, 12 y",
+    "status": "[29]: Vulnerable (IUCN); never a bounty target",
+    "diet/offRosterShare": "assumption 0.6, informed by Hart, Katembo & Punga 1996 (Ituri, scats): rodents 50.9% and ungulates 20.2% of prey items, mean prey 1.4 kg; [30]: mainly rodents",
+    "hunting.agile_mangabey (Phase B)": "assumption: juveniles only (no source records golden cats taking mangabeys; Phase B research [35]); preference 0.1"
+  },
+  "forest_elephant": {
+    "body": "docs/2026-10-14-congo-phase-b-research.md [7],[8],[11]: Dzanga females 2.0 m, males 2.3 m; males ~2.0 t; assumption female 1.6 t, male 2.5 t",
+    "diet": "docs/2026-10-14-congo-phase-b-research.md [6]: Lopé, 307 foods, fruit in 82% of dung; assumption 85% browse and fruit, 15% herbs; intake 100 kg/day is an assumption (4-6% of mass, scaled from savanna elephants)",
+    "social": "docs/2026-10-14-congo-phase-b-research.md [1],[6]: family units of a mother and young, Lopé groups 3-8; males leave from ~7 years",
+    "density": "docs/2026-10-14-congo-phase-b-research.md [3]: Gabon 0.38/km² (Laguardia et al. 2021); 876 over 2,304 km²",
+    "lifecycle": "docs/2026-10-14-congo-phase-b-research.md [1],[2]: gestation ~22 months (670 d), median interbirth 59 months (1,795 d), first birth median 23 y; maturity 15 y and max 65 y are assumptions",
+    "activity": "docs/2026-10-14-congo-phase-b-research.md [9]: active day and night (cathemeral, assumption for the hourly curve)",
+    "locomotion": "assumption: walk 1.2, charge 6 m/s; crosses rivers (no forest speeds measured)",
+    "status": "docs/2026-10-14-congo-phase-b-research.md [5]: Critically Endangered (Gobush et al. 2021); never a bounty target"
+  },
+  "agile_mangabey": {
+    "body": "docs/2026-10-14-congo-phase-b-research.md [12],[14]: males 7-13 kg, females 5-7 kg (Kingdon 1997); assumption male 10, female 6",
+    "diet": "docs/2026-10-14-congo-phase-b-research.md [12],[13],[15]: fruit and seeds dominate; 26-30% of feeding time on insects; offRosterShare 0.25 (invertebrates, fungi) is an assumption",
+    "social": "docs/2026-10-14-congo-phase-b-research.md [12],[14],[36]: groups of 7-22, one adult male",
+    "density": "assumption (docs/2026-10-14-congo-phase-b-research.md): 4/km² over the 625 km² of swamp and flooded forest and 0.5/km² over the 1,602 km² of terra firme (some groups live in non-flooded forest [12]); 3,300",
+    "lifecycle": "docs/2026-10-14-congo-phase-b-research.md [12]: gestation 165-175 d, mature 4-5 y, up to 20 y wild; interbirth 640 d and max 25 y are assumptions",
+    "activity": "docs/2026-10-14-congo-phase-b-research.md [12]: diurnal; climbs to escape cats, drops into cover from eagles",
+    "status": "docs/2026-10-14-congo-phase-b-research.md [13]: Least Concern (Maisels et al. 2020); may be a bounty target"
+  },
+  "crowned_eagle": {
+    "body": "docs/2026-10-14-congo-phase-b-research.md [25]: female 3.2-4.7 kg, male 2.55-4.12 kg; wingspan 1.51-1.81 m",
+    "diet": "docs/2026-10-14-congo-phase-b-research.md [22]-[25]: monkeys 81-88% of prey (Kibale, Ituri), 56% of Taï bones; small duikers taken; mean prey 5.67 kg at Taï, up to ~20 kg; about one prey every 3-4 days [25] (~100 a year). offRosterShare 0.92 is calibrated so an eagle takes ~15 of the simulated prey a year (the 60-day soak at 0.85 measured ~31): the agile mangabey is one of about eight monkeys it hunts here and small duikers a minor part. Intake 0.25 kg/day is an assumption",
+    "hunting": "docs/2026-10-14-congo-phase-b-research.md [25]: still-hunts from a perch and drops onto prey, most kills on the forest floor",
+    "social": "docs/2026-10-14-congo-phase-b-research.md [25],[27]: territorial pairs, 6.5-16 km² hunting range per adult; one pair per 15 km² (the sparse end of the assumption) gives 307 birds",
+    "lifecycle": "docs/2026-10-14-congo-phase-b-research.md [25]: clutch 1-2, one chick raised, incubation ~49 d, fledging ~110 d, dependent ~11 months, breeds every 2 years, mature ~5 y; the egg stands in as a gestation",
+    "status": "docs/2026-10-14-congo-phase-b-research.md [26]: Near Threatened; kept off the bounty list (decreasing)",
+    "hunting.cachesKills": "docs/2026-10-14-congo-phase-b-research.md [25]: lifts prey almost vertically to a branch; it feeds on a kill over days (caching is an assumption from that), so one duiker is not one meal",
+    "hunting.preyPreference": "assumption: mangabey 0.5, blue duiker 0.4 (primates other than the mangabey carry most of its diet, off-roster)"
+  },
+  "dwarf_crocodile": {
+    "body": "docs/2026-10-14-congo-phase-b-research.md [28]: males 18-45 kg, females 13.6-31.8 kg; assumption male 25, female 18",
+    "diet": "docs/2026-10-14-congo-phase-b-research.md [28],[29]: invertebrates the main food, also fish and frogs; offRosterShare 0.95 and prey up to 1.5 kg (a newborn at most) are assumptions",
+    "density": "assumption (docs/2026-10-14-congo-phase-b-research.md [30]: ~4.6 per km of unhunted Gabon stream; the sim has no small streams): 0.6/km² over 625 km² of swamp and flooded forest, 375",
+    "lifecycle": "docs/2026-10-14-congo-phase-b-research.md [28]: clutch 10-14, incubation ~100 d, mature 6.8-15.7 y in Gabon (2,500 d used), >40 y captive",
+    "activity": "docs/2026-10-14-congo-phase-b-research.md [28],[32]: strictly nocturnal",
+    "status": "docs/2026-10-14-congo-phase-b-research.md [31],[32]: Vulnerable (1996); never a bounty target"
+  }
 }

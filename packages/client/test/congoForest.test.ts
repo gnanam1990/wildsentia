@@ -47,6 +47,28 @@ describe('the Congo forest layer', () => {
     expect(forest.update(focus.clone().add(new THREE.Vector3(30, 0, 0)))).toBe(false);
     expect(forest.update(focus.clone().add(new THREE.Vector3(90, 0, 0)))).toBe(true);
   });
+  it('turns the tall deciduous crowns and the canopy surface in a drier spell, never the understory', () => {
+    setWorldGrid(CONGO_GRID);
+    const forest = new CongoForest(), patches = region(1, 1);
+    forest.setScene(patches, 7, false);
+    const c = patchCentre(CONGO_GRID, 30 * 160 + 30);
+    forest.update(new THREE.Vector3(c.x, 0, c.z));
+    const leaves = (kind: string) => (forest.root.getObjectByName(`congo:${kind}:leaves`) as THREE.InstancedMesh).material as THREE.Material;
+    const seasonal = (m: THREE.Material) => m.customProgramCacheKey().includes('congo-deciduous');
+    expect(seasonal(leaves('emergent'))).toBe(true);
+    expect(seasonal(leaves('canopy'))).toBe(true);
+    expect(seasonal(leaves('sapling'))).toBe(false);
+    const depth = (forest.root.getObjectByName('congo:canopy:leaves') as THREE.InstancedMesh).customDepthMaterial!;
+    expect(seasonal(depth)).toBe(true);
+    const shell = forest.root.getObjectByName('canopy-shell') as THREE.Mesh;
+    const shader = { uniforms: {} as Record<string, { value: number }>, vertexShader: '#include <worldpos_vertex>',
+      fragmentShader: '#include <clipping_planes_fragment>\n#include <color_fragment>' };
+    (shell.material as THREE.Material).onBeforeCompile(shader as never, {} as never);
+    forest.setSeason('monsoon');
+    expect(shader.uniforms.uSeasonDry!.value).toBe(0);
+    forest.setSeason('transition');
+    expect(shader.uniforms.uSeasonDry!.value).toBeGreaterThan(0.5);
+  });
   it('covers forest with a canopy surface at its height, opens over a bai, and leaves a hole where the plants stand', () => {
     setWorldGrid(CONGO_GRID);
     const baiId = 25 * 160 + 25, forest = new CongoForest();

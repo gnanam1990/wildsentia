@@ -33,10 +33,15 @@ export type SignedHeaders = { key?: string | undefined; timestamp?: string | und
  */
 const NONCES_PER_KEY = Math.ceil((AGENT_RATE_LIMITS.commandsPerSecond + AGENT_RATE_LIMITS.observesPerSecond) * 2 * SIGNATURE_SKEW_MS / 1000);
 
-/** Replay protection: each key's nonces are remembered while their timestamps are fresh, and bounded. */
+/**
+ * Replay protection: each key's nonces are remembered while their timestamps are fresh, and bounded.
+ * Nonces live in memory, so a restart forgets them; `since` (when this process started) stands in:
+ * a request signed before it is refused as stale, so one captured before a restart cannot be
+ * replayed after it. A client whose clock runs behind is refused only for that lag after a restart.
+ */
 export class NonceStore {
   readonly #seen = new Map<string, Map<string, number>>();
-  constructor(private readonly perKey = NONCES_PER_KEY, private readonly maxKeys = 20_000) {}
+  constructor(private readonly perKey = NONCES_PER_KEY, private readonly maxKeys = 20_000, readonly since = Date.now()) {}
 
   /**
    * False if this nonce was used, or the key has made too many requests in the window. `until`
@@ -82,7 +87,7 @@ export function verifySigned(h: SignedHeaders, p: { audience: string; method: st
   if (!h.key || !h.timestamp || !h.nonce || !h.signature) return { ok: false, error: 'missing_signature' };
   if (!KEY_RE.test(h.key)) return { ok: false, error: 'bad_key' };
   if (!SIG_RE.test(h.signature) || !NONCE_RE.test(h.nonce) || !/^[0-9]{13}$/.test(h.timestamp)) return { ok: false, error: 'bad_signature' };
-  if (Math.abs(Number(h.timestamp) - now) > SIGNATURE_SKEW_MS) return { ok: false, error: 'stale_timestamp' };
+  if (Math.abs(Number(h.timestamp) - now) > SIGNATURE_SKEW_MS || Number(h.timestamp) < nonces.since) return { ok: false, error: 'stale_timestamp' };
   const key = publicKey(h.key);
   if (!key) return { ok: false, error: 'bad_key' };
   const data = Buffer.from(signingString({ ...p, timestamp: h.timestamp, nonce: h.nonce }));

@@ -8,9 +8,24 @@ export interface LeaguePlayer {
   label: string;
   source: "local" | "human" | "openrouter";
 }
+/** The world a match is played in: the server's own (the island's league or the Congo forest's). */
+export type LeagueWorld = "island" | "congo";
+/** The animals a player may take into a match, by world; the hunters among them may play "hunt". */
+export const LEAGUE_SPECIES = {
+  island: ["tiger", "leopard", "chital", "hare"],
+  congo: ["african_leopard", "african_golden_cat", "blue_duiker", "red_river_hog"],
+} as const;
+export const LEAGUE_HUNTERS: Record<LeagueWorld, readonly string[]> = {
+  island: ["tiger", "leopard"],
+  congo: ["african_leopard", "african_golden_cat"],
+};
+/** What the experiences page offers in a world: each animal, and whether it may play "hunt". */
+export function leagueChoices(world: LeagueWorld): Array<{ id: string; hunts: boolean }> {
+  return LEAGUE_SPECIES[world].map((id) => ({ id, hunts: LEAGUE_HUNTERS[world].includes(id) }));
+}
 export interface LeagueRequest {
   mission: LeagueMission;
-  species: "tiger" | "leopard" | "chital" | "hare";
+  species: (typeof LEAGUE_SPECIES)[LeagueWorld][number];
   durationSeconds: 180 | 300;
   players: string[];
   seed: number;
@@ -137,15 +152,15 @@ const record = (x: unknown): x is Record<string, unknown> =>
 export function leagueRequest(
   x: unknown,
   allowed: readonly string[],
+  world: LeagueWorld = "island",
 ): LeagueRequest | null {
   if (
     !record(x) ||
     typeof x.mission !== "string" ||
     typeof x.species !== "string" ||
     !["water", "hunt", "survive"].includes(String(x.mission)) ||
-    !["tiger", "leopard", "chital", "hare"].includes(String(x.species)) ||
-    (x.mission === "hunt" &&
-      !["tiger", "leopard"].includes(String(x.species))) ||
+    !(LEAGUE_SPECIES[world] as readonly string[]).includes(String(x.species)) ||
+    (x.mission === "hunt" && !LEAGUE_HUNTERS[world].includes(String(x.species))) ||
     ![180, 300].includes(Number(x.durationSeconds)) ||
     typeof x.durationSeconds !== "number" ||
     !Number.isSafeInteger(x.seed) ||
@@ -174,16 +189,18 @@ export function labRequest(x: unknown): LabRequest | null {
     ? { scenario: x.scenario as LabScenario, days: x.days as 3 | 7 | 30 }
     : null;
 }
+/** A destination may lie anywhere in the largest world, the 48 km Congo forest. */
+const ARENA_EXTENT_M = 50_000;
 export function arenaCommand(x: unknown): ArenaCommand | null {
   if (!record(x) || typeof x.action !== "string") return null;
   if (
     x.action === "go_to" &&
     typeof x.x === "number" &&
     Number.isFinite(x.x) &&
-    Math.abs(x.x) <= 10_000 &&
+    Math.abs(x.x) <= ARENA_EXTENT_M &&
     typeof x.z === "number" &&
     Number.isFinite(x.z) &&
-    Math.abs(x.z) <= 10_000 &&
+    Math.abs(x.z) <= ARENA_EXTENT_M &&
     typeof x.gait === "string" &&
     ["walk", "trot", "run"].includes(x.gait)
   )

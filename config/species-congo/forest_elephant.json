@@ -1,0 +1,159 @@
+{
+  "id": "forest_elephant",
+  "displayName": "Forest elephant",
+  "archetype": "mega_herbivore",
+  "trophicRole": [
+    "browser",
+    "grazer"
+  ],
+  "body": {
+    "adultMassKg": 2000,
+    "shoulderHeightM": 2.1,
+    "massBySexKg": {
+      "female": 1600,
+      "male": 2500
+    }
+  },
+  "locomotion": {
+    "walkMs": 1.2,
+    "trotMs": 3.0,
+    "sprintMs": 6.0,
+    "sprintStaminaS": 20,
+    "terrainCost": {
+      "shola": 1.0,
+      "grassland": 1.2,
+      "riparian": 1.0,
+      "rock": 1.6,
+      "marsh": 1.6,
+      "water": 2.0,
+      "terra_firme": 1.0,
+      "flooded_forest": 1.1,
+      "swamp_forest": 1.3,
+      "bai": 0.9
+    },
+    "floodedTerrainCost": {
+      "flooded_forest": 1.6
+    }
+  },
+  "senses": {
+    "sightRangeM": 60,
+    "hearingRangeM": 900,
+    "smellRangeM": 600
+  },
+  "escape": {
+    "detectionDistanceM": 70,
+    "flightInitiationM": 20,
+    "evasiveness": 0.1
+  },
+  "diet": {
+    "eats": [
+      {
+        "target": "browse",
+        "preference": 0.85
+      },
+      {
+        "target": "grass",
+        "preference": 0.15
+      }
+    ],
+    "dailyIntakeKg": 100,
+    "waterNeedLPerDay": 150,
+    "canScavenge": false,
+    "carrionTolerance": 0.0
+  },
+  "social": {
+    "structure": "family",
+    "groupSize": [
+      1,
+      8
+    ],
+    "alarmSharing": true
+  },
+  "activity": {
+    "hourly": [
+      0.8,
+      0.7,
+      0.6,
+      0.6,
+      0.7,
+      0.9,
+      1,
+      1,
+      0.9,
+      0.8,
+      0.7,
+      0.6,
+      0.6,
+      0.6,
+      0.7,
+      0.8,
+      0.9,
+      1,
+      1,
+      0.9,
+      0.9,
+      0.9,
+      0.8,
+      0.8
+    ]
+  },
+  "learning": {
+    "innate": {
+      "forage_efficiency": 0.3,
+      "water_locations": 0.3
+    },
+    "learnRateFromParent": 0.01
+  },
+  "lifecycle": {
+    "followFromDays": 0,
+    "maxAgeDays": 23725,
+    "baselineMortalityPerDay": 0.0001,
+    "stages": [
+      {
+        "name": "newborn",
+        "startDays": 0,
+        "sizeFactor": 0.06,
+        "dependent": true,
+        "mortalityPerDay": 8e-05
+      },
+      {
+        "name": "juvenile",
+        "startDays": 365,
+        "sizeFactor": 0.3,
+        "dependent": true,
+        "mortalityPerDay": 8e-05
+      },
+      {
+        "name": "subadult",
+        "startDays": 2555,
+        "sizeFactor": 0.6,
+        "dependent": false,
+        "mortalityPerDay": 0.0001
+      },
+      {
+        "name": "adult",
+        "startDays": 5475,
+        "sizeFactor": 1.0,
+        "dependent": false,
+        "mortalityPerDay": 0.0001
+      },
+      {
+        "name": "elder",
+        "startDays": 18250,
+        "sizeFactor": 0.95,
+        "dependent": false,
+        "mortalityPerDay": 0.0003
+      }
+    ],
+    "sexualMaturityDays": 5475,
+    "gestationDays": 670,
+    "litterSize": [
+      1,
+      1
+    ],
+    "interBirthIntervalDays": 1795,
+    "oestrusCycleDays": 112,
+    "weanDays": 730,
+    "dispersalDays": 2555
+  }
+}

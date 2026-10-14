@@ -1,0 +1,201 @@
+{
+  "id": "crowned_eagle",
+  "displayName": "Crowned eagle",
+  "archetype": "raptor",
+  "trophicRole": [
+    "apex_predator"
+  ],
+  "body": {
+    "adultMassKg": 3.6,
+    "shoulderHeightM": 0.6,
+    "massBySexKg": {
+      "female": 4.0,
+      "male": 3.2
+    }
+  },
+  "locomotion": {
+    "walkMs": 0.5,
+    "trotMs": 1.5,
+    "sprintMs": 18.0,
+    "sprintStaminaS": 10,
+    "flies": true,
+    "terrainCost": {
+      "shola": 1.0,
+      "grassland": 1.0,
+      "riparian": 1.0,
+      "rock": 1.0,
+      "marsh": 1.0,
+      "water": 1.0,
+      "terra_firme": 1.0,
+      "flooded_forest": 1.0,
+      "swamp_forest": 1.0,
+      "bai": 1.0
+    }
+  },
+  "senses": {
+    "sightRangeM": 200,
+    "hearingRangeM": 300,
+    "smellRangeM": 0
+  },
+  "escape": {
+    "detectionDistanceM": 50,
+    "flightInitiationM": 20,
+    "evasiveness": 0.9
+  },
+  "diet": {
+    "eats": [
+      {
+        "target": "meat",
+        "preference": 1.0
+      }
+    ],
+    "dailyIntakeKg": 0.25,
+    "offRosterShare": 0.92,
+    "waterNeedLPerDay": 0.1,
+    "canScavenge": false,
+    "carrionTolerance": 0.0
+  },
+  "hunting": {
+    "preferredPrey": [
+      "agile_mangabey",
+      "blue_duiker",
+      "water_chevrotain",
+      "bay_duiker",
+      "peters_duiker"
+    ],
+    "stalkConcealment": 0.9,
+    "commitDistanceM": 30,
+    "baseSuccess": 0.4,
+    "staminaCostPerChase": 0.3,
+    "huntFromHunger": 0.3,
+    "maxPreyKg": 12,
+    "preferredPreyKg": [
+      1,
+      8
+    ],
+    "subdueSeconds": [
+      [
+        0,
+        4
+      ],
+      [
+        5,
+        20
+      ],
+      [
+        8,
+        60
+      ]
+    ],
+    "subdueBreakFree": 0.2,
+    "cachesKills": true,
+    "preyPreference": {
+      "agile_mangabey": 0.5,
+      "blue_duiker": 0.4,
+      "water_chevrotain": 0.2,
+      "bay_duiker": 0.1,
+      "peters_duiker": 0.1
+    }
+  },
+  "social": {
+    "structure": "pair",
+    "pairBond": true,
+    "groupSize": [
+      1,
+      2
+    ],
+    "alarmSharing": false,
+    "territory": {
+      "femaleKm2": 12,
+      "maleKm2": 12,
+      "floaterMortalityPerDay": 0.002
+    }
+  },
+  "activity": {
+    "hourly": [
+      0.1,
+      0.1,
+      0.1,
+      0.1,
+      0.1,
+      0.1,
+      0.8,
+      1,
+      1,
+      1,
+      0.9,
+      0.8,
+      0.8,
+      0.8,
+      0.9,
+      1,
+      1,
+      0.9,
+      0.4,
+      0.1,
+      0.1,
+      0.1,
+      0.1,
+      0.1
+    ]
+  },
+  "learning": {
+    "innate": {
+      "stalk_technique": 0.5,
+      "water_locations": 0.2
+    },
+    "learnRateFromParent": 0.02
+  },
+  "lifecycle": {
+    "followFromDays": 110,
+    "maxAgeDays": 9125,
+    "baselineMortalityPerDay": 0.0002,
+    "stages": [
+      {
+        "name": "newborn",
+        "startDays": 0,
+        "sizeFactor": 0.1,
+        "dependent": true,
+        "mortalityPerDay": 0.003
+      },
+      {
+        "name": "juvenile",
+        "startDays": 110,
+        "sizeFactor": 0.8,
+        "dependent": true,
+        "mortalityPerDay": 0.001
+      },
+      {
+        "name": "subadult",
+        "startDays": 330,
+        "sizeFactor": 0.95,
+        "dependent": false,
+        "mortalityPerDay": 0.0005
+      },
+      {
+        "name": "adult",
+        "startDays": 1825,
+        "sizeFactor": 1.0,
+        "dependent": false,
+        "mortalityPerDay": 0.0002
+      },
+      {
+        "name": "elder",
+        "startDays": 7300,
+        "sizeFactor": 0.95,
+        "dependent": false,
+        "mortalityPerDay": 0.0006
+      }
+    ],
+    "sexualMaturityDays": 1825,
+    "gestationDays": 49,
+    "litterSize": [
+      1,
+      1
+    ],
+    "interBirthIntervalDays": 730,
+    "oestrusCycleDays": 365,
+    "weanDays": 330,
+    "dispersalDays": 365
+  }
+}

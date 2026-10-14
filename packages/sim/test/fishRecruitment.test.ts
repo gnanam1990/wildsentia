@@ -110,4 +110,27 @@ describe('finite freshwater fish early life', () => {
     expect(f.state).toEqual(otherState);
     expect(f.patches).toEqual(otherPatches);
   });
+
+  // The Congo calendar is not the island's: its 'wet' is the third quarter, and its third island
+  // quarter is a drier spell. Fish spawn at the start of the world's own wet season.
+  it('spawns at the start of the world\'s own wet season, not on the island calendar', () => {
+    const congoWet = fixture();
+    expect(stepMicroEcology(congoWet.state, congoWet.patches, [], 1, 'wet', 180 * WORLD_SECONDS_PER_DAY - 3600, 'congo_v1')
+      .map((e) => e.type)).toEqual(['fish_spawned']);
+    const congoDry = fixture();
+    expect(stepMicroEcology(congoDry.state, congoDry.patches, [], 1, 'transition', 270 * WORLD_SECONDS_PER_DAY - 3600, 'congo_v1')
+      .map((e) => e.type)).toEqual([]);
+    const lateWet = fixture();
+    expect(stepMicroEcology(lateWet.state, lateWet.patches, [], 1, 'wet', 230 * WORLD_SECONDS_PER_DAY - 3600, 'congo_v1')
+      .map((e) => e.type)).toEqual([]);
+  });
+
+  it('keeps fish in the Congo\'s flooded and swamp forest while they hold water', () => {
+    for (const habitat of ['flooded_forest', 'swamp_forest'] as const) {
+      const f = fixture();
+      f.patch.habitat = habitat;
+      stepMicroEcology(f.state, f.patches, [], 1, 'monsoon', 10 * WORLD_SECONDS_PER_DAY);
+      expect(f.micro.fishBiomassKg, habitat).toBeGreaterThan(0);
+    }
+  });
 });

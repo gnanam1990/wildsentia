@@ -1,0 +1,204 @@
+{
+  "id": "dwarf_crocodile",
+  "displayName": "Dwarf crocodile",
+  "archetype": "apex_predator",
+  "trophicRole": [
+    "mesopredator"
+  ],
+  "body": {
+    "adultMassKg": 22,
+    "shoulderHeightM": 0.25,
+    "massBySexKg": {
+      "female": 18,
+      "male": 25
+    }
+  },
+  "locomotion": {
+    "walkMs": 0.4,
+    "trotMs": 1.0,
+    "sprintMs": 3.0,
+    "sprintStaminaS": 5,
+    "swims": {
+      "swimMs": 0.8,
+      "diveSeconds": 1800
+    },
+    "terrainCost": {
+      "shola": 2.5,
+      "grassland": 2.5,
+      "riparian": 0.8,
+      "rock": 3.0,
+      "marsh": 0.7,
+      "water": 0.5,
+      "terra_firme": 2.5,
+      "flooded_forest": 0.8,
+      "swamp_forest": 0.7,
+      "bai": 2.0
+    },
+    "floodedTerrainCost": {
+      "flooded_forest": 0.6
+    }
+  },
+  "senses": {
+    "sightRangeM": 20,
+    "hearingRangeM": 60,
+    "smellRangeM": 40
+  },
+  "escape": {
+    "detectionDistanceM": 20,
+    "flightInitiationM": 8,
+    "evasiveness": 0.5
+  },
+  "diet": {
+    "eats": [
+      {
+        "target": "meat",
+        "preference": 1.0
+      }
+    ],
+    "dailyIntakeKg": 0.2,
+    "offRosterShare": 0.95,
+    "waterNeedLPerDay": 0.5,
+    "canScavenge": true,
+    "carrionTolerance": 0.9
+  },
+  "hunting": {
+    "preferredPrey": [
+      "water_chevrotain",
+      "blue_duiker",
+      "bay_duiker",
+      "peters_duiker"
+    ],
+    "stalkConcealment": 0.9,
+    "commitDistanceM": 2,
+    "baseSuccess": 0.3,
+    "staminaCostPerChase": 0.3,
+    "huntFromHunger": 0.5,
+    "maxPreyKg": 1.5,
+    "preferredPreyKg": [
+      0.2,
+      1.5
+    ],
+    "subdueSeconds": [
+      [
+        0,
+        4
+      ],
+      [
+        5,
+        20
+      ],
+      [
+        8,
+        60
+      ]
+    ],
+    "subdueBreakFree": 0.3,
+    "cachesKills": false,
+    "preyPreference": {
+      "water_chevrotain": 1.0,
+      "blue_duiker": 0.5,
+      "bay_duiker": 0.2,
+      "peters_duiker": 0.2
+    }
+  },
+  "social": {
+    "structure": "solitary",
+    "groupSize": [
+      1,
+      1
+    ],
+    "alarmSharing": false,
+    "territory": {
+      "femaleKm2": 1,
+      "maleKm2": 2,
+      "floaterMortalityPerDay": 0.002
+    }
+  },
+  "activity": {
+    "hourly": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      0.8,
+      0.4,
+      0.15,
+      0.15,
+      0.15,
+      0.15,
+      0.15,
+      0.15,
+      0.15,
+      0.15,
+      0.15,
+      0.15,
+      0.15,
+      0.5,
+      0.9,
+      1,
+      1,
+      1,
+      1
+    ]
+  },
+  "learning": {
+    "innate": {
+      "stalk_technique": 0.4,
+      "water_locations": 0.5
+    },
+    "learnRateFromParent": 0.01
+  },
+  "lifecycle": {
+    "followFromDays": 0,
+    "maxAgeDays": 14600,
+    "baselineMortalityPerDay": 0.0001,
+    "stages": [
+      {
+        "name": "newborn",
+        "startDays": 0,
+        "sizeFactor": 0.003,
+        "dependent": false,
+        "mortalityPerDay": 0.01
+      },
+      {
+        "name": "juvenile",
+        "startDays": 365,
+        "sizeFactor": 0.1,
+        "dependent": false,
+        "mortalityPerDay": 0.002
+      },
+      {
+        "name": "subadult",
+        "startDays": 1460,
+        "sizeFactor": 0.4,
+        "dependent": false,
+        "mortalityPerDay": 0.0005
+      },
+      {
+        "name": "adult",
+        "startDays": 2500,
+        "sizeFactor": 1.0,
+        "dependent": false,
+        "mortalityPerDay": 0.0001
+      },
+      {
+        "name": "elder",
+        "startDays": 11000,
+        "sizeFactor": 0.95,
+        "dependent": false,
+        "mortalityPerDay": 0.0004
+      }
+    ],
+    "sexualMaturityDays": 2500,
+    "gestationDays": 100,
+    "litterSize": [
+      10,
+      14
+    ],
+    "interBirthIntervalDays": 365,
+    "oestrusCycleDays": 365,
+    "weanDays": 1,
+    "dispersalDays": 30
+  }
+}

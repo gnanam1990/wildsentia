@@ -1,4 +1,4 @@
-import type { HabitatType, SpeciesConfig } from '@vana/shared';
+import { fliesSpecies, type HabitatType, type SpeciesConfig } from '@vana/shared';
 
 /**
  * A species' field guide for agents (docs/2026-10-09-challenges-design.md §13): what the island's
@@ -28,7 +28,7 @@ export interface FieldGuide {
 
 const KINDS: Record<SpeciesConfig['archetype'], string> = {
   apex_predator: 'solitary hunter', pack_predator: 'pack hunter', herd_grazer: 'grazer',
-  mega_herbivore: 'large herbivore', omnivore_rooter: 'omnivore', arboreal_troop: 'tree dweller', scavenger_flyer: 'scavenging bird',
+  mega_herbivore: 'large herbivore', omnivore_rooter: 'omnivore', arboreal_troop: 'tree dweller', scavenger_flyer: 'scavenging bird', raptor: 'bird of prey',
 };
 /** Group structures the herd rule can be set for. */
 export const HERD_STRUCTURES = new Set(['herd', 'pack', 'family', 'troop']);
@@ -44,7 +44,7 @@ export function fieldGuide(cfg: SpeciesConfig, all: readonly SpeciesConfig[]): F
     speedsMs: { walk: l.walkMs, trot: l.trotMs, run: l.sprintMs }, runSeconds: l.sprintStaminaS,
     terrain: (Object.entries(l.terrainCost) as Array<[HabitatType, number]>).map(([habitat, cost]) => ({ habitat, cost }))
       .sort((a, b) => a.cost - b.cost),
-    climbsTrees: l.climbsTrees === true, flies: cfg.id === 'vulture',
+    climbsTrees: l.climbsTrees === true, flies: fliesSpecies(cfg),
     eats: cfg.diet.eats.slice().sort((a, b) => b.preference - a.preference).map((e) => e.target),
     scavenges: cfg.diet.canScavenge, waterLitresPerDay: cfg.diet.waterNeedLPerDay,
     senses: { sightM: cfg.senses.sightRangeM, hearingM: cfg.senses.hearingRangeM, smellM: cfg.senses.smellRangeM },

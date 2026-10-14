@@ -18,6 +18,9 @@ export const HABITAT_ANALOGUE: Readonly<Record<CongoHabitat, IslandHabitat>> = {
 /** The island habitat a patch looks and behaves like where only island figures exist. */
 export const habitatAnalogue = (habitat: string): IslandHabitat =>
   (HABITAT_ANALOGUE as Partial<Record<string, IslandHabitat>>)[habitat] ?? habitat as IslandHabitat;
+/** Where the insect-visited understorey flowers: the island's shola and riparian forest, the Congo's forest. */
+const FLOWERING_HABITATS: ReadonlySet<string> = new Set(['shola', 'riparian', 'terra_firme', 'flooded_forest', 'swamp_forest']);
+export const floweringHabitat = (habitat: string): boolean => FLOWERING_HABITATS.has(habitat);
 export type PatchId = number;
 
 export interface PlantBiomass {

@@ -8,6 +8,7 @@ import { terrainHeightKey, type HeightSampler, type PatchView } from './terrain.
 import { addTreeDetailFade, bakeTreeAtlas, treeFadeRangeFor, TREE_FADE_END_M, TREE_PLAN_MARGIN_M, type TreeAtlas } from './treeLod.js';
 import { addCameraInteriorFade } from './observerVisibility.js';
 import { ForestBatches } from './forestBatches.js';
+import { addSeasonalLeaves, seasonalDryness } from './seasonalLeaves.js';
 import { addLeafLodFade, alternateLeafCards, LEAF_LOD_START_M, LEAF_LOD_END_M } from './leafLod.js';
 import type { RenderTier } from './renderQuality.js';
 import { preferenceFor, standSpot, treeAgeScale } from './forestStructure.js';
@@ -398,6 +399,8 @@ export class NearVegetation {
   readonly #distant = new Map<string, DistantTrees>();
   readonly #observer = { value: new THREE.Vector3() };
   readonly #treeFade = { value: treeFadeRangeFor('high') };
+  /** The season's dryness, shared by every canopy material: leaves yellow and fall (seasonalLeaves.ts). */
+  readonly #seasonDry = { value: 0 };
   /** The tier's fade range before any dense-clump shrink (clumpDetailScale). */
   readonly #tierFade = treeFadeRangeFor('high');
   #quality: RenderTier = 'high';
@@ -528,6 +531,7 @@ export class NearVegetation {
             atlases.set(file, atlas);
           }
           const batches = new ForestBatches(atlas, kind, this.#treeFade);
+          addSeasonalLeaves(batches.material, this.#seasonDry, false);
           this.#distant.set(kind, { batches, atlas }); this.root.add(batches.root);
           for (const near of meshes) {
             const sourceMaterials = Array.isArray(near.material) ? near.material : [near.material];
@@ -536,6 +540,7 @@ export class NearVegetation {
               if (near.userData.leafLod === 'full' || near.userData.leafLod === 'middle')
                 addLeafLodFade(material, near.userData.leafLod);
               addCameraInteriorFade(material, this.#observer, 'tree');
+              addSeasonalLeaves(material, this.#seasonDry, !!near.userData.leafLod);
             }
             // Three's generated shadow material does not inherit onBeforeCompile.
             // Keep alpha-cut leaves and the camera-centred fade in the depth pass too.
@@ -550,6 +555,8 @@ export class NearVegetation {
             if (near.userData.leafLod === 'full' || near.userData.leafLod === 'middle')
               addLeafLodFade(depth, near.userData.leafLod);
             addCameraInteriorFade(depth, this.#observer, 'tree');
+            // Fallen leaf casts no shadow either.
+            if (near.userData.leafLod) addSeasonalLeaves(depth, this.#seasonDry, true);
             near.customDepthMaterial = depth;
           }
         }
@@ -622,6 +629,11 @@ export class NearVegetation {
     for (const { batches } of this.#distant.values()) {
       batches.material.color.setScalar(0.3 + Math.max(0, Math.min(1, daylight)) * 0.5);
     }
+  }
+
+  /** The world's season: canopies yellow and thin as it dries, and green again with the rains. */
+  setSeason(season: string): void {
+    this.#seasonDry.value = seasonalDryness(season);
   }
 
   /** Replans coverage after movement; refreshes view culling independently on camera turns.

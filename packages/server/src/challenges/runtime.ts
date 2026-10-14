@@ -3,7 +3,7 @@ import type { SpeciesConfig } from '@vana/shared';
 import type { Pool } from '../db/pool.js';
 import { HERD_STRUCTURES } from '../live/fieldGuide.js';
 import type { LiveLayer, WorldPort } from '../live/liveLayer.js';
-import { viemChallengeChain, type ChallengeChain } from './chain.js';
+import { ARC_MEMO_CONTRACT, viemChallengeChain, type ChallengeChain } from './chain.js';
 import { ChainOps } from './chainOps.js';
 import { ChallengeEngine } from './engine.js';
 import { ChallengeIndexer } from './indexer.js';
@@ -26,6 +26,8 @@ export interface ChallengesConfig {
   /** The ERC-8004 registries (both or neither): players link identities, and attempts leave feedback (with a site URL). */
   identityRegistry: Hex | null;
   reputationRegistry: Hex | null;
+  /** VANA_CHALLENGES_MEMO=1: settlements go through Arc's Memo contract with a readable note. */
+  memoContract: Hex | null;
 }
 
 const loopback = (host: string) => host === 'localhost' || host === '127.0.0.1';
@@ -71,6 +73,8 @@ export function challengesConfig(env: NodeJS.ProcessEnv): ChallengesConfig | und
     if (u.protocol !== 'https:' || u.username || u.password || u.search || u.hash || u.pathname !== '/') throw new Error('Invalid VANA_PUBLIC_ORIGIN');
     siteUrl = u.origin;
   }
+  const memo = env.VANA_CHALLENGES_MEMO?.trim() ?? '';
+  if (!['', '0', '1'].includes(memo)) throw new Error('Invalid VANA_CHALLENGES_MEMO (1 or 0)');
   const explorer = env.VANA_CHALLENGES_EXPLORER_URL?.trim();
   if (explorer && !/^https:\/\/[^\s/]+(\/[^\s]*)?$/.test(explorer)) throw new Error('Invalid VANA_CHALLENGES_EXPLORER_URL');
   return {
@@ -78,6 +82,7 @@ export function challengesConfig(env: NodeJS.ProcessEnv): ChallengesConfig | und
     evaluatorKey: key as Hex, fromBlock, adminToken,
     usdcDomain: { name: need('VANA_CHALLENGES_USDC_DOMAIN_NAME'), version: need('VANA_CHALLENGES_USDC_DOMAIN_VERSION') },
     explorerUrl: explorer ? explorer.replace(/\/$/, '') : null, attemptsContract: attempts, siteUrl, identityRegistry, reputationRegistry,
+    memoContract: memo === '1' ? ARC_MEMO_CONTRACT : null,
   };
 }
 

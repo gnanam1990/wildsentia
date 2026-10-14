@@ -24,7 +24,7 @@
     </header>
     <main id="experience-main">
       <section class="experience-hero">
-        <p class="eyebrow">One island. A thousand stories.</p>
+        <p class="eyebrow" id="experiences-eyebrow">One island. A thousand stories.</p>
         <h1>Come closer to the wild.</h1>
         <p>
           Play a short survival match, follow a life, or ask your guide what is
@@ -89,7 +89,7 @@
             </select></label
           >
           <label
-            >Island seed<input
+            ><span id="league-seed-label">Island seed</span><input
               name="seed"
               type="number"
               min="0"
@@ -216,11 +216,11 @@
             <p class="pill">Answers from the saved forest</p>
             <div id="safari-transcript" role="log" aria-live="polite"></div>
             <div class="prompt-chips">
-              <button type="button" data-question="Show me a tiger">
+              <button type="button" id="ask-show-me" data-question="Show me a tiger">
                 Show me a tiger</button
               ><button type="button" data-question="What is happening?">
                 What's happening?</button
-              ><button type="button" data-question="Tell me about an elephant">
+              ><button type="button" id="ask-meet" data-question="Tell me about an elephant">
                 Meet an elephant
               </button>
             </div>
@@ -344,7 +344,7 @@
           ></progress>
           <div class="chart-legend">
             <span class="baseline-key">Baseline</span
-            ><span class="experiment-key">Changed island</span>
+            ><span class="experiment-key" id="lab-changed-key">Changed island</span>
           </div>
           <div id="lab-charts" class="chart-grid"></div>
           <div id="lab-table" class="table-scroll"></div>
@@ -360,7 +360,7 @@
       </section>
     </main>
     <footer class="experience-footer">
-      The island continues its own story. <a href="/">Return to the forest</a>
+      <span id="footer-story">The island continues its own story.</span> <a href="/">Return to the forest</a>
     </footer>
     <script type="module" src="/src/experiences.ts"></script>
   </body>

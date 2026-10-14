@@ -1,6 +1,7 @@
 import './pageChrome.js';
 import { api, loadAccountState, mountAccountBox, wallet } from './account.js';
 import type { AccountView } from './accountModel.js';
+import { parseWorldGrid, setWorldGrid, worldGrid } from './worldGrid.js';
 import { checkTypedData, draftError, draftKey, HABITAT_COLOURS, relayMessage, signError, termsFrom, toMetres, toPixel, typedDataForWallet, usdcAtomic,
   type FormValues, type RelayStatus } from './challengeNewModel.js';
 
@@ -46,13 +47,13 @@ function showFields(): void {
 function drawMap(): void {
   const canvas = $<HTMLCanvasElement>('new-map'), ctx = canvas.getContext('2d');
   if (!ctx) return;
-  const size = canvas.width, cell = size / 20;
+  const size = canvas.width, grid = worldGrid(), cell = size / grid.cols, spanM = grid.cols * grid.patchM;
   ctx.fillStyle = '#0b1a24'; ctx.fillRect(0, 0, size, size);
   for (const p of patches) { ctx.fillStyle = HABITAT_COLOURS[p.habitat] ?? '#555'; ctx.fillRect(p.x * cell, p.y * cell, cell + 0.5, cell + 0.5); }
   const f = values();
   if (f.zone) {
     const c = toPixel(f.zone.x, f.zone.z, size);
-    ctx.strokeStyle = '#f2d16b'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(c.px, c.py, f.zone.radiusM / 6000 * size, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = '#f2d16b'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(c.px, c.py, f.zone.radiusM / spanM * size, 0, Math.PI * 2); ctx.stroke();
   }
   if (f.template === 'reach') {
     const t = toPixel(f.x, f.z, size);
@@ -146,6 +147,8 @@ async function main(): Promise<void> {
     Object.assign(input('new-zone-radius'), { min: String(zone.min), max: String(zone.max) });
     Object.assign(input('new-herd-distance'), { min: String(herd.min), max: String(herd.max) });
     Object.assign(input('new-prize'), { min: info.prizeUsdc.min, max: info.prizeUsdc.max, placeholder: `${info.prizeUsdc.min} to ${info.prizeUsdc.max}` });
+    // The map is the world's own grid: the island's 20 patches a side or the Congo forest's 160.
+    setWorldGrid(parseWorldGrid((await api<{ grid?: unknown }>('/world')).grid));
     patches = (await api<{ patches: Array<{ x: number; y: number; habitat: string }> }>('/patches')).patches;
   } catch { say('Creating challenges is not available on this server right now.'); }
   for (const id of ['new-template', 'new-zone-on', 'new-herd-on', 'new-x', 'new-z', 'new-zone-x', 'new-zone-z', 'new-zone-radius'])

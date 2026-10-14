@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { commands, islandTime, lifeLength, rulesText, shortUsdc } from '../src/connect.js';
+import { commands, connectCopy, islandTime, lifeLength, rulesText, shortUsdc } from '../src/connect.js';
 import { friendlyWorldTime } from '../src/hud.js';
 
 describe('Connect page', () => {
@@ -30,5 +30,18 @@ describe('Connect page', () => {
     expect(islandTime({ worldTime: t, formatted: 'x', season: 'monsoon' })).toBe(friendlyWorldTime(t));
     // An older server without worldTime still says something.
     expect(islandTime({ formatted: 'Y01-monsoon-D01 03:00', season: 'monsoon' })).toBe('Y01-monsoon-D01 03:00');
+  });
+
+  it('in the Congo forest, suggests its own animals and speaks of the forest', () => {
+    const c = commands('https://vana.example/api', true);
+    const all = Object.values(c).flat().join('\n');
+    expect(all).toContain('possess blue_duiker');
+    expect(all).toContain('llm.mjs blue_duiker');
+    expect(all).not.toMatch(/chital|sambar|tiger|dhole/);
+    const copy = Object.values(connectCopy(true)).join(' ');
+    expect(copy).not.toMatch(/island|chital|tiger/i);
+    expect(copy).toMatch(/African leopard/);
+    expect(connectCopy(false).intro).toMatch(/island/);
+    expect(commands('https://vana.example/api').play!.join('\n')).toContain('possess chital');
   });
 });

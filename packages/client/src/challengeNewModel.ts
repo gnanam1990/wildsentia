@@ -105,7 +105,9 @@ export function signError(e: unknown): string {
 export const draftError = (code: string) => DRAFT_ERRORS[code] ?? `The server refused this challenge (${code}).`;
 
 export const HABITAT_COLOURS: Record<string, string> = { shola: '#2f5d3a', grassland: '#8aa65a', riparian: '#4f8f6f', rock: '#8c8478',
-  marsh: '#5f7f68', water: '#2b5c7d' };
+  marsh: '#5f7f68', water: '#2b5c7d',
+  // The Congo forest's habitats.
+  terra_firme: '#2a5232', flooded_forest: '#3f7a63', swamp_forest: '#4d6b4f', bai: '#9bb36a' };
 
 export type RelayStatus = { state: 'not_sent' | 'sending' } | { state: 'failed'; error: string } | { state: 'created'; challengeId: number };
 const RELAY_FAILURES: Record<string, string> = {

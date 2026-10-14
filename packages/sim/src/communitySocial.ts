@@ -1,4 +1,4 @@
-import { ISLAND_GRID, patchAtPosition, type CommunityState, type HumanAction, type HumanSkill, type WorldPosition } from '@vana/shared';
+import { ISLAND_GRID, patchAtPosition, type CommunityState, type WorldGrid, type HumanAction, type HumanSkill, type WorldPosition } from '@vana/shared';
 import type { EventLog } from './events/log.js';
 
 export interface HumanWorkWindow {
@@ -22,7 +22,7 @@ export function workSkill(action: HumanAction): HumanSkill | null {
 
 /** Applies only paid, overlapping work within conversation distance. No remote friendship,
  * idle teaching, extra labour, material grants or model-written relationships. */
-export function learnFromSharedWork(state: CommunityState, windows: readonly HumanWorkWindow[], log: EventLog): void {
+export function learnFromSharedWork(state: CommunityState, windows: readonly HumanWorkWindow[], log: EventLog, grid: WorldGrid = ISLAND_GRID): void {
   if (state.version < 3) return;
   const people = new Map(state.people.map(p => [p.id, p]));
   // Code-point order (sim_0.38.0): localeCompare followed the host's locale data.
@@ -33,8 +33,8 @@ export function learnFromSharedWork(state: CommunityState, windows: readonly Hum
     const start = Math.max(a.start, b.start), end = Math.min(a.end, b.end);
     if (end <= start || Math.hypot(a.position.x - b.position.x, a.position.z - b.position.z) > 3) continue;
     const pa = people.get(a.personId), pb = people.get(b.personId);
-    const workPatch = state.version >= 5 ? patchAtPosition(ISLAND_GRID, a.position) : pa?.patchId;
-    if (!pa || !pb || workPatch !== (state.version >= 5 ? patchAtPosition(ISLAND_GRID, b.position) : pb.patchId)) continue;
+    const workPatch = state.version >= 5 ? patchAtPosition(grid, a.position) : pa?.patchId;
+    if (!pa || !pb || workPatch !== (state.version >= 5 ? patchAtPosition(grid, b.position) : pb.patchId)) continue;
     if ((pa.diedAt !== null && pa.diedAt <= start) || (pb.diedAt !== null && pb.diedAt <= start)) continue;
     const seconds = Math.min(end, pa.diedAt ?? end, pb.diedAt ?? end) - start;
     if (seconds <= 0) continue;

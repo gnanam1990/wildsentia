@@ -1,7 +1,7 @@
 import { canHunt, type World } from '@vana/sim';
 import { landWalkable, patchCentre, regionOfPatch } from '@vana/shared';
 import type { OwnershipStore } from '../ownership/store.js';
-import { type Bounty, type BountyStore, type Preset } from './store.js';
+import { thinTrack, type Bounty, type BountyStore, type Preset } from './store.js';
 
 /**
  * Congo 1D (spec §5): admin presets, validation, publication and adjudication of bounties.
@@ -15,6 +15,11 @@ export const PRESETS: Readonly<Record<Preset, { amountAtomic: bigint; windowWorl
   hard: { amountAtomic: 25_000_000n, windowWorldSeconds: 5 * 86_400, label: 'Hard: 25 SIM-USDC, 5 world days' },
   elite: { amountAtomic: 60_000_000n, windowWorldSeconds: 7 * 86_400, label: 'Elite: 60 SIM-USDC, 7 world days' },
 };
+/**
+ * Species never put under a bounty: threatened animals whose real decline is driven by hunting
+ * (plan 2A: the Vulnerable golden cat now; forest elephants, great apes and pangolins when they come).
+ */
+export const PROTECTED_SPECIES: ReadonlySet<string> = new Set(['african_golden_cat', 'forest_elephant', 'dwarf_crocodile', 'crowned_eagle']);
 /** A real elapsed time this many times the window's (at the world's rate) is an outage: held for review. */
 export const OUTAGE_FACTOR = 3;
 const WATER_WITHIN_M = 1000, PREDATOR_WITHIN_M = 15_000;
@@ -66,7 +71,7 @@ export class BountyEngine {
 
   /** A draft on an owned animal's current life, from a preset (an admin may set the amount). */
   async draft(p: { targetAnimalId: string; preset: Preset; amountAtomic?: bigint; windowWorldSeconds?: number }):
-    Promise<{ ok: true; bounty: Bounty } | { ok: false; reason: 'not_owned' | 'bad_preset' | 'bad_amount' | 'bad_window' }> {
+    Promise<{ ok: true; bounty: Bounty } | { ok: false; reason: 'not_owned' | 'bad_preset' | 'bad_amount' | 'bad_window' | 'protected_species' }> {
     const preset = Object.hasOwn(PRESETS, p.preset) ? PRESETS[p.preset] : undefined;
     if (!preset) return { ok: false, reason: 'bad_preset' };
     const amount = p.amountAtomic ?? preset.amountAtomic, window = p.windowWorldSeconds ?? preset.windowWorldSeconds;
@@ -74,6 +79,7 @@ export class BountyEngine {
     if (!Number.isSafeInteger(window) || window < 3600 || window > 30 * 86_400) return { ok: false, reason: 'bad_window' };
     const life = await this.ownership.lifeOfAnimal(p.targetAnimalId), animal = this.host.world.animal(p.targetAnimalId);
     if (!life || life.status !== 'alive' || !animal?.alive || animal.assetId !== life.assetId) return { ok: false, reason: 'not_owned' };
+    if (PROTECTED_SPECIES.has(animal.speciesId)) return { ok: false, reason: 'protected_species' };
     const asset = (await this.ownership.asset(life.assetId))!;
     const bounty = await this.bounties.createDraft({ preset: p.preset, targetLifeId: life.lifeId, targetAnimalId: animal.id, targetSpeciesId: animal.speciesId,
       targetRegion: regionOfPatch(this.host.world.grid, animal.patchId), targetAssetId: asset.assetId, targetOwnerAccountId: asset.ownerAccountId,
@@ -178,7 +184,10 @@ export class BountyEngine {
     if (!(await this.bounties.decide(b.bountyId, d))) return null;
     const actors = [b.targetAnimalId, ...(d.outcome === 'predator' && d.winnerAnimalId ? [d.winnerAnimalId] : [])];
     const events = await this.eventsOf(actors, b.publishedWorldTime ?? 0, d.worldTime).catch(() => []);
-    await this.bounties.saveRecord(b.bountyId, events);
+    // The target's path over the bounty, for the forest viewer's replay; the raw log is then cleared.
+    const track = thinTrack(await this.bounties.tracks(b.bountyId, b.publishedWorldTime ?? 0).catch(() => []));
+    await this.bounties.saveRecord(b.bountyId, events, track.map(({ x, z, state, worldTime }) => ({ x, z, state, worldTime })));
+    await this.bounties.deleteTracks(b.bountyId).catch(() => undefined);
     return { bountyId: b.bountyId, outcome: d.outcome, payeeWallet: d.payeeWallet };
   }
 

@@ -191,7 +191,8 @@ export class AgentStore {
       wins as (
         select c.agent_id, count(*) as drops, sum(d.amount_micro) as usdc_micro
         from reward_claims c join reward_drops d on d.id = c.drop_id
-        where c.agent_id is not null and c.status in ('reserved', 'paid_reported') group by c.agent_id)
+        -- A won drop counts while reserved, once its payment is reported, and once verified on-chain.
+        where c.agent_id is not null and c.status in ('reserved', 'paid_reported', 'verified_paid') group by c.agent_id)
       select a.id, a.name, coalesce(w.drops, 0) as drops, coalesce(w.usdc_micro, 0) as usdc_micro,
         l.best_s, coalesce(l.lost, 0) as lost
       from live_agents a left join wins w on w.agent_id = a.id left join lives l on l.agent_id = a.id`);

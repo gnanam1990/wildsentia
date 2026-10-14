@@ -1,4 +1,4 @@
-import { ISLAND_GRID,
+import { ISLAND_GRID, gridOfPatches, habitatAnalogue, inCongoChannel, type WorldGrid,
   HOME_STAGES, NUTRIENT_PER_KG_BIOMASS, emptyCommunityInventory, islandHeightAt, landWalkable, homeCondition,
   patchCentre, patchAtPosition, spatialHash, waterAccessPosition, atWaterAccess,
   takeEdibleMass, type Agent, type Carcass, type CommunityState, type HumanAction, type Person, type Patch, type WaterBudget, type WorldEvent, type WorldPosition, type MicroEcologyState, type MicroPatchPopulation,
@@ -31,17 +31,21 @@ export interface CommunityWildlife {
 
 /** A bounded local work area on core dry land. Full flood/obstacle siting is separate. */
 export function foundCommunity(patches: readonly Patch[], seed: number, log: EventLog, version: 2 | 3 | 4 | 5 | 6 | 7 | 8 = 8): CommunityState {
-  const site = patches.filter(p => landWalkable(p) && ['grassland', 'shola', 'riparian'].includes(p.habitat)
+  const grid = gridOfPatches(patches);
+  // A Congo habitat stands in for the island habitat it resembles (terra firme as shola, a bai as grassland).
+  const site = patches.filter(p => landWalkable(p) && ['grassland', 'shola', 'riparian'].includes(habitatAnalogue(p.habitat))
     && p.waterVolume >= 100 && p.plant.browse >= 500 && p.plant.grass >= 100)
     .filter(p => {
+      // A Congo home stands clear of any river channel.
+      if (p.congoSeed !== undefined) { const c = patchCentre(grid, p.id); return !inCongoChannel(grid, p.congoSeed, c.x + 30, c.z + 30); }
       if (p.islandSeed === undefined) return true;
-      const c = patchCentre(ISLAND_GRID, p.id), h = islandHeightAt(p.islandSeed, c.x + 30, c.z + 30);
+      const c = patchCentre(grid, p.id), h = islandHeightAt(p.islandSeed, c.x + 30, c.z + 30);
       return h > 3 && [[-4, -4], [4, -4], [-4, 4], [4, 4]].every(([x, z]) =>
         Math.abs(islandHeightAt(p.islandSeed!, c.x + 30 + x!, c.z + 30 + z!) - h) < 1);
     })
     .sort((a, b) => spatialHash(`household:${seed}:${a.id}`) - spatialHash(`household:${seed}:${b.id}`))[0];
   if (!site) throw new Error('no suitable community site; refuse to invent supplies or place people offshore');
-  const centre = patchCentre(ISLAND_GRID, site.id), home = { x: centre.x + 30, z: centre.z + 30, heading: 0 };
+  const centre = patchCentre(grid, site.id), home = { x: centre.x + 30, z: centre.z + 30, heading: 0 };
   const state: CommunityState = {
     profile: 'household_v1', version, ...(version >= 3 ? { relationships: [] } : {}), id: 'village_0001', name: 'Riverbend', householdId: 'household_0001',
     foundedAt: 0, updatedAt: 0, patchId: site.id, stores: emptyCommunityInventory(),
@@ -81,9 +85,9 @@ function emit(state: CommunityState, person: Person | null, log: EventLog, type:
     goal: person?.task?.kind ?? 'settle', conditions, outcome, effects, causalParents: parents, confidence: 'authoritative' });
 }
 
-function destination(state: CommunityState, person: Person, kind: HumanAction, site = state.patchId): WorldPosition {
-  const c = patchCentre(ISLAND_GRID, site);
-  if (kind === 'collect_water' || kind === 'fish') return waterAccessPosition(ISLAND_GRID, site);
+function destination(state: CommunityState, person: Person, kind: HumanAction, site = state.patchId, grid: WorldGrid = ISLAND_GRID): WorldPosition {
+  const c = patchCentre(grid, site);
+  if (kind === 'collect_water' || kind === 'fish') return waterAccessPosition(grid, site);
   if (kind === 'seek_resources') return { ...c, heading: 0 };
   if (kind.startsWith('gather_')) return { x: c.x - 35, z: c.z + (kind === 'gather_fibre' ? -35 : 0), heading: 0 };
   if (['deliver', 'sleep', 'build', 'rest', 'cook', 'repair'].includes(kind)) return { ...state.building.position };
@@ -190,7 +194,7 @@ function start(state: CommunityState, p: Person, at: number, log: EventLog, patc
     }
   }
   const target = kind === 'hunt' && prey?.position ? { ...prey.position }
-    : kind === 'care_child' && child ? { ...child.position } : destination(state, p, kind, site);
+    : kind === 'care_child' && child ? { ...child.position } : destination(state, p, kind, site, gridOfPatches([patch]));
   // Shared supplies can only be withdrawn when physically at the household.
   if (distance(p.position, state.building.position) < 1) {
     for (const [key, need, max] of [['foodKg', p.needs.hunger >= .45, .7], ['waterL', p.needs.thirst >= .4, 1]] as const) {
@@ -217,7 +221,7 @@ function start(state: CommunityState, p: Person, at: number, log: EventLog, patc
       delete p.task.targetPersonId;
       points = [{ ...p.position }];
     }
-    p.task.journey = { destinationPatchId: patchAtPosition(ISLAND_GRID, p.task.destination), waypoints: points };
+    p.task.journey = { destinationPatchId: patchAtPosition(gridOfPatches([patch]), p.task.destination), waypoints: points };
   }
   p.task.eventId = emit(state, p, log, 'human_task_started', at, 'success', { action: p.task.kind,
     ...(state.version >= 5 ? { destinationPatchId: p.task.journey!.destinationPatchId } : {}),
@@ -304,7 +308,7 @@ function finish(state: CommunityState, p: Person, patch: Patch, budget: WaterBud
       const chance = (.15 + .65 * (p.skills.fishing ?? 0)) * Math.min(1, before / .3);
       const roll = spatialHash(`${task.eventId}:catch`) / 0x1_0000_0000;
       Object.assign(conditions, { stockBeforeKg: before, catchChance: chance, roll, sourcePatchId: patch.id });
-      if (state.version < 2 || !fishable(patch, pool) || !atWaterAccess(ISLAND_GRID, p.position, patch.id)) {
+      if (state.version < 2 || !fishable(patch, pool) || !atWaterAccess(gridOfPatches([patch]), p.position, patch.id)) {
         outcome = 'failure'; conditions.reason = 'no_accessible_fish';
       } else if (roll >= chance) { outcome = 'failure'; conditions.reason = 'no_catch'; }
       else {
@@ -516,7 +520,7 @@ export function stepCommunity(state: CommunityState, patches: Patch[], budget: W
         recording.capture(p, now + dt - remaining);
       }
     }
-    learnFromSharedWork(state, workWindows, log);
+    learnFromSharedWork(state, workWindows, log, gridOfPatches(patches));
     advanceCommunityFamily(state, patches, now, now + dt, log);
     elapsed += dt;
   }

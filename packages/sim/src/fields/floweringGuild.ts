@@ -1,7 +1,8 @@
 import {
-  NUTRIENT_PER_KG_BIOMASS, WORLD_SECONDS_PER_DAY, WORLD_SECONDS_PER_YEAR, dayOfYear, yearOf,
+  NUTRIENT_PER_KG_BIOMASS, floweringHabitat, WORLD_SECONDS_PER_DAY, WORLD_SECONDS_PER_YEAR, dayOfYear, yearOf,
   type EventType, type FloweringGuildState, type MicroEcologyState, type Patch, type WorldTime,
 } from '@vana/shared';
+import { habitatBrowseCapacity } from '../grid.js';
 
 /** Uncalibrated scenario coefficients; these are not field-measured species rates. */
 export const FLOWERING_POLICY = Object.freeze({
@@ -24,7 +25,7 @@ export interface FloweringTransition {
 }
 
 export function floweringEligible(patch: Patch): boolean {
-  return (patch.habitat === 'shola' || patch.habitat === 'riparian')
+  return floweringHabitat(patch.habitat)
     && patch.surface !== 'coast' && patch.surface !== 'ocean' && patch.capacity.browse > 0;
 }
 
@@ -169,7 +170,7 @@ export function validateFloweringGuild(patch: Patch, at: WorldTime): void {
     || !Array.isArray(guild.seedBank) || guild.seedBank.length > 2
     || !finite(patch.capacity.browse) || !finite(patch.plant.browse)
     || Math.abs(patch.capacity.browse + guild.capacityKg
-      - (patch.habitat === 'shola' ? 7000 : 4000)) > 1e-6
+      - habitatBrowseCapacity(patch.habitat)) > 1e-6
     || standing(guild) > guild.capacityKg + 1e-7)
     throw new Error('invalid flowering guild checkpoint');
   if (guild.bloom) {

@@ -41,6 +41,7 @@ describe('a checkpoint in slices', () => {
     // A garbage-collection pause can land in any slice; the slicing itself is held to 60 ms.
     expect(p99(gaps)).toBeLessThan(Number(process.env.VANA_CONGO_SLICE_MAX_MS ?? 60));
     expect(p99(jsonGaps)).toBeLessThan(Number(process.env.VANA_CONGO_SLICE_MAX_MS ?? 60));
-    expect(Math.max(...gaps, ...jsonGaps)).toBeLessThan(250);
+    // The one pause allowed, scaled on the slower GitHub runner (VANA_CONGO_SLICE_PAUSE_MS in CI).
+    expect(Math.max(...gaps, ...jsonGaps)).toBeLessThan(Number(process.env.VANA_CONGO_SLICE_PAUSE_MS ?? 250));
   }, 300_000);
 });

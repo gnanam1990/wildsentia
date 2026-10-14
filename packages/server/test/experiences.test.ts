@@ -16,6 +16,7 @@ import {
 import {
   arenaCommand,
   labRequest,
+  LEAGUE_SPECIES,
   leagueRequest,
   type ArenaFrame,
 } from "@vana/shared";
@@ -76,6 +77,22 @@ describe("experience contracts and optional providers", () => {
       expect(
         leagueRequest({ ...match, ...change }, [...match.players, "human"]),
       ).toBeNull();
+  });
+  it("plays the Congo forest's own animals in a Congo world, and only its hunters hunt", () => {
+    const players = [...match.players, "human"];
+    const congo = (change: object) => leagueRequest({ ...match, ...change }, players, "congo");
+    expect(congo({ mission: "hunt", species: "african_leopard" })?.species).toBe("african_leopard");
+    expect(congo({ mission: "hunt", species: "african_golden_cat" })?.species).toBe("african_golden_cat");
+    expect(congo({ mission: "water", species: "blue_duiker" })?.species).toBe("blue_duiker");
+    expect(congo({ mission: "survive", species: "red_river_hog" })?.species).toBe("red_river_hog");
+    expect(congo({ mission: "hunt", species: "blue_duiker" })).toBeNull();
+    expect(congo({ mission: "water", species: "tiger" })).toBeNull();
+    expect(leagueRequest({ ...match, species: "african_leopard" }, players)).toBeNull();
+    expect(LEAGUE_SPECIES.congo).toEqual(["african_leopard", "african_golden_cat", "blue_duiker", "red_river_hog"]);
+  });
+  it("accepts a destination anywhere in the 48 km Congo forest, and nothing beyond it", () => {
+    expect(arenaCommand({ action: "go_to", x: 24_600, z: 47_000, gait: "trot" })).toEqual({ action: "go_to", x: 24_600, z: 47_000, gait: "trot" });
+    expect(arenaCommand({ action: "go_to", x: 60_000, z: 0, gait: "trot" })).toBeNull();
   });
   it("rejects coercible command objects, non-finite positions and extra capability types", () => {
     for (const c of [

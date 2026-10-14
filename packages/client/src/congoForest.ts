@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { congoChannelHalfM, congoRivers, patchCentre, riverIndex, spatialHash } from '@vana/shared';
 import { worldGrid } from './worldGrid.js';
 import { CONGO_STEP_M, congoLattice, type PatchView } from './terrain.js';
-import { CONGO_KINDS, congoLeafDepthMaterial, congoPlantMaterials, congoPlantParts, planCongoPatch, type CongoKind, type PlacedPlant, type PlantParts } from './congoPlants.js';
+import { CONGO_DECIDUOUS_SHARE, congoSeasonalDryness } from './seasonalLeaves.js';
+import { CONGO_KINDS, congoCrownMaterials, congoLeafDepthMaterial, congoPlantMaterials, congoSeasonDry, congoPlantParts, planCongoPatch, type CongoKind, type PlacedPlant, type PlantParts } from './congoPlants.js';
 import { buildCongoWater, type LoadedGround } from './congoWater.js';
 
 /** How far from the camera's focus each kind of plant is drawn one by one (metres). */
@@ -20,6 +21,8 @@ const UNDER_CANOPY_FROM_M = 12, UNDER_CANOPY_TO_M = 45;
 /** Trees stand a little into the ground, so a buttress never floats on a slope. */
 const TREE_SINK_M = 0.3;
 const TREES = new Set<CongoKind>(['emergent', 'canopy', 'midstory', 'raphia', 'sapling']);
+/** The kinds whose crowns may be deciduous (seasonalLeaves.ts); the understory stays evergreen. */
+const DECIDUOUS = new Set<CongoKind>(['emergent', 'canopy']);
 /** Plans kept for this many patches (the most recently used): about a kilometre around the camera. */
 const PLAN_CACHE_PATCHES = 96;
 
@@ -51,6 +54,11 @@ export class CongoForest {
 
   /** How many patches' plans are held. */
   get plannedPatches(): number { return this.#plans.size; }
+
+  /** The world's season: the deciduous share of tall crowns turns and sheds in the drier spells. */
+  setSeason(season: string): void {
+    congoSeasonDry.value = congoSeasonalDryness(season);
+  }
 
   /** A new region set or season: new canopy surface and water; the near plants are planted again on the next update. */
   setScene(patches: readonly PatchView[], seed: number, flooded: boolean): void {
@@ -131,7 +139,8 @@ export class CongoForest {
     for (const kind of CONGO_KINDS) {
       const plants = chosen.get(kind) ?? [], parts = congoPlantParts(kind);
       for (const part of Object.keys(parts) as Array<keyof PlantParts>) {
-        const mesh = this.#mesh(kind, part, parts[part]!, materials[part], plants.length);
+        const material = part === 'leaves' && DECIDUOUS.has(kind) ? congoCrownMaterials().leaves : materials[part];
+        const mesh = this.#mesh(kind, part, parts[part]!, material, plants.length);
         plants.forEach((plant, i) => {
           p.set(plant.x, ground(plant.x, plant.z) - (TREES.has(kind) ? TREE_SINK_M : 0), plant.z);
           matrix.compose(p, q.setFromAxisAngle(up, plant.rotY), s.setScalar(plant.scale));
@@ -158,7 +167,7 @@ export class CongoForest {
       mesh.name = name; mesh.frustumCulled = false;
       // Only the tall trees cast shade, dappled through their leaf clusters (and their trunks).
       mesh.castShadow = kind === 'emergent' || kind === 'canopy';
-      if (part === 'leaves') mesh.customDepthMaterial = congoLeafDepthMaterial();
+      if (part === 'leaves') mesh.customDepthMaterial = DECIDUOUS.has(kind) ? congoCrownMaterials().depth : congoLeafDepthMaterial();
       mesh.receiveShadow = true;
       this.#meshes.set(name, mesh); this.root.add(mesh);
     }
@@ -220,10 +229,10 @@ export class CongoForest {
     const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide });
     const hole = this.#hole;
     material.onBeforeCompile = (shader) => {
-      shader.uniforms.holeCentre = hole.centre; shader.uniforms.holeRadius = hole.radius;
+      shader.uniforms.holeCentre = hole.centre; shader.uniforms.holeRadius = hole.radius; shader.uniforms.uSeasonDry = congoSeasonDry;
       shader.vertexShader = 'varying vec3 vShellWorld;\n' + shader.vertexShader.replace('#include <worldpos_vertex>',
         '#include <worldpos_vertex>\nvShellWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-      shader.fragmentShader = `uniform vec2 holeCentre; uniform float holeRadius; varying vec3 vShellWorld;
+      shader.fragmentShader = `uniform vec2 holeCentre; uniform float holeRadius; uniform float uSeasonDry; varying vec3 vShellWorld;
 float shellHash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 float shellNoise(vec2 p) { vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
   return mix(mix(shellHash(i), shellHash(i + vec2(1.0, 0.0)), u.x), mix(shellHash(i + vec2(0.0, 1.0)), shellHash(i + vec2(1.0, 1.0)), u.x), u.y); }
@@ -250,9 +259,14 @@ vec2 shellCrowns(vec2 p) {
         vec3 tone = mix(vec3(0.62, 0.9, 0.5), vec3(1.05, 1.1, 0.62), crown.y);
         tone = mix(tone, vec3(1.15, 0.85, 0.55), step(0.94, crown.y));
         float leafy = shellNoise(vShellWorld.xz / 2.2) * 0.35 + 0.65;
-        diffuseColor.rgb *= tone * mix(0.32, 1.2, max(dome, giant)) * leafy;`);
+        // In a drier spell the deciduous share of crowns turns yellow-brown and opens to its branches.
+        float deciduous = step(fract(crown.y * 7.13), ${CONGO_DECIDUOUS_SHARE.toFixed(3)}) * uSeasonDry;
+        leafy *= 1.0 - deciduous * 0.3 * (1.0 - shellNoise(vShellWorld.xz / 0.9));
+        diffuseColor.rgb *= tone * mix(0.32, 1.2, max(dome, giant)) * leafy;
+        vec3 dryCrown = vec3(dot(diffuseColor.rgb, vec3(0.42, 0.42, 0.16))) * vec3(1.55, 1.1, 0.45);
+        diffuseColor.rgb = mix(diffuseColor.rgb, dryCrown, deciduous * 0.85);`);
     };
-    material.customProgramCacheKey = () => 'congo-canopy-shell-v2';
+    material.customProgramCacheKey = () => 'congo-canopy-shell-v3';
     const mesh = new THREE.Mesh(geometry, material);
     mesh.name = 'canopy-shell'; mesh.receiveShadow = false; mesh.castShadow = false;
     return mesh;

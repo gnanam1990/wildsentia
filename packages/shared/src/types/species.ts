@@ -3,7 +3,7 @@ import type { LifeStage, SkillId } from './agent.js';
 
 export type Archetype =
   | 'apex_predator' | 'pack_predator' | 'herd_grazer'
-  | 'mega_herbivore' | 'omnivore_rooter' | 'arboreal_troop' | 'scavenger_flyer';
+  | 'mega_herbivore' | 'omnivore_rooter' | 'arboreal_troop' | 'scavenger_flyer' | 'raptor';
 
 export type TrophicRole =
   | 'apex_predator' | 'mesopredator' | 'grazer' | 'browser' | 'omnivore' | 'scavenger';
@@ -35,6 +35,8 @@ export interface SpeciesConfig {
      * giant squirrel, leopard). Omitted: a ground animal.
      */
     climbsTrees?: boolean;
+    /** Phase B: a bird that travels by air (the vulture, the crowned eagle). */
+    flies?: boolean;
     /** Congo 1B: swims, and dives to escape, staying under for up to `diveSeconds`. Omitted: never swims. */
     swims?: { swimMs: number; diveSeconds: number };
     /** Congo 1B: what crossing water or flooded forest costs while it is flooded, where not `terrainCost`. */
@@ -64,6 +66,12 @@ export interface SpeciesConfig {
       foodValue?: number;
     }>;
     dailyIntakeKg: number;
+    /**
+     * Congo 2A: the share of a day's food from prey the world does not hold (a leopard's primates
+     * and cane rats, a golden cat's rodents). Only the rest of its hunger falls on simulated prey.
+     * Omitted: none.
+     */
+    offRosterShare?: number;
     /**
      * sim_0.37.0: the most food (kg as eaten) the gut can process in a day. Where some food is
      * worth less than a kilogram of need (foodValue), this is what stops an animal making up poor
@@ -260,6 +268,11 @@ export interface SpeciesConfig {
  * What crossing a habitat costs this species: its own figure, or its analogue's for a Congo
  * habitat it does not name. Flooded ground (Congo 1B) costs its `floodedTerrainCost` where it has one.
  */
+/** A species that travels by air: the vulture's archetype, or any species flagged `flies` (the crowned eagle). */
+export function fliesSpecies(cfg: Pick<SpeciesConfig, 'archetype' | 'locomotion'>): boolean {
+  return cfg.archetype === 'scavenger_flyer' || cfg.locomotion.flies === true;
+}
+
 export function terrainCostFor(cfg: Pick<SpeciesConfig, 'locomotion'>, habitat: HabitatType, flooded = false): number {
   const wet = flooded ? (cfg.locomotion.floodedTerrainCost as Partial<Record<HabitatType, number>> | undefined)?.[habitat] : undefined;
   if (wet !== undefined) return wet;

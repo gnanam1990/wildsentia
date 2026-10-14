@@ -23,7 +23,7 @@ export const SpeciesConfigSchema = z
     displayName: z.string().min(1),
     archetype: z.enum([
       'apex_predator', 'pack_predator', 'herd_grazer',
-      'mega_herbivore', 'omnivore_rooter', 'arboreal_troop', 'scavenger_flyer',
+      'mega_herbivore', 'omnivore_rooter', 'arboreal_troop', 'scavenger_flyer', 'raptor',
     ]),
     trophicRole: z
       .array(z.enum(['apex_predator', 'mesopredator', 'grazer', 'browser', 'omnivore', 'scavenger']))
@@ -37,6 +37,8 @@ export const SpeciesConfigSchema = z
       sprintStaminaS: z.number().positive(),
       terrainCost: habitatCost,
       climbsTrees: z.boolean().optional(),
+      // Phase B: a bird that travels by air (the vulture, the crowned eagle).
+      flies: z.boolean().optional(),
       // Congo 1B: swimmers and divers, and what crossing ground costs while it is flooded.
       swims: z.object({ swimMs: z.number().positive().finite(), diveSeconds: z.number().positive().max(3_600) }).optional(),
       floodedTerrainCost: z.object({
@@ -64,6 +66,7 @@ export const SpeciesConfigSchema = z
         }))
         .min(1),
       dailyIntakeKg: z.number().positive(),
+      offRosterShare: z.number().min(0).max(0.98).optional(),
       gutCapacityBodyFraction: z.number().gt(0).max(0.3).optional(),
       maxDailyIntakeKg: z.number().positive().finite().optional(),
       waterNeedLPerDay: z.number().positive(),
@@ -216,7 +219,7 @@ export const SpeciesConfigSchema = z
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'sprintMs must exceed walkMs' });
     }
     const eatsMeat = cfg.diet.eats.some((e) => e.target === 'meat');
-    const isPredator = cfg.archetype === 'apex_predator' || cfg.archetype === 'pack_predator';
+    const isPredator = cfg.archetype === 'apex_predator' || cfg.archetype === 'pack_predator' || cfg.archetype === 'raptor';
     if (isPredator && cfg.hunting === undefined) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'a predator archetype requires a hunting block' });
     }

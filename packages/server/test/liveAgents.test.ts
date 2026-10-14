@@ -41,6 +41,16 @@ describe('signed agent requests', () => {
     expect(verifySigned(headers(old), { audience: aud, method: 'GET', path: '/x', body: '' }, nonces)).toEqual({ ok: false, error: 'stale_timestamp' });
     expect(verifySigned({}, { audience: aud, method: 'GET', path: '/x', body: '' }, nonces)).toEqual({ ok: false, error: 'missing_signature' });
   });
+  it('refuses a request signed before the server started, so one captured before a restart cannot be replayed after it', () => {
+    const started = Date.now();
+    const before = signedHeaders(k, aud, 'POST', '/agents/me/stop', '', { timestamp: String(started - 30_000) });
+    // A fresh process has no memory of the nonces it saw; its start time stands in for them.
+    const restarted = new NonceStore(undefined, undefined, started);
+    expect(verifySigned(headers(before), { audience: aud, method: 'POST', path: '/agents/me/stop', body: '' }, restarted, started + 1_000))
+      .toEqual({ ok: false, error: 'stale_timestamp' });
+    const after = signedHeaders(k, aud, 'POST', '/agents/me/stop', '', { timestamp: String(started + 500) });
+    expect(verifySigned(headers(after), { audience: aud, method: 'POST', path: '/agents/me/stop', body: '' }, restarted, started + 1_000)).toMatchObject({ ok: true });
+  });
   it('bounds how many requests one key can make inside the replay window', () => {
     const nonces = new NonceStore(3);
     for (let i = 0; i < 3; i++) expect(nonces.claim('k', `nonce-${i}-aaaaaaaaaaaa`, 0)).toBe('ok');
@@ -235,6 +245,10 @@ maybe('live agent API', () => {
     // Bob's current sambar (15 minutes) beats his earlier life (9 minutes).
     expect(board.agents[1].longestLifeSeconds).toBeGreaterThanOrEqual(900);
     expect(board.agents[1].longestLifeSeconds).toBeLessThan(960);
+    // A win stays on the board once its payment is verified on-chain.
+    await pool!.query("update reward_claims set status='verified_paid' where agent_id=$1", [aliceId]);
+    const verified = await deps.store.leaderboard(live.avatars.values(), Date.now());
+    expect(verified.find((r) => r.agentId === aliceId)).toMatchObject({ drops: 1, usdcMicro: '2500000' });
   });
 
   it('lets an agent say a line that nearby agents hear, and lets the operator mute it', async () => {

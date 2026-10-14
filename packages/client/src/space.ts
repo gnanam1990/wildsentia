@@ -23,6 +23,15 @@ export interface RenderPosition {
 }
 
 /** One elevation contract for rigs, camera, cutaways, dots and screen-space attachments. */
+/**
+ * Water deeper than an animal stands at the hip is swum, not walked: its body rides with the back
+ * at the waterline and the head above. Shallower water is waded on its feet.
+ */
+export function swimBaseY(groundY: number, surfaceY: number | null, hipM: number): { y: number; swimming: boolean } {
+  if (surfaceY === null || surfaceY - groundY <= hipM * 0.9) return { y: groundY, swimming: false };
+  return { y: Math.round((surfaceY - hipM) * 1000) / 1000, swimming: true };
+}
+
 export function renderBaseY(position: { x: number; z: number; altitudeM?: number }, groundAt: (x: number, z: number) => number): number {
   return groundAt(position.x, position.z) + (position.altitudeM ?? 0);
 }

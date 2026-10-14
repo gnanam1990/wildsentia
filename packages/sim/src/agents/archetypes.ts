@@ -16,6 +16,9 @@ export const ARCHETYPE_GOALS: Record<Archetype, readonly GoalId[]> = {
   omnivore_rooter:['flee', 'scavenge', 'find_food', 'find_water', 'rest', 'wander'],
   arboreal_troop: ['flee', 'find_food', 'find_water', 'rest', 'wander'],
   scavenger_flyer:['scavenge', 'find_water', 'rest', 'wander'],
+  // Phase B: a hunter that travels by air and drops onto its prey (the crowned eagle); it
+  // 'scavenges' only its own cached kill (perception.ts), feeding on it over days.
+  raptor:         ['hunt', 'scavenge', 'find_water', 'rest', 'wander'],
 };
 
 export function goalsFor(archetype: Archetype): readonly GoalId[] {

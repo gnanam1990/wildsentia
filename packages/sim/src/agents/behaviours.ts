@@ -1,5 +1,5 @@
 import {
-  NUTRIENT_PER_KG_BIOMASS, terrainCostFor, edibleMass, takeEdibleMass, patchAtPosition, patchCentre, positionInPatch, atWaterAccess, waterAccessPosition, waterContactPosition, WATER_CONTACT_RADIUS_M, landRayDistance, landWalkable, treeAnchorForPatch, treeAnchorGeometry,
+  NUTRIENT_PER_KG_BIOMASS, fliesSpecies, terrainCostFor, edibleMass, takeEdibleMass, patchAtPosition, patchCentre, positionInPatch, atWaterAccess, waterAccessPosition, waterContactPosition, WATER_CONTACT_RADIUS_M, landRayDistance, landWalkable, treeAnchorForPatch, treeAnchorGeometry,
   type Agent, type Carcass, type DeathCause, type Patch, type Rng, type SkillId, type WorldGrid,
   type SpeciesConfig, type WorldTime, type WorldPosition, type MovementTrace,
 } from '@vana/shared';
@@ -515,7 +515,9 @@ function hunt(ctx: BehaviourContext): void {
   }
   const at = Math.floor(ctx.worldTime + last.seconds);
   // sim_0.37.0: a leopard hauls its kill into the tree of the patch it fell in, where there is one.
-  const cached = outcome.killed && hunting.cachesKills === true && treeAnchorForPatch(ctx.view.grid, ctx.patches[victim.patchId]!) !== null;
+  // Phase B: a bird carries it up into whatever canopy stands there (the crowned eagle).
+  const cached = outcome.killed && hunting.cachesKills === true
+    && (fliesSpecies(ctx.species) || treeAnchorForPatch(ctx.view.grid, ctx.patches[victim.patchId]!) !== null);
   const event = ctx.log.append({
     type: 'hunt', worldTime: at, simVersion: '', patchId: victim.patchId,
     actors: [ctx.agent.id, victim.id], goal: ctx.choice.goal,

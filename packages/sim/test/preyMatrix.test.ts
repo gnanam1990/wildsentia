@@ -37,3 +37,27 @@ describe('which prey a predator may take (1B)', () => {
     expect(world.resolveLiveHunt(a!.id, duikerAnimal.id, duikerAnimal.position!, world.now(), true)).not.toBeNull();
   }, 60_000);
 });
+
+describe('the 2A food web: prey sized for the leopard, small prey for the golden cat', () => {
+  const leopard = CONGO.get('african_leopard')!, cat = CONGO.get('african_golden_cat')!;
+  const prey = (id: string, over = {}) => [CONGO.get(id)!, congoAgent(id, over)] as const;
+  it('a leopard takes red duikers, hogs, sitatunga and a buffalo calf, never a grown buffalo', () => {
+    for (const id of ['bay_duiker', 'peters_duiker', 'red_river_hog', 'sitatunga']) expect(canHunt(leopard, ...prey(id)), id).toBe(true);
+    expect(canHunt(leopard, ...prey('forest_buffalo'))).toBe(false);
+    expect(canHunt(leopard, ...prey('forest_buffalo', { massKg: 60, lifeStage: 'juvenile' }))).toBe(true);
+  });
+  it('the golden cat takes blue duikers and young, never grown red duikers or hogs, and avoids leopards that hunt it', () => {
+    expect(canHunt(cat, ...prey('blue_duiker'))).toBe(true);
+    expect(canHunt(cat, ...prey('bay_duiker'))).toBe(false);
+    expect(canHunt(cat, ...prey('bay_duiker', { massKg: 6, lifeStage: 'juvenile' }))).toBe(true);
+    expect(canHunt(cat, ...prey('red_river_hog'))).toBe(false);
+    expect(canHunt(cat, ...prey('red_river_hog', { massKg: 3, lifeStage: 'newborn' }))).toBe(true);
+    expect(canHunt(leopard, ...prey('african_golden_cat'))).toBe(true);
+    expect(cat.escape.avoids).toContain('african_leopard');
+  });
+  it('weights the leopard toward mid-sized prey (Lopé: hogs, red duikers), not blue duikers', () => {
+    const w = leopard.hunting!.preyPreference!;
+    expect(w.red_river_hog!).toBeGreaterThan(w.blue_duiker!);
+    expect(w.bay_duiker!).toBeGreaterThan(w.blue_duiker!);
+  });
+});

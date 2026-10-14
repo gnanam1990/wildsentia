@@ -183,6 +183,7 @@ export function buildApi({ host, pool, narrator, insights: insightDeps, live, re
       season: seasonAt(now, host.world?.terrainProfile),
       ...view.summary(),
       worldHoursPerRealHour: host.worldHoursPerRealHour,
+      grid: host.grid,
     };
   });
 

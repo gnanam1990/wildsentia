@@ -3,7 +3,7 @@ import { patchAtPosition, isMovementTrace, isDrinkingActivity, movementAt, treeA
 import { encounterAt, isRecordedEncounter } from './encounterReplay.js';
 import type { AnimalState } from './protocol.js';
 import type { RenderPosition } from './space.js';
-import { climbs, type ClimbVisualPhase, type FlightVisualPhase } from './animation.js';
+import { climbs, flies, type ClimbVisualPhase, type FlightVisualPhase } from './animation.js';
 import type { MovementTrace } from '@vana/shared';
 import { displaySecondAt, paceEncounter, paceMovement, recordedSecondAt, walkingPace, type Pacing } from '@vana/shared';
 import { huntMoment } from './huntActs.js';
@@ -235,7 +235,7 @@ export class LiveEncounterPlayer {
       const activity = m.activity;
       const drinking = activity !== undefined && seconds >= activity.startSeconds && seconds < activity.endSeconds;
       if (activity && seconds >= activity.startSeconds) position = { ...activity.position, moving: false };
-      const flightVisualPhase = m.actor.speciesId === 'vulture' && !drinking
+      const flightVisualPhase = flies(m.actor.speciesId) && !drinking
         ? recordedFlightPhase(m.trace, seconds) : null;
       const climbVisualPhase = climbs(m.actor.speciesId) && !drinking
         ? recordedClimbPhase(m.trace, seconds) : null;

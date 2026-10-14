@@ -8,6 +8,24 @@ import type { Database, Pool } from '../db/pool.js';
  * intent before it is recorded, so a restart or a replay never pays twice.
  */
 
+/** One sample of a target's path: where it was, what it was doing, at what world time. */
+export interface TrackRow { x: number; z: number; state: string; worldTime: number }
+/** A record keeps at most this many samples of the target's path. */
+export const RECORD_TRACK_MAX = 2_000;
+
+/**
+ * A path thinned for the record: its first and last samples and every change of state stay; the
+ * rest are taken evenly, so the whole bounty fits in RECORD_TRACK_MAX samples.
+ */
+export function thinTrack<T extends TrackRow>(track: readonly T[], max = RECORD_TRACK_MAX): T[] {
+  if (track.length <= max) return [...track];
+  const keep = new Set<number>([0, track.length - 1]);
+  for (let i = 1; i < track.length; i++) if (track[i]!.state !== track[i - 1]!.state) keep.add(i);
+  const room = Math.max(0, max - keep.size);
+  for (let k = 1; k <= room && keep.size < max; k++) keep.add(Math.round((k * (track.length - 1)) / (room + 1)));
+  return [...keep].sort((a, b) => a - b).slice(0, max).map((i) => track[i]!);
+}
+
 export type BountyStatus = 'draft' | 'validated' | 'active' | 'on_hold' | 'adjudicated' | 'settled' | 'cancelled';
 export type Preset = 'standard' | 'hard' | 'elite';
 export type Outcome = 'predator' | 'survived' | 'void';
@@ -154,6 +172,7 @@ export class BountyStore {
       const b = (await db.query('select * from bounties where bounty_id=$1 for update', [bountyId])).rows[0];
       if (!b || !['draft', 'validated', 'active', 'on_hold'].includes(b.status as string)) return false;
       await db.query("update bounties set status='cancelled', cancel_reason=$2 where bounty_id=$1", [bountyId, reason]);
+      await db.query('delete from bounty_tracks where bounty_id=$1', [bountyId]);
       if (b.status === 'active' || b.status === 'on_hold') {
         await db.query("insert into sim_ledger (category, amount_atomic, decimals, ref) values ('reward_pool', $1, $2, $3)",
           [String(b.amount_atomic), b.decimals, `bounty:${bountyId}:return`]);
@@ -229,11 +248,15 @@ export class BountyStore {
       on conflict do nothing`, [bountyId, agentId, animalId, worldTime])).rowCount ?? 0) > 0;
   }
 
-  /** Adds a sample to a bounty target's track log and prunes what is older than six world hours. */
+  /** Adds a sample to a bounty target's track log; the whole log is kept until the bounty is decided. */
   async saveTrack(s: { bountyId: string; x: number; z: number; state: string; worldTime: number }): Promise<void> {
     await this.pool.query(`insert into bounty_tracks (bounty_id, world_time, x, z, state) values ($1,$2,$3,$4,$5) on conflict do nothing`,
       [s.bountyId, s.worldTime, s.x, s.z, s.state]);
-    await this.pool.query('delete from bounty_tracks where bounty_id=$1 and world_time < $2', [s.bountyId, s.worldTime - 6 * 3600]);
+  }
+
+  /** Clears a bounty's track log once its path is in the record (or it was cancelled). */
+  async deleteTracks(bountyId: string): Promise<void> {
+    await this.pool.query('delete from bounty_tracks where bounty_id=$1', [bountyId]);
   }
 
   /** A bounty target's track log since a world time, oldest first. */
@@ -247,15 +270,16 @@ export class BountyStore {
       .map((r) => ({ agentId: r.agent_id as string, animalId: r.animal_id as string, firstSeenWorldTime: Number(r.first_seen_world_time) }));
   }
 
-  async saveRecord(bountyId: string, events: unknown[]): Promise<string> {
-    const sha256 = createHash('sha256').update(JSON.stringify(events)).digest('hex');
-    await this.pool.query('insert into bounty_records (bounty_id, events, sha256) values ($1,$2,$3) on conflict (bounty_id) do nothing',
-      [bountyId, JSON.stringify(events), sha256]);
+  /** The record: the event log slice and the target's path. The hash covers both (only the events when no path was kept). */
+  async saveRecord(bountyId: string, events: unknown[], track: TrackRow[] = []): Promise<string> {
+    const sha256 = createHash('sha256').update(JSON.stringify(track.length ? { events, track } : events)).digest('hex');
+    await this.pool.query('insert into bounty_records (bounty_id, events, sha256, track) values ($1,$2,$3,$4) on conflict (bounty_id) do nothing',
+      [bountyId, JSON.stringify(events), sha256, JSON.stringify(track)]);
     return sha256;
   }
 
-  async record(bountyId: string): Promise<{ events: unknown[]; sha256: string } | null> {
-    const row = (await this.pool.query('select events, sha256 from bounty_records where bounty_id=$1', [bountyId])).rows[0];
-    return row ? { events: row.events as unknown[], sha256: row.sha256 as string } : null;
+  async record(bountyId: string): Promise<{ events: unknown[]; track: TrackRow[]; sha256: string } | null> {
+    const row = (await this.pool.query('select events, track, sha256 from bounty_records where bounty_id=$1', [bountyId])).rows[0];
+    return row ? { events: row.events as unknown[], track: (row.track ?? []) as TrackRow[], sha256: row.sha256 as string } : null;
   }
 }

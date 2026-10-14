@@ -131,6 +131,8 @@ maybe('bounties over the API', () => {
     await discovery.idle();
     expect(await bountyStore.entrants(draft.bountyId)).toEqual([expect.objectContaining({ agentId: tracker.agentId })]);
 
+    // The target's path while the bounty ran (its track log), for the replay.
+    await bountyStore.saveTrack({ bountyId: draft.bountyId, x: prey.x, z: prey.z, state: 'grazing', worldTime: host.world.now() });
     // The kill, the outcome and its public record.
     await host.exclusive(async () => host.world.resolveLiveHunt(leopard.animalId, duiker.animalId, { ...prey }, host.world.now(), true));
     expect(await engine.adjudicate()).toEqual([{ bountyId: draft.bountyId, outcome: 'predator', payeeWallet: hunterOwner.wallet }]);
@@ -138,5 +140,8 @@ maybe('bounties over the API', () => {
     expect(record).toMatchObject({ simulated: true, outcome: 'predator', winnerAnimalId: leopard.animalId,
       payout: { wallet: hunterOwner.wallet, amountAtomic: '10000000', status: 'recorded' }, entrants: 1 });
     expect(record.record.sha256).toMatch(/^[0-9a-f]{64}$/);
+    // Once settled, the forest viewer can replay it: the target, its species and its path.
+    expect(record).toMatchObject({ targetAnimalId: duiker.animalId, targetSpeciesId: 'blue_duiker' });
+    expect(record.record.track).toEqual([expect.objectContaining({ state: 'grazing' })]);
   });
 });

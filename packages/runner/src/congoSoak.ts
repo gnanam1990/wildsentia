@@ -10,11 +10,17 @@ export interface CongoSoakResult {
   days: number;
   living: Record<string, number>;
   kills: Record<string, number>;
+  /** Kills by predator species, then prey species. */
+  killsBy: Record<string, Record<string, number>>;
+  /** Deaths by species, then cause (predation, starvation, senescence...). */
+  deaths: Record<string, Record<string, number>>;
   dives: number;
   /** Non-swimmers in mid-river (a channel patch with no dry ground beside it) at the end of a day: should be none. */
   strandedInWater: number;
   meanCondition: Record<string, number>;
   hourMs: { p95: number; max: number };
+  /** Living animals by species every 30 days (day 0 first), to see whether the web is stable. */
+  monthly: Array<{ day: number; living: Record<string, number> }>;
 }
 
 const SPECIES_DIR = fileURLToPath(new URL('../../../config/species-congo', import.meta.url));
@@ -23,8 +29,19 @@ export function runCongoSoak(o: { seed: number; days: number; population?: Recor
   const world = createWorld({ seed: o.seed, speciesDir: SPECIES_DIR, terrainProfile: 'congo_v1',
     initialAgents: o.population ?? CONGO_POPULATION, minPopulation: {}, retainEvents: 20_000 });
   const kills: Record<string, number> = {}, hours: number[] = [];
+  const killsBy: CongoSoakResult['killsBy'] = {}, deaths: CongoSoakResult['deaths'] = {};
   let dives = 0, stranded = 0;
+  const count = () => {
+    const living: Record<string, number> = {};
+    for (const a of world.agents) if (a.alive) living[a.speciesId] = (living[a.speciesId] ?? 0) + 1;
+    return living;
+  };
+  const monthly: CongoSoakResult['monthly'] = [{ day: 0, living: count() }];
   for (let day = 0; day < o.days; day++) {
+    if (day > 0 && day % 30 === 0) {
+      monthly.push({ day, living: count() });
+      if (process.env.SOAK_PROGRESS) console.error(JSON.stringify(monthly.at(-1)));
+    }
     for (let h = 0; h < 24; h++) {
       const t = performance.now();
       world.step(1);
@@ -34,6 +51,13 @@ export function runCongoSoak(o: { seed: number; days: number; population?: Recor
         if (e.type === 'hunt' && e.outcome === 'success') {
           const prey = String(e.conditions.preySpecies ?? world.animal(e.actors[1] ?? '')?.speciesId ?? 'unknown');
           kills[prey] = (kills[prey] ?? 0) + 1;
+          const by = killsBy[String(e.conditions.predatorSpecies ?? 'unknown')] ??= {};
+          by[prey] = (by[prey] ?? 0) + 1;
+        }
+        if (e.type === 'died') {
+          const of = deaths[String(e.conditions.species ?? 'unknown')] ??= {};
+          const cause = String(e.conditions.cause ?? 'unknown');
+          of[cause] = (of[cause] ?? 0) + 1;
         }
         if (e.type === 'fled' && e.conditions.escape === 'dive' && e.outcome === 'success') dives++;
       }
@@ -52,7 +76,7 @@ export function runCongoSoak(o: { seed: number; days: number; population?: Recor
   }
   hours.sort((a, b) => a - b);
   return {
-    days: o.days, living, kills, dives, strandedInWater: stranded,
+    days: o.days, living, kills, killsBy, deaths, dives, strandedInWater: stranded, monthly,
     meanCondition: Object.fromEntries(Object.entries(condition).map(([id, xs]) => [id, xs.reduce((s, x) => s + x, 0) / xs.length])),
     hourMs: { p95: hours[Math.min(hours.length - 1, Math.ceil(hours.length * 0.95) - 1)]!, max: hours.at(-1)! },
   };

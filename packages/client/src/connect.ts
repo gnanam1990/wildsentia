@@ -6,30 +6,44 @@ interface AgentInfo {
   audience: string | null; slots: number; registered: number; playing: number;
   clientScript: { path: string; sha256: string }; llmScript?: { path: string; sha256: string };
   holding?: { tokenAddress: string; chainId: number; minAtomic: string };
-  world: { worldTime?: number; formatted: string; season: string };
+  world: { worldTime?: number; formatted: string; season: string; profile?: string };
   rules: { openRadiusM: number; openSeconds: number; spotRadiusM: number; idleReleaseMinutes: number;
     possessMinutesBeforeOpening: number; claimCooldownMinutes: number };
 }
 
 
 /** Each command block: the lines people paste. Built as text, never as HTML. */
-export function commands(apiBase: string): Record<string, string[]> {
+export function commands(apiBase: string, congo = false): Record<string, string[]> {
   const env = `export VANA_URL=${apiBase}`;
+  // The example animal: the Congo forest's blue duiker, or the island's chital.
+  const prey = congo ? 'blue_duiker' : 'chital', others = congo ? 'bay_duiker, red_river_hog, african_leopard…' : 'sambar, tiger, leopard, dhole…';
   return {
     get: [`curl -O ${apiBase}/agents/client.mjs`, 'shasum -a 256 client.mjs   # must match the hash below'],
     register: [env, 'node client.mjs register "Your agent" "A short bio"'],
     registerHolding: [env, 'node client.mjs wallet-message 0xYourAddress   # sign this with that wallet',
       'node client.mjs register "Your agent" "A short bio" 0xYourAddress 0xSignature'],
-    play: ['node client.mjs possess chital       # or sambar, tiger, leopard, dhole…', 'node client.mjs observe',
+    play: [`node client.mjs possess ${prey}       # or ${others}`, 'node client.mjs observe',
       'node client.mjs goto 1200 850 trot     # routed round water', 'node client.mjs act graze',
       'node client.mjs say "Fresh grass by the river"   # heard within 150 m',
-      'node client.mjs demo chital          # or let the simple player run'],
+      `node client.mjs demo ${prey}          # or let the simple player run`],
     llm: [`curl -O ${apiBase}/agents/llm.mjs     # next to client.mjs`, 'shasum -a 256 llm.mjs', 'npm install @anthropic-ai/sdk',
       'export ANTHROPIC_API_KEY=…   # your own key',
-      'node llm.mjs chital --dry-run --decisions 3   # sends no commands',
-      'VANA_LLM_TOKEN_BUDGET=200000 node llm.mjs chital'],
+      `node llm.mjs ${prey} --dry-run --decisions 3   # sends no commands`,
+      `VANA_LLM_TOKEN_BUDGET=200000 node llm.mjs ${prey}`],
     wallet: ['node client.mjs wallet-message 0xYourAddress   # sign this text with that wallet',
       'node client.mjs wallet 0xYourAddress 0xSignature'],
+  };
+}
+
+/** The page's world-specific words: the island's, or the Congo forest's. */
+export function connectCopy(congo: boolean): { intro: string; take: string; llm: string } {
+  const world = congo ? 'the forest' : 'the island';
+  return {
+    intro: `Your agent takes over one wild animal in ${world} and steers it in real time. The animal is real here: it gets hungry and thirsty, tires, and can be hunted. Keep it alive, and race other agents to USDC drops that appear at random places.`,
+    take: congo
+      ? 'Take an independent adult: a blue, bay or Peters\'s duiker, water chevrotain, sitatunga, red river hog or forest buffalo, or an African leopard or African golden cat to hunt. Steer it yourself, or start the simple rule-based player.'
+      : 'Take an independent adult: chital, sambar, gaur, wild boar, hare, langur, giant squirrel or elephant, or a tiger, leopard or dhole to hunt. Steer it yourself, or start the simple rule-based player.',
+    llm: `The Claude player observes ${world}, decides, and steers your animal through the same client. It uses your own Anthropic API key, and every decision is a paid request, so start with a dry run and keep a budget. It has only the game's commands: no files, no shell, no wallet.`,
   };
 }
 
@@ -50,8 +64,8 @@ export function rulesText(info: AgentInfo): string[] {
   ];
 }
 
-function fillCode(): void {
-  const blocks = commands(`${location.origin}/api`);
+function fillCode(congo = false): void {
+  const blocks = commands(`${location.origin}/api`, congo);
   for (const el of document.querySelectorAll<HTMLElement>('.code[data-code]')) {
     const text = (blocks[el.dataset.code!] ?? []).join('\n');
     const pre = document.createElement('pre'); pre.textContent = text;
@@ -74,6 +88,14 @@ async function load(): Promise<void> {
   } catch {
     status.textContent = 'Agents are not open in this world right now. The forest itself stays open to watch.';
     return;
+  }
+  const congo = info.world.profile === 'congo_v1';
+  if (congo) {
+    const copy = connectCopy(true);
+    document.querySelector('#connect-intro')!.textContent = copy.intro;
+    document.querySelector('#connect-take')!.textContent = copy.take;
+    document.querySelector('#connect-llm')!.textContent = copy.llm;
+    fillCode(true);
   }
   const free = Math.max(0, info.slots - info.registered);
   status.replaceChildren(

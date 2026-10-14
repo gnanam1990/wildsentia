@@ -1,6 +1,7 @@
 import * as THREE from 'three';
+import { addCongoDeciduous } from './seasonalLeaves.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { congoChannelHalfM, congoRivers, patchCentre, riverIndex, spatialHash, type RiverPath } from '@vana/shared';
+import { congoChannelHalfM, congoRivers, patchCentre, riverIndex, spatialHash, treeAnchorForPatch, type RiverPath } from '@vana/shared';
 import { worldGrid } from './worldGrid.js';
 import type { PatchView } from './terrain.js';
 
@@ -47,7 +48,8 @@ function riversOf(seed: number) {
  * What grows in one patch: the same plants, in the same places, every time. `kinds` plans only
  * those kinds, each exactly as it stands in the whole plan (each kind draws from its own sequence).
  */
-export function planCongoPatch(patch: Pick<PatchView, 'id' | 'habitat'>, seed: number, kinds?: ReadonlySet<CongoKind>): PlacedPlant[] {
+export function planCongoPatch(patch: Pick<PatchView, 'id' | 'habitat'> & Partial<Pick<PatchView, 'canopyCover' | 'surface'>>, seed: number,
+  kinds?: ReadonlySet<CongoKind>): PlacedPlant[] {
   // A river patch is water only where its channel runs; its dry edge grows the flooded forest's plants.
   const counts = PER_PATCH[patch.habitat === 'water' ? 'flooded_forest' : patch.habitat];
   if (!counts) return [];
@@ -68,6 +70,9 @@ export function planCongoPatch(patch: Pick<PatchView, 'id' | 'habitat'>, seed: n
       if (!inChannel(x, z)) out.push({ kind, x, z, scale, rotY });
     }
   }
+  // Where a leopard or golden cat climbs (shared/treeAnchor.ts, 6 m up), a real canopy tree stands.
+  const anchor = !kinds || kinds.has('canopy') ? treeAnchorForPatch(grid, patch) : null;
+  if (anchor && !inChannel(anchor.x, anchor.z)) out.push({ kind: 'canopy', x: anchor.x, z: anchor.z, scale: 0.85, rotY: spatialHash(`congo-climb-tree:${patch.id}`) / 0x1_0000_0000 * Math.PI * 2 });
   if (patch.habitat !== 'bai' && (!kinds || kinds.has('rock')) && fromRiver <= widestHalf + ROCK_BANK_M) {
     const random = rng(spatialHash(`congo-plants:${seed}:${patch.id}:rock`));
     for (let i = 0; i < ROCK_TRIES; i++) {
@@ -262,6 +267,9 @@ function leafTexture(): THREE.Texture | null {
 
 let materials: Record<keyof PlantParts, THREE.Material> | null = null;
 let leafDepth: THREE.MeshDepthMaterial | null = null;
+let crowns: { leaves: THREE.Material; depth: THREE.MeshDepthMaterial } | null = null;
+/** The world's season as a deciduous crown's dryness (seasonalLeaves.ts), shared by every tall tree. */
+export const congoSeasonDry = { value: 0 };
 /**
  * The leaf clusters' shadow: cut by the same leaf texture, so a crown casts dappled shade, not
  * the solid squares of its cards.
@@ -269,6 +277,19 @@ let leafDepth: THREE.MeshDepthMaterial | null = null;
 export function congoLeafDepthMaterial(): THREE.MeshDepthMaterial {
   const map = (congoPlantMaterials().leaves as THREE.MeshStandardMaterial).map;
   return leafDepth ??= new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, ...(map ? { map, alphaTest: 0.45 } : {}) });
+}
+/**
+ * The tall trees' leaves (emergents and canopy): the same leaf, but its deciduous share of crowns
+ * turns and sheds in the drier spells. The understory beneath stays evergreen.
+ */
+export function congoCrownMaterials(): { leaves: THREE.Material; depth: THREE.MeshDepthMaterial } {
+  if (crowns) return crowns;
+  const map = leafTexture();
+  const leaves = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide, emissive: 0x16300c, ...(map ? { map, alphaTest: 0.45 } : {}) });
+  const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, ...(map ? { map, alphaTest: 0.45 } : {}) });
+  addCongoDeciduous(leaves, congoSeasonDry, 'leaves');
+  addCongoDeciduous(depth, congoSeasonDry, 'depth');
+  return crowns = { leaves, depth };
 }
 export function congoPlantMaterials(): Record<keyof PlantParts, THREE.Material> {
   if (materials) return materials;

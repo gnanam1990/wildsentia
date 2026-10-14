@@ -81,6 +81,7 @@ Note both addresses and the challenges contract's deployment block (from `broadc
 | `VANA_CHALLENGES_IDENTITY_REGISTRY` | `0x8004A818BFB912233c491871b3d84c89A494BD9e` (ERC-8004, Arc Testnet) |
 | `VANA_CHALLENGES_REPUTATION_REGISTRY` | `0x8004B663056A597Dffe9eCcC1965A193B7388713` (ERC-8004, Arc Testnet) |
 | `VANA_X_CLIENT_ID` / `_SECRET` / `_REDIRECT_URI` | from the X app; redirect `https://wildsentia.lol/api/accounts/x/callback` |
+| `VANA_CHALLENGES_MEMO` | `1`: every payout and refund goes through Arc's Memo contract (`0x5294E9927c3306DcBaDb03fe70b92e01cCede505`) with a readable note, such as "Wildsentia challenge #42: refunded". Leave it unset until check 6 below passes. |
 
 On start, the server refuses to run if:
 - the key is not the challenges contract's evaluator;
@@ -99,6 +100,12 @@ If the RPC cannot be reached at start, the forest still starts: challenges stay 
 3. **Refunded:** a challenge nobody wins refunds to its creator an hour after its deadline.
 4. **Rules:** an attempt that breaks a rule ends with its reason, and its record is on chain.
 5. **Payouts paused:** while the owner has paused payouts, a met attempt stays `won`. After the pause is lifted, it is paid if still within the window; otherwise it refunds.
+6. **Memo notes (`VANA_CHALLENGES_MEMO=1`):** the design asks for one call on testnet before this is relied on.
+   1. Refund one expired 1 USDC challenge with the setting on.
+   2. On the explorer, the transaction goes to the Memo contract, carries the note, and the escrow's `ChallengeRefunded` event is in the same transaction.
+   3. The challenge shows "Refunded".
+
+   If the transaction reverts with `MemoFailed`, turn the setting off: payouts then go straight to the escrow, as before.
 
 ## 5. If something goes wrong
 

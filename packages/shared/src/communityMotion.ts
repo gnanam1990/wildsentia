@@ -1,4 +1,4 @@
-import { ISLAND_GRID, isWorldPosition, type WorldPosition } from './grid.js';
+import { ISLAND_GRID, isWorldPosition, type WorldGrid, type WorldPosition } from './grid.js';
 import type { CommunityState, HumanAction } from './types/community.js';
 
 export interface HumanMotionSample {
@@ -21,7 +21,7 @@ const actions = new Set(['gather_food', 'collect_water', 'gather_timber', 'gathe
   'drink', 'sleep', 'build', 'rest', 'fish', 'cook', 'repair', 'seek_resources', 'hunt', 'care_child']);
 const record = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
-export function isCommunityMotion(value: unknown, community: Pick<CommunityState, 'people' | 'updatedAt' | 'foundedAt'>): value is CommunityMotion {
+export function isCommunityMotion(value: unknown, community: Pick<CommunityState, 'people' | 'updatedAt' | 'foundedAt'>, grid: WorldGrid = ISLAND_GRID): value is CommunityMotion {
   if (!record(value) || value.version !== 1 || !finite(value.startWorldTime) || !finite(value.endWorldTime)
     || value.startWorldTime < community.foundedAt || value.endWorldTime !== community.updatedAt
     || value.endWorldTime <= value.startWorldTime || value.endWorldTime - value.startWorldTime > 3600
@@ -34,7 +34,7 @@ export function isCommunityMotion(value: unknown, community: Pick<CommunityState
     ids.add(track.personId); let previous: HumanMotionSample | null = null;
     for (const sample of track.samples) {
       if (!record(sample) || !finite(sample.seconds) || sample.seconds < 0 || sample.seconds > duration
-        || !isWorldPosition(ISLAND_GRID, sample.position) || typeof sample.alive !== 'boolean'
+        || !isWorldPosition(grid, sample.position) || typeof sample.alive !== 'boolean'
         || !(sample.action === null || typeof sample.action === 'string' && actions.has(sample.action))
         || !(sample.phase === null || sample.phase === 'travel' || sample.phase === 'work')
         || !(sample.taskEventId === null || typeof sample.taskEventId === 'string' && sample.taskEventId.length > 0 && sample.taskEventId.length <= 128)

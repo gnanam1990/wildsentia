@@ -43,6 +43,20 @@ export const SPECIES_VISUALS: Record<string, SpeciesVisual> = {
   african_leopard:  { heightM: 0.65, model: { file: '/assets/animals/AfricanLeopard.glb' }, colour: 0xc9963e },
   blue_duiker:      { heightM: 0.36, model: { file: '/assets/animals/BlueDuiker.glb' }, colour: 0x5b5560 },
   water_chevrotain: { heightM: 0.35, model: { file: '/assets/animals/WaterChevrotain.glb' }, colour: 0x6b4a32 },
+  // Congo 2A: generated surfaces; the antelopes on the Deer rig, the hog and buffalo on the Bull
+  // rig (tools/art/build_species.sh), the golden cat on the big-cat rig (tools/art/rig_big_cat.py).
+  bay_duiker:         { heightM: 0.5,  model: { file: '/assets/animals/BayDuiker.glb' }, colour: 0x8a3b1e },
+  peters_duiker:      { heightM: 0.52, model: { file: '/assets/animals/PetersDuiker.glb' }, colour: 0xa24a22 },
+  red_river_hog:      { heightM: 0.7,  model: { file: '/assets/animals/RedRiverHog.glb' }, colour: 0xb4521f },
+  forest_buffalo:     { heightM: 1.2,  model: { file: '/assets/animals/ForestBuffalo.glb' }, colour: 0x6b3a22 },
+  sitatunga:          { heightM: 1.0,  model: { file: '/assets/animals/Sitatunga.glb' }, colour: 0x4a443c },
+  african_golden_cat: { heightM: 0.42, model: { file: '/assets/animals/AfricanGoldenCat.glb' }, colour: 0xb7783a },
+  // Phase B (docs/2026-10-14-congo-phase-b-research.md). Heights are the models' whole height:
+  // the elephant's back, the mangabey's raised tail, the standing eagle, the crocodile's high walk.
+  forest_elephant:    { heightM: 2.3,  model: { file: '/assets/animals/ForestElephant.glb' }, colour: 0x5d5a56 },
+  agile_mangabey:     { heightM: 0.48, model: { file: '/assets/animals/AgileMangabey.glb' }, colour: 0x8a7d62 },
+  crowned_eagle:      { heightM: 0.62, model: { file: '/assets/animals/CrownedEagle.glb' }, colour: 0x3a3632 },
+  dwarf_crocodile:    { heightM: 0.4,  model: { file: '/assets/animals/DwarfCrocodile.glb' }, colour: 0x2e2a22 },
 };
 
 const UNKNOWN: SpeciesVisual = { heightM: 1, model: null, colour: 0x888888 };
@@ -66,6 +80,8 @@ export function visualForAnimal(animal: Pick<AnimalState, 'speciesId' | 'sex' | 
   // The realistic vulture is modelled with folded wings, so it cannot open them; in the air the
   // older rig, built with spreadable wings and Flap/Glide clips, stands in.
   if (animal.speciesId === 'vulture' && airborne) return { ...SPECIES_VISUALS.vulture!, model: { file: '/assets/animals/Vulture.glb' } };
+  // The crowned eagle has a second model, generated with its wings spread, for the air.
+  if (animal.speciesId === 'crowned_eagle' && airborne) return { ...SPECIES_VISUALS.crowned_eagle!, heightM: 0.35, model: { file: '/assets/animals/CrownedEagleFlying.glb' } };
   // Chital hinds carry no antlers; the generated stag model stays for males and the young.
   if (animal.speciesId === 'chital' && animal.sex === 'female' && animal.lifeStage !== 'newborn' && animal.lifeStage !== 'juvenile')
     return { ...SPECIES_VISUALS.chital!, model: { file: '/assets/animals/ChitalHind.glb' } };
@@ -99,7 +115,14 @@ export function modelStatus(speciesId: string): string {
   if (visualFor(speciesId).model === null) return 'Placeholder · species rig pending';
   if (speciesId === 'african_leopard') return 'Generated African leopard on its own big-cat rig · planted-paw gaits, keyframed, not motion capture';
   if (speciesId === 'blue_duiker') return 'Generated blue duiker on the deer rig · the deer\'s clips; duiker-specific gait pending';
-  if (speciesId === 'water_chevrotain') return 'Generated water chevrotain on the deer rig · the deer\'s clips; swimming pose pending';
+  if (['bay_duiker', 'peters_duiker', 'sitatunga'].includes(speciesId)) return 'Generated from reference views, on the deer rig · the deer\'s clips';
+  if (['red_river_hog', 'forest_buffalo'].includes(speciesId)) return 'Generated from reference views, on the bull rig · the bull\'s clips';
+  if (speciesId === 'african_golden_cat') return 'Generated golden cat on the big-cat rig · planted-paw gaits, keyframed, not motion capture';
+  if (speciesId === 'forest_elephant') return 'Generated forest elephant on the generic elephant rig · its walk and feeding clips; gait polish pending';
+  if (speciesId === 'agile_mangabey') return 'Generated agile mangabey on the langur rig · the langur\'s clips';
+  if (speciesId === 'crowned_eagle') return 'Generated crowned eagle on the vulture rig · a wings-spread model in the air; its side profile in flight pending';
+  if (speciesId === 'dwarf_crocodile') return 'Generated dwarf crocodile on a skeleton of its own · high walk, swim and death keyframed, not motion capture';
+  if (speciesId === 'water_chevrotain') return 'Generated water chevrotain on the deer rig · the deer\'s clips; it swims with its back at the waterline';
   if (speciesId === 'tiger') return 'Generated tiger on its own big-cat rig · planted-paw gaits, keyframed, not motion capture';
   if (speciesId === 'leopard') return 'Generated leopard on its own big-cat rig · planted-paw gaits, keyframed, not motion capture';
   if (speciesId === 'elephant') return 'Generic elephant rig · local walk added; gait polish pending';
