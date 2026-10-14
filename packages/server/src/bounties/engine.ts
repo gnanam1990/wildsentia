@@ -19,7 +19,7 @@ export const PRESETS: Readonly<Record<Preset, { amountAtomic: bigint; windowWorl
  * Species never put under a bounty: threatened animals whose real decline is driven by hunting
  * (plan 2A: the Vulnerable golden cat now; forest elephants, great apes and pangolins when they come).
  */
-export const PROTECTED_SPECIES: ReadonlySet<string> = new Set(['african_golden_cat']);
+export const PROTECTED_SPECIES: ReadonlySet<string> = new Set(['african_golden_cat', 'forest_elephant', 'dwarf_crocodile', 'crowned_eagle']);
 /** A real elapsed time this many times the window's (at the world's rate) is an outage: held for review. */
 export const OUTAGE_FACTOR = 3;
 const WATER_WITHIN_M = 1000, PREDATOR_WITHIN_M = 15_000;

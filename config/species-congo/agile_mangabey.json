@@ -1,0 +1,162 @@
+{
+  "id": "agile_mangabey",
+  "displayName": "Agile mangabey",
+  "archetype": "arboreal_troop",
+  "trophicRole": [
+    "browser",
+    "omnivore"
+  ],
+  "body": {
+    "adultMassKg": 8,
+    "shoulderHeightM": 0.3,
+    "massBySexKg": {
+      "female": 6,
+      "male": 10
+    }
+  },
+  "locomotion": {
+    "walkMs": 0.8,
+    "trotMs": 3.0,
+    "sprintMs": 6.0,
+    "sprintStaminaS": 40,
+    "climbsTrees": true,
+    "terrainCost": {
+      "shola": 1.0,
+      "grassland": 1.2,
+      "riparian": 1.0,
+      "rock": 1.6,
+      "marsh": 1.6,
+      "water": 3.0,
+      "terra_firme": 1.1,
+      "flooded_forest": 0.8,
+      "swamp_forest": 0.8,
+      "bai": 1.6
+    }
+  },
+  "senses": {
+    "sightRangeM": 60,
+    "hearingRangeM": 200,
+    "smellRangeM": 50
+  },
+  "escape": {
+    "detectionDistanceM": 80,
+    "flightInitiationM": 30,
+    "evasiveness": 0.8,
+    "avoids": [
+      "african_leopard",
+      "crowned_eagle"
+    ]
+  },
+  "diet": {
+    "eats": [
+      {
+        "target": "browse",
+        "preference": 1.0
+      }
+    ],
+    "dailyIntakeKg": 0.35,
+    "offRosterShare": 0.25,
+    "waterNeedLPerDay": 0.3,
+    "canScavenge": false,
+    "carrionTolerance": 0.0
+  },
+  "social": {
+    "structure": "troop",
+    "groupSize": [
+      7,
+      22
+    ],
+    "alarmSharing": true,
+    "heedsAlarmOf": [
+      "blue_duiker"
+    ]
+  },
+  "activity": {
+    "hourly": [
+      0.1,
+      0.1,
+      0.1,
+      0.1,
+      0.1,
+      0.1,
+      0.8,
+      1,
+      1,
+      1,
+      0.9,
+      0.8,
+      0.8,
+      0.8,
+      0.9,
+      1,
+      1,
+      0.9,
+      0.4,
+      0.1,
+      0.1,
+      0.1,
+      0.1,
+      0.1
+    ]
+  },
+  "learning": {
+    "innate": {
+      "forage_efficiency": 0.3,
+      "water_locations": 0.2,
+      "predator_avoidance": 0.4
+    },
+    "learnRateFromParent": 0.02
+  },
+  "lifecycle": {
+    "followFromDays": 30,
+    "maxAgeDays": 9125,
+    "baselineMortalityPerDay": 0.00015,
+    "stages": [
+      {
+        "name": "newborn",
+        "startDays": 0,
+        "sizeFactor": 0.08,
+        "dependent": true,
+        "mortalityPerDay": 0.002
+      },
+      {
+        "name": "juvenile",
+        "startDays": 180,
+        "sizeFactor": 0.3,
+        "dependent": true,
+        "mortalityPerDay": 0.0008
+      },
+      {
+        "name": "subadult",
+        "startDays": 730,
+        "sizeFactor": 0.6,
+        "dependent": false,
+        "mortalityPerDay": 0.0003
+      },
+      {
+        "name": "adult",
+        "startDays": 1642,
+        "sizeFactor": 1.0,
+        "dependent": false,
+        "mortalityPerDay": 0.00015
+      },
+      {
+        "name": "elder",
+        "startDays": 6570,
+        "sizeFactor": 0.95,
+        "dependent": false,
+        "mortalityPerDay": 0.0006
+      }
+    ],
+    "sexualMaturityDays": 1642,
+    "gestationDays": 170,
+    "litterSize": [
+      1,
+      1
+    ],
+    "interBirthIntervalDays": 640,
+    "oestrusCycleDays": 30,
+    "weanDays": 365,
+    "dispersalDays": 1642
+  }
+}

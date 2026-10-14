@@ -1,4 +1,4 @@
-import { terrainCostFor, initialPosition, patchAtPosition, patchCentre, positionInPatch, landWalkable,
+import { fliesSpecies, terrainCostFor, initialPosition, patchAtPosition, patchCentre, positionInPatch, landWalkable,
   type WorldGrid, type Agent, type Patch, type SpeciesConfig, type WorldPosition, type MovementTrace, type GoalId } from '@vana/shared';
 import { approachContact } from './movement.js';
 import { locateAgent } from './spatial.js';
@@ -68,7 +68,7 @@ export function navigate(
 ): { trace: MovementTrace; distanceM: number; seconds: number; sprintSeconds: number; unreachable: boolean } {
   if (!Number.isFinite(secondsAvailable) || secondsAvailable < 0 || !Number.isFinite(startWorldTime)) throw new Error('invalid navigation budget');
   if (endpoint && !positionInPatch(grid, endpoint, destination)) throw new Error('route endpoint outside destination');
-  if (cfg.archetype === 'scavenger_flyer') {
+  if (fliesSpecies(cfg)) {
     return navigateFlight(grid, agent, cfg, patches, destination, goal, startWorldTime, secondsAvailable, endpoint);
   }
   const from = { ...locateAgent(grid, agent) };

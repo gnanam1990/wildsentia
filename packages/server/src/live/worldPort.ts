@@ -1,4 +1,4 @@
-import { terrainCostFor, isWorldPosition, landWalkable, patchAtPosition, patchCentre, patchIdAt, treeAnchorForPatch, waterAccessPosition, type Agent, type HabitatType, type WorldGrid } from '@vana/shared';
+import { fliesSpecies, terrainCostFor, isWorldPosition, landWalkable, patchAtPosition, patchCentre, patchIdAt, treeAnchorForPatch, waterAccessPosition, type Agent, type HabitatType, type WorldGrid } from '@vana/shared';
 import { canHunt, locomotionFactor, type World } from '@vana/sim';
 import { WorldBusyError, type AnimalView, type PatchView, type SpeciesMotion, type WorldPort } from './liveLayer.js';
 import { landRoute } from './route.js';
@@ -68,7 +68,7 @@ export function worldPort(world: () => World, worldId: () => string | null, play
       if (!cfg) return null;
       const l = cfg.locomotion;
       return { displayName: cfg.displayName, walkMs: l.walkMs, trotMs: l.trotMs, sprintMs: l.sprintMs,
-        sprintStaminaS: l.sprintStaminaS, predator: cfg.archetype === 'apex_predator' || cfg.archetype === 'pack_predator',
+        sprintStaminaS: l.sprintStaminaS, predator: cfg.archetype === 'apex_predator' || cfg.archetype === 'pack_predator' || cfg.archetype === 'raptor',
         preferredPrey: [...(cfg.hunting?.preferredPrey ?? [])], baseSuccess: cfg.hunting?.baseSuccess ?? 0,
         stalkConcealment: cfg.hunting?.stalkConcealment ?? 0, commitDistanceM: cfg.hunting?.commitDistanceM ?? 0,
         eatsMeat: cfg.diet.eats.some((e) => e.target === 'meat'),
@@ -76,7 +76,7 @@ export function worldPort(world: () => World, worldId: () => string | null, play
         detectionM: cfg.escape.detectionDistanceM, flightInitiationM: cfg.escape.flightInitiationM,
         evasiveness: cfg.escape.evasiveness, shoulderHeightM: cfg.body.shoulderHeightM,
         alarmSharing: cfg.social.alarmSharing === true, packHunter: cfg.archetype === 'pack_predator',
-        climbs: cfg.locomotion.climbsTrees === true, flies: cfg.id === 'vulture' };
+        climbs: cfg.locomotion.climbsTrees === true, flies: fliesSpecies(cfg) };
     },
     possessionBlock: (id) => world().possessionBlock(id),
     possess: (id, controller, opts) => { held(); return world().possess(id, controller, opts); },

@@ -78,6 +78,7 @@ const SPECIES_NAME: Record<string, string> = {
   african_leopard: 'African leopard', blue_duiker: 'blue duiker', water_chevrotain: 'water chevrotain',
   bay_duiker: 'bay duiker', peters_duiker: 'Peters\'s duiker', red_river_hog: 'red river hog', forest_buffalo: 'forest buffalo',
   sitatunga: 'sitatunga', african_golden_cat: 'African golden cat',
+  forest_elephant: 'forest elephant', agile_mangabey: 'agile mangabey', crowned_eagle: 'crowned eagle', dwarf_crocodile: 'dwarf crocodile',
 };
 const speciesOf = (id: string | undefined): string | null => {
   if (!id) return null;

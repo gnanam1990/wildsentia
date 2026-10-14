@@ -6,7 +6,8 @@ import { assetState, simAmount, timeLeft, type AssetView } from './congoModel.js
 const $ = <T extends HTMLElement>(id: string) => document.querySelector<T>(`#${id}`)!;
 const SPECIES: Record<string, string> = { african_leopard: 'African leopard', blue_duiker: 'Blue duiker', water_chevrotain: 'Water chevrotain',
   bay_duiker: 'Bay duiker', peters_duiker: 'Peters\'s duiker', red_river_hog: 'Red river hog', forest_buffalo: 'Forest buffalo', sitatunga: 'Sitatunga',
-  african_golden_cat: 'African golden cat' };
+  african_golden_cat: 'African golden cat', forest_elephant: 'Forest elephant', agile_mangabey: 'Agile mangabey', crowned_eagle: 'Crowned eagle',
+  dwarf_crocodile: 'Dwarf crocodile' };
 const name = (id: string) => SPECIES[id] ?? id;
 const ERRORS: Record<string, string> = {
   signed_out: 'Sign in first.', no_account: 'Sign in first.', no_wallet: 'Link a wallet to your account first: it is where SIMULATED rewards are recorded.',

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { actClipTime, climbs, clipForObservedMotion, clipForState, clipPhase, elephantTrunkReach, renderStateFor, replayClipTime, struggleClip, vigilance,
-  type ClimbVisualPhase, type FlightVisualPhase, climbPose } from './animation.js';
+  type ClimbVisualPhase, type FlightVisualPhase, climbPose, flies } from './animation.js';
 import { PositionTracker, renderBaseY, swimBaseY, type RenderPosition } from './space.js';
 import type { AnimalState } from './protocol.js';
 import { chooseVisible } from './lod.js';
@@ -317,7 +317,7 @@ export class AnimalLayer {
     const partner = followedId === null ? undefined : recorded.get(followedId)?.partnerId;
     if (partner && positions.has(partner)) visible.add(partner);
     this.#wanted = visible;
-    this.#airborne = new Set([...visible].filter((id) => animals.get(id)!.speciesId === 'vulture'
+    this.#airborne = new Set([...visible].filter((id) => flies(animals.get(id)!.speciesId)
       && ((positions.get(id)!.altitudeM ?? 0) > 0.5 || recorded.get(id)?.flightVisualPhase !== undefined)));
     this.#wantedVariants = new Map([...visible].map(id => [id, variantKey(animals.get(id)!, this.#airborne.has(id))]));
     this.#renderPositions = positions;
@@ -338,10 +338,10 @@ export class AnimalLayer {
       this.#appearance(rig, pose?.animal ?? animal);
       if (pose) {
         rig.group.rotation.y = position.heading;
-        const flightPhase = animal.speciesId === 'vulture' ? pose.flightVisualPhase ?? null : null;
+        const flightPhase = flies(animal.speciesId) ? pose.flightVisualPhase ?? null : null;
         const climbPhase = arboreal(animal.speciesId) ? pose.climbVisualPhase ?? null : null;
         const unknownAirborne = pose.kind === 'movement' && (position.altitudeM ?? 0) > 0
-          && (animal.speciesId === 'vulture' && flightPhase === null
+          && (flies(animal.speciesId) && flightPhase === null
             || arboreal(animal.speciesId) && position.moving && climbPhase === null);
         const shown = renderStateFor(pose.animal.state, position.moving);
         this.#climb(rig, animal.speciesId, climbPhase);
@@ -415,7 +415,7 @@ export class AnimalLayer {
     const bodies: Body[] = [], fixed: Obstacle[] = [...this.people];
     for (const id of visible) {
       const animal = animals.get(id), position = positions.get(id);
-      if (!animal || !position || (position.altitudeM ?? 0) > 0 || animal.speciesId === 'vulture') continue;
+      if (!animal || !position || (position.altitudeM ?? 0) > 0 || flies(animal.speciesId)) continue;
       const pose = recorded.get(id);
       if (arboreal(animal.speciesId) && (animal.locomotionMode === 'climb' || pose?.climbVisualPhase !== undefined)) continue;
       const radius = visualFor(animal.speciesId).heightM * 0.5 * characterScale(animal);

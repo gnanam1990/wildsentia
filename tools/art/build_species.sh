@@ -30,6 +30,10 @@ peters   Deer     PetersDuiker  -                        Idle,Walk,Eating,Gallop
 hog      Bull     RedRiverHog   Tail4,Tail5,Tail6,Tail7  Idle,Walk,Eating,Gallop,Idle_Headlow,Death  bbox
 buffalo  Bull     ForestBuffalo -                        Idle,Walk,Eating,Gallop,Idle_Headlow,Death  feet Head
 sitatunga Deer    Sitatunga     -                        Idle,Walk,Eating,Gallop,Idle_Headlow,Death
+elephant ElephantWalking ForestElephant -                  Idle,Walk,Eating,Angry
+eagle    Vulture  CrownedEagle  -                        Idle,Walk,Flap,Glide,Eating,Death  bbox
+eagleflight Vulture CrownedEagleFlying -                 Flap,Glide  bbox
+mangabey Langur   AgileMangabey -                        Idle,Walk,Run,Eating,Drinking,Death
 '
 wanted="$*"
 echo "$table" | while read -r species rig out nodeform clips fit rigidhead; do
@@ -38,7 +42,7 @@ echo "$table" | while read -r species rig out nodeform clips fit rigidhead; do
   [ "$nodeform" = "-" ] && nodeform=""
   mkdir -p "$ART/review/$species"
   "$BLENDER" -b --python tools/art/bind_to_rig.py -- --mesh "$ART/$species-tripo.glb" --rig "$RIGS/$rig.glb" \
-    --mesh-forward "${FORWARD:-X}" --out "$ART/review/$species/$out.glb" --no-deform "$nodeform" --review-clips "$clips" --fit "${fit:-feet}" ${rigidhead:+--rigid-head "$rigidhead"} 2>&1 \
+    --mesh-forward="${FORWARD:-X}" --out "$ART/review/$species/$out.glb" --no-deform "$nodeform" --review-clips "$clips" --fit "${fit:-feet}" ${rigidhead:+--rigid-head "$rigidhead"} 2>&1 \
     | grep -E "FIT|SKIN|WROTE|Traceback|Error" | sed "s/^/$species: /"
   cp "$ART/review/$species/$out.glb" "$OUT/$out.glb"
 done

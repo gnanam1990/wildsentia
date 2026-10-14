@@ -19,6 +19,14 @@ describe('the safari guide in the Congo forest', () => {
     expect(safariAnswer('a golden cat?', null, congo, []).animalId).toBe('african_golden_cat_0004');
     expect(safariAnswer('show me a pig', null, congo, []).animalId).toBe('red_river_hog_0005');
   });
+  it('finds the Phase B animals by their everyday names', () => {
+    const forest = view([animal('forest_elephant_0001', 'forest_elephant'), animal('agile_mangabey_0002', 'agile_mangabey'),
+      animal('crowned_eagle_0003', 'crowned_eagle'), animal('dwarf_crocodile_0004', 'dwarf_crocodile')]);
+    expect(safariAnswer('Show me an elephant', null, forest, []).animalId).toBe('forest_elephant_0001');
+    expect(safariAnswer('where are the monkeys?', null, forest, []).animalId).toBe('agile_mangabey_0002');
+    expect(safariAnswer('is there an eagle?', null, forest, []).animalId).toBe('crowned_eagle_0003');
+    expect(safariAnswer('a crocodile!', null, forest, []).animalId).toBe('dwarf_crocodile_0004');
+  });
   it('still finds the island\'s animals on the island', () => {
     const island = view([animal('tiger_0001', 'tiger'), animal('leopard_0002', 'leopard')]);
     expect(safariAnswer('Show me a tiger', null, island, []).animalId).toBe('tiger_0001');

@@ -218,8 +218,13 @@ export function clipForState(state: string, availableClips: readonly string[]): 
 }
 
 /** Species that climb their patch's tree in the simulation; the leopard climbs to escape tigers (sim_0.37). */
-export const CLIMBERS: ReadonlySet<string> = new Set(['langur', 'squirrel', 'leopard']);
+export const CLIMBERS: ReadonlySet<string> = new Set(['langur', 'squirrel', 'leopard',
+  // The Congo forest's climbers: its cats climb to escape and the mangabey to flee a cat.
+  'african_leopard', 'african_golden_cat', 'agile_mangabey']);
 export const climbs = (speciesId: string): boolean => CLIMBERS.has(speciesId);
+/** Species that travel by air in the simulation: the island's vulture, the Congo's crowned eagle. */
+export const FLYERS: ReadonlySet<string> = new Set(['vulture', 'crowned_eagle']);
+export const flies = (speciesId: string): boolean => FLYERS.has(speciesId);
 
 /** Trunk radius the climber is held clear of; drawn anchor trees are broadleaf trunks of about this size. */
 export const CLIMB_TRUNK_CLEARANCE_M = 0.32;
@@ -233,7 +238,7 @@ export const CLIMB_TRUNK_CLEARANCE_M = 0.32;
 export function climbPose(speciesId: string, phase: ClimbVisualPhase | null, bodyLengthM: number):
   { pitch: number; back: number; lift: number } {
   if (phase === null) return { pitch: 0, back: 0, lift: 0 };
-  const headFirstDown = phase === 'descending' && (speciesId === 'squirrel' || speciesId === 'leopard');
+  const headFirstDown = phase === 'descending' && ['squirrel', 'leopard', 'african_leopard', 'african_golden_cat'].includes(speciesId);
   return headFirstDown
     // Head down turns the belly backwards, so the body is held out on the other side.
     ? { pitch: Math.PI / 2, back: CLIMB_TRUNK_CLEARANCE_M, lift: bodyLengthM / 2 }

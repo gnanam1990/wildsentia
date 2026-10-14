@@ -68,7 +68,8 @@
       "water_chevrotain",
       "bay_duiker",
       "peters_duiker",
-      "red_river_hog"
+      "red_river_hog",
+      "agile_mangabey"
     ],
     "stalkConcealment": 0.8,
     "commitDistanceM": 8,
@@ -101,7 +102,8 @@
       "water_chevrotain": 0.3,
       "bay_duiker": 0.2,
       "peters_duiker": 0.2,
-      "red_river_hog": 0.3
+      "red_river_hog": 0.3,
+      "agile_mangabey": 0.1
     }
   },
   "social": {

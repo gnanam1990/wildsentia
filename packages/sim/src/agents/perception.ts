@@ -56,7 +56,7 @@ const edibleKg = (patch: Patch, species: SpeciesConfig): number => {
 };
 
 const isPredator = (config: SpeciesConfig): boolean =>
-  config.archetype === 'apex_predator' || config.archetype === 'pack_predator';
+  config.archetype === 'apex_predator' || config.archetype === 'pack_predator' || config.archetype === 'raptor';
 
 /**
  * Whether `prey` must keep away from `predator`: it is among the predator's prey, or (sim_0.37.0)
@@ -322,7 +322,9 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
   // Or by sight. A vulture smells almost nothing and sees for two kilometres from the air;
   // found by scent alone, it found only what it stood beside and starved over country full
   // of carcasses.
-  if (species.diet.canScavenge) {
+  // Phase B: a hunter that caches its kills but is no scavenger (the crowned eagle) finds only its own.
+  const ownCacheOnly = !species.diet.canScavenge && species.hunting?.cachesKills === true;
+  if (species.diet.canScavenge || ownCacheOnly) {
     const sightPatches = Math.round(species.senses.sightRangeM / view.grid.patchM);
     const reach = Math.min(MAX_PERCEPTION_RADIUS, Math.max(CARRION_SEARCH_RADIUS, sightPatches));
     const enough = dailyNeed * 2;
@@ -348,6 +350,7 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
           && !canEatMaternalCarcass(agent, species, candidate, view)) continue;
         if (view.worldTime !== undefined && heldByPredatorOf(candidate, agent.speciesId, view.worldTime, view)) continue;
         if (!canReachCarcass(candidate, agent)) continue;
+        if (ownCacheOnly && candidate.cachedBy !== agent.id) continue;
         const smelt = distanceM <= candidate.scentRadiusM + species.senses.smellRangeM;
         const seen = distanceM <= species.senses.sightRangeM;
         if (!smelt && !seen) continue;

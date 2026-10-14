@@ -53,7 +53,7 @@
       }
     ],
     "dailyIntakeKg": 2.5,
-    "offRosterShare": 0.35,
+    "offRosterShare": 0.3,
     "gutCapacityBodyFraction": 0.14,
     "waterNeedLPerDay": 3,
     "canScavenge": true,
@@ -68,6 +68,7 @@
       "red_river_hog",
       "forest_buffalo",
       "sitatunga",
+      "agile_mangabey",
       "african_golden_cat"
     ],
     "stalkConcealment": 0.8,
@@ -108,7 +109,8 @@
       "red_river_hog": 2.0,
       "forest_buffalo": 0.8,
       "sitatunga": 1.0,
-      "african_golden_cat": 0.3
+      "african_golden_cat": 0.3,
+      "agile_mangabey": 1.0
     }
   },
   "social": {

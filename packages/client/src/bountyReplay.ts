@@ -14,7 +14,8 @@ export interface BountyRecordView {
 
 const NAMES: Record<string, string> = { african_leopard: 'an African leopard', african_golden_cat: 'an African golden cat', blue_duiker: 'a blue duiker',
   water_chevrotain: 'a water chevrotain', bay_duiker: 'a bay duiker', peters_duiker: 'a Peters\'s duiker', red_river_hog: 'a red river hog',
-  forest_buffalo: 'a forest buffalo', sitatunga: 'a sitatunga' };
+  forest_buffalo: 'a forest buffalo', sitatunga: 'a sitatunga', forest_elephant: 'a forest elephant', agile_mangabey: 'an agile mangabey',
+  crowned_eagle: 'a crowned eagle', dwarf_crocodile: 'a dwarf crocodile' };
 const obj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 

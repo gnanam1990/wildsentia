@@ -59,7 +59,10 @@ const aliases: Array<[string[], string[]]> = [
   [["tiger", "புலி"], ["tiger"]],
   [["golden cat"], ["african_golden_cat"]],
   [["leopard", "சிறுத்தை"], ["leopard", "african_leopard"]],
-  [["elephant", "யானை"], ["elephant"]],
+  [["elephant", "யானை"], ["elephant", "forest_elephant"]],
+  [["mangabey", "monkey", "குரங்கு"], ["agile_mangabey", "langur"]],
+  [["eagle", "கழுகு"], ["crowned_eagle"]],
+  [["crocodile", "croc", "முதலை"], ["dwarf_crocodile"]],
   [["bay duiker"], ["bay_duiker"]],
   [["peters"], ["peters_duiker"]],
   [["blue duiker", "duiker"], ["blue_duiker", "bay_duiker", "peters_duiker"]],
@@ -73,6 +76,7 @@ const aliases: Array<[string[], string[]]> = [
   [["hare", "rabbit", "முயல்"], ["hare"]],
 ];
 const CONGO_SPECIES = new Set(["african_leopard", "african_golden_cat", "blue_duiker", "bay_duiker", "peters_duiker",
+  "forest_elephant", "agile_mangabey", "crowned_eagle", "dwarf_crocodile",
   "water_chevrotain", "sitatunga", "forest_buffalo", "red_river_hog"]);
 export function safariAnswer(
   question: string,

@@ -18,7 +18,8 @@
     "activity": "[2],[7]: diurnal and crepuscular in forest",
     "lifecycle": "[1]: gestation 96 d, litter 2-3, weaned ~90 d, mature ~771-937 d, max 17 y, 15-24 months between litters",
     "hunting.preferredPrey/preyPreference (2A)": "[3],[4],[23]: Lopé diet: ungulates 59% of biomass, red river hog 20%, buffalo 13% (calves and young), mean prey 29.2 kg; 10-40 kg preferred; weights are assumptions from these shares; golden cat taken rarely (intraguild) [6]",
-    "diet/offRosterShare": "[23] Henschel et al. 2005 (Lopé, 196 scats): by biomass 59% ungulates, 18% diurnal primates, 17% large rodents (cane rat 13%); 0.35 = primates + large rodents, prey the world does not hold"
+    "diet/offRosterShare": "[23] Henschel et al. 2005 (Lopé, 196 scats): by biomass 59% ungulates, 18% diurnal primates, 17% large rodents (cane rat 13%); 0.3 = primates other than the simulated agile mangabey, and large rodents (assumption for the mangabey's share)",
+    "hunting.agile_mangabey (Phase B)": "Phase B research [12],[20],[21]: leopards are a major predator of primates at Taï and Lopé; mangabeys forage on the ground in the leopard's ambush zone; preference 1.0 is an assumption"
   },
   "blue_duiker": {
     "body": "[11],[12],[4]: 3.5-9 kg, typically 4-5 kg; shoulder 0.32-0.41 m",
@@ -90,6 +91,43 @@
     "social": "[29],[30]: solitary; 16.2 per 100 km2 unhunted, 3.8 where snared; territory sizes are assumptions from that density",
     "lifecycle": "assumption: gestation 75 d (as other Caracal), 1-2 kittens, mature 18 months, 12 y",
     "status": "[29]: Vulnerable (IUCN); never a bounty target",
-    "diet/offRosterShare": "assumption 0.6, informed by Hart, Katembo & Punga 1996 (Ituri, scats): rodents 50.9% and ungulates 20.2% of prey items, mean prey 1.4 kg; [30]: mainly rodents"
+    "diet/offRosterShare": "assumption 0.6, informed by Hart, Katembo & Punga 1996 (Ituri, scats): rodents 50.9% and ungulates 20.2% of prey items, mean prey 1.4 kg; [30]: mainly rodents",
+    "hunting.agile_mangabey (Phase B)": "assumption: juveniles only (no source records golden cats taking mangabeys; Phase B research [35]); preference 0.1"
+  },
+  "forest_elephant": {
+    "body": "docs/2026-10-14-congo-phase-b-research.md [7],[8],[11]: Dzanga females 2.0 m, males 2.3 m; males ~2.0 t; assumption female 1.6 t, male 2.5 t",
+    "diet": "docs/2026-10-14-congo-phase-b-research.md [6]: Lopé, 307 foods, fruit in 82% of dung; assumption 85% browse and fruit, 15% herbs; intake 100 kg/day is an assumption (4-6% of mass, scaled from savanna elephants)",
+    "social": "docs/2026-10-14-congo-phase-b-research.md [1],[6]: family units of a mother and young, Lopé groups 3-8; males leave from ~7 years",
+    "density": "docs/2026-10-14-congo-phase-b-research.md [3]: Gabon 0.38/km² (Laguardia et al. 2021); 876 over 2,304 km²",
+    "lifecycle": "docs/2026-10-14-congo-phase-b-research.md [1],[2]: gestation ~22 months (670 d), median interbirth 59 months (1,795 d), first birth median 23 y; maturity 15 y and max 65 y are assumptions",
+    "activity": "docs/2026-10-14-congo-phase-b-research.md [9]: active day and night (cathemeral, assumption for the hourly curve)",
+    "locomotion": "assumption: walk 1.2, charge 6 m/s; crosses rivers (no forest speeds measured)",
+    "status": "docs/2026-10-14-congo-phase-b-research.md [5]: Critically Endangered (Gobush et al. 2021); never a bounty target"
+  },
+  "agile_mangabey": {
+    "body": "docs/2026-10-14-congo-phase-b-research.md [12],[14]: males 7-13 kg, females 5-7 kg (Kingdon 1997); assumption male 10, female 6",
+    "diet": "docs/2026-10-14-congo-phase-b-research.md [12],[13],[15]: fruit and seeds dominate; 26-30% of feeding time on insects; offRosterShare 0.25 (invertebrates, fungi) is an assumption",
+    "social": "docs/2026-10-14-congo-phase-b-research.md [12],[14],[36]: groups of 7-22, one adult male",
+    "density": "assumption (docs/2026-10-14-congo-phase-b-research.md): 4/km² over the 625 km² of swamp and flooded forest, none counted on terra firme; 2,500",
+    "lifecycle": "docs/2026-10-14-congo-phase-b-research.md [12]: gestation 165-175 d, mature 4-5 y, up to 20 y wild; interbirth 640 d and max 25 y are assumptions",
+    "activity": "docs/2026-10-14-congo-phase-b-research.md [12]: diurnal; climbs to escape cats, drops into cover from eagles",
+    "status": "docs/2026-10-14-congo-phase-b-research.md [13]: Least Concern (Maisels et al. 2020); may be a bounty target"
+  },
+  "crowned_eagle": {
+    "body": "docs/2026-10-14-congo-phase-b-research.md [25]: female 3.2-4.7 kg, male 2.55-4.12 kg; wingspan 1.51-1.81 m",
+    "diet": "docs/2026-10-14-congo-phase-b-research.md [22]-[25]: monkeys 81-88% of prey (Kibale, Ituri), 56% of Taï bones; small duikers taken; mean prey 5.67 kg at Taï, up to ~20 kg. offRosterShare 0.85 is an assumption: the agile mangabey is one of about eight monkeys an eagle hunts here and small duikers are a minor part, so the simulated prey are ~15% of its food. Intake 0.25 kg/day is an assumption",
+    "hunting": "docs/2026-10-14-congo-phase-b-research.md [25]: still-hunts from a perch and drops onto prey, most kills on the forest floor",
+    "social": "docs/2026-10-14-congo-phase-b-research.md [25],[27]: territorial pairs, 6.5-16 km² hunting range per adult; one pair per 12 km² (assumption) gives 368 birds",
+    "lifecycle": "docs/2026-10-14-congo-phase-b-research.md [25]: clutch 1-2, one chick raised, incubation ~49 d, fledging ~110 d, dependent ~11 months, breeds every 2 years, mature ~5 y; the egg stands in as a gestation",
+    "status": "docs/2026-10-14-congo-phase-b-research.md [26]: Near Threatened; kept off the bounty list (decreasing)",
+    "hunting.cachesKills": "docs/2026-10-14-congo-phase-b-research.md [25]: lifts prey almost vertically to a branch; it feeds on a kill over days (caching is an assumption from that), so one duiker is not one meal"
+  },
+  "dwarf_crocodile": {
+    "body": "docs/2026-10-14-congo-phase-b-research.md [28]: males 18-45 kg, females 13.6-31.8 kg; assumption male 25, female 18",
+    "diet": "docs/2026-10-14-congo-phase-b-research.md [28],[29]: invertebrates the main food, also fish and frogs; offRosterShare 0.95 and prey up to 1.5 kg (a newborn at most) are assumptions",
+    "density": "assumption (docs/2026-10-14-congo-phase-b-research.md [30]: ~4.6 per km of unhunted Gabon stream; the sim has no small streams): 0.6/km² over 625 km² of swamp and flooded forest, 375",
+    "lifecycle": "docs/2026-10-14-congo-phase-b-research.md [28]: clutch 10-14, incubation ~100 d, mature 6.8-15.7 y in Gabon (2,500 d used), >40 y captive",
+    "activity": "docs/2026-10-14-congo-phase-b-research.md [28],[32]: strictly nocturnal",
+    "status": "docs/2026-10-14-congo-phase-b-research.md [31],[32]: Vulnerable (1996); never a bounty target"
   }
 }

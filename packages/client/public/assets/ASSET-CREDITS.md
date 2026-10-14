@@ -113,6 +113,23 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
   `tools/art/build_species.sh`; a dewclaw left as a detached crumb is dropped. The golden cat on the
   project's big-cat rig (`tools/art/rig_big_cat.py --species golden_cat`), keyframed, not motion capture.
 
+## VANA — generated Congo species, Phase B (14 October 2026)
+- Used for: forest elephant (ForestElephant), agile mangabey (AgileMangabey), crowned eagle
+  (CrownedEagle on the ground, CrownedEagleFlying in the air), dwarf crocodile (DwarfCrocodile).
+- Surfaces: generated for this project with Higgsfield under the owner's paid plan: GPT Image 2.5
+  side, front and back views (elephant c8b7836b, ccce23b3, 1e3e72a4; mangabey 1a0e0e66, 57600fb9,
+  b068640f; eagle d70959a7, 2bf06113, 5391f4ea; crocodile 1df93010, 86a866d7, 91dcba01), lifted with
+  Tripo H3.1 multiview (20k faces, PBR, detailed texture; elephant 36714fe4, mangabey a7b68088, eagle
+  d88a5833, crocodile 4016618d). The eagle in flight: GPT Image 2.5 views with its wings spread
+  (f2f86ed4, 6c12f374, 287d8c4c) lifted with Meshy multi-image to 3D (dec91e64; a Tripo attempt from two views, b59e7972, grew fins where the wing was seen edge-on and was set aside). In flight it is bound to the Vulture rig's spread-wing rest; seen side-on its body tilts up (the rig rests as a standing bird), to be refined. Reference views and
+  review sheets: `docs/art-review/congo-2026-10-14/`. (A mandrill mesh, 3bcd639e, was made and set
+  aside when the research chose the agile mangabey.)
+- Skeletons and clips, by `tools/art/build_species.sh`: the elephant on the generic CC0 elephant rig
+  (ElephantWalking, OpenGameArt, below), the mangabey on the project's Langur rig, the eagle (both
+  models) on the project's Vulture rig. The crocodile on a skeleton of its own
+  (`tools/art/rig_crocodile.py`: spine, eight-bone tail, sprawled legs; weights by distance to the
+  bones, as bone heat found no solution on its scutes), keyframed, not motion capture.
+
 ## VANA — generated wild boar (WildBoar)
 - Used for: boar (WildBoar), from 5 October 2026.
 - Surface: generated for this project with Higgsfield under the owner's paid plan (Pro). Three
@@ -217,6 +234,11 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
   - `animals/ForestBuffalo.glb`: sha256 `41b1867fb33b0f74`
   - `animals/Sitatunga.glb`: sha256 `263724729507878d`
   - `animals/AfricanGoldenCat.glb`: sha256 `f224b1cff5928d55`
+  - `animals/ForestElephant.glb`: sha256 `857653ac2031adb9`
+  - `animals/AgileMangabey.glb`: sha256 `2d35e84625afd756`
+  - `animals/CrownedEagle.glb`: sha256 `0385d33e2339dac3`
+  - `animals/DwarfCrocodile.glb`: sha256 `3f2b62fd18fe5928`
+  - `animals/CrownedEagleFlying.glb`: sha256 `6b4caf6310c6265e`
   - `animals/ElephantWalking.glb`: sha256 `f82c664c59e76713`
   - `animals/AsianElephantAdultMale.glb`: sha256 `fa5095bb38155cc041363ac60eb6d9a2f56cc660ffa2e322fd8a229afc841c8c`
   - `animals/AsianElephantAdultFemale.glb`: sha256 `4b2259f653ca329b0c61e69a155f312b97555d92b66506731edfcec5fb54de03`
