@@ -1,4 +1,4 @@
-import { parseWorldGrid, setWorldGrid } from './worldGrid.js';
+import { parseWorldGrid, setWorldGrid, worldGrid } from './worldGrid.js';
 import { floweringHabitat, isCommunityState, type CommunityState, type LiveEncounterFrame, type MicroEcologyState } from '@vana/shared';
 import { WorldStore, type AnimalState, type WorldState } from './protocol.js';
 import { isLiveEncounterFrame } from './liveEncounters.js';
@@ -75,7 +75,7 @@ function environment(value: unknown): SceneEnvironment | null {
     }
     microEcology = value.microEcology as unknown as MicroEcologyState;
   }
-  if (value.community !== undefined && value.community !== null && (!isCommunityState(value.community)
+  if (value.community !== undefined && value.community !== null && (!isCommunityState(value.community, worldGrid())
     || !ids.has(value.community.patchId))) return null;
   return { patches: value.patches as PatchView[], carcasses, ...(microEcology ? { microEcology } : {}),
     ...(value.community === undefined ? {} : { community: value.community as CommunityState | null }) };

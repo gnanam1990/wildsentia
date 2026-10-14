@@ -1,3 +1,4 @@
+import { worldGrid } from './worldGrid.js';
 import { humanMotionAt, isCommunityMotion, type CommunityState, type CommunityMotion, type LiveEncounterFrame, type HumanAction, type HumanMotionSample, type WorldPosition } from '@vana/shared';
 
 export interface HumanPlaybackPose {
@@ -22,7 +23,7 @@ export class CommunityPlayback {
   #rate = 0;
   apply(community: CommunityState | null | undefined, frame: LiveEncounterFrame | null, receivedAt: number): void {
     const motion = community?.motion;
-    if (!community || !motion || !isCommunityMotion(motion, community) || !frame || !Number.isFinite(receivedAt)
+    if (!community || !motion || !isCommunityMotion(motion, community, worldGrid()) || !frame || !Number.isFinite(receivedAt)
       || !Number.isFinite(frame.rate) || frame.rate <= 0 || !Number.isFinite(frame.elapsedWorldSeconds) || frame.elapsedWorldSeconds < 0
       || frame.elapsedWorldSeconds > 3600 || frame.startWorldTime !== motion.startWorldTime || frame.endWorldTime !== motion.endWorldTime) {
       this.#motion = null; this.#id = null; return;

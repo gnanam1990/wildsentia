@@ -368,7 +368,7 @@ export function runSoak({ seed, days, speciesDir, terrainProfile = 'mainland', c
     completedDays = day + 1;
     sampleYearForage(year, completedDays, foragePercent(world.patches.filter(landWalkable)));
     if (completedDays % yearDays === 0) { tally(); closeYear(completedDays); }
-    if (world.community && !isCommunityState(world.community) && failures.length < MAX_RECORDED_FAILURES)
+    if (world.community && !isCommunityState(world.community, world.grid) && failures.length < MAX_RECORDED_FAILURES)
       failures.push(`day ${day}: invalid community state`);
     onProgress?.({ completedDays, requestedDays: days,
       livingAnimals: world.agents.reduce((n, agent) => n + Number(agent.alive), 0), failures: failures.length });

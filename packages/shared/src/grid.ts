@@ -16,6 +16,8 @@ export const CONGO_GRID: WorldGrid = Object.freeze({ cols: 160, rows: 160, patch
 
 /** The Congo forest is 160 × 160 patches; every other profile is the 20 × 20 island lattice. */
 export function gridForProfile(profile: TerrainProfile): WorldGrid { return profile === 'congo_v1' ? CONGO_GRID : ISLAND_GRID; }
+/** The grid a world's patches lie on: a Congo patch carries its seed (the island's and mainland's are the 20 × 20). */
+export function gridOfPatches(patches: readonly { congoSeed?: number }[]): WorldGrid { return patches[0]?.congoSeed !== undefined ? CONGO_GRID : ISLAND_GRID; }
 
 export const patchCount = (g: WorldGrid): number => g.cols * g.rows;
 export const patchColRow = (g: WorldGrid, id: number): { col: number; row: number } => ({ col: id % g.cols, row: Math.floor(id / g.cols) });

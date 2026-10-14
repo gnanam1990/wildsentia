@@ -30,7 +30,7 @@ export interface TreeAnchorPatch {
 
 /** Rivers by seed and grid, built once: a Congo anchor in a channel has no tree to climb. */
 const riversBySeed = new Map<string, ReturnType<typeof riverIndex>>();
-function inCongoChannel(grid: WorldGrid, seed: number, x: number, z: number): boolean {
+export function inCongoChannel(grid: WorldGrid, seed: number, x: number, z: number): boolean {
   const key = `${seed}:${grid.cols}x${grid.rows}:${grid.patchM}`;
   let near = riversBySeed.get(key);
   if (!near) { near = riverIndex(congoRivers(seed, grid)); riversBySeed.set(key, near); }

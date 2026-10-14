@@ -1,12 +1,13 @@
-import { ISLAND_GRID, isWorldPosition as isGridPosition, patchAtPosition as gridPatchAt, patchCentre as gridCentre,
-  positionInPatch as gridPositionInPatch, type WorldPosition } from './grid.js';
+import { ISLAND_GRID, isWorldPosition as isGridPosition, patchAtPosition as gridPatchAt, patchCentre as gridCentre, patchCount,
+  positionInPatch as gridPositionInPatch, type WorldGrid, type WorldPosition } from './grid.js';
 
-// A community exists only on the island profiles, whose lattice is always the island grid.
-const positionInPatch = (value: unknown, patchId: number): value is WorldPosition => gridPositionInPatch(ISLAND_GRID, value, patchId);
-const isWorldPosition = (value: unknown): value is WorldPosition => isGridPosition(ISLAND_GRID, value);
-const patchAtPosition = (value: Parameters<typeof gridPatchAt>[1]): number => gridPatchAt(ISLAND_GRID, value);
-const patchCentre = (id: number): { x: number; z: number } => gridCentre(ISLAND_GRID, id);
-const ISLAND_PATCH_M = ISLAND_GRID.patchM;
+// The lattice the community lives on: the island's, or (2B) the Congo forest's. Set for each check.
+let GRID: WorldGrid = ISLAND_GRID;
+const positionInPatch = (value: unknown, patchId: number): value is WorldPosition => gridPositionInPatch(GRID, value, patchId);
+const isWorldPosition = (value: unknown): value is WorldPosition => isGridPosition(GRID, value);
+const patchAtPosition = (value: Parameters<typeof gridPatchAt>[1]): number => gridPatchAt(GRID, value);
+const patchCentre = (id: number): { x: number; z: number } => gridCentre(GRID, id);
+const lastPatch = (): number => patchCount(GRID) - 1;
 import { HOME_STAGES, HOME_SHELTER_THRESHOLD, type CommunityState } from './types/community.js';
 import { isCommunityMotion } from './communityMotion.js';
 
@@ -20,11 +21,17 @@ const inventory = (v: unknown, version: number) => record(v) && ['foodKg', 'timb
 const unitFields = (v: unknown, keys: string[]) => record(v) && keys.every(k => number(v[k], 1));
 
 /** Bounded persisted/public contract. Unknown future versions fail closed. */
-export function isCommunityState(value: unknown): value is CommunityState {
+export function isCommunityState(value: unknown, grid: WorldGrid = ISLAND_GRID): value is CommunityState {
+  const previous = GRID;
+  GRID = grid;
+  try { return checkCommunityState(value); } finally { GRID = previous; }
+}
+
+function checkCommunityState(value: unknown): value is CommunityState {
   if (!record(value) || (value.version !== 1 && value.version !== 2 && value.version !== 3 && value.version !== 4 && value.version !== 5 && value.version !== 6 && value.version !== 7 && value.version !== 8) || value.profile !== 'household_v1'
     || !text(value.id) || !text(value.name) || !text(value.householdId)
     || !number(value.foundedAt) || !number(value.updatedAt) || value.foundedAt > value.updatedAt
-    || !number(value.patchId, 399) || !Number.isInteger(value.patchId)
+    || !number(value.patchId, lastPatch()) || !Number.isInteger(value.patchId)
     || !inventory(value.stores, value.version) || !Array.isArray(value.people)
     || (value.version >= 7 ? value.people.length < 4 || value.people.length > 12
       || value.nextPersonSeq !== value.people.length + 1 : value.people.length !== 4 || value.nextPersonSeq !== undefined)) return false;
@@ -75,7 +82,7 @@ export function isCommunityState(value: unknown): value is CommunityState {
       || !number(p.appearanceSeed, 0xffffffff) || !Number.isInteger(p.appearanceSeed)
       || !number(p.ageDays) || !number(p.massKg, 250) || !number(p.health, 1)
       || typeof p.alive !== 'boolean' || !(p.diedAt === null || number(p.diedAt, at))
-      || p.alive !== (p.diedAt === null) || !number(p.patchId, 399) || !Number.isInteger(p.patchId)
+      || p.alive !== (p.diedAt === null) || !number(p.patchId, lastPatch()) || !Number.isInteger(p.patchId)
       || (value.version < 5 && p.patchId !== patchId) || !positionInPatch(p.position, p.patchId)
       || !inventory(p.inventory, value.version) || !unitFields(p.needs, ['hunger', 'thirst', 'fatigue'])
       || !unitFields(p.skills, ['gathering', 'building'])
@@ -98,10 +105,10 @@ export function isCommunityState(value: unknown): value is CommunityState {
       || p.generation !== undefined || p.reproductiveRole !== undefined
       || p.lastBirthAt !== undefined || p.pregnancy !== undefined) return false;
     if (value.version >= 5) {
-      if (!Array.isArray(p.visitedSites) || p.visitedSites.length > 400) return false;
+      if (!Array.isArray(p.visitedSites) || p.visitedSites.length > patchCount(GRID)) return false;
       const seen = new Set<number>();
       for (const site of p.visitedSites) {
-        if (!record(site) || !number(site.patchId, 399) || !Number.isInteger(site.patchId)
+        if (!record(site) || !number(site.patchId, lastPatch()) || !Number.isInteger(site.patchId)
           || seen.has(site.patchId) || !number(site.at, at) || site.at < value.foundedAt) return false;
         seen.add(site.patchId);
       }
@@ -114,13 +121,13 @@ export function isCommunityState(value: unknown): value is CommunityState {
         || !number(t.startedAt, at) || !text(t.eventId)) return false;
       if (value.version >= 5) {
         const j = t.journey;
-        if (!record(j) || !number(j.destinationPatchId, 399) || !Number.isInteger(j.destinationPatchId)
+        if (!record(j) || !number(j.destinationPatchId, lastPatch()) || !Number.isInteger(j.destinationPatchId)
           || !positionInPatch(t.destination, j.destinationPatchId) || !Array.isArray(j.waypoints) || j.waypoints.length > 401) return false;
         let previous = p.patchId;
         for (const point of j.waypoints) {
           if (!isWorldPosition(point)) return false;
           const next = patchAtPosition(point), a = patchCentre(previous), b = patchCentre(next);
-          if (previous !== next && Math.abs(a.x - b.x) + Math.abs(a.z - b.z) !== ISLAND_PATCH_M) return false;
+          if (previous !== next && Math.abs(a.x - b.x) + Math.abs(a.z - b.z) !== GRID.patchM) return false;
           previous = next;
         }
         const last = j.waypoints.at(-1);
@@ -182,5 +189,5 @@ export function isCommunityState(value: unknown): value is CommunityState {
     if (expected.length !== occupants.length || !expected.every(id => occupants.includes(id))) return false;
   }
   return b.occupantIds.every(id => people.some(p => p.id === id && p.alive))
-    && (value.motion === undefined || isCommunityMotion(value.motion, value as unknown as CommunityState));
+    && (value.motion === undefined || isCommunityMotion(value.motion, value as unknown as CommunityState, GRID));
 }
