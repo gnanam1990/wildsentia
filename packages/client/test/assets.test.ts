@@ -23,6 +23,8 @@ describe('generated species replacements', () => {
     ['ChitalHind', [...quadruped, 'Idle_Headlow']], ['Hare', ['Idle', 'Gallop', 'Jump', 'Resting', 'Death']],
     ['GreyLangur', small], ['GiantSquirrel', small], ['WhiteRumpedVulture', ['Idle', 'Walk', 'Eating', 'Drinking', 'Death']],
     ['BlueDuiker', [...quadruped, 'Idle_Headlow']], ['WaterChevrotain', [...quadruped, 'Idle_Headlow']],
+    ['BayDuiker', [...quadruped, 'Idle_Headlow']], ['PetersDuiker', [...quadruped, 'Idle_Headlow']], ['RedRiverHog', [...quadruped, 'Idle_Headlow']],
+    ['ForestBuffalo', [...quadruped, 'Idle_Headlow']], ['Sitatunga', [...quadruped, 'Idle_Headlow']],
   ] as const)('%s keeps the rig clips the observer plays and stays within its byte budget', (name, clips) => {
     const gltf = manifest(`${name}.glb`);
     expect(gltf.skins).toHaveLength(1);
@@ -32,7 +34,8 @@ describe('generated species replacements', () => {
 });
 
 describe('free local character assets', () => {
-  it.each(['TigerCat', 'ElephantWalking', 'Langur', 'Squirrel', 'Vulture', 'WildBoar', 'Chital', 'Sambar', 'Gaur', 'Dhole', 'Jackal', 'GreyLangur', 'GiantSquirrel', 'WhiteRumpedVulture', 'ChitalHind', 'Hare', 'BlueDuiker', 'WaterChevrotain', 'AfricanLeopard'])('%s contains finite, normalized skin weights and actual changing motion', (name) => {
+  it.each(['TigerCat', 'ElephantWalking', 'Langur', 'Squirrel', 'Vulture', 'WildBoar', 'Chital', 'Sambar', 'Gaur', 'Dhole', 'Jackal', 'GreyLangur', 'GiantSquirrel', 'WhiteRumpedVulture', 'ChitalHind', 'Hare', 'BlueDuiker', 'WaterChevrotain', 'AfricanLeopard',
+    'BayDuiker', 'PetersDuiker', 'RedRiverHog', 'ForestBuffalo', 'Sitatunga', 'AfricanGoldenCat'])('%s contains finite, normalized skin weights and actual changing motion', (name) => {
     const buffer = readFileSync(new URL(`../public/assets/animals/${name}.glb`, import.meta.url));
     const jsonLength = buffer.readUInt32LE(12);
     const gltf = JSON.parse(buffer.subarray(20, 20 + jsonLength).toString());
@@ -139,15 +142,15 @@ describe('free local character assets', () => {
     expect(existsSync(new URL('../public/assets/animals/TigerRigged.glb', import.meta.url))).toBe(false);
     expect(modelStatus('tiger')).toMatch(/^Generated tiger on its own big-cat rig/);
   });
-  it('ships the African leopard on a big-cat rig of its own, with every gait, act and rest the observer plays', () => {
+  it.each(['AfricanLeopard', 'AfricanGoldenCat'])('ships %s on a big-cat rig of its own, with every gait, act and rest the observer plays', (name) => {
     // tools/art/rig_big_cat.py; review in docs/art-review/congo-2026-10-14.
-    const gltf = manifest('AfricanLeopard.glb');
+    const gltf = manifest(`${name}.glb`);
     expect(gltf.skins).toHaveLength(1);
     expect(gltf.skins![0]!.joints.length).toBeGreaterThanOrEqual(30);
     expect(gltf.images?.length).toBeGreaterThan(0);
     for (const name of ['Idle', 'Walk', 'Run', 'Gallop', 'Sneak', 'Pounce', 'Bite', 'Eating', 'Drinking', 'Resting', 'Death'])
       expect(gltf.animations?.find((a) => a.name === name)?.channels.length).toBeGreaterThan(0);
-    expect(readFileSync(new URL('../public/assets/animals/AfricanLeopard.glb', import.meta.url)).length).toBeLessThan(2_000_000);
+    expect(readFileSync(new URL(`../public/assets/animals/${name}.glb`, import.meta.url)).length).toBeLessThan(2_000_000);
   });
   it('draws the island leopard with the same leopard model and rig (one species), and says so', () => {
     expect(visualFor('leopard').model?.file).toBe('/assets/animals/AfricanLeopard.glb');

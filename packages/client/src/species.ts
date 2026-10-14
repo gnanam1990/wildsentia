@@ -43,6 +43,14 @@ export const SPECIES_VISUALS: Record<string, SpeciesVisual> = {
   african_leopard:  { heightM: 0.65, model: { file: '/assets/animals/AfricanLeopard.glb' }, colour: 0xc9963e },
   blue_duiker:      { heightM: 0.36, model: { file: '/assets/animals/BlueDuiker.glb' }, colour: 0x5b5560 },
   water_chevrotain: { heightM: 0.35, model: { file: '/assets/animals/WaterChevrotain.glb' }, colour: 0x6b4a32 },
+  // Congo 2A: generated surfaces; the antelopes on the Deer rig, the hog and buffalo on the Bull
+  // rig (tools/art/build_species.sh), the golden cat on the big-cat rig (tools/art/rig_big_cat.py).
+  bay_duiker:         { heightM: 0.5,  model: { file: '/assets/animals/BayDuiker.glb' }, colour: 0x8a3b1e },
+  peters_duiker:      { heightM: 0.52, model: { file: '/assets/animals/PetersDuiker.glb' }, colour: 0xa24a22 },
+  red_river_hog:      { heightM: 0.7,  model: { file: '/assets/animals/RedRiverHog.glb' }, colour: 0xb4521f },
+  forest_buffalo:     { heightM: 1.2,  model: { file: '/assets/animals/ForestBuffalo.glb' }, colour: 0x6b3a22 },
+  sitatunga:          { heightM: 1.0,  model: { file: '/assets/animals/Sitatunga.glb' }, colour: 0x4a443c },
+  african_golden_cat: { heightM: 0.42, model: { file: '/assets/animals/AfricanGoldenCat.glb' }, colour: 0xb7783a },
 };
 
 const UNKNOWN: SpeciesVisual = { heightM: 1, model: null, colour: 0x888888 };
@@ -99,6 +107,9 @@ export function modelStatus(speciesId: string): string {
   if (visualFor(speciesId).model === null) return 'Placeholder · species rig pending';
   if (speciesId === 'african_leopard') return 'Generated African leopard on its own big-cat rig · planted-paw gaits, keyframed, not motion capture';
   if (speciesId === 'blue_duiker') return 'Generated blue duiker on the deer rig · the deer\'s clips; duiker-specific gait pending';
+  if (['bay_duiker', 'peters_duiker', 'sitatunga'].includes(speciesId)) return 'Generated from reference views, on the deer rig · the deer\'s clips';
+  if (['red_river_hog', 'forest_buffalo'].includes(speciesId)) return 'Generated from reference views, on the bull rig · the bull\'s clips';
+  if (speciesId === 'african_golden_cat') return 'Generated golden cat on the big-cat rig · planted-paw gaits, keyframed, not motion capture';
   if (speciesId === 'water_chevrotain') return 'Generated water chevrotain on the deer rig · the deer\'s clips; swimming pose pending';
   if (speciesId === 'tiger') return 'Generated tiger on its own big-cat rig · planted-paw gaits, keyframed, not motion capture';
   if (speciesId === 'leopard') return 'Generated leopard on its own big-cat rig · planted-paw gaits, keyframed, not motion capture';

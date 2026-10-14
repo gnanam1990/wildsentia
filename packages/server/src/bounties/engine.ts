@@ -15,6 +15,11 @@ export const PRESETS: Readonly<Record<Preset, { amountAtomic: bigint; windowWorl
   hard: { amountAtomic: 25_000_000n, windowWorldSeconds: 5 * 86_400, label: 'Hard: 25 SIM-USDC, 5 world days' },
   elite: { amountAtomic: 60_000_000n, windowWorldSeconds: 7 * 86_400, label: 'Elite: 60 SIM-USDC, 7 world days' },
 };
+/**
+ * Species never put under a bounty: threatened animals whose real decline is driven by hunting
+ * (plan 2A: the Vulnerable golden cat now; forest elephants, great apes and pangolins when they come).
+ */
+export const PROTECTED_SPECIES: ReadonlySet<string> = new Set(['african_golden_cat']);
 /** A real elapsed time this many times the window's (at the world's rate) is an outage: held for review. */
 export const OUTAGE_FACTOR = 3;
 const WATER_WITHIN_M = 1000, PREDATOR_WITHIN_M = 15_000;
@@ -66,7 +71,7 @@ export class BountyEngine {
 
   /** A draft on an owned animal's current life, from a preset (an admin may set the amount). */
   async draft(p: { targetAnimalId: string; preset: Preset; amountAtomic?: bigint; windowWorldSeconds?: number }):
-    Promise<{ ok: true; bounty: Bounty } | { ok: false; reason: 'not_owned' | 'bad_preset' | 'bad_amount' | 'bad_window' }> {
+    Promise<{ ok: true; bounty: Bounty } | { ok: false; reason: 'not_owned' | 'bad_preset' | 'bad_amount' | 'bad_window' | 'protected_species' }> {
     const preset = Object.hasOwn(PRESETS, p.preset) ? PRESETS[p.preset] : undefined;
     if (!preset) return { ok: false, reason: 'bad_preset' };
     const amount = p.amountAtomic ?? preset.amountAtomic, window = p.windowWorldSeconds ?? preset.windowWorldSeconds;
@@ -74,6 +79,7 @@ export class BountyEngine {
     if (!Number.isSafeInteger(window) || window < 3600 || window > 30 * 86_400) return { ok: false, reason: 'bad_window' };
     const life = await this.ownership.lifeOfAnimal(p.targetAnimalId), animal = this.host.world.animal(p.targetAnimalId);
     if (!life || life.status !== 'alive' || !animal?.alive || animal.assetId !== life.assetId) return { ok: false, reason: 'not_owned' };
+    if (PROTECTED_SPECIES.has(animal.speciesId)) return { ok: false, reason: 'protected_species' };
     const asset = (await this.ownership.asset(life.assetId))!;
     const bounty = await this.bounties.createDraft({ preset: p.preset, targetLifeId: life.lifeId, targetAnimalId: animal.id, targetSpeciesId: animal.speciesId,
       targetRegion: regionOfPatch(this.host.world.grid, animal.patchId), targetAssetId: asset.assetId, targetOwnerAccountId: asset.ownerAccountId,

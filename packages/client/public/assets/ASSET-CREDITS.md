@@ -99,6 +99,20 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
   against the client's stride length, baked to plain keys. Keyframed, not motion capture.
   Rebuild: `Blender -b --python tools/art/rig_big_cat.py -- --species leopard --mesh leopard-tripo.glb --out AfricanLeopard.glb`.
 
+## VANA — generated Congo species, Phase 2A (14 October 2026)
+- Used for: bay duiker (BayDuiker), Peters's duiker (PetersDuiker), red river hog (RedRiverHog), forest
+  buffalo (ForestBuffalo), sitatunga (Sitatunga), African golden cat (AfricanGoldenCat).
+- Surfaces: generated for this project with Higgsfield under the owner's paid plan (Pro): GPT Image 2.5
+  front, side and back views (bay 724a3978, b7d9f782, 48e4947d; Peters's 84b5e563, 5fab2482, 6e852d2c;
+  hog 78d10205, 0e03007b, dc086427; buffalo bcd47653, d7400cae, af7847de; sitatunga 36c523aa, ccb4d82b,
+  f0b1a220; golden cat 6928a9e6, 18150a4d, 1d6dadb4), lifted with Tripo H3.1 multiview (20k faces, PBR,
+  detailed texture; bay 932099c3, Peters's 0d252ef4, hog 23e9a930, buffalo ca4efba0, sitatunga 0e2b7e45,
+  golden cat 105a5465). Reference views and review sheets: `docs/art-review/congo-2026-10-14/`.
+- Skeletons and clips: the duikers and sitatunga on the Quaternius Deer rig, the hog (body-length fit)
+  and buffalo (its skull and horns rigid with the head) on the Quaternius Bull rig, all CC0, by
+  `tools/art/build_species.sh`; a dewclaw left as a detached crumb is dropped. The golden cat on the
+  project's big-cat rig (`tools/art/rig_big_cat.py --species golden_cat`), keyframed, not motion capture.
+
 ## VANA — generated wild boar (WildBoar)
 - Used for: boar (WildBoar), from 5 October 2026.
 - Surface: generated for this project with Higgsfield under the owner's paid plan (Pro). Three
@@ -197,6 +211,12 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
   - `animals/Elephant.glb`: sha256 `682e6b100ff1a6a23`
   - `animals/Rabbit.glb`: sha256 `763c19a2606208f05`
   - `animals/TigerCat.glb`: sha256 `dd2d718afcf503dd`
+  - `animals/BayDuiker.glb`: sha256 `12e1e0034ceb09cc`
+  - `animals/PetersDuiker.glb`: sha256 `0384af40492c6b5d`
+  - `animals/RedRiverHog.glb`: sha256 `c464d7e57e5ef233`
+  - `animals/ForestBuffalo.glb`: sha256 `41b1867fb33b0f74`
+  - `animals/Sitatunga.glb`: sha256 `263724729507878d`
+  - `animals/AfricanGoldenCat.glb`: sha256 `f224b1cff5928d55`
   - `animals/ElephantWalking.glb`: sha256 `f82c664c59e76713`
   - `animals/AsianElephantAdultMale.glb`: sha256 `fa5095bb38155cc041363ac60eb6d9a2f56cc660ffa2e322fd8a229afc841c8c`
   - `animals/AsianElephantAdultFemale.glb`: sha256 `4b2259f653ca329b0c61e69a155f312b97555d92b66506731edfcec5fb54de03`

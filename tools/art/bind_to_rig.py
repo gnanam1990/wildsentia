@@ -38,6 +38,9 @@ parser.add_argument("--fit-tail", action="store_true")
 # feet: align front and hind feet with the rig's (right when tails differ, e.g. canids).
 # bbox: match nose-to-tail length (right when the rig's legs are much longer, e.g. boar on bull).
 parser.add_argument("--fit", choices=["feet", "bbox"], default="feet")
+# A skull bearing horns (a buffalo's) moves as one with this bone: bone heat would let the horn
+# tips follow the neck too, and they stretch when the head goes down.
+parser.add_argument("--rigid-head", default="")
 args = parser.parse_args(argv)
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -311,6 +314,84 @@ if unweighted:
             body.vertex_groups[g.group].add([v.index], g.weight, "REPLACE")
     unweighted = sum(1 for v in body.data.vertices if not v.groups)
     print(f"SKIN after nearest-neighbour fill: unweighted {unweighted}")
+
+# Small detached pieces of the surface (a hoof, a horn tip) are separate islands of the mesh; the
+# proxy's weights can pin one to the wrong limb, and it floats away when that limb moves. Each
+# small island follows, rigidly, the body point closest to any part of it (a hoof meets the foot of
+# its own leg); a crumb under 1% of the surface (a dewclaw, ~50 vertices) is dropped rather than left floating.
+import bmesh
+from mathutils.kdtree import KDTree as _KDTree
+bm = bmesh.new()
+bm.from_mesh(body.data)
+bm.verts.ensure_lookup_table()
+island_of = [-1] * len(bm.verts)
+islands = []
+for start in bm.verts:
+    if island_of[start.index] != -1:
+        continue
+    stack, members = [start], []
+    island_of[start.index] = len(islands)
+    while stack:
+        v = stack.pop()
+        members.append(v.index)
+        for e in v.link_edges:
+            w = e.other_vert(v)
+            if island_of[w.index] == -1:
+                island_of[w.index] = len(islands)
+                stack.append(w)
+    islands.append(members)
+bm.free()
+main = max(range(len(islands)), key=lambda i: len(islands[i]))
+small = [i for i, members in enumerate(islands) if i != main and len(members) < len(body.data.vertices) * 0.02]
+if small:
+    tree = _KDTree(len(islands[main]))
+    for k, vi in enumerate(islands[main]):
+        tree.insert(body.data.vertices[vi].co, k)
+    tree.balance()
+    crumbs = []
+    for i in small:
+        if len(islands[i]) < len(body.data.vertices) * 0.01:
+            crumbs += islands[i]
+            continue
+        best = min((tree.find(body.data.vertices[vi].co) for vi in islands[i]), key=lambda hit: hit[2])
+        anchor = body.data.vertices[islands[main][best[1]]]
+        for vi in islands[i]:
+            for g in list(body.data.vertices[vi].groups):
+                body.vertex_groups[g.group].remove([vi])
+            for g in anchor.groups:
+                body.vertex_groups[g.group].add([vi], g.weight, "REPLACE")
+    if crumbs:
+        bm = bmesh.new()
+        bm.from_mesh(body.data)
+        bm.verts.ensure_lookup_table()
+        bmesh.ops.delete(bm, geom=[bm.verts[vi] for vi in crumbs], context="VERTS")
+        bm.to_mesh(body.data)
+        bm.free()
+print(f"SKIN islands {len(islands)} (small: {[len(islands[i]) for i in small]} of {len(body.data.vertices)}); {len(small)} small ones follow the body point nearest them or, as crumbs, are dropped")
+
+if args.rigid_head:
+    def segment_distance(p, a, b):
+        ab = b - a
+        t = max(0.0, min(1.0, (p - a).dot(ab) / max(ab.length_squared, 1e-12)))
+        return (p - (a + ab * t)).length
+    deform = [b for b in armature.data.bones if b.use_deform]
+    ends = {b.name: (armature.matrix_world @ b.head_local, armature.matrix_world @ b.tail_local) for b in deform}
+    head = body.vertex_groups.get(args.rigid_head) or body.vertex_groups.new(name=args.rigid_head)
+    head_bone = armature.data.bones[args.rigid_head]
+    neck = head_bone.parent.name if head_bone.parent else None
+    base_z = ends[args.rigid_head][0].z
+    rigid = 0
+    for v in body.data.vertices:
+        p = body.matrix_world @ v.co
+        nearest = min(ends, key=lambda n: segment_distance(p, *ends[n]))
+        # The skull, and what rises above the head's base from it (horns) though nearer the neck.
+        if nearest != args.rigid_head and not (nearest == neck and p.z > base_z):
+            continue
+        for g in list(v.groups):
+            body.vertex_groups[g.group].remove([v.index])
+        head.add([v.index], 1.0, "REPLACE")
+        rigid += 1
+    print(f"SKIN {rigid} vertices nearest the {args.rigid_head} move rigidly with it")
 
 # ---- Every clip as its own NLA track, so the exporter writes them all ----------------------
 armature.animation_data_create()

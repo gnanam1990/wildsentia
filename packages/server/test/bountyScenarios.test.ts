@@ -191,6 +191,13 @@ maybe('bounty scenarios', () => {
     expect((await ledger()).filter((r) => r.category === 'payout')).toHaveLength(1);
   });
 
+  it('never drafts a bounty on a protected species (the Vulnerable golden cat; later elephants, apes, pangolins)', async () => {
+    await fund();
+    const [owner] = await people();
+    const cat = await owned(owner, 'african_golden_cat');
+    expect(await engine.draft({ targetAnimalId: cat.animalId, preset: 'standard' })).toEqual({ ok: false, reason: 'protected_species' });
+  });
+
   it('refuses to publish an unfunded bounty', async () => {
     const [prey] = await people();
     const d = await engine.draft({ targetAnimalId: (await owned(prey, 'blue_duiker')).animalId, preset: 'elite' });

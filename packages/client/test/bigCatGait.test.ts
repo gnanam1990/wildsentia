@@ -78,7 +78,7 @@ function paws(file: string, clip: string, rig = CAT_RIG) {
 
 describe('the big cats\' strides', () => {
   // Both cats' own rig (tools/art/rig_big_cat.py), built 0.65 m tall: paw tips rest about 14 mm up.
-  it.each(['AfricanLeopard.glb', 'TigerCat.glb'])('%s walks on planted paws: a four-beat walk, each paw down most of the stride, lifted clear between', (file) => {
+  it.each(['AfricanLeopard.glb', 'TigerCat.glb', 'AfricanGoldenCat.glb'])('%s walks on planted paws: a four-beat walk, each paw down most of the stride, lifted clear between', (file) => {
     for (const paw of paws(file, 'Walk', CAT_RIG)) {
       expect(paw.planted, paw.leg).toBeGreaterThan(0.5);
       expect(paw.planted, paw.leg).toBeLessThan(0.8);
@@ -87,7 +87,7 @@ describe('the big cats\' strides', () => {
       expect(paw.lowest, paw.leg).toBeGreaterThan(-0.005);
     }
   });
-  it.each(['AfricanLeopard.glb', 'TigerCat.glb'])('%s trots, gallops with long flights between footfalls, and stalks low, never through the ground', (file) => {
+  it.each(['AfricanLeopard.glb', 'TigerCat.glb', 'AfricanGoldenCat.glb'])('%s trots, gallops with long flights between footfalls, and stalks low, never through the ground', (file) => {
     for (const paw of paws(file, 'Run', CAT_RIG)) {
       expect(paw.planted, paw.leg).toBeGreaterThan(0.3);
       expect(paw.planted, paw.leg).toBeLessThan(0.6);

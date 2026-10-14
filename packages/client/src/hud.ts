@@ -76,6 +76,8 @@ const SPECIES_NAME: Record<string, string> = {
   tiger: 'tiger', leopard: 'leopard', elephant: 'elephant', langur: 'langur', squirrel: 'giant squirrel', hare: 'hare', vulture: 'vulture',
   human: 'villager',
   african_leopard: 'African leopard', blue_duiker: 'blue duiker', water_chevrotain: 'water chevrotain',
+  bay_duiker: 'bay duiker', peters_duiker: 'Peters\'s duiker', red_river_hog: 'red river hog', forest_buffalo: 'forest buffalo',
+  sitatunga: 'sitatunga', african_golden_cat: 'African golden cat',
 };
 const speciesOf = (id: string | undefined): string | null => {
   if (!id) return null;
@@ -84,6 +86,8 @@ const speciesOf = (id: string | undefined): string | null => {
   return (last > 0 ? SPECIES_NAME[id.slice(0, last)] : undefined) ?? SPECIES_NAME[prefix] ?? null;
 };
 const an = (noun: string) => (/^[aeiou]/i.test(noun) ? `An ${noun}` : `A ${noun}`);
+/** The same in the middle of a sentence: only the article is lower case ("a Peters's duiker", "an African leopard"). */
+const aOr = (noun: string) => (/^[aeiou]/i.test(noun) ? `an ${noun}` : `a ${noun}`);
 
 /**
  * One plain sentence for the "Happening now" list, from the event's type, outcome and the
@@ -97,10 +101,11 @@ export function feedSentence(event: Record<string, unknown>): string {
   const failed = outcome === 'failed' || outcome === 'interrupted';
   if (first !== null) {
     switch (type) {
-      case 'hunt': return second ? (outcome === 'success' ? `${an(first)} caught ${an(second).toLowerCase()}` : `${an(first)}'s hunt for ${an(second).toLowerCase()} failed`) : `${an(first)} hunted`;
+      case 'hunt': return second ? (outcome === 'success' ? `${an(first)} caught ${aOr(second)}` : `${an(first)}'s hunt for ${aOr(second)} failed`) : `${an(first)} hunted`;
       case 'human_hunt': return outcome === 'success' ? 'Villagers brought back a catch' : 'A village hunt came back empty';
-      case 'scavenged': return second ? `${an(first)} fed on ${an(second).toLowerCase()} carcass` : `${an(first)} scavenged`;
-      case 'fed': return ['tiger', 'leopard', 'dhole', 'jackal', 'African leopard'].includes(first) ? `${an(first)} ate` : `${an(first)} grazed`;
+      case 'scavenged': return second ? `${an(first)} fed on ${aOr(second)} carcass` : `${an(first)} scavenged`;
+      case 'fed': return ['tiger', 'leopard', 'dhole', 'jackal', 'African leopard', 'African golden cat'].includes(first) ? `${an(first)} ate`
+        : ['wild boar', 'red river hog'].includes(first) ? `${an(first)} foraged` : `${an(first)} grazed`;
       case 'drank': return `${an(first)} drank water`;
       case 'rested': return actors.length > 1 && first === second ? `Two ${first === 'wild boar' ? 'wild boars' : `${first}s`} rested together` : `${an(first)} rested`;
       case 'moved': return failed ? `${an(first)} changed course` : `${an(first)} moved to new ground`;
@@ -111,7 +116,7 @@ export function feedSentence(event: Record<string, unknown>): string {
       case 'died': {
         const cause = typeof (event.conditions as Record<string, unknown> | undefined)?.cause === 'string'
           ? (event.conditions as Record<string, string>).cause : '';
-        return cause === 'predation' && second ? `${an(first)} was killed by ${an(second).toLowerCase()}` : `${an(first)} died`;
+        return cause === 'predation' && second ? `${an(first)} was killed by ${aOr(second)}` : `${an(first)} died`;
       }
       case 'fled': return `${an(first)} fled`;
       case 'courtship': return `${an(first)} courted a mate`;

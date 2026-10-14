@@ -31,3 +31,25 @@ describe('the Congo forest in the happening-now feed', () => {
     expect(feedSentence({ type: 'hunt', outcome: 'success', actors: ['tiger_0001', 'chital_0002'] })).toBe('A tiger caught a chital');
   });
 });
+
+// Congo 2A (docs/superpowers/plans/2026-10-14-congo-2a-species.md): six more species, drawn with
+// models of their own at their shoulder heights, named in the feed.
+describe('the Congo 2A species in the browser', () => {
+  const SIX: Array<[string, string, number]> = [
+    ['bay_duiker', 'BayDuiker', 0.5], ['peters_duiker', 'PetersDuiker', 0.52], ['red_river_hog', 'RedRiverHog', 0.7],
+    ['forest_buffalo', 'ForestBuffalo', 1.2], ['sitatunga', 'Sitatunga', 1.0], ['african_golden_cat', 'AfricanGoldenCat', 0.42],
+  ];
+  it.each(SIX)('draws %s with %s.glb at %s m, honestly labelled', (id, file, height) => {
+    expect(visualFor(id)).toMatchObject({ heightM: height, model: { file: `/assets/animals/${file}.glb` } });
+    expect(modelStatus(id)).toMatch(/^Generated /);
+  });
+  it('names them in the happening-now feed', async () => {
+    const { feedSentence } = await import('../src/hud.js');
+    expect(feedSentence({ type: 'hunt', outcome: 'success', actors: ['african_leopard_002a', 'red_river_hog_0101'] })).toBe('An African leopard caught a red river hog');
+    expect(feedSentence({ type: 'hunt', outcome: 'success', actors: ['african_golden_cat_0007', 'blue_duiker_00ab'] })).toBe('An African golden cat caught a blue duiker');
+    expect(feedSentence({ type: 'fed', outcome: 'success', actors: ['african_golden_cat_0007'] })).toBe('An African golden cat ate');
+    expect(feedSentence({ type: 'fed', outcome: 'success', actors: ['red_river_hog_0101'] })).toBe('A red river hog foraged');
+    expect(feedSentence({ type: 'fed', outcome: 'success', actors: ['forest_buffalo_0003'] })).toBe('A forest buffalo grazed');
+    expect(feedSentence({ type: 'hunt', outcome: 'success', actors: ['african_leopard_002a', 'peters_duiker_0002'] })).toBe('An African leopard caught a Peters\'s duiker');
+  });
+});
