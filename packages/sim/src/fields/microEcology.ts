@@ -152,11 +152,14 @@ function growthDemand(target: number, current: number, hours: number): number {
   return Math.min(headroom, target * MAX_ROLE_GROWTH_PER_HOUR * hours);
 }
 
+/** The habitats that hold fish while they hold water: the island's, and the Congo's flooded and swamp forest. */
+const FISH_HABITATS = new Set(['water', 'marsh', 'riparian', 'flooded_forest', 'swamp_forest']);
+export function fishHabitat(habitat: string): boolean {
+  return FISH_HABITATS.has(habitat);
+}
+
 function wetFreshwater(patch: Patch): boolean {
-  return patch.surface !== 'ocean' && patch.surface !== 'coast' && patch.waterVolume >= 20
-    && (patch.habitat === 'water' || patch.habitat === 'marsh' || patch.habitat === 'riparian'
-      // The Congo's flooded and swamp forest hold fish while they hold water.
-      || patch.habitat === 'flooded_forest' || patch.habitat === 'swamp_forest');
+  return patch.surface !== 'ocean' && patch.surface !== 'coast' && patch.waterVolume >= 20 && fishHabitat(patch.habitat);
 }
 
 function connectedWetNeighbours(patch: Patch, byId: Map<number, Patch>): Patch[] {

@@ -10,6 +10,7 @@ import { loadSpeciesDir } from './config/loader.js';
 import { establishRooting, validateRooting } from './fields/rooting.js';
 import { newWaterBudget } from './fields/drainage.js';
 import { establishFloweringGuild, floweringEligible, validateFloweringGuild } from './fields/floweringGuild.js';
+import { fishHabitat } from './fields/microEcology.js';
 import type { NutrientLedger } from './fields/nutrients.js';
 import { SIM_VERSION, World, type WorldOptions } from './world.js';
 
@@ -189,7 +190,7 @@ export function restoreSnapshot(snapshot: Snapshot, options: WorldOptions): Worl
       || !['eggs', 'larvae'].includes(patch.fishCohort.stage)
       || snapshot.patches[patch.patchId]?.surface === 'ocean'
       || snapshot.patches[patch.patchId]?.surface === 'coast'
-      || !['water', 'marsh', 'riparian'].includes(snapshot.patches[patch.patchId]?.habitat ?? '')
+      || !fishHabitat(snapshot.patches[patch.patchId]?.habitat ?? '')
       || (snapshot.patches[patch.patchId]?.waterVolume ?? 0) < 20)))
     throw new Error('invalid fish recruitment checkpoint');
   const climbers = new Set([...loadSpeciesDir(options.speciesDir)].filter(([, cfg]) => cfg.locomotion.climbsTrees).map(([id]) => id));
@@ -202,6 +203,10 @@ export function restoreSnapshot(snapshot: Snapshot, options: WorldOptions): Worl
         || agent.lastMaternalWaterAt > snapshot.worldTime || agent.speciesId !== 'boar'))
       throw new Error('invalid maternal water-care checkpoint');
   }
+  // A Congo checkpoint saved before its forest flowered has no guild anywhere: give it one, as the
+  // island's rules upgrade did. A guild missing from only some forest is damage, and is refused.
+  if (isCongoProfile(snapshot.terrainProfile) && snapshot.patches.every((p) => p.floweringGuild === undefined))
+    establishFloweringGuild(snapshot.patches, snapshot.worldTime, true);
   for (const patch of snapshot.patches) {
     if (floweringEligible(patch) !== (patch.floweringGuild !== undefined))
       throw new Error('missing or misplaced flowering guild checkpoint');
