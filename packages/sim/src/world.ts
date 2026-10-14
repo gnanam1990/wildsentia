@@ -38,7 +38,7 @@ import { surface } from './agents/aquatic.js';
 import { locateAgent, locateCarcass, placeBeside } from './agents/spatial.js';
 import { approachMate, finishCourtship, type CourtshipVisit } from './agents/courtship.js';
 import {
-  assessMate, birth, isReadyToGiveBirth, isReceptive,
+  assessMate, birth, foundingBreedingState, isReadyToGiveBirth, isReceptive,
   packAllowsBreeding,
 } from './agents/reproduction.js';
 
@@ -169,6 +169,15 @@ export class World {
         const second = founders[1]!;
         second.sex = founders[0]!.sex === 'female' ? 'male' : 'female';
         second.massKg = adultMassFor(second, this.species.get(speciesId)!);
+      }
+      // Congo founders: each female somewhere in her breeding cycle, not all receptive at once
+      // (drawn once every sex is settled).
+      if (isCongoProfile(this.terrainProfile) && cfg) for (const agent of founders) {
+        if (agent.sex !== 'female') continue;
+        const state = foundingBreedingState(cfg, this.#rng.next(), this.#time);
+        agent.pregnantSince = state.pregnantSince;
+        if (state.pregnancyFatherId !== undefined) agent.pregnancyFatherId = state.pregnancyFatherId;
+        if (state.nextOestrusAt !== undefined) agent.nextOestrusAt = state.nextOestrusAt;
       }
     }
     if (options.communityProfile === 'household_v1') this.community = foundCommunity(this.patches, options.seed, this.log, options.initialCommunityRulesVersion);
@@ -904,9 +913,11 @@ export class World {
     const fatherId = mother.pregnancyFatherId;
     const father = fatherId == null ? null : this.#agentsById.get(fatherId) ?? null;
 
+    // A Congo founder's young were sired before the record began: by a sire like any founder.
+    const outsideSire = father === null && isCongoProfile(this.terrainProfile) ? foundingTraits(this.#rng) : undefined;
     const result = birth(
       mother, father, cfg, this.patches[mother.patchId]!, this.pedigree, this.#rng, this.#time,
-      () => `${mother.speciesId}_${(this.#agentSeq++).toString(16).padStart(4, '0')}`,
+      () => `${mother.speciesId}_${(this.#agentSeq++).toString(16).padStart(4, '0')}`, outsideSire,
     );
 
     for (const child of result.newborns) {

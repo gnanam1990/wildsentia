@@ -1,6 +1,6 @@
 import {
   NUTRIENT_PER_KG_BIOMASS,
-  type Agent, type Patch, type Rng, type SpeciesConfig, type WorldTime,
+  type Agent, type Patch, type Rng, type SpeciesConfig, type Traits, type WorldTime,
 } from '@vana/shared';
 import { WORLD_SECONDS_PER_DAY } from '@vana/shared';
 import { inheritTraits } from './genetics.js';
@@ -126,6 +126,22 @@ export function conceive(mother: Agent, father: Agent, worldTime: WorldTime): vo
   mother.pregnancyFatherId = father.id;
 }
 
+/**
+ * A founding female's place in her breeding cycle (Congo founders). A wild population holds its
+ * females at every point of the cycle, so she is drawn uniformly over one inter-birth interval:
+ * within a gestation of her next birth she is already pregnant, that far along (by a sire from
+ * before the record, so none is named); otherwise she comes into breeding when her interval allows.
+ * Her young from the last birth are not founded with her.
+ */
+export function foundingBreedingState(config: SpeciesConfig, draw: number, worldTime: WorldTime):
+  { pregnantSince: number | null; pregnancyFatherId?: null; nextOestrusAt?: number } {
+  const { interBirthIntervalDays: interval, gestationDays: gestation } = config.lifecycle;
+  const sinceBirth = draw * interval, open = interval - gestation;
+  return sinceBirth < open
+    ? { pregnantSince: null, nextOestrusAt: worldTime + (open - sinceBirth) * WORLD_SECONDS_PER_DAY }
+    : { pregnantSince: worldTime - (sinceBirth - open) * WORLD_SECONDS_PER_DAY, pregnancyFatherId: null };
+}
+
 export function isReadyToGiveBirth(
   mother: Agent,
   config: SpeciesConfig,
@@ -156,6 +172,8 @@ export function birth(
   rng: Rng,
   worldTime: WorldTime,
   nextId: () => string,
+  /** A sire from outside the record (a Congo founder's mate): the young inherit from him too. */
+  outsideSire?: Traits,
 ): BirthResult {
   const [fullMin, fullMax] = config.lifecycle.litterSize;
   // sim_0.37.0: a mother in poor condition carries a smaller litter (wild boar litter size rises
@@ -176,9 +194,8 @@ export function birth(
   const newborns: Agent[] = [];
 
   for (let i = 0; i < count; i++) {
-    const traits = father === null
-      ? mother.traits
-      : inheritTraits(mother.traits, father.traits, rng, inbreeding);
+    const traits = father !== null ? inheritTraits(mother.traits, father.traits, rng, inbreeding)
+      : outsideSire ? inheritTraits(mother.traits, outsideSire, rng) : mother.traits;
 
     const child: Agent = {
       id: nextId(),
