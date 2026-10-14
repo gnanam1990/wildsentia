@@ -81,7 +81,8 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
   f8c08628, was rejected in review and not shipped).
 
 ## VANA — generated Congo species (14 October 2026)
-- Used for: blue duiker (BlueDuiker), water chevrotain (WaterChevrotain), African leopard (AfricanLeopard).
+- Used for: blue duiker (BlueDuiker), water chevrotain (WaterChevrotain), African leopard and the island's
+  leopard (AfricanLeopard; one species). The interim LeopardRigged.glb (the tiger repainted) is retired.
 - Surfaces: generated for this project with Higgsfield under the owner's paid plan (Pro): GPT
   Image 2.5 front, side and back reference views (duiker 14002d7a, 73eb7073, f2a9eb31; chevrotain
   766de682, 6031bedb, 89bdaf79), lifted with Tripo H3.1 multiview (20k faces, PBR, detailed

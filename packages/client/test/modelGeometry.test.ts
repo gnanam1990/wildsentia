@@ -88,7 +88,7 @@ describe('model anatomy', () => {
   it('stands the grey langur on four limbs; the generated mesh grew a fifth under its chest', () => {
     expect(groundContacts('/assets/animals/GreyLangur.glb')).toBe(4);
   });
-  it.each(['GiantSquirrel', 'Chital', 'ChitalHind', 'Sambar', 'Gaur', 'WildBoar', 'Dhole', 'Jackal', 'TigerRigged', 'LeopardRigged'])(
+  it.each(['GiantSquirrel', 'Chital', 'ChitalHind', 'Sambar', 'Gaur', 'WildBoar', 'Dhole', 'Jackal', 'TigerRigged', 'AfricanLeopard', 'BlueDuiker', 'WaterChevrotain'])(
     'stands %s on exactly four limbs', (name) => {
       expect(groundContacts(`/assets/animals/${name}.glb`)).toBe(4);
     });
