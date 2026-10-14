@@ -50,6 +50,8 @@ export function mcpClient(env = process.env) {
 }
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+/** The Congo prey a leopard hunts: clues to any other bounty are not worth its time. */
+const prey = (clues = []) => clues.filter((c) => c.speciesId === 'blue_duiker' || c.speciesId === 'water_chevrotain');
 
 /**
  * Where a clue points (spec §6): past fresh tracks the way the target went, or toward a call it
@@ -105,9 +107,9 @@ export async function hunt(mcp, { log = console.log, tick = () => wait(2000), ma
       const last = board.lastSeen[0];
       log(`heading for where bounty ${last.bountyId} was last seen`);
       await move({ x: last.x, z: last.z, gait: 'trot' });
-    } else if (followClue(seen.animal.position, board.clues)) {
-      // Fresh tracks or a call: follow where they lead.
-      const to = followClue(seen.animal.position, board.clues);
+    } else if (followClue(seen.animal.position, prey(board.clues))) {
+      // Fresh tracks or a call of prey a leopard hunts: follow where they lead.
+      const to = followClue(seen.animal.position, prey(board.clues));
       log(`following a clue to (${to.x}, ${to.z})`);
       await move(to);
     } else {

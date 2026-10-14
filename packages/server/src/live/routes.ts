@@ -463,7 +463,9 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
       return { id: a.id, x: p.x, z: p.z, ...motionOf(a, live.wild.get(a.id), live.avatars.byAnimal(a.id)) };
     }).filter((a) => Math.hypot(a.x - avatar.x, a.z - avatar.z) <= 400);
     return deps.bounties!.discovery.view(agentId, avatar, near, { canopyAt: (x, z) => world.patchAt(x, z)?.canopyCover ?? 0,
-      patchIdAt: (x, z) => world.patchAt(x, z)?.id ?? null, worldTime: world.now() });
+      // The hour being played, the clock the track log is stamped with: the world's own clock only
+      // moves a whole hour at each step.
+      patchIdAt: (x, z) => world.patchAt(x, z)?.id ?? null, worldTime: deps.bounties!.now() });
   }
 
   function observation(agent: AgentRecord) {

@@ -201,6 +201,19 @@ describe('hunt act clips', () => {
     for (let i = 0; i < torso.times.length; i++) expect(at(torso, i).angleTo(base)).toBeLessThan(1e-5);
     expect(Array.from(body.values.slice(0, 3))).toEqual([0, expect.closeTo(0.3, 6), 0]);
   });
+  it('kicks the big-cat rig\'s limbs too, by their names as three.js loads them (dots dropped)', () => {
+    const q = (angle: number) => new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), angle).toArray();
+    const limbs = ['scapulaL', 'upperarmR', 'forearmL', 'handR', 'fingersL', 'thighR', 'shinL', 'footR', 'toesL'];
+    const death = new THREE.AnimationClip('Death', 1, limbs.map((b) => new THREE.QuaternionKeyframeTrack(`${b}.quaternion`, [0, 1], [...q(0), ...q(0)])));
+    const gait = new THREE.AnimationClip('Gallop', 1, limbs.map((b) => new THREE.QuaternionKeyframeTrack(`${b}.quaternion`, [0, 0.25, 0.5, 0.75, 1],
+      [...q(0), ...q(0.5), ...q(0), ...q(-0.5), ...q(0)])));
+    const clip = struggleClip(death, gait);
+    for (const b of limbs) {
+      const track = clip.tracks.find((t) => t.name === `${b}.quaternion`)!;
+      const kick = Math.max(...Array.from({ length: track.times.length }, (_, i) => new THREE.Quaternion().angleTo(new THREE.Quaternion().fromArray(track.values as unknown as number[], i * 4))));
+      expect(kick, b).toBeGreaterThan(0.3);
+    }
+  });
 });
 
 describe('leopard climbing', () => {

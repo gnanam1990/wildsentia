@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BountyDiscovery, motionOf } from '../src/bounties/discovery.js';
+import { BountyDiscovery, motionOf, targetState } from '../src/bounties/discovery.js';
 
 const bounty = { bountyId: 'b1', targetAnimalId: 'blue_duiker_0001', amountAtomic: 10_000_000n, decimals: 6, deadlineWorldTime: 90_000 };
 
@@ -128,5 +128,30 @@ describe('bounty clues', () => {
     end();
     await discovery.refresh();
     expect(discovery.view('ag_2', leopard, [], at(noon)).clues).toEqual([]);
+  });
+
+  it('never turns where the target is now into a clue: a target lying unseen in cover nearby leaves no track or disturbance pointing at it', async () => {
+    const { discovery } = setup();
+    await discovery.refresh();
+    // It walked in and lay down 10 m away, in deep cover at night; the animal does not sense it.
+    discovery.sample((id) => (id === 'blue_duiker_0001' ? { x: 10, z: 40, state: 'travelling' } : null), noon - 1800);
+    discovery.sample((id) => (id === 'blue_duiker_0001' ? { x: 10, z: 0, state: 'resting' } : null), noon - 20);
+    const night = { canopyAt: () => 0.95, worldTime: noon, patchIdAt: () => 7 };
+    const seen = discovery.view('ag_1', leopard, [], night);
+    expect(seen.clues.find((c) => c.kind === 'tracks' && c.x === 10 && c.z === 0)).toBeUndefined();
+    expect(seen.clues.find((c) => c.kind === 'disturbance' && c.ageWorldSeconds < 60)).toBeUndefined();
+    // The trail it left on the way in is fair: older, and somewhere it no longer is.
+    expect(seen.clues.find((c) => c.kind === 'tracks')).toBeUndefined(); // (10, 40) is beyond 30 m
+  });
+
+  it('logs what a target is doing: a live chase or flight, a steered sprint (prey flee, a leopard chases), else its own state', () => {
+    const duiker = { speciesId: 'blue_duiker', state: 'grazing' }, cat = { speciesId: 'african_leopard', state: 'resting' };
+    expect(targetState(duiker, { mode: 'flee' }, null)).toBe('fleeing');
+    expect(targetState(cat, { mode: 'chase' }, null)).toBe('chasing');
+    expect(targetState(duiker, null, { moving: true, gait: 'run' })).toBe('fleeing');
+    expect(targetState(cat, null, { moving: true, gait: 'run' })).toBe('chasing');
+    expect(targetState(duiker, null, { moving: true, gait: 'walk' })).toBe('travelling');
+    expect(targetState(duiker, null, { moving: false, gait: 'run' })).toBe('resting');
+    expect(targetState(duiker, { mode: 'idle' }, null)).toBe('grazing');
   });
 });

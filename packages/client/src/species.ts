@@ -26,8 +26,7 @@ export const SPECIES_VISUALS: Record<string, SpeciesVisual> = {
   jackal:   { heightM: 0.45, model: { file: '/assets/animals/Jackal.glb' }, colour: 0xa98a5f },
   // Gobkit Free Animal Pack B (CC0).
   boar:     { heightM: 0.85, model: { file: '/assets/animals/WildBoar.glb' }, colour: 0x4b3f37 },
-  // Existing project-owned geometry, rigged locally. Not the blocked Sketchfab download.
-  // The generated tiger on the big-cat rig (tools/art/rig_big_cat.py), as the leopards are.
+  // The generated tiger (animals/Tiger.glb, not the blocked Sketchfab download) on the big-cat rig (tools/art/rig_big_cat.py), as the leopards are.
   tiger:    { heightM: 1.0,  model: { file: '/assets/animals/TigerCat.glb' }, colour: 0xd9822b },
   // One species with the Congo's leopard: the same generated model and big-cat rig (tools/art/rig_big_cat.py).
   leopard:  { heightM: 0.7,  model: { file: '/assets/animals/AfricanLeopard.glb' }, colour: 0xc9963e },

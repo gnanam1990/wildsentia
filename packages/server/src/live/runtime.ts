@@ -17,7 +17,7 @@ import { ControlService } from '../ownership/control.js';
 import type { OwnedDeps } from '../ownership/routes.js';
 import { BountyStore } from '../bounties/store.js';
 import { BountyEngine, DevSettlementAdapter } from '../bounties/engine.js';
-import { BountyDiscovery } from '../bounties/discovery.js';
+import { BountyDiscovery, targetState } from '../bounties/discovery.js';
 import type { BountyDeps } from '../bounties/routes.js';
 import { EventStore } from '../db/eventStore.js';
 
@@ -181,13 +181,10 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
           const animal = host.world.animal(id);
           const at = live.positionOf(id) ?? animal?.position;
           if (!animal || !at) return null;
-          const runner = live.wild.get(id), avatar = live.avatars.byAnimal(id);
-          const state = runner?.mode === 'flee' ? 'fleeing' : runner?.mode === 'chase' ? 'chasing'
-            : avatar ? (avatar.moving ? 'travelling' : 'resting') : animal.state;
-          return { x: at.x, z: at.z, state };
+          return { x: at.x, z: at.z, state: targetState(animal, live.wild.get(id), live.avatars.byAnimal(id)) };
         };
         timers.push(setInterval(() => {
-          void bounties.discovery.refresh().then(() => bounties.discovery.sample(doing, host.world.now())).catch(() => undefined);
+          void bounties.discovery.refresh().then(() => bounties.discovery.sample(doing, bounties.now())).catch(() => undefined);
         }, 2000));
       }
       // Four times a second, filtered per viewer by the gateway; the roster every two seconds.
