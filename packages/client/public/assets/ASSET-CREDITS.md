@@ -127,7 +127,7 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
 - Skeletons and clips, by `tools/art/build_species.sh`: the elephant on the generic CC0 elephant rig
   (ElephantWalking, OpenGameArt, below), the mangabey on the project's Langur rig, the eagle (both
   models) on the project's Vulture rig. The crocodile on a skeleton of its own
-  (`tools/art/rig_crocodile.py`: spine, eight-bone tail, sprawled legs; weights by distance to the
+  (`tools/art/rig_crocodile.py`: spine, eight-bone tail, sprawled legs, a lower jaw that gapes at rest and snaps when it feeds; weights by distance to the
   bones, as bone heat found no solution on its scutes), keyframed, not motion capture.
 
 ## VANA — generated wild boar (WildBoar)
@@ -237,7 +237,7 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
   - `animals/ForestElephant.glb`: sha256 `857653ac2031adb9`
   - `animals/AgileMangabey.glb`: sha256 `2d35e84625afd756`
   - `animals/CrownedEagle.glb`: sha256 `0385d33e2339dac3`
-  - `animals/DwarfCrocodile.glb`: sha256 `3f2b62fd18fe5928`
+  - `animals/DwarfCrocodile.glb`: sha256 `43d33d841a068644`
   - `animals/CrownedEagleFlying.glb`: sha256 `6b4caf6310c6265e`
   - `animals/ElephantWalking.glb`: sha256 `f82c664c59e76713`
   - `animals/AsianElephantAdultMale.glb`: sha256 `fa5095bb38155cc041363ac60eb6d9a2f56cc660ffa2e322fd8a229afc841c8c`
