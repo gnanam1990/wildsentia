@@ -31,9 +31,11 @@ export interface CommunityWildlife {
 
 /** A bounded local work area on core dry land. Full flood/obstacle siting is separate. */
 export function foundCommunity(patches: readonly Patch[], seed: number, log: EventLog, version: 2 | 3 | 4 | 5 | 6 | 7 | 8 = 8): CommunityState {
-  const grid = gridOfPatches(patches);
-  // A Congo habitat stands in for the island habitat it resembles (terra firme as shola, a bai as grassland).
+  const grid = gridOfPatches(patches), congo = patches[0]?.congoSeed !== undefined;
+  // A Congo habitat stands in for the island habitat it resembles (terra firme as shola, a bai as
+  // grassland). The Congo forest's village is a riverside one, in flooded forest, so it can fish.
   const site = patches.filter(p => landWalkable(p) && ['grassland', 'shola', 'riparian'].includes(habitatAnalogue(p.habitat))
+    && (!congo || p.habitat === 'flooded_forest')
     && p.waterVolume >= 100 && p.plant.browse >= 500 && p.plant.grass >= 100)
     .filter(p => {
       // A Congo home stands clear of any river channel.
@@ -47,14 +49,15 @@ export function foundCommunity(patches: readonly Patch[], seed: number, log: Eve
   if (!site) throw new Error('no suitable community site; refuse to invent supplies or place people offshore');
   const centre = patchCentre(grid, site.id), home = { x: centre.x + 30, z: centre.z + 30, heading: 0 };
   const state: CommunityState = {
-    profile: 'household_v1', version, ...(version >= 3 ? { relationships: [] } : {}), id: 'village_0001', name: 'Riverbend', householdId: 'household_0001',
+    profile: 'household_v1', version, ...(version >= 3 ? { relationships: [] } : {}), id: 'village_0001', name: congo ? 'Forest Landing' : 'Riverbend', householdId: 'household_0001',
     foundedAt: 0, updatedAt: 0, patchId: site.id, stores: emptyCommunityInventory(),
     ...(version >= 7 ? { nextPersonSeq: 5 } : {}),
     building: { id: 'home_0001', position: home, stage: 'site', labourSeconds: 0,
       materials: { timberKg: 0, fibreKg: 0 }, completedAt: null, occupantIds: [],
       ...(version >= 4 ? { maintenance: { repairsCompleted: 0, lastRepairAt: null,
         ...(version >= 8 ? { collapses: 0, lastCollapseAt: null, lastCollapseEventId: null, rebuildsCompleted: 0 } : {}) } } : {}) },
-    people: ['Mira', 'Kavi', 'Nila', 'Tavi'].map((name, i) => ({
+    // A fictional village: invented names, the Congo forest's its own (owner's default, 14 October 2026).
+    people: (congo ? ['Elo', 'Masi', 'Tumo', 'Lina'] : ['Mira', 'Kavi', 'Nila', 'Tavi']).map((name, i) => ({
       id: `person_${String(i + 1).padStart(4, '0')}`, name, householdId: 'household_0001',
       appearanceSeed: spatialHash(`${seed}:${name}`), ageDays: [32, 29, 27, 19][i]! * 360,
       massKg: [62, 71, 58, 64][i]!, alive: true, diedAt: null, patchId: site.id,

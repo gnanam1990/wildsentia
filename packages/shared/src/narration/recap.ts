@@ -108,9 +108,11 @@ export function recapLine(event: WorldEvent, subjectId: string): RecapLine | nul
       const distance = event.effects.verticalDistanceM;
       if (typeof distance !== 'number' || !Number.isFinite(distance) || distance <= 0)
         return line(ascent ? 'Approached a tree; no ascent recorded' : 'Attempted to descend; no vertical movement recorded');
+      // A canopy dweller (the agile mangabey) lives up there: up to rest, down to forage.
+      const reason = event.conditions.reason;
       return line(ascent
-        ? event.outcome === 'success' ? 'Climbed into a tree' : 'Partly climbed a tree'
-        : event.outcome === 'success' ? 'Descended from a tree' : 'Partly descended from a tree');
+        ? event.outcome === 'success' ? reason === 'roost' ? 'Went up into the canopy to rest' : 'Climbed into a tree' : 'Partly climbed a tree'
+        : event.outcome === 'success' ? reason === 'forage' ? 'Came down to forage' : 'Descended from a tree' : 'Partly descended from a tree');
     }
     case 'emigration':
       return subjectId === first ? line('Walked out of the forest') : null;

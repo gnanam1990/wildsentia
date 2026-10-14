@@ -73,6 +73,16 @@ export function treeAnchorForPatch(grid: WorldGrid, patch: TreeAnchorPatch): Tre
   };
 }
 
+/** Why an animal goes up or down its tree, and the goal that move serves: up to escape a ground
+ * predator or (a canopy dweller) to rest; down when it is safe, the tree is gone, a need is urgent,
+ * or (a canopy dweller) to forage. Null for any other pairing. */
+export function treeClimbGoal(direction: unknown, reason: unknown): 'flee' | 'rest' | null {
+  if (direction === 'ascend') return reason === 'local_threat' ? 'flee' : reason === 'roost' ? 'rest' : null;
+  if (direction === 'descend')
+    return ['threat_gone', 'canopy_lost', 'urgent_need', 'forage'].includes(String(reason)) ? 'rest' : null;
+  return null;
+}
+
 /** A non-climbable standing remnant keeps a previously occupied trunk visible after canopy loss. */
 export function treeAnchorRemnantForPatch(grid: WorldGrid, patch: TreeAnchorPatch): TreeAnchorGeometry | null {
   if (patch.surface === 'coast' || patch.surface === 'ocean'

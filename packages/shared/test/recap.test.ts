@@ -31,6 +31,15 @@ describe('recapLine', () => {
     expect(recapLine({ ...tree, conditions: { direction: 'descend' }, outcome: 'success',
       effects: { verticalDistanceM: 6 } }, 'langur_1')?.text).toBe('Descended from a tree');
   });
+  it('tells a canopy dweller resting up its tree and coming down to forage', () => {
+    const roost = ev({ id: 'tree_2', type: 'tree_climbed', actors: ['mangabey_1'],
+      conditions: { direction: 'ascend', reason: 'roost' }, effects: { verticalDistanceM: 6 } });
+    expect(recapLine(roost, 'mangabey_1')?.text).toBe('Went up into the canopy to rest');
+    expect(recapLine({ ...roost, conditions: { direction: 'descend', reason: 'forage' } }, 'mangabey_1')?.text)
+      .toBe('Came down to forage');
+    expect(recapLine({ ...roost, outcome: 'interrupted', effects: { verticalDistanceM: 3 } }, 'mangabey_1')?.text)
+      .toBe('Partly climbed a tree');
+  });
   it('tells each side of a birth from its own point of view', () => {
     const born = ev({ id: 'born_1', type: 'born', actors: ['chital_0a', 'chital_01', 'chital_02'] });
     expect(recapLine(born, 'chital_0a')?.text).toBe('Was born');

@@ -94,6 +94,17 @@ describe('bounded live encounter collection', () => {
       expect(collectLiveMovements(ISLAND_GRID, [invalid], appearance, 0, [end])).toEqual([]);
     }
   });
+  it('admits a canopy dweller going up to rest and down to forage, and no other pairing', () => {
+    const roost = climb(); roost.goal = 'rest'; roost.movement!.goal = 'rest'; roost.conditions.reason = 'roost';
+    expect(isRecordedTreeClimb(ISLAND_GRID, roost)).toBe(true);
+    const foray = climb('descend'); foray.conditions.reason = 'forage';
+    expect(isRecordedTreeClimb(ISLAND_GRID, foray)).toBe(true);
+    // Up to rest is a roost, never a flight; down is never to roost.
+    const fled = climb(); fled.conditions.reason = 'roost';
+    expect(isRecordedTreeClimb(ISLAND_GRID, fled)).toBe(false);
+    const down = climb('descend'); down.conditions.reason = 'roost';
+    expect(isRecordedTreeClimb(ISLAND_GRID, down)).toBe(false);
+  });
   // Water contact is recorded around the patch's access point, which sim_0.30.0 moved off the centre.
   const source = waterAccessPosition(ISLAND_GRID, 0);
   const w = (dx: number) => ({ x: source.x + dx, z: source.z, heading: Math.PI / 2 });

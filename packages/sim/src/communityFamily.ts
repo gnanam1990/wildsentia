@@ -9,6 +9,8 @@ const GESTATION_DAYS = 250; // Fictional world parameter, not a medical or cultu
 const MAX_PEOPLE = 12;
 const CHILD_WORK_AGE_DAYS = 6 * 360;
 const names = ['Aru', 'Luma', 'Sori', 'Navi', 'Taru', 'Ira', 'Omi', 'Sela'];
+/** Invented names for the Congo forest's village children. */
+const congoNames = ['Teni', 'Bako', 'Isa', 'Mbu', 'Koli', 'Sana', 'Delo', 'Ewa'];
 const distance = (a: Person, b: Person) => Math.hypot(a.position.x - b.position.x, a.position.z - b.position.z);
 
 export function dependentChild(p: Person, version: number): boolean {
@@ -68,7 +70,7 @@ export function advanceCommunityFamily(state: CommunityState, patches: Patch[], 
     const idNumber = state.nextPersonSeq!++;
     const proposed = { ...mother.position, x: mother.position.x + .3 };
     const child: Person = {
-      id: `person_${String(idNumber).padStart(4, '0')}`, name: `${names[(idNumber - 5) % names.length]!} ${idNumber}`,
+      id: `person_${String(idNumber).padStart(4, '0')}`, name: `${(patches[0]?.congoSeed !== undefined ? congoNames : names)[(idNumber - 5) % names.length]!} ${idNumber}`,
       householdId: state.householdId, appearanceSeed: spatialHash(`${state.id}:child:${idNumber}`),
       ageDays: 0, massKg: pregnancy.fetusKg, alive: true, diedAt: null, patchId: mother.patchId,
       position: positionInPatch(gridOfPatches(patches), proposed, mother.patchId) ? proposed : { ...mother.position }, health: 1,

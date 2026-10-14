@@ -142,6 +142,9 @@ prev = "hips"
 for i in range(len(TAIL) - 1):
     add(f"tail{i + 1}", P(*TAIL[i]), P(*TAIL[i + 1]), prev, connect=prev != "hips")
     prev = f"tail{i + 1}"
+# The lower jaw hinges behind the eye, below the mouth line (mesh z 0.20 along the head).
+MOUTH_Z, JAW_U = 0.20, 0.865
+add("jaw", P(JAW_U, 0.185), P(0.985, 0.188), "head")
 for (leg, side), joints in LEGS.items():
     sign = 1 if side == "L" else -1
     pts = [P(u, z, sign * y) for u, z, y in joints]
@@ -200,6 +203,20 @@ for v in body.data.vertices:
     total = sum(w for w, _ in top)
     for w, name in top:
         groups[name].add([v.index], w / total, "REPLACE")
+# The jaw: what lies below the mouth line ahead of the hinge follows it, what lies above follows
+# the head; a 4 mm band at the lips is shared so the mouth closes without a seam.
+jaw_y = -(JAW_U - U0) * K
+for v in body.data.vertices:
+    p = v.co
+    if p.y > jaw_y:
+        continue
+    for g in list(v.groups):
+        body.vertex_groups[g.group].remove([v.index])
+    below = max(0.0, min(1.0, (MOUTH_Z * K - p.z) / (0.004 * K) + 0.5))
+    if below > 0:
+        groups["jaw"].add([v.index], below, "REPLACE")
+    if below < 1:
+        groups["head"].add([v.index], 1 - below, "REPLACE")
 bpy.ops.object.select_all(action="DESELECT")
 body.select_set(True)
 arm.select_set(True)
@@ -266,11 +283,17 @@ def leg(legname, side, swing, lift=0.0, fold=0.0):
 
 
 # ---- Clips -----------------------------------------------------------------------------------
+def jaw(open_deg):
+    set_rot("jaw", pitch_up(math.radians(-open_deg)))
+
+
 def idle(t):
+    # Resting with its mouth a little open (crocodiles gape to shed heat), closing now and then.
     p = 2 * math.pi * t
     set_loc("root", Vector((0, 0, 0.004 * math.sin(2 * p))))
     body_wave(p, 1.0, 4.0)
     set_rot("head", pitch_up(math.radians(3) * (0.5 + 0.5 * math.sin(p))))
+    jaw(10 * (1 - smooth((t - 0.6) / 0.1) * (1 - smooth((t - 0.8) / 0.1))))
 
 
 def walk(t):
@@ -309,6 +332,8 @@ def eating(t):
     shake = math.sin(2 * math.pi * 4 * t) * smooth((t - 0.45) / 0.1) * (1 - smooth((t - 0.85) / 0.15))
     set_rot("neck", pitch_up(math.radians(-12) * grab) @ yaw_left(math.radians(14) * shake))
     set_rot("head", pitch_up(math.radians(-8) * grab) @ roll_right(math.radians(10) * shake))
+    # Jaws open wide on the approach and snap shut on the prey.
+    jaw(38 * smooth(t / 0.18) * (1 - smooth((t - 0.22) / 0.06)) + 6 * smooth((t - 0.85) / 0.15))
     for legname in ("hind", "fore"):
         for side in ("L", "R"):
             leg(legname, side, 0.0)
@@ -323,6 +348,7 @@ def death(t):
         for side in ("L", "R"):
             leg(legname, side, 0.1, lift=math.radians(-25) * slack)
     body_wave(0.0, 0.0, 0.0)
+    jaw(14 * slack)
 
 
 CLIPS = [

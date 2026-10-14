@@ -15,6 +15,10 @@ describe('a village in the Congo forest', () => {
     const world = createWorld(options);
     const village = world.community!;
     expect(village).toBeTruthy();
+    // Fictional, inspired by the region: invented names, a riverside home in flooded forest.
+    expect(village.name).toBe('Forest Landing');
+    expect(village.people.map((p) => p.name)).toEqual(['Elo', 'Masi', 'Tumo', 'Lina']);
+    expect(world.patches[village.patchId]!.habitat).toBe('flooded_forest');
     const home = village.building.position;
     expect(isWorldPosition(CONGO_GRID, home)).toBe(true);
     expect(inCongoChannel(CONGO_GRID, 7, home.x, home.z)).toBe(false);

@@ -650,7 +650,7 @@ export class SimHost {
     const checkpoint = await this.#takeSnapshotInSlices();
     // Persist every completed hour, not just `checkpoint.community.motion` (the final hour).
     // These inserts may be retried; only the subsequent durable snapshot publishes them.
-    await this.#humanMotion.append(this.#pendingHumanMotion);
+    await this.#humanMotion.append(this.#pendingHumanMotion, this.grid);
     await this.#snapshots.saveJson(checkpoint, await this.#snapshotJsonInSlices(checkpoint));
     await this.#snapshots.prune(48);
     this.#publishCheckpoint(checkpoint);

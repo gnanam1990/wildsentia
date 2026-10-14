@@ -1,4 +1,4 @@
-import { isMovementTrace, isDrinkingActivity, positionInPatch, treeAnchorGeometry, recordedWaterAccessPositions, WATER_CONTACT_RADIUS_M,
+import { isMovementTrace, isDrinkingActivity, positionInPatch, treeAnchorGeometry, treeClimbGoal, recordedWaterAccessPositions, WATER_CONTACT_RADIUS_M,
   MAX_LIVE_MOVEMENTS, MAX_LIVE_MOVEMENT_SAMPLES,
   type Agent, type EncounterAppearance, type LiveEncounter, type LiveMovement, type WorldEvent, type WorldPosition, type WorldGrid } from '@vana/shared';
 
@@ -17,8 +17,8 @@ export function isRecordedTreeClimb(grid: WorldGrid, event: WorldEvent): boolean
   const direction = event.conditions.direction;
   if (!anchor || event.conditions.treeAnchorId !== anchor.id
     || direction !== 'ascend' && direction !== 'descend'
-    || !['local_threat', 'threat_gone', 'canopy_lost', 'urgent_need'].includes(String(event.conditions.reason))
-    || event.goal !== (direction === 'ascend' ? 'flee' : 'rest')
+    || treeClimbGoal(direction, event.conditions.reason) === null
+    || event.goal !== treeClimbGoal(direction, event.conditions.reason)
     || event.outcome !== (trace.completed ? 'success' : 'interrupted')) return false;
   const vertical = event.effects.verticalDistanceM;
   if (typeof vertical !== 'number' || !Number.isFinite(vertical) || vertical < 0 || vertical > anchor.climbHeightM) return false;

@@ -562,8 +562,6 @@ const sceneUpdates = new SceneUpdates<{
       if (congoSeed !== undefined) {
         if (congoForest === null) {
           congoForest = new CongoForest(); scene.add(congoForest.root);
-          // The Congo forest has no village (yet): the island's Village button would open an empty page.
-          document.querySelector<HTMLButtonElement>('#open-community')!.hidden = true;
           // Plants between the camera and a followed animal are cut away, as the island's trees are.
           for (const material of [...Object.values(congoPlantMaterials()), congoCrownMaterials().leaves]) observerVisibility.patch(material);
         }
@@ -572,6 +570,8 @@ const sceneUpdates = new SceneUpdates<{
         // Animals swim where the river or the flood is deeper than they stand.
         animals.waterSurfaceAt = congoWaterSurface(congoSeed, flooded);
         atmosphere.haze = 1;
+        // A Congo world may have a village or not: the Village button is shown only when it does.
+        document.querySelector<HTMLButtonElement>('#open-community')!.hidden = !update.environment.community;
       }
       const ground = waterGround(update.environment.patches);
       animals.pools = update.environment.patches.flatMap((patch) => { const pool = islandPool(patch, ground); return pool ? [pool] : []; });

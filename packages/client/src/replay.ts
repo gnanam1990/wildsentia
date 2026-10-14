@@ -1,7 +1,7 @@
 import { worldGrid } from './worldGrid.js';
 import type { Drives } from './protocol.js';
 import { patchCentre, subPatchOffset } from './space.js';
-import { isMovementTrace, positionInPatch, treeAnchorGeometry, type MovementTrace, type WorldPosition } from '@vana/shared';
+import { isMovementTrace, positionInPatch, treeAnchorGeometry, treeClimbGoal, type MovementTrace, type WorldPosition } from '@vana/shared';
 
 export interface LifeTrackPoint {
   worldTime: number; patchId: number; state: string; goal: string; drives: Drives;
@@ -31,11 +31,11 @@ const record = (value: unknown): value is Record<string, unknown> => typeof valu
 export function isRecordedClimb(value: unknown): value is RecordedClimb {
   if (!record(value) || typeof value.eventId !== 'string' || !value.eventId
     || !isMovementTrace(worldGrid(), value.trace) || (value.direction !== 'ascend' && value.direction !== 'descend')
-    || !['local_threat', 'threat_gone', 'canopy_lost', 'urgent_need'].includes(String(value.reason))
+    || treeClimbGoal(value.direction, value.reason) === null
     || value.outcome !== (value.trace.completed ? 'success' : 'interrupted')) return false;
   const anchor = treeAnchorGeometry(worldGrid(), value.trace.destinationPatchId);
   if (!anchor || value.treeAnchorId !== anchor.id
-    || value.trace.goal !== (value.direction === 'ascend' ? 'flee' : 'rest')
+    || value.trace.goal !== treeClimbGoal(value.direction, value.reason)
     || typeof value.verticalDistanceM !== 'number' || !Number.isFinite(value.verticalDistanceM)
     || value.verticalDistanceM < 0 || value.verticalDistanceM > anchor.climbHeightM) return false;
   let travelled = 0, previous = value.trace.samples[0]!.altitudeM ?? 0;
