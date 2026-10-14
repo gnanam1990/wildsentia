@@ -1,6 +1,8 @@
 import { spatialHash } from './spatial.js';
 import { habitatAnalogue } from './types/patch.js';
 import { patchCentre, patchCount, type WorldGrid } from './grid.js';
+import { congoRivers, riverIndex } from './congo/rivers.js';
+import { congoChannelHalfM } from './congo/terrain.js';
 
 /** A small authoritative subset of trees, not an inventory of decorative vegetation. */
 export interface TreeAnchorGeometry {
@@ -22,6 +24,18 @@ export interface TreeAnchorPatch {
   habitat: string;
   canopyCover?: number;
   surface?: 'land' | 'coast' | 'ocean';
+  /** A Congo patch's world seed: where its rivers run. */
+  congoSeed?: number;
+}
+
+/** Rivers by seed and grid, built once: a Congo anchor in a channel has no tree to climb. */
+const riversBySeed = new Map<string, ReturnType<typeof riverIndex>>();
+function inCongoChannel(grid: WorldGrid, seed: number, x: number, z: number): boolean {
+  const key = `${seed}:${grid.cols}x${grid.rows}:${grid.patchM}`;
+  let near = riversBySeed.get(key);
+  if (!near) { near = riverIndex(congoRivers(seed, grid)); riversBySeed.set(key, near); }
+  const at = near(x, z);
+  return at.distanceM <= congoChannelHalfM(at.river, grid) + 3;
 }
 
 /**
@@ -49,7 +63,9 @@ export function treeAnchorForPatch(grid: WorldGrid, patch: TreeAnchorPatch): Tre
   if (!geometry || patch.surface === 'coast' || patch.surface === 'ocean'
     || !(patch.canopyCover !== undefined && Number.isFinite(patch.canopyCover)
       && patch.canopyCover >= 0.3 && patch.canopyCover <= 1)
-    || (habitatAnalogue(patch.habitat) !== 'shola' && habitatAnalogue(patch.habitat) !== 'riparian')) return null;
+    || (habitatAnalogue(patch.habitat) !== 'shola' && habitatAnalogue(patch.habitat) !== 'riparian')
+    // A Congo river may cross a forest patch: no tree stands in its channel.
+    || (patch.congoSeed !== undefined && inCongoChannel(grid, patch.congoSeed, geometry.x, geometry.z))) return null;
   return {
     ...geometry,
     visualKind: habitatAnalogue(patch.habitat) === 'shola' ? 'CommonTree_1' : 'TwistedTree_1',
