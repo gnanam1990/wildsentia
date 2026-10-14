@@ -96,6 +96,12 @@ describe('selected retained tree route', () => {
     expect(isRecordedClimb(attempt)).toBe(true);
     expect(climbMoment(attempt, 10)).toContain('no vertical climb occurred');
   });
+  it('labels a canopy dweller going up to rest, which is never a flight', () => {
+    const saved = climb(), roost = { ...saved, reason: 'roost', trace: { ...saved.trace, goal: 'rest' as const } };
+    expect(isRecordedClimb(roost)).toBe(true);
+    expect(isRecordedClimb({ ...saved, reason: 'roost' })).toBe(false);
+    expect(isRecordedClimb({ ...roost, reason: 'local_threat' })).toBe(false);
+  });
   it('rejects false trunk, height, direction, duration and outcome assertions', () => {
     const saved = climb();
     for (const altered of [{ ...saved, treeAnchorId: 'wrong' }, { ...saved, verticalDistanceM: 0 },

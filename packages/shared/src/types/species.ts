@@ -35,6 +35,11 @@ export interface SpeciesConfig {
      * giant squirrel, leopard). Omitted: a ground animal.
      */
     climbsTrees?: boolean;
+    /**
+     * Phase B: lives in the canopy (the agile mangabey). It rests and sleeps up its patch's tree
+     * and comes down to forage and drink. Needs `climbsTrees`. Omitted: climbs only to escape.
+     */
+    canopyDweller?: boolean;
     /** Phase B: a bird that travels by air (the vulture, the crowned eagle). */
     flies?: boolean;
     /** Congo 1B: swims, and dives to escape, staying under for up to `diveSeconds`. Omitted: never swims. */

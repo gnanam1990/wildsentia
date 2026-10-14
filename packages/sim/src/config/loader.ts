@@ -37,6 +37,7 @@ export const SpeciesConfigSchema = z
       sprintStaminaS: z.number().positive(),
       terrainCost: habitatCost,
       climbsTrees: z.boolean().optional(),
+      canopyDweller: z.boolean().optional(),
       // Phase B: a bird that travels by air (the vulture, the crowned eagle).
       flies: z.boolean().optional(),
       // Congo 1B: swimmers and divers, and what crossing ground costs while it is flooded.

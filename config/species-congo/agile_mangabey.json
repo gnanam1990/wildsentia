@@ -20,6 +20,7 @@
     "sprintMs": 6.0,
     "sprintStaminaS": 40,
     "climbsTrees": true,
+    "canopyDweller": true,
     "terrainCost": {
       "shola": 1.0,
       "grassland": 1.2,

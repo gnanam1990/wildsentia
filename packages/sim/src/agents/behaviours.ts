@@ -268,6 +268,10 @@ function drink(ctx: BehaviourContext, mayMove = true, causalParents: string[] = 
 }
 
 function rest(ctx: BehaviourContext): void {
+  // A canopy dweller (the agile mangabey) rests up its patch's tree, as it sleeps there.
+  const anchor = ctx.species.locomotion.canopyDweller && ctx.species.locomotion.climbsTrees && mayClimb(ctx)
+    ? treeAnchorForPatch(ctx.view.grid, ctx.percept.patch) : null;
+  if (anchor) { climbTree(ctx, anchor, 'roost'); return; }
   delete ctx.agent.journey;
   ctx.agent.state = 'resting';
   ctx.agent.stamina = clamp01((ctx.agent.stamina ?? 1) + 0.25 * ctx.hours);
@@ -674,19 +678,12 @@ function flee(ctx: BehaviourContext): void {
   const options = ctx.percept.patch.neighbours.filter(id => landWalkable(ctx.patches[id]));
   const threat = ctx.percept.threat;
 
-  // Only an actual local ground predator can initiate the bounded tree escape. Dependent
-  // young, pregnant animals and adults currently responsible for dependent offspring stay
-  // with the existing ground/family policy. This grants no food, water or chase outcome.
-  const raisingYoung = ctx.agent.offspringIds.some(id => {
-    const child = ctx.view.agentById?.(id);
-    return child?.alive && child.dependentOn === ctx.agent.id;
-  });
-  const anchor = threat?.patchId === ctx.agent.patchId && !needsProvisioning(ctx.agent, ctx.species)
-    && ctx.agent.dependentOn === null && ctx.agent.pregnantSince === null && !raisingYoung
+  // Only an actual local ground predator can initiate the bounded tree escape.
+  const anchor = threat?.patchId === ctx.agent.patchId && mayClimb(ctx)
     ? treeAnchorForPatch(ctx.view.grid, ctx.percept.patch) : null;
   // Tree climbers (langur, giant squirrel and, sim_0.37.0, the leopard escaping a tiger).
   if (anchor && ctx.species.locomotion.climbsTrees) {
-    climbToEscape(ctx, anchor);
+    climbTree(ctx, anchor, 'local_threat');
     return;
   }
   // Congo 1B: a swimmer (the water chevrotain) runs for water and dives, out of sight and reach.
@@ -745,17 +742,33 @@ function diveToEscape(ctx: BehaviourContext, refuge: { patchId: number; position
     causalParents: [], confidence: 'authoritative', movement: travel.trace });
 }
 
+/** Dependent young, pregnant animals and adults currently responsible for dependent offspring
+ * stay with the existing ground/family policy: none of them climbs. */
+function mayClimb(ctx: BehaviourContext): boolean {
+  const raisingYoung = ctx.agent.offspringIds.some(id => {
+    const child = ctx.view.agentById?.(id);
+    return child?.alive && child.dependentOn === ctx.agent.id;
+  });
+  return !needsProvisioning(ctx.agent, ctx.species) && ctx.agent.dependentOn === null
+    && ctx.agent.pregnantSince === null && !raisingYoung;
+}
+
 /** One event for the actual ground approach and vertical segment. Two events in a single
- * hour would be deliberately rejected by the live movement index as ambiguous ownership. */
-function climbToEscape(ctx: BehaviourContext, anchor: NonNullable<ReturnType<typeof treeAnchorForPatch>>): void {
+ * hour would be deliberately rejected by the live movement index as ambiguous ownership.
+ * Up to escape a local threat (at a run), or a canopy dweller up to rest (at a walk). This
+ * grants no food, water or chase outcome. */
+function climbTree(ctx: BehaviourContext, anchor: NonNullable<ReturnType<typeof treeAnchorForPatch>>,
+  reason: 'local_threat' | 'roost'): void {
   const agent = ctx.agent, startPatchId = agent.patchId, budget = ctx.hours * 3600;
+  const goal = reason === 'roost' ? 'rest' : 'flee';
   const endpoint = { x: anchor.x, z: anchor.z, heading: agent.position?.heading ?? 0 };
-  const ground = navigate(ctx.view.grid, agent, ctx.species, ctx.patches, anchor.patchId, 'flee', ctx.worldTime, budget, true, endpoint);
+  const ground = navigate(ctx.view.grid, agent, ctx.species, ctx.patches, anchor.patchId, goal, ctx.worldTime, budget,
+    goal === 'flee', endpoint);
   // Reaching the trunk is not a completed ascent. Zero remaining time must never be
   // reported as a successful climb or replayed as if it acquired altitude.
   let trace: MovementTrace = { ...ground.trace, completed: false }, verticalDistanceM = 0, verticalSeconds = 0;
   if (ground.trace.completed && !ground.unreachable && ground.seconds < budget) {
-    const vertical = advanceTreeVertical(ctx.view.grid, agent, ctx.patches[anchor.patchId]!, 'ascend', 'flee', ctx.worldTime,
+    const vertical = advanceTreeVertical(ctx.view.grid, agent, ctx.patches[anchor.patchId]!, 'ascend', goal, ctx.worldTime,
       budget - ground.seconds, ctx.species.locomotion.climbsTrees === true);
     if (!vertical.unreachable) {
       verticalDistanceM = vertical.distanceM; verticalSeconds = vertical.seconds;
@@ -771,13 +784,13 @@ function climbToEscape(ctx: BehaviourContext, anchor: NonNullable<ReturnType<typ
     }
   }
   const seconds = ground.seconds + verticalSeconds;
-  agent.currentGoal = 'flee'; agent.alternativeGoal = ctx.choice.alternative;
-  agent.goalScore = ctx.choice.score; agent.state = agent.altitudeM ? 'resting' : 'fleeing';
+  agent.currentGoal = goal; agent.alternativeGoal = ctx.choice.alternative;
+  agent.goalScore = ctx.choice.score; agent.state = agent.altitudeM || goal === 'rest' ? 'resting' : 'fleeing';
   agent.stamina = clamp01((agent.stamina ?? 1) - ground.sprintSeconds / ctx.species.locomotion.sprintStaminaS);
   agent.drives.fatigue = clamp01(agent.drives.fatigue + 0.12 * seconds / 3600);
   ctx.log.append({ type: 'tree_climbed', worldTime: Math.floor(ctx.worldTime + seconds), simVersion: '',
-    patchId: agent.patchId, position: { ...locateAgent(ctx.view.grid, agent) }, actors: [agent.id], goal: 'flee',
-    conditions: { direction: 'ascend', treeAnchorId: anchor.id, reason: 'local_threat',
+    patchId: agent.patchId, position: { ...locateAgent(ctx.view.grid, agent) }, actors: [agent.id], goal,
+    conditions: { direction: 'ascend', treeAnchorId: anchor.id, reason,
       from: startPatchId, destination: anchor.patchId },
     outcome: trace.completed ? 'success' : 'interrupted',
     effects: { distanceM: ground.distanceM + verticalDistanceM, horizontalDistanceM: ground.distanceM,
@@ -788,7 +801,7 @@ function climbToEscape(ctx: BehaviourContext, anchor: NonNullable<ReturnType<typ
 /** A saved perched animal spends real time returning along its exact stable trunk. Ground
  * actions resume on the next decision, never retroactively in the remainder of this hour. */
 export function descendPerchedAnimal(grid: WorldGrid, agent: Agent, patch: Patch, worldTime: WorldTime, hours: number,
-  reason: 'threat_gone' | 'canopy_lost' | 'urgent_need', log: EventLog, climbs?: boolean): void {
+  reason: 'threat_gone' | 'canopy_lost' | 'urgent_need' | 'forage', log: EventLog, climbs?: boolean): void {
   const anchor = treeAnchorGeometry(grid, patch.id);
   if (!anchor || !agent.altitudeM) throw new Error('descent requires a perched agent at a stable anchor');
   const vertical = advanceTreeVertical(grid, agent, patch, 'descend', 'rest', worldTime, Math.min(3600, hours * 3600), climbs);

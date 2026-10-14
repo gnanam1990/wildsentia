@@ -48,6 +48,8 @@ export const SIM_VERSION = 'sim_0.38.0';
  * An unweaned independent drinker need not leave a nearby caregiver every hour for a sip. */
 const DEPENDENT_URGENT_THIRST = 0.5;
 const DEPENDENT_URGENT_HUNGER = 0.65;
+/** Phase B: a canopy dweller perched in its tree comes down to forage or drink at this hunger or thirst. */
+const CANOPY_FORAGE_DRIVE = 0.5;
 
 export interface WorldOptions {
   /** Isolated experiments only; ordinary worlds keep the exact existing rainfall policy. */
@@ -1524,9 +1526,13 @@ export class World {
         // Stays up while the threat frightens it (sim_0.34.0: a predator merely in sight no longer holds it there).
         const threatened = (perceive(agent, cfg, view).threat?.fear ?? 0) >= 0.5;
         const urgentNeed = agent.drives.thirst >= 0.72 || agent.drives.hunger >= 0.8;
-        if (canopyLost || !threatened || urgentNeed) {
+        // A canopy dweller lives up there: it comes down to forage or drink, not because it is safe.
+        const dweller = cfg.locomotion.canopyDweller === true;
+        const forage = agent.drives.hunger >= CANOPY_FORAGE_DRIVE || agent.drives.thirst >= CANOPY_FORAGE_DRIVE;
+        if (canopyLost || urgentNeed || !threatened && (!dweller || forage)) {
           descendPerchedAnimal(this.grid, agent, patch, this.#time, hours,
-            canopyLost ? 'canopy_lost' : !threatened ? 'threat_gone' : 'urgent_need', this.log, cfg.locomotion.climbsTrees === true);
+            canopyLost ? 'canopy_lost' : threatened ? 'urgent_need' : dweller ? 'forage' : 'threat_gone',
+            this.log, cfg.locomotion.climbsTrees === true);
         } else {
           agent.currentGoal = 'rest'; agent.alternativeGoal = null; agent.goalScore = 1;
           agent.state = 'resting';
