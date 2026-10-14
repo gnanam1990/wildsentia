@@ -41,6 +41,16 @@ describe('signed agent requests', () => {
     expect(verifySigned(headers(old), { audience: aud, method: 'GET', path: '/x', body: '' }, nonces)).toEqual({ ok: false, error: 'stale_timestamp' });
     expect(verifySigned({}, { audience: aud, method: 'GET', path: '/x', body: '' }, nonces)).toEqual({ ok: false, error: 'missing_signature' });
   });
+  it('refuses a request signed before the server started, so one captured before a restart cannot be replayed after it', () => {
+    const started = Date.now();
+    const before = signedHeaders(k, aud, 'POST', '/agents/me/stop', '', { timestamp: String(started - 30_000) });
+    // A fresh process has no memory of the nonces it saw; its start time stands in for them.
+    const restarted = new NonceStore(undefined, undefined, started);
+    expect(verifySigned(headers(before), { audience: aud, method: 'POST', path: '/agents/me/stop', body: '' }, restarted, started + 1_000))
+      .toEqual({ ok: false, error: 'stale_timestamp' });
+    const after = signedHeaders(k, aud, 'POST', '/agents/me/stop', '', { timestamp: String(started + 500) });
+    expect(verifySigned(headers(after), { audience: aud, method: 'POST', path: '/agents/me/stop', body: '' }, restarted, started + 1_000)).toMatchObject({ ok: true });
+  });
   it('bounds how many requests one key can make inside the replay window', () => {
     const nonces = new NonceStore(3);
     for (let i = 0; i < 3; i++) expect(nonces.claim('k', `nonce-${i}-aaaaaaaaaaaa`, 0)).toBe('ok');
