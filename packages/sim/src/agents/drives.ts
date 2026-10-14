@@ -17,11 +17,12 @@ const FEAR_DECAY_PER_HOUR = 0.42;
 
 export { HUNGER_PER_DAY, THIRST_PER_DAY };
 
-export function updateDrives(agent: Agent, _species: SpeciesConfig, hours: number): void {
+export function updateDrives(agent: Agent, species: SpeciesConfig, hours: number): void {
   const days = hours / 24;
   const d = agent.drives;
 
-  d.hunger = clamp01(d.hunger + HUNGER_PER_DAY * days);
+  // Food from prey the world does not hold (offRosterShare) is eaten off-stage: only the rest is hunger.
+  d.hunger = clamp01(d.hunger + HUNGER_PER_DAY * days * (1 - (species.diet.offRosterShare ?? 0)));
   d.thirst = clamp01(d.thirst + THIRST_PER_DAY * days);
 
   const fatigueDelta =

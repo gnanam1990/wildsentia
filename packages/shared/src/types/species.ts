@@ -65,6 +65,12 @@ export interface SpeciesConfig {
     }>;
     dailyIntakeKg: number;
     /**
+     * Congo 2A: the share of a day's food from prey the world does not hold (a leopard's primates
+     * and cane rats, a golden cat's rodents). Only the rest of its hunger falls on simulated prey.
+     * Omitted: none.
+     */
+    offRosterShare?: number;
+    /**
      * sim_0.37.0: the most food (kg as eaten) the gut can process in a day. Where some food is
      * worth less than a kilogram of need (foodValue), this is what stops an animal making up poor
      * food by eating more of it (wild boar on fibrous grass). Omitted: no daily limit.

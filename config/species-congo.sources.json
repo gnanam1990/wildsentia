@@ -17,7 +17,8 @@
     "social.territory": "[4]: Taï male 86 km², females 22-29 km² (assumption: Gabon F 25, M 80)",
     "activity": "[2],[7]: diurnal and crepuscular in forest",
     "lifecycle": "[1]: gestation 96 d, litter 2-3, weaned ~90 d, mature ~771-937 d, max 17 y, 15-24 months between litters",
-    "hunting.preferredPrey/preyPreference (2A)": "[3],[4],[23]: Lopé diet: ungulates 59% of biomass, red river hog 20%, buffalo 13% (calves and young), mean prey 29.2 kg; 10-40 kg preferred; weights are assumptions from these shares; golden cat taken rarely (intraguild) [6]"
+    "hunting.preferredPrey/preyPreference (2A)": "[3],[4],[23]: Lopé diet: ungulates 59% of biomass, red river hog 20%, buffalo 13% (calves and young), mean prey 29.2 kg; 10-40 kg preferred; weights are assumptions from these shares; golden cat taken rarely (intraguild) [6]",
+    "diet/offRosterShare": "[23] Henschel et al. 2005 (Lopé, 196 scats): by biomass 59% ungulates, 18% diurnal primates, 17% large rodents (cane rat 13%); 0.35 = primates + large rodents, prey the world does not hold"
   },
   "blue_duiker": {
     "body": "[11],[12],[4]: 3.5-9 kg, typically 4-5 kg; shoulder 0.32-0.41 m",
@@ -88,6 +89,7 @@
     "escape": "[6]: highest trophic overlap with the leopard of any pair; avoids leopards",
     "social": "[29],[30]: solitary; 16.2 per 100 km2 unhunted, 3.8 where snared; territory sizes are assumptions from that density",
     "lifecycle": "assumption: gestation 75 d (as other Caracal), 1-2 kittens, mature 18 months, 12 y",
-    "status": "[29]: Vulnerable (IUCN); never a bounty target"
+    "status": "[29]: Vulnerable (IUCN); never a bounty target",
+    "diet/offRosterShare": "assumption 0.6, informed by Hart, Katembo & Punga 1996 (Ituri, scats): rodents 50.9% and ungulates 20.2% of prey items, mean prey 1.4 kg; [30]: mainly rodents"
   }
 }

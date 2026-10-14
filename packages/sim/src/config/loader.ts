@@ -64,6 +64,7 @@ export const SpeciesConfigSchema = z
         }))
         .min(1),
       dailyIntakeKg: z.number().positive(),
+      offRosterShare: z.number().min(0).max(0.9).optional(),
       gutCapacityBodyFraction: z.number().gt(0).max(0.3).optional(),
       maxDailyIntakeKg: z.number().positive().finite().optional(),
       waterNeedLPerDay: z.number().positive(),
