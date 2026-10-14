@@ -81,7 +81,7 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
   f8c08628, was rejected in review and not shipped).
 
 ## VANA — generated Congo species (14 October 2026)
-- Used for: blue duiker (BlueDuiker), water chevrotain (WaterChevrotain).
+- Used for: blue duiker (BlueDuiker), water chevrotain (WaterChevrotain), African leopard (AfricanLeopard).
 - Surfaces: generated for this project with Higgsfield under the owner's paid plan (Pro): GPT
   Image 2.5 front, side and back reference views (duiker 14002d7a, 73eb7073, f2a9eb31; chevrotain
   766de682, 6031bedb, 89bdaf79), lifted with Tripo H3.1 multiview (20k faces, PBR, detailed
@@ -90,6 +90,13 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
 - Skeleton and clips: the Quaternius Deer rig and its clips (CC0), rest pose refitted to each body
   (`fit feet`); the deer's surface is not used.
 - Rebuild: `ART=<dir of <species>-tripo.glb> tools/art/build_species.sh duiker chevrotain`.
+- African leopard (AfricanLeopard): GPT Image 2.5 views (front d1c940e8, side 0933d8c9, back
+  33b3b257; an earlier front view, db00bcf2, was not used: its tail swung out), Tripo H3.1
+  multiview f5592116 (20k faces, PBR, detailed texture). Skeleton, weights and clips are this
+  project's own, built by `tools/art/rig_african_leopard.py` (36 bones; Idle, Walk, Run (the trot),
+  Gallop, Sneak, Eating, Drinking, Resting, Pounce, Bite, Death): planted-paw IK strides designed
+  against the client's stride length, baked to plain keys. Keyframed, not motion capture.
+  Rebuild: `Blender -b --python tools/art/rig_african_leopard.py -- --mesh leopard-tripo.glb --out AfricanLeopard.glb`.
 
 ## VANA — generated wild boar (WildBoar)
 - Used for: boar (WildBoar), from 5 October 2026.
@@ -186,6 +193,7 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
   - `animals/Hare.glb`: sha256 `21c4e03805abedc2`
   - `animals/BlueDuiker.glb`: sha256 `c5ae0e49d7c94327`
   - `animals/WaterChevrotain.glb`: sha256 `faa47f04cf2a1471`
+  - `animals/AfricanLeopard.glb`: sha256 `8bdb2ac4f4b748d4`
   - `animals/Tiger.glb`: sha256 `7d7c3d9546d1bbeb`
   - `animals/Elephant.glb`: sha256 `682e6b100ff1a6a23`
   - `animals/Rabbit.glb`: sha256 `763c19a2606208f05`

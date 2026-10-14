@@ -38,8 +38,9 @@ export const SPECIES_VISUALS: Record<string, SpeciesVisual> = {
   hare:     { heightM: 0.22, model: { file: '/assets/animals/Hare.glb' }, colour: 0x9c8466 },
   vulture:  { heightM: 0.8,  model: { file: '/assets/animals/WhiteRumpedVulture.glb' }, colour: 0x3a3430 },
   // Congo forest (1B). Duiker and chevrotain: generated surfaces on the Deer rig
-  // (tools/art/build_species.sh; review in docs/art-review/congo-2026-10-14). Leopard: interim.
-  african_leopard:  { heightM: 0.65, model: { file: '/assets/animals/LeopardRigged.glb' }, colour: 0xc9963e },
+  // (tools/art/build_species.sh). Leopard: a generated surface on its own big-cat rig
+  // (tools/art/rig_african_leopard.py). Reviews in docs/art-review/congo-2026-10-14.
+  african_leopard:  { heightM: 0.65, model: { file: '/assets/animals/AfricanLeopard.glb' }, colour: 0xc9963e },
   blue_duiker:      { heightM: 0.36, model: { file: '/assets/animals/BlueDuiker.glb' }, colour: 0x5b5560 },
   water_chevrotain: { heightM: 0.35, model: { file: '/assets/animals/WaterChevrotain.glb' }, colour: 0x6b4a32 },
 };
@@ -96,7 +97,7 @@ export function modelStatusForAnimal(animal: Pick<AnimalState, 'speciesId' | 'se
 /** Visible delivery status, separate from whether the species exists in the simulation. */
 export function modelStatus(speciesId: string): string {
   if (visualFor(speciesId).model === null) return 'Placeholder · species rig pending';
-  if (speciesId === 'african_leopard') return 'Temporary model · the interim leopard rig; an African forest leopard coat pending';
+  if (speciesId === 'african_leopard') return 'Generated African leopard on its own big-cat rig · planted-paw gaits, keyframed, not motion capture';
   if (speciesId === 'blue_duiker') return 'Generated blue duiker on the deer rig · the deer\'s clips; duiker-specific gait pending';
   if (speciesId === 'water_chevrotain') return 'Generated water chevrotain on the deer rig · the deer\'s clips; swimming pose pending';
   if (speciesId === 'tiger') return 'Local tiger rig · authored motion; deformation polish pending';
