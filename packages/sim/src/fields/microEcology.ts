@@ -1,5 +1,5 @@
 import {
-  NUTRIENT_PER_KG_BIOMASS, dayOfYear, microBiomassKg, seasonAt, yearOf,
+  DAYS_PER_YEAR, NUTRIENT_PER_KG_BIOMASS, dayOfYear, microBiomassKg, seasonAt, yearOf,
   type Carcass, type FishCohort, type MicroEcologyState, type MicroPatchPopulation, type Patch, type Season, type WorldTime,
 } from '@vana/shared';
 
@@ -17,8 +17,9 @@ const FISH_PRODUCER_HARVEST_FRACTION_PER_DAY = 0.24;
 const FISH_DISPERSAL_FRACTION_PER_DAY = 0.12;
 const MIN_DISPERSING_FISH_KG = 0.002;
 /** Explicitly uncalibrated scenario policy, not measured wild rates. */
-const FISH_SPAWN_START_DAY = 271;
-const FISH_SPAWN_END_DAY = 300;
+/** Fish spawn in the first month of the world's wet season, on its own calendar (island or Congo). */
+const FISH_SPAWN_WINDOW_DAYS = 30;
+const SEASON_DAYS = DAYS_PER_YEAR / 4;
 const FISH_SPAWN_FRACTION = 0.03;
 const FISH_SPAWN_MAX_KG = 0.004;
 const FISH_SPAWN_MIN_STOCK_KG = 0.01;
@@ -153,7 +154,9 @@ function growthDemand(target: number, current: number, hours: number): number {
 
 function wetFreshwater(patch: Patch): boolean {
   return patch.surface !== 'ocean' && patch.surface !== 'coast' && patch.waterVolume >= 20
-    && (patch.habitat === 'water' || patch.habitat === 'marsh' || patch.habitat === 'riparian');
+    && (patch.habitat === 'water' || patch.habitat === 'marsh' || patch.habitat === 'riparian'
+      // The Congo's flooded and swamp forest hold fish while they hold water.
+      || patch.habitat === 'flooded_forest' || patch.habitat === 'swamp_forest');
 }
 
 function connectedWetNeighbours(patch: Patch, byId: Map<number, Patch>): Patch[] {
@@ -254,7 +257,7 @@ function feedFishFromProducer(patch: Patch, micro: MicroPatchPopulation,
  * the authoritative simulation rather than in the renderer or narrator.
  */
 export function stepMicroEcology(state: MicroEcologyState, patches: Patch[], carcasses: Carcass[],
-  hours: number, season: Season, worldTime: WorldTime): FishTransition[] {
+  hours: number, season: Season, worldTime: WorldTime, terrainProfile?: string): FishTransition[] {
   if (!Number.isFinite(hours) || hours <= 0) throw new Error('invalid micro-ecology duration');
   const transitions: FishTransition[] = [];
   const endAt = worldTime + hours * 3600;
@@ -349,8 +352,8 @@ export function stepMicroEcology(state: MicroEcologyState, patches: Patch[], car
     if (wetFreshwater(patch)) {
       advanceFishCohort(patch, m, worldTime, endAt, transitions);
       const spawnYear = yearOf(endAt), spawnDay = dayOfYear(endAt);
-      if (!m.fishCohort && m.lastFishSpawnYear < spawnYear && seasonAt(endAt) === 'wet'
-        && spawnDay >= FISH_SPAWN_START_DAY && spawnDay <= FISH_SPAWN_END_DAY
+      if (!m.fishCohort && m.lastFishSpawnYear < spawnYear && seasonAt(endAt, terrainProfile) === 'wet'
+        && (spawnDay - 1) % SEASON_DAYS < FISH_SPAWN_WINDOW_DAYS
         && m.fishBiomassKg >= FISH_SPAWN_MIN_STOCK_KG) {
         const biomassKg = Math.min(FISH_SPAWN_MAX_KG, m.fishBiomassKg * FISH_SPAWN_FRACTION);
         m.fishBiomassKg -= biomassKg;

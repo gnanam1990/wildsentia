@@ -1313,7 +1313,7 @@ export class World {
     }
 
     yield;
-    const fishTransitions = stepMicroEcology(this.microEcology, this.patches, this.carcasses, hours, season, this.#time);
+    const fishTransitions = stepMicroEcology(this.microEcology, this.patches, this.carcasses, hours, season, this.#time, this.terrainProfile);
     yield;
     const floweringTransitions = stepFloweringGuild(this.patches, this.microEcology,
       hours, this.#time + hours * WORLD_SECONDS_PER_HOUR);
