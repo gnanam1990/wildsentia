@@ -7,7 +7,7 @@ import { SimHost } from '../src/simHost.js';
 import { OwnershipStore } from '../src/ownership/store.js';
 import { LifeService } from '../src/ownership/lives.js';
 import { SimulatedPurchaseAdapter, loadOwnershipConfig } from '../src/ownership/purchase.js';
-import { BountyStore } from '../src/bounties/store.js';
+import { BountyStore, thinTrack } from '../src/bounties/store.js';
 import { BountyEngine, DevSettlementAdapter } from '../src/bounties/engine.js';
 import { testDatabaseUrl } from './testDatabase.js';
 import { ownedAsset, person } from './ownershipFixtures.js';
@@ -63,15 +63,37 @@ maybe('bounty scenarios', () => {
   const ledger = async () => (await pool!.query('select category, amount_atomic::text as a, ref from sim_ledger order by entry_id')).rows;
   const people = async () => { n += 10; return [await person(pool!, n + 1), await person(pool!, n + 2)] as const; };
 
-  it('keeps a target\'s track log in the database: saved, read back in order, pruned after six world hours', async () => {
+  it('keeps a target\'s whole track log in the database while the bounty lasts, read back in order from a time', async () => {
     await fund();
     const [owner] = await people();
     const duiker = await owned(owner, 'blue_duiker'), b = await published(duiker.animalId);
     for (const [t, x] of [[1_000, 1], [5_000, 2], [20_000, 3], [30_000, 4]] as const)
       await bounties.saveTrack({ bountyId: b.bountyId, x, z: 0, state: 'travelling', worldTime: t });
-    // The last save pruned everything older than 30,000 - 21,600 = 8,400.
-    expect((await bounties.tracks(b.bountyId, 0)).map((s) => [s.worldTime, s.x])).toEqual([[20_000, 3], [30_000, 4]]);
+    expect((await bounties.tracks(b.bountyId, 0)).map((s) => [s.worldTime, s.x])).toEqual([[1_000, 1], [5_000, 2], [20_000, 3], [30_000, 4]]);
     expect((await bounties.tracks(b.bountyId, 25_000)).map((s) => s.worldTime)).toEqual([30_000]);
+  });
+
+  it('puts the target\'s path into the bounty\'s record when it is decided, then clears the log; the record route shows it once settled', async () => {
+    await fund();
+    const [prey, hunter] = await people();
+    const duiker = await owned(prey, 'blue_duiker'), leopard = await owned(hunter, 'african_leopard');
+    const b = await published(duiker.animalId);
+    const start = b.publishedWorldTime ?? 0;
+    for (let i = 0; i < 3; i++) await bounties.saveTrack({ bountyId: b.bountyId, x: 10 * i, z: 5, state: i === 2 ? 'fleeing' : 'travelling', worldTime: start + 60 * (i + 1) });
+    expect(await kill(leopard.animalId, duiker.animalId)).not.toBeNull();
+    await engine.adjudicate();
+    const record = (await bounties.record(b.bountyId))!;
+    expect(record.track.map((s) => [s.x, s.state])).toEqual([[0, 'travelling'], [10, 'travelling'], [20, 'fleeing']]);
+    expect(await bounties.tracks(b.bountyId, 0)).toEqual([]);
+  });
+
+  it('thins a long path for the record to at most 2,000 samples, keeping its ends and every change of state', () => {
+    const long = Array.from({ length: 9_000 }, (_, i) => ({ x: i, z: 0, state: i === 4_321 ? 'fleeing' : 'travelling', worldTime: i * 10 }));
+    const thin = thinTrack(long);
+    expect(thin.length).toBeLessThanOrEqual(2_000);
+    expect(thin[0]).toEqual(long[0]); expect(thin.at(-1)).toEqual(long.at(-1));
+    expect(thin.some((s) => s.state === 'fleeing')).toBe(true);
+    expect(thin.every((s, i) => i === 0 || s.worldTime > thin[i - 1]!.worldTime)).toBe(true);
   });
 
   it('pays the owner of an eligible owned predator that makes the kill, and settles once', async () => {

@@ -146,8 +146,14 @@ $('congo-status-form').addEventListener('submit', async (event) => {
     const b = await api<{ speciesId: string; region: string; amountAtomic: string; decimals: number; status: string; timeLeftWorldSeconds: number; outcome?: string }>(`/congo/bounties/${encodeURIComponent(id)}`);
     out.textContent = [`${name(b.speciesId)} in ${b.region}`, `Reward ${simAmount(b.amountAtomic, b.decimals, store?.token ?? 'SIM-USDC')}`, `Status: ${b.status}`,
       b.status === 'active' ? `Time left: ${timeLeft(b.timeLeftWorldSeconds)}` : '', b.outcome ? `Outcome: ${b.outcome}` : ''].filter(Boolean).join('\n');
+    // A settled bounty can be watched again in the forest, from its record.
+    $('congo-bounty-replay').hidden = b.status !== 'settled';
+    $<HTMLAnchorElement>('congo-bounty-replay').href = `/#bounty=${encodeURIComponent(id)}`;
   }
-  catch (e) { out.textContent = (e as Error).message === 'not_found' ? 'No published bounty has that id.' : `Unavailable (${(e as Error).message}).`; }
+  catch (e) {
+    out.textContent = (e as Error).message === 'not_found' ? 'No published bounty has that id.' : `Unavailable (${(e as Error).message}).`;
+    $('congo-bounty-replay').hidden = true;
+  }
   out.hidden = false;
 });
 

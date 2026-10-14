@@ -1,7 +1,7 @@
 import { canHunt, type World } from '@vana/sim';
 import { landWalkable, patchCentre, regionOfPatch } from '@vana/shared';
 import type { OwnershipStore } from '../ownership/store.js';
-import { type Bounty, type BountyStore, type Preset } from './store.js';
+import { thinTrack, type Bounty, type BountyStore, type Preset } from './store.js';
 
 /**
  * Congo 1D (spec §5): admin presets, validation, publication and adjudication of bounties.
@@ -178,7 +178,10 @@ export class BountyEngine {
     if (!(await this.bounties.decide(b.bountyId, d))) return null;
     const actors = [b.targetAnimalId, ...(d.outcome === 'predator' && d.winnerAnimalId ? [d.winnerAnimalId] : [])];
     const events = await this.eventsOf(actors, b.publishedWorldTime ?? 0, d.worldTime).catch(() => []);
-    await this.bounties.saveRecord(b.bountyId, events);
+    // The target's path over the bounty, for the forest viewer's replay; the raw log is then cleared.
+    const track = thinTrack(await this.bounties.tracks(b.bountyId, b.publishedWorldTime ?? 0).catch(() => []));
+    await this.bounties.saveRecord(b.bountyId, events, track.map(({ x, z, state, worldTime }) => ({ x, z, state, worldTime })));
+    await this.bounties.deleteTracks(b.bountyId).catch(() => undefined);
     return { bountyId: b.bountyId, outcome: d.outcome, payeeWallet: d.payeeWallet };
   }
 

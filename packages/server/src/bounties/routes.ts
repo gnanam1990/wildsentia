@@ -50,7 +50,7 @@ export function installBountyRoutes(scope: FastifyInstance, deps: BountyDeps): v
     const b = await store.get(req.params.id);
     if (!b || b.status !== 'settled') return reply.code(404).send({ error: 'not_settled' });
     const record = await store.record(b.bountyId), settlement = await store.settlementOf(b.bountyId);
-    return { simulated: true, bountyId: b.bountyId, outcome: b.outcome, targetAnimalId: b.targetAnimalId, winnerAnimalId: b.outcome === 'predator' ? b.winnerAnimalId : null,
+    return { simulated: true, bountyId: b.bountyId, outcome: b.outcome, targetAnimalId: b.targetAnimalId, targetSpeciesId: b.targetSpeciesId, winnerAnimalId: b.outcome === 'predator' ? b.winnerAnimalId : null,
       decidedWorldTime: b.decidedWorldTime, rulesHash: b.rulesHash, payout: settlement ? { wallet: settlement.payeeWallet, amountAtomic: settlement.amountAtomic.toString(),
         status: settlement.status } : null, entrants: (await store.entrants(b.bountyId)).length, record };
   });

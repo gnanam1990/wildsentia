@@ -1,5 +1,7 @@
 import * as THREE from 'three';
-import { movementAt } from '@vana/shared';
+import { movementAt, patchAtPosition, isWorldPosition } from '@vana/shared';
+import { loadBountyLife } from './bountyReplay.js';
+import { worldGrid } from './worldGrid.js';
 import { WorldStore, type AnimalState } from './protocol.js';
 import { createScene } from './scene.js';
 import { hideFarFieldNear } from './terrain.js';
@@ -299,7 +301,10 @@ const dayOf = (t: number): string => {
   return `year ${Math.floor(days / 360) + 1}, day ${(days % 360) + 1}`;
 };
 
-async function startReplay(id: string, selectedEventId?: string, kind: 'encounter' | 'climb' = 'encounter'): Promise<void> {
+let replayIsBounty = false;
+async function startReplay(id: string, selectedEventId?: string, kind: 'encounter' | 'climb' = 'encounter',
+  preloaded?: (signal: AbortSignal) => Promise<Life>): Promise<void> {
+  replayIsBounty = preloaded !== undefined;
   eventVisit.clear();
   const request = ++replayRequest;
   replayAbort?.abort(); replayAbort = new AbortController();
@@ -314,7 +319,7 @@ async function startReplay(id: string, selectedEventId?: string, kind: 'encounte
   recordingPicker.replaceChildren(); recordingPicker.disabled = true;
   replaySeek.disabled = true; replayPlay.disabled = true;
   try {
-    const life = selectedEventId ? kind === 'climb'
+    const life = preloaded ? await preloaded(replayAbort.signal) : selectedEventId ? kind === 'climb'
       ? await loadSelectedClimb(id, selectedEventId, replayAbort.signal)
       : await loadSelectedEncounter(id, selectedEventId, replayAbort.signal)
       : await loadLifeHistory(id, { signal: replayAbort.signal,
@@ -325,7 +330,7 @@ async function startReplay(id: string, selectedEventId?: string, kind: 'encounte
     const climbs = (life.climbs ?? []).filter(isRecordedClimb).filter(e => e.trace.actorId === life.id);
     if (life.track.length === 0 && records.length === 0 && climbs.length === 0)
       throw new Error('No recorded positions, encounters or tree routes for this animal yet.');
-    const whole = new Option('Whole life — sampled positions', 'life');
+    const whole = new Option(preloaded ? 'The bounty — the target\'s path' : 'Whole life — sampled positions', 'life');
     whole.disabled = life.track.length === 0;
     recordingPicker.add(whole);
     records.forEach((e, i) => recordingPicker.add(new Option(
@@ -926,9 +931,12 @@ function frame(): void {
     animals.update(playback.paused ? 0 : dt * playback.speed);
     replaySeek.value = String(Math.round(progress * 1000));
     replayPlay.textContent = playback.paused ? progress >= 1 ? 'Replay again' : 'Play' : 'Pause';
-    const status = `${playback.paused ? progress >= 1 ? 'Finished' : 'Paused' : 'Playing'} · ${encounter ? 'paired server recording' : climb ? 'saved tree route' : 'sampled life record'}`;
+    const status = `${playback.paused ? progress >= 1 ? 'Finished' : 'Paused' : 'Playing'} · ${encounter ? 'paired server recording' : climb ? 'saved tree route' : replayIsBounty ? 'bounty record' : 'sampled life record'}`;
     if (replayStatus.textContent !== status) replayStatus.textContent = status;
     bubble.show(undefined, null);
+    // A regional world (Congo) streams only the regions around the view: a replay elsewhere
+    // must ask for its own, or it plays over empty ground.
+    sendView();
     renderFrame(dt, now);
     return;
   }
@@ -1180,9 +1188,24 @@ follow.distance = 900;
 frame();
 
 addEventListener('hashchange', () => {
+  const bounty = bountyFromHash(location.hash);
+  if (bounty) { void startBountyReplay(bounty); return; }
   const id = animalFromHash(location.hash);
   if (id !== null) watch(id);
 });
+
+/** Congo: `#bounty=<id>` replays a settled bounty from its record (the target's path and its end). */
+function bountyFromHash(hash: string): string | null {
+  const id = new URLSearchParams(hash.slice(1)).get('bounty');
+  return id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id) ? id : null;
+}
+function startBountyReplay(bountyId: string): Promise<void> {
+  const patchOf = (x: number, z: number) => {
+    const at = { x, z, heading: 0 };
+    return isWorldPosition(worldGrid(), at) ? patchAtPosition(worldGrid(), at) : null;
+  };
+  return startReplay('', undefined, 'encounter', (signal) => loadBountyLife(bountyId, signal, patchOf));
+}
 
 // Same-origin experience pages may guide the observer and capture its actual rendered scene.
 // No external window can invoke this bridge; all actor/event references remain bounded.
@@ -1249,7 +1272,9 @@ addEventListener('pagehide', () => experienceCapture?.cancel());
 const stop = store.onChange(() => {
   if (store.world === null) return;
   if (followRevision === 0) {
-    const id = initialFollowId(location.hash, lastFollowed.get(), store.animals);
+    const bounty = bountyFromHash(location.hash);
+    if (bounty) void startBountyReplay(bounty);
+    const id = bounty ? null : initialFollowId(location.hash, lastFollowed.get(), store.animals);
     if (id !== null) { follow.distance = 22; watch(id); }
   }
   stop();
