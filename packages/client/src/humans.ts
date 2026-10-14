@@ -30,6 +30,15 @@ export function humanAgeScale(ageDays: number): number {
   if (ageDays < 18 * 360) return .7 + .3 * (ageDays - 6 * 360) / (12 * 360);
   return 1;
 }
+/**
+ * A child's head is far larger for its body than an adult's (about a quarter of body length at
+ * birth, an eighth in adults). The adult models are scaled down for children; their head bone is
+ * scaled up, from 1.4x at birth to 1x at eighteen, so a child does not read as a small adult.
+ */
+export function childHeadScale(ageDays: number): number {
+  const years = Math.max(0, ageDays) / 360;
+  return years >= 18 ? 1 : 1 + 0.4 * (1 - years / 18) ** 1.5;
+}
 export function humanPose(p: Pick<SavedPerson, 'alive' | 'task' | 'moving'>): { clip: string; lying: boolean } {
   if (!p.alive || (p.task?.phase === 'work' && p.task.kind === 'sleep')) return { clip: 'Death01', lying: true };
   if (p.task?.phase === 'travel') return { clip: p.moving === false ? 'Idle_Loop' : 'Walk_Loop', lying: false };
@@ -271,6 +280,9 @@ export class HumanLayer {
       else if (reducedMotion) { rig.action!.time = Math.min(.3, clip.duration / 2); rig.mixer.update(0); }
       else if (p.animationSeconds !== undefined) { rig.action!.time = p.animationSeconds % clip.duration; rig.mixer.update(0); }
       else rig.mixer.update(Number.isFinite(dt) ? Math.min(.1, Math.max(0, dt)) : 0);
+      // After the clip: a child's larger head (the clips never scale bones, but this keeps it so).
+      const head = rig.visual.getObjectByName('Head');
+      if (head) head.scale.setScalar(childHeadScale(p.ageDays));
       // Small retarget sole/body clearance, not terrain IK or a new authoritative location.
       rig.root.position.set(p.position.x, this.#ground(p.position.x, p.position.z) + (pose.lying ? .09 : .03), p.position.z);
       rig.root.rotation.y = p.position.heading;

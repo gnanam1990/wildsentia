@@ -207,3 +207,18 @@ describe('people sharing one spot', () => {
     expect(spreadCrowded(apart)).toEqual(apart);
   });
 });
+
+// Children are drawn with the adult models scaled down; a child's head is far larger for its body,
+// so young people get a larger head bone (proportions from growth charts: about a quarter of body
+// length at birth, an eighth in adults; here a gentler 1.4x at birth to 1x at eighteen).
+describe('child proportions', () => {
+  it('gives a newborn the largest head, easing to an adult\'s by eighteen', async () => {
+    const { childHeadScale } = await import('../src/humans.js');
+    expect(childHeadScale(0)).toBeCloseTo(1.4, 5);
+    expect(childHeadScale(6 * 360)).toBeGreaterThan(1.15);
+    expect(childHeadScale(6 * 360)).toBeLessThan(1.3);
+    expect(childHeadScale(18 * 360)).toBe(1);
+    expect(childHeadScale(40 * 360)).toBe(1);
+    for (let d = 0; d < 18 * 360; d += 200) expect(childHeadScale(d + 200)).toBeLessThanOrEqual(childHeadScale(d));
+  });
+});
