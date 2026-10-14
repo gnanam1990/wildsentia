@@ -26,6 +26,17 @@ describe('a Congo region scene in the browser', () => {
     expect(got!.environment.patches.map((p) => [p.congoSeed, p.flooded ?? false, p.deepWater ?? false])).toEqual([[7, false, false], [7, true, false], [7, false, true]]);
     setWorldGrid(ISLAND_GRID);
   });
+  // The Congo forest flowers too (terra firme, flooded and swamp forest): a scene carrying its
+  // flowering guild is the forest as it is, not a forged patch.
+  it('accepts the Congo forest\'s flowering understorey, and still refuses a guild on open bai', () => {
+    const updates = new SceneUpdates<null>({ async prepare() { return null; }, commit() {}, discard() {}, status: vi.fn() });
+    const guild = { guildId: 'insect_visited_understorey_v1', vegetativeKg: 12, openKg: 0.1, visitedKg: 0.02, seedKg: 0,
+      stage: 'flowering', nextEligibleAt: 3600 + 86400 };
+    expect(updates.receive(scene([congoPatch(12_880, 'terra_firme', { floweringGuild: guild }),
+      congoPatch(12_881, 'flooded_forest', { floweringGuild: guild }), congoPatch(12_882, 'swamp_forest', { floweringGuild: guild })]), 0)).toBe(true);
+    expect(updates.receive(scene([congoPatch(12_883, 'bai', { floweringGuild: guild })]), 0)).toBe(false);
+    setWorldGrid(ISLAND_GRID);
+  });
   it('refuses a Congo patch that claims a sea surface, or mixes Congo and island seeds', () => {
     const updates = new SceneUpdates<null>({ async prepare() { return null; }, commit() {}, discard() {}, status: vi.fn() });
     expect(updates.receive(scene([congoPatch(0, 'terra_firme', { surface: 'ocean' })]), 0)).toBe(false);

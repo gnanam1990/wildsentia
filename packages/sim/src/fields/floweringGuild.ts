@@ -1,5 +1,5 @@
 import {
-  NUTRIENT_PER_KG_BIOMASS, WORLD_SECONDS_PER_DAY, WORLD_SECONDS_PER_YEAR, dayOfYear, yearOf,
+  NUTRIENT_PER_KG_BIOMASS, floweringHabitat, WORLD_SECONDS_PER_DAY, WORLD_SECONDS_PER_YEAR, dayOfYear, yearOf,
   type EventType, type FloweringGuildState, type MicroEcologyState, type Patch, type WorldTime,
 } from '@vana/shared';
 import { habitatBrowseCapacity } from '../grid.js';
@@ -24,11 +24,8 @@ export interface FloweringTransition {
   outcome: 'success' | 'failure';
 }
 
-/** The island's shola and riparian forest, and the Congo forest's terra firme, flooded and swamp forest. */
-const FLOWERING_HABITATS = new Set(['shola', 'riparian', 'terra_firme', 'flooded_forest', 'swamp_forest']);
-
 export function floweringEligible(patch: Patch): boolean {
-  return FLOWERING_HABITATS.has(patch.habitat)
+  return floweringHabitat(patch.habitat)
     && patch.surface !== 'coast' && patch.surface !== 'ocean' && patch.capacity.browse > 0;
 }
 

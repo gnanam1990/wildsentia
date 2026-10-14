@@ -1,5 +1,5 @@
 import { parseWorldGrid, setWorldGrid } from './worldGrid.js';
-import { isCommunityState, type CommunityState, type LiveEncounterFrame, type MicroEcologyState } from '@vana/shared';
+import { floweringHabitat, isCommunityState, type CommunityState, type LiveEncounterFrame, type MicroEcologyState } from '@vana/shared';
 import { WorldStore, type AnimalState, type WorldState } from './protocol.js';
 import { isLiveEncounterFrame } from './liveEncounters.js';
 import type { PatchView } from './terrain.js';
@@ -51,7 +51,7 @@ function environment(value: unknown): SceneEnvironment | null {
       || (p.flooded !== undefined && typeof p.flooded !== 'boolean') || (p.deepWater !== undefined && typeof p.deepWater !== 'boolean')))) return null;
     if (p.floweringGuild !== undefined && p.floweringGuild !== null) {
       const guild = p.floweringGuild;
-      if (!record(guild) || !['shola', 'riparian'].includes(p.habitat as string)
+      if (!record(guild) || !floweringHabitat(p.habitat as string)
         || p.surface === 'coast' || p.surface === 'ocean'
         || guild.guildId !== 'insect_visited_understorey_v1'
         || ![guild.vegetativeKg, guild.openKg, guild.visitedKg, guild.seedKg].every(nonnegative)
