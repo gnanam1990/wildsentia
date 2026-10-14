@@ -1,4 +1,4 @@
-import { BaseError, createPublicClient, decodeErrorResult, encodeFunctionData, getAddress, type Hex, http, keccak256, parseAbi,
+import { BaseError, createPublicClient, decodeErrorResult, encodeFunctionData, getAddress, type Hex, http, keccak256, parseAbi, stringToHex,
   parseEventLogs } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { attemptsAbi } from './attemptsAbi.js';
@@ -97,6 +97,28 @@ export interface ChallengeChain {
 export interface ChainConfig {
   rpcUrl: string; chainId: number; contract: Hex; evaluatorKey: Hex; attemptsContract?: Hex | null;
   identityRegistry?: Hex | null; reputationRegistry?: Hex | null;
+  /** Arc's Memo contract: settlements go through it with a readable note (design §12). */
+  memoContract?: Hex | null;
+}
+
+/**
+ * Arc's predeployed Memo contract (docs.arc.io/arc/concepts/transaction-memos, read 14 October
+ * 2026): `memo(target, data, memoId, memoData)` forwards the call through the CallFrom precompile,
+ * so the target still sees the sender's own account (an EOA, as the evaluator is) as msg.sender.
+ */
+export const ARC_MEMO_CONTRACT: Hex = '0x5294E9927c3306DcBaDb03fe70b92e01cCede505';
+const memoAbi = parseAbi(['function memo(address target, bytes data, bytes32 memoId, bytes memoData)']);
+
+/** The note a settlement carries on the explorer: short, plain, and the same every time it is sent. */
+export function settlementNote(call: Extract<ChainCall, { fn: 'resolve' | 'refund' }>): string {
+  return call.fn === 'refund' ? `Wildsentia challenge #${call.id}: refunded`
+    : `Wildsentia challenge #${call.id}: won by ${call.winner.slice(0, 6)}…${call.winner.slice(-4)}`;
+}
+
+/** The escrow call wrapped in Memo, with a stable id for reconciliation (a resend carries the same). */
+export function memoCall(target: Hex, data: Hex, call: Extract<ChainCall, { fn: 'resolve' | 'refund' }>): Hex {
+  return encodeFunctionData({ abi: memoAbi, functionName: 'memo', args: [target, data,
+    keccak256(stringToHex(`wildsentia:challenge:${call.id}:${call.fn}`)), stringToHex(settlementNote(call))] });
 }
 
 export function viemChallengeChain(config: ChainConfig): ChallengeChain {
@@ -181,7 +203,11 @@ export function viemChallengeChain(config: ChainConfig): ChallengeChain {
       return { min, max };
     },
     async prepare(call, options) {
-      const data = encode(call), to = target(call);
+      const inner = encode(call), escrow = target(call);
+      // A settlement goes through Memo when configured; everything else straight to its contract.
+      const viaMemo = !!config.memoContract && (call.fn === 'resolve' || call.fn === 'refund');
+      const to = viaMemo ? getAddress(config.memoContract!) : escrow;
+      const data = viaMemo ? memoCall(escrow, inner, call as Extract<ChainCall, { fn: 'resolve' | 'refund' }>) : inner;
       const [nonce, block, gas] = await Promise.all([
         options?.nonce ?? client.getTransactionCount({ address: account.address, blockTag: 'pending' }),
         client.getBlock({ blockTag: 'latest' }),
