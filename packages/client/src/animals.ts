@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { actClipTime, climbs, clipForObservedMotion, clipForState, clipPhase, elephantTrunkReach, renderStateFor, replayClipTime, struggleClip, vigilance,
-  type ClimbVisualPhase, type FlightVisualPhase, climbPose, flies } from './animation.js';
+  type ClimbVisualPhase, type FlightVisualPhase, climbPose, flies, swimmingClip } from './animation.js';
 import { PositionTracker, renderBaseY, swimBaseY, type RenderPosition } from './space.js';
 import type { AnimalState } from './protocol.js';
 import { chooseVisible } from './lod.js';
@@ -442,7 +442,8 @@ export class AnimalLayer {
     unknownAirborne = false, climbPhase: ClimbVisualPhase | null = null, act?: number, actWeight = 1): void {
     const grounded = flightPhase === null && climbPhase === null && !unknownAirborne;
     if (grounded) state = stateAtSpeed(state, rig.gait);
-    const clip = (grounded ? clipForGait(state, rig.gait.gait, rig.clipNames) : null)
+    const clip = swimmingClip(rig.swimming, state, rig.clipNames)
+      ?? (grounded ? clipForGait(state, rig.gait.gait, rig.clipNames) : null)
       ?? clipForObservedMotion(state, rig.clipNames, flightPhase, unknownAirborne, climbPhase);
     rig.mixer?.stopAllAction();
     // No crossfade or wall-clock advance during a seek. Poses are illustrative, but stable.
@@ -528,7 +529,8 @@ export class AnimalLayer {
     const grounded = climbPhase === null && !unknownAirborne;
     if (grounded) state = stateAtSpeed(state, rig.gait);
     if (grounded && rig.looksUp && vigilance(state, this.#clockSeconds, rig.seed) > 0.5) state = 'standing';
-    const wanted = (grounded ? clipForGait(state, rig.gait.gait, rig.clipNames) : null)
+    const wanted = swimmingClip(rig.swimming, state, rig.clipNames)
+      ?? (grounded ? clipForGait(state, rig.gait.gait, rig.clipNames) : null)
       ?? clipForObservedMotion(state, rig.clipNames, null, unknownAirborne, climbPhase);
     // Never keep walking/eating after a state changes to one without a supported clip.
     if (wanted === null) {

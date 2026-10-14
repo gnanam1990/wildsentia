@@ -4,6 +4,7 @@ import { setWorldGrid } from '../src/worldGrid.js';
 import { congoLattice } from '../src/terrain.js';
 import { congoWaterSurface } from '../src/congoWater.js';
 import { swimBaseY } from '../src/space.js';
+import { swimmingClip } from '../src/animation.js';
 
 afterEach(() => setWorldGrid(ISLAND_GRID));
 
@@ -34,5 +35,15 @@ describe('swimming in the Congo forest', () => {
     expect(dry(belt!.x, belt!.z)).toBeNull();
     expect(wet(belt!.x, belt!.z)! - ground(belt!.x, belt!.z)).toBeCloseTo(0.6, 1);
     expect(wet(mid.x, mid.z + main.floodBeltM + half + 2000)).toBeNull();
+  });
+
+  it('plays a swimmer\'s own swim clip in deep water, and its usual clips on land or in death', () => {
+    const croc = ['Idle', 'Walk', 'Swim', 'Eating', 'Death'];
+    expect(swimmingClip(true, 'travelling', croc)).toBe('Swim');
+    expect(swimmingClip(true, 'resting', croc)).toBe('Swim');
+    expect(swimmingClip(false, 'travelling', croc)).toBeNull();
+    expect(swimmingClip(true, 'dead', croc)).toBeNull();
+    // An animal with no swim clip paddles its walk (slowed, in animals.ts).
+    expect(swimmingClip(true, 'travelling', ['Idle', 'Walk'])).toBeNull();
   });
 });
