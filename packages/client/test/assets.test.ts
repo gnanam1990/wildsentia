@@ -22,6 +22,7 @@ describe('generated species replacements', () => {
     ['Dhole', [...quadruped, 'Idle_2_HeadLow']], ['Jackal', [...quadruped, 'Idle_2_HeadLow']],
     ['ChitalHind', [...quadruped, 'Idle_Headlow']], ['Hare', ['Idle', 'Gallop', 'Jump', 'Resting', 'Death']],
     ['GreyLangur', small], ['GiantSquirrel', small], ['WhiteRumpedVulture', ['Idle', 'Walk', 'Eating', 'Drinking', 'Death']],
+    ['BlueDuiker', [...quadruped, 'Idle_Headlow']], ['WaterChevrotain', [...quadruped, 'Idle_Headlow']],
   ] as const)('%s keeps the rig clips the observer plays and stays within its byte budget', (name, clips) => {
     const gltf = manifest(`${name}.glb`);
     expect(gltf.skins).toHaveLength(1);
@@ -31,7 +32,7 @@ describe('generated species replacements', () => {
 });
 
 describe('free local character assets', () => {
-  it.each(['TigerRigged', 'LeopardRigged', 'ElephantWalking', 'Langur', 'Squirrel', 'Vulture', 'WildBoar', 'Chital', 'Sambar', 'Gaur', 'Dhole', 'Jackal', 'GreyLangur', 'GiantSquirrel', 'WhiteRumpedVulture', 'ChitalHind', 'Hare'])('%s contains finite, normalized skin weights and actual changing motion', (name) => {
+  it.each(['TigerRigged', 'LeopardRigged', 'ElephantWalking', 'Langur', 'Squirrel', 'Vulture', 'WildBoar', 'Chital', 'Sambar', 'Gaur', 'Dhole', 'Jackal', 'GreyLangur', 'GiantSquirrel', 'WhiteRumpedVulture', 'ChitalHind', 'Hare', 'BlueDuiker', 'WaterChevrotain'])('%s contains finite, normalized skin weights and actual changing motion', (name) => {
     const buffer = readFileSync(new URL(`../public/assets/animals/${name}.glb`, import.meta.url));
     const jsonLength = buffer.readUInt32LE(12);
     const gltf = JSON.parse(buffer.subarray(20, 20 + jsonLength).toString());

@@ -4,12 +4,15 @@ import { underWater } from '../src/animals.js';
 
 // Congo 1A.4: the Congo species are drawn, honestly labelled, and a diver is not drawn at all.
 describe('the Congo species in the browser', () => {
-  it('have models at their shoulder heights, labelled temporary', () => {
+  it('have models at their shoulder heights, honestly labelled', () => {
     expect(visualFor('african_leopard')).toMatchObject({ heightM: 0.65, model: { file: '/assets/animals/LeopardRigged.glb' } });
-    expect(visualFor('blue_duiker').model?.file).toBe('/assets/animals/Deer.glb');
-    expect(visualFor('blue_duiker').heightM).toBe(0.36);
-    expect(visualFor('water_chevrotain').model?.file).toBe('/assets/animals/Fox.glb');
-    for (const id of ['african_leopard', 'blue_duiker', 'water_chevrotain']) expect(modelStatus(id)).toMatch(/Temporary/);
+    // Their own photoreal surfaces on the Deer rig (no tint: the coat is the model's own).
+    expect(visualFor('blue_duiker')).toMatchObject({ heightM: 0.36, model: { file: '/assets/animals/BlueDuiker.glb' } });
+    expect(visualFor('water_chevrotain')).toMatchObject({ heightM: 0.35, model: { file: '/assets/animals/WaterChevrotain.glb' } });
+    expect(visualFor('blue_duiker').model?.tint).toBeUndefined();
+    expect(visualFor('water_chevrotain').model?.tint).toBeUndefined();
+    expect(modelStatus('african_leopard')).toMatch(/Temporary/);
+    for (const id of ['blue_duiker', 'water_chevrotain']) expect(modelStatus(id)).toMatch(/^Generated .* on the deer rig/);
   });
   it('hides an animal under water', () => {
     expect(underWater({ locomotionMode: 'submerged' })).toBe(true);

@@ -80,6 +80,17 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
   a781faf2, vulture 7fd1587a, chital hind a6059627, hare 5dbb6e14 (an earlier standing hare,
   f8c08628, was rejected in review and not shipped).
 
+## VANA — generated Congo species (14 October 2026)
+- Used for: blue duiker (BlueDuiker), water chevrotain (WaterChevrotain).
+- Surfaces: generated for this project with Higgsfield under the owner's paid plan (Pro): GPT
+  Image 2.5 front, side and back reference views (duiker 14002d7a, 73eb7073, f2a9eb31; chevrotain
+  766de682, 6031bedb, 89bdaf79), lifted with Tripo H3.1 multiview (20k faces, PBR, detailed
+  texture; duiker d236ae94, chevrotain f4c95599). Reference views and per-clip review sheets are
+  in `docs/art-review/congo-2026-10-14/`.
+- Skeleton and clips: the Quaternius Deer rig and its clips (CC0), rest pose refitted to each body
+  (`fit feet`); the deer's surface is not used.
+- Rebuild: `ART=<dir of <species>-tripo.glb> tools/art/build_species.sh duiker chevrotain`.
+
 ## VANA — generated wild boar (WildBoar)
 - Used for: boar (WildBoar), from 5 October 2026.
 - Surface: generated for this project with Higgsfield under the owner's paid plan (Pro). Three
@@ -173,6 +184,8 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
   - `animals/WhiteRumpedVulture.glb`: sha256 `dcd2259e64a75b99`
   - `animals/ChitalHind.glb`: sha256 `964cd399c9ba3459`
   - `animals/Hare.glb`: sha256 `21c4e03805abedc2`
+  - `animals/BlueDuiker.glb`: sha256 `c5ae0e49d7c94327`
+  - `animals/WaterChevrotain.glb`: sha256 `faa47f04cf2a1471`
   - `animals/Tiger.glb`: sha256 `7d7c3d9546d1bbeb`
   - `animals/Elephant.glb`: sha256 `682e6b100ff1a6a23`
   - `animals/Rabbit.glb`: sha256 `763c19a2606208f05`
