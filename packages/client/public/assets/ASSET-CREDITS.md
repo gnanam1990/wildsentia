@@ -94,10 +94,10 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
 - African leopard (AfricanLeopard): GPT Image 2.5 views (front d1c940e8, side 0933d8c9, back
   33b3b257; an earlier front view, db00bcf2, was not used: its tail swung out), Tripo H3.1
   multiview f5592116 (20k faces, PBR, detailed texture). Skeleton, weights and clips are this
-  project's own, built by `tools/art/rig_african_leopard.py` (36 bones; Idle, Walk, Run (the trot),
+  project's own, built by `tools/art/rig_big_cat.py` (36 bones; Idle, Walk, Run (the trot),
   Gallop, Sneak, Eating, Drinking, Resting, Pounce, Bite, Death): planted-paw IK strides designed
   against the client's stride length, baked to plain keys. Keyframed, not motion capture.
-  Rebuild: `Blender -b --python tools/art/rig_african_leopard.py -- --mesh leopard-tripo.glb --out AfricanLeopard.glb`.
+  Rebuild: `Blender -b --python tools/art/rig_big_cat.py -- --species leopard --mesh leopard-tripo.glb --out AfricanLeopard.glb`.
 
 ## VANA — generated wild boar (WildBoar)
 - Used for: boar (WildBoar), from 5 October 2026.
@@ -163,14 +163,12 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
 - Licence: output generated on a paid Higgsfield plan, owned by the project under Higgsfield's
   terms of service. Re-check those terms before production.
 - Source retained unchanged: `animals/Tiger.glb`, unrigged, zero animation clips.
-- Live derivative: `animals/TigerRigged.glb`. Locally fitted skeleton and geometric weights;
-  oriented +Z and animated by `tools/assets/rig_local_tiger.py`. No new generation credits used.
-- Authored clips: Idle, Walk, Run, Sneak, Eating, Drinking, Resting, Death. These are simplified
-  poses/cycles, not motion capture. Walk, Run (a trot) and Sneak were rewritten on 10 October 2026
-  by `tools/assets/big_cat_gaits.mjs` (a cat's four-beat walk with planted paws), in both the tiger
-  and the leopard. Resting is an idle variant, not a lying-down animation;
-  feeding/drinking are head-lowering gestures without mouth/water or carcass contact.
-- Manual weight painting, gait/contact and anatomy review remain pending.
+- Live derivative since 14 October 2026: `animals/TigerCat.glb`, the same surface on the big-cat
+  rig the leopards use (`tools/art/rig_big_cat.py --species tiger`: 36 bones fitted to joints
+  measured from the mesh; Idle, Walk, Run (the trot), Gallop, Sneak, Eating, Drinking, Resting,
+  Pounce, Bite, Death as planted-paw IK strides baked to keys). Keyframed, not motion capture.
+  No new generation credits used. The earlier `TigerRigged.glb` (a 19-bone fitted skeleton,
+  `tools/assets/rig_local_tiger.py`) is retired.
 - **Not the Amil “Running Tiger” Sketchfab asset.** The official download did not complete
   (`ERR_BLOCKED_BY_CLIENT` in Chrome); no Amil model was imported or attributed as shipped.
 
@@ -194,11 +192,11 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
   - `animals/Hare.glb`: sha256 `21c4e03805abedc2`
   - `animals/BlueDuiker.glb`: sha256 `c5ae0e49d7c94327`
   - `animals/WaterChevrotain.glb`: sha256 `faa47f04cf2a1471`
-  - `animals/AfricanLeopard.glb`: sha256 `89e2b28182669488`
+  - `animals/AfricanLeopard.glb`: sha256 `a07d1164da0eeb10`
   - `animals/Tiger.glb`: sha256 `7d7c3d9546d1bbeb`
   - `animals/Elephant.glb`: sha256 `682e6b100ff1a6a23`
   - `animals/Rabbit.glb`: sha256 `763c19a2606208f05`
-  - `animals/TigerRigged.glb`: sha256 `de507500a8afe2ec`
+  - `animals/TigerCat.glb`: sha256 `73a279b4be2de348`
   - `animals/ElephantWalking.glb`: sha256 `f82c664c59e76713`
   - `animals/AsianElephantAdultMale.glb`: sha256 `fa5095bb38155cc041363ac60eb6d9a2f56cc660ffa2e322fd8a229afc841c8c`
   - `animals/AsianElephantAdultFemale.glb`: sha256 `4b2259f653ca329b0c61e69a155f312b97555d92b66506731edfcec5fb54de03`

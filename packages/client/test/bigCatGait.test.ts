@@ -33,12 +33,11 @@ const qmul = (a: Q, b: Q): Q => [a[3]*b[0]+a[0]*b[3]+a[1]*b[2]-a[2]*b[1], a[3]*b
   a[3]*b[2]+a[0]*b[1]-a[1]*b[0]+a[2]*b[3], a[3]*b[3]-a[0]*b[0]-a[1]*b[1]-a[2]*b[2]];
 const rotate = (q: Q, v: V): V => { const p = qmul(qmul(q, [v[0], v[1], v[2], 0]), [-q[0], -q[1], -q[2], q[3]]); return [p[0], p[1], p[2]]; };
 
-/** The interim tiger rig's feet, and the leopard rig's (tools/art/rig_african_leopard.py) toes. */
-const OLD_RIG = { feet: ['front.1.foot', 'front.-1.foot', 'back.1.foot', 'back.-1.foot'], tip: 0.12, ground: 0.02 };
+/** The big-cat rig's (tools/art/rig_big_cat.py) toes. */
 const CAT_RIG = { feet: ['fingers.L', 'fingers.R', 'toes.L', 'toes.R'], tip: 0.05, ground: 0.012 };
 
 /** Each paw tip's height and fore-aft position over one cycle of a clip. */
-function paws(file: string, clip: string, rig = OLD_RIG) {
+function paws(file: string, clip: string, rig = CAT_RIG) {
   const { gltf, read } = load(file);
   const parent = new Map<number, number>();
   gltf.nodes.forEach((n, i) => n.children?.forEach((c) => parent.set(c, i)));
@@ -78,31 +77,9 @@ function paws(file: string, clip: string, rig = OLD_RIG) {
 }
 
 describe('the big cats\' strides', () => {
-  it.each(['TigerRigged.glb'])('%s walks: each paw planted most of the stride, swept under the body, lifted between, never through the ground', (file) => {
-    for (const paw of paws(file, 'Walk')) {
-      expect(paw.planted, paw.leg).toBeGreaterThan(0.5);
-      expect(paw.planted, paw.leg).toBeLessThan(0.8);
-      expect(paw.sweep, paw.leg).toBeGreaterThan(0.45);
-      expect(paw.lift, paw.leg).toBeGreaterThan(0.05);
-      expect(paw.lowest, paw.leg).toBeGreaterThan(0.055); // the paw tip's resting height is 0.061
-    }
-  });
-
-  it('trots on diagonal pairs and stalks low, with the same footing', () => {
-    for (const paw of paws('TigerRigged.glb', 'Run')) {
-      expect(paw.planted, paw.leg).toBeGreaterThan(0.3);
-      expect(paw.planted, paw.leg).toBeLessThan(0.6);
-      expect(paw.lowest, paw.leg).toBeGreaterThan(0.055);
-    }
-    for (const paw of paws('TigerRigged.glb', 'Sneak')) {
-      expect(paw.planted, paw.leg).toBeGreaterThan(0.55);
-      expect(paw.lowest, paw.leg).toBeGreaterThan(0.055);
-    }
-  });
-
-  // The leopard's own rig, in metres (0.65 m tall): paw tips rest about 14 mm above the ground.
-  it('the leopard walks on planted paws: a four-beat walk, each paw down most of the stride, lifted clear between', () => {
-    for (const paw of paws('AfricanLeopard.glb', 'Walk', CAT_RIG)) {
+  // Both cats' own rig (tools/art/rig_big_cat.py), built 0.65 m tall: paw tips rest about 14 mm up.
+  it.each(['AfricanLeopard.glb', 'TigerCat.glb'])('%s walks on planted paws: a four-beat walk, each paw down most of the stride, lifted clear between', (file) => {
+    for (const paw of paws(file, 'Walk', CAT_RIG)) {
       expect(paw.planted, paw.leg).toBeGreaterThan(0.5);
       expect(paw.planted, paw.leg).toBeLessThan(0.8);
       expect(paw.sweep, paw.leg).toBeGreaterThan(0.35);
@@ -110,18 +87,18 @@ describe('the big cats\' strides', () => {
       expect(paw.lowest, paw.leg).toBeGreaterThan(-0.005);
     }
   });
-  it('the leopard trots, gallops with long flights between footfalls, and stalks low, never through the ground', () => {
-    for (const paw of paws('AfricanLeopard.glb', 'Run', CAT_RIG)) {
+  it.each(['AfricanLeopard.glb', 'TigerCat.glb'])('%s trots, gallops with long flights between footfalls, and stalks low, never through the ground', (file) => {
+    for (const paw of paws(file, 'Run', CAT_RIG)) {
       expect(paw.planted, paw.leg).toBeGreaterThan(0.3);
       expect(paw.planted, paw.leg).toBeLessThan(0.6);
       expect(paw.lowest, paw.leg).toBeGreaterThan(-0.005);
     }
-    for (const paw of paws('AfricanLeopard.glb', 'Gallop', CAT_RIG)) {
+    for (const paw of paws(file, 'Gallop', CAT_RIG)) {
       expect(paw.planted, paw.leg).toBeLessThan(0.45);
       expect(paw.lift, paw.leg).toBeGreaterThan(0.08);
       expect(paw.lowest, paw.leg).toBeGreaterThan(-0.005);
     }
-    for (const paw of paws('AfricanLeopard.glb', 'Sneak', CAT_RIG)) {
+    for (const paw of paws(file, 'Sneak', CAT_RIG)) {
       expect(paw.planted, paw.leg).toBeGreaterThan(0.6);
       expect(paw.lowest, paw.leg).toBeGreaterThan(-0.005);
     }
