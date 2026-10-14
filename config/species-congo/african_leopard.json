@@ -53,7 +53,7 @@
       }
     ],
     "dailyIntakeKg": 2.5,
-    "offRosterShare": 0.3,
+    "offRosterShare": 0.45,
     "gutCapacityBodyFraction": 0.14,
     "waterNeedLPerDay": 3,
     "canScavenge": true,

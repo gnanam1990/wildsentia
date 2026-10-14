@@ -163,4 +163,21 @@ counts at day 365 (founding in brackets).
   - Mangabeys also founded on terra firme at 0.5/km², to 3,300.
 
   At about 41,000 animals the hour's median is 1.13 s and its worst 1.28 s. The one-year soak of this tuned web follows below.
+- **One year with mangabeys in the trees (seed 7, 14 October).** Mangabeys now rest and sleep up their trees, out of reach of the planar hunt solver. The eagles then turned to duikers. Two one-year soaks:
+
+  | Run | Blue duiker | Bay / Peters's | Mangabey | Leopard | Golden cat | Eagle | Red river hog |
+  |---|---|---|---|---|---|---|---|
+  | Start | 22,000 | 4,600 / 4,600 | 3,300 | 92 | 140 | 307 | 2,300 |
+  | Canopy, diets as before | 11,761 (−47%) | 4,208 / 4,229 | 2,827 | 68 | 161 | 266 | 3,775 |
+  | + diets calibrated | 18,108 (−18%) | 4,474 / 4,508 | 3,243 | 72 | 175 | 252 | 3,916 |
+
+  - Before calibration, predators took 14,061 blue duikers a year: golden cats 5,550, leopards 4,273, eagles 4,086. A golden cat took about 35 a year, twice its diet's share.
+  - The world holds 12.7 blue duikers per km², at the low end of what Central African forests hold, while the predators are at real densities. Off-roster shares are therefore calibrated to kill rates: leopard 0.3 → 0.45 (it also eats duikers the world does not hold), golden cat 0.6 → 0.85, eagle 0.92 → 0.97. Predators then took 8,108 blue duikers a year: leopards 4,218, golden cats 2,161, eagles 1,582.
+  - Still drifting after calibration:
+    - Blue duikers held to day 180 (21,258) and then fell about 600 a month in the second half.
+    - Leopards fell from 92 to 72, 37 of them starved. Eagles fell from 307 to 252, 62 of them in territorial fights.
+    - Red river hogs grew 70% and were still growing; predators took 322 a year.
+    - Golden cats rose 25%.
+  - Mangabeys held (−2%). An independent mangabey spends about 75% of its hours aloft.
+  - The hour's p95 was 1.75 s and its maximum 3.75 s, on a machine shared with other work.
 - **Hour cost.** Under the founders and diet fixes the hour's p95 was 1.58 s and its maximum 5.6 s. That run shared the machine with the CI gate and two other soaks; the budget benchmark run alone stays under 2 s.

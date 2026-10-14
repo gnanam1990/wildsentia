@@ -67,7 +67,7 @@ describe('the Congo species (1B)', () => {
     expect(eagle.archetype).toBe('raptor'); expect(eagle.locomotion.flies).toBe(true);
     expect(eagle.hunting!.preferredPrey[0]).toBe('agile_mangabey'); within(eagle.hunting!.maxPreyKg, 8, 20);
     within(eagle.lifecycle.gestationDays, 45, 50); expect(eagle.lifecycle.litterSize).toEqual([1, 1]);
-    within(eagle.diet.offRosterShare!, 0.8, 0.95);
+    within(eagle.diet.offRosterShare!, 0.8, 0.98);
     const croc = g('dwarf_crocodile');
     expect(croc.locomotion.swims).toBeDefined(); expect(croc.activity!.hourly[1]).toBe(1); expect(croc.activity!.hourly[12]).toBeLessThan(0.3);
     // A background predator of small prey: invertebrates, fish and frogs, a newborn at most.
