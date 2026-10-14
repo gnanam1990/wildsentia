@@ -38,6 +38,9 @@ parser.add_argument("--fit-tail", action="store_true")
 # feet: align front and hind feet with the rig's (right when tails differ, e.g. canids).
 # bbox: match nose-to-tail length (right when the rig's legs are much longer, e.g. boar on bull).
 parser.add_argument("--fit", choices=["feet", "bbox"], default="feet")
+# Degrees to pitch the mesh nose-down about the side axis once it faces -Y (a generated bird in
+# flight can come out with its body tilted up).
+parser.add_argument("--pitch", type=float, default=0.0)
 # A skull bearing horns (a buffalo's) moves as one with this bone: bone heat would let the horn
 # tips follow the neck too, and they stretch when the head goes down.
 parser.add_argument("--rigid-head", default="")
@@ -134,6 +137,9 @@ if turn is None:
 body.rotation_mode = "XYZ"  # glTF import leaves QUATERNION, which ignores rotation_euler
 body.rotation_euler = (0, 0, turn)
 apply_transforms(body)
+if args.pitch:
+    body.rotation_euler = (math.radians(args.pitch), 0, 0)
+    apply_transforms(body)
 lo, hi = world_bbox([body])
 body.location = Vector((-(lo.x + hi.x) / 2, -(lo.y + hi.y) / 2, -lo.z))
 apply_transforms(body)

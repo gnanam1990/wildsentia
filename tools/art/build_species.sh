@@ -9,7 +9,8 @@ BLENDER="${BLENDER:-/Applications/Blender.app/Contents/MacOS/Blender}"
 RIGS=packages/client/public/assets/animals
 OUT="${OUT:-$RIGS}"
 
-# Tripo meshes face +X (head first); FORWARD overrides.
+# Tripo meshes face +X (head first); FORWARD overrides. PITCH (degrees) levels a body that comes out
+# tilted (the flying eagle: FORWARD=-Y PITCH=46.5).
 # species  rig       output         bones that must not deform  clips to review  [fit]
 table='
 boar     Bull     WildBoar      Tail4,Tail5,Tail6,Tail7  Idle,Walk,Eating,Gallop,Idle_Headlow,Death  bbox
@@ -42,7 +43,7 @@ echo "$table" | while read -r species rig out nodeform clips fit rigidhead; do
   [ "$nodeform" = "-" ] && nodeform=""
   mkdir -p "$ART/review/$species"
   "$BLENDER" -b --python tools/art/bind_to_rig.py -- --mesh "$ART/$species-tripo.glb" --rig "$RIGS/$rig.glb" \
-    --mesh-forward="${FORWARD:-X}" --out "$ART/review/$species/$out.glb" --no-deform "$nodeform" --review-clips "$clips" --fit "${fit:-feet}" ${rigidhead:+--rigid-head "$rigidhead"} 2>&1 \
+    --mesh-forward="${FORWARD:-X}" --out "$ART/review/$species/$out.glb" --no-deform "$nodeform" --review-clips "$clips" --fit "${fit:-feet}" --pitch="${PITCH:-0}" ${rigidhead:+--rigid-head "$rigidhead"} 2>&1 \
     | grep -E "FIT|SKIN|WROTE|Traceback|Error" | sed "s/^/$species: /"
   cp "$ART/review/$species/$out.glb" "$OUT/$out.glb"
 done

@@ -81,7 +81,8 @@ export function visualForAnimal(animal: Pick<AnimalState, 'speciesId' | 'sex' | 
   // older rig, built with spreadable wings and Flap/Glide clips, stands in.
   if (animal.speciesId === 'vulture' && airborne) return { ...SPECIES_VISUALS.vulture!, model: { file: '/assets/animals/Vulture.glb' } };
   // The crowned eagle has a second model, generated with its wings spread, for the air.
-  if (animal.speciesId === 'crowned_eagle' && airborne) return { ...SPECIES_VISUALS.crowned_eagle!, heightM: 0.35, model: { file: '/assets/animals/CrownedEagleFlying.glb' } };
+  // Its rest pose holds the wings raised in a V (2.0 units tall to a 3.24 span): 1.05 m tall gives a 1.7 m wingspan.
+  if (animal.speciesId === 'crowned_eagle' && airborne) return { ...SPECIES_VISUALS.crowned_eagle!, heightM: 1.05, model: { file: '/assets/animals/CrownedEagleFlying.glb' } };
   // Chital hinds carry no antlers; the generated stag model stays for males and the young.
   if (animal.speciesId === 'chital' && animal.sex === 'female' && animal.lifeStage !== 'newborn' && animal.lifeStage !== 'juvenile')
     return { ...SPECIES_VISUALS.chital!, model: { file: '/assets/animals/ChitalHind.glb' } };
@@ -120,7 +121,7 @@ export function modelStatus(speciesId: string): string {
   if (speciesId === 'african_golden_cat') return 'Generated golden cat on the big-cat rig · planted-paw gaits, keyframed, not motion capture';
   if (speciesId === 'forest_elephant') return 'Generated forest elephant on the generic elephant rig · its walk (with a swinging trunk) and feeding clips';
   if (speciesId === 'agile_mangabey') return 'Generated agile mangabey on the langur rig · the langur\'s clips';
-  if (speciesId === 'crowned_eagle') return 'Generated crowned eagle on the vulture rig · a wings-spread model in the air; its side profile in flight pending';
+  if (speciesId === 'crowned_eagle') return 'Generated crowned eagle on the vulture rig · a wings-spread model, level in the air';
   if (speciesId === 'dwarf_crocodile') return 'Generated dwarf crocodile on a skeleton of its own · high walk, swim, jaws and death keyframed, not motion capture';
   if (speciesId === 'water_chevrotain') return 'Generated water chevrotain on the deer rig · the deer\'s clips; it swims with its back at the waterline';
   if (speciesId === 'tiger') return 'Generated tiger on its own big-cat rig · planted-paw gaits, keyframed, not motion capture';
