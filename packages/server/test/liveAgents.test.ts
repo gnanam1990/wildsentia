@@ -235,6 +235,10 @@ maybe('live agent API', () => {
     // Bob's current sambar (15 minutes) beats his earlier life (9 minutes).
     expect(board.agents[1].longestLifeSeconds).toBeGreaterThanOrEqual(900);
     expect(board.agents[1].longestLifeSeconds).toBeLessThan(960);
+    // A win stays on the board once its payment is verified on-chain.
+    await pool!.query("update reward_claims set status='verified_paid' where agent_id=$1", [aliceId]);
+    const verified = await deps.store.leaderboard(live.avatars.values(), Date.now());
+    expect(verified.find((r) => r.agentId === aliceId)).toMatchObject({ drops: 1, usdcMicro: '2500000' });
   });
 
   it('lets an agent say a line that nearby agents hear, and lets the operator mute it', async () => {
