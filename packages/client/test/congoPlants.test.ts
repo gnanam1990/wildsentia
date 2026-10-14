@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { CONGO_GRID, ISLAND_GRID, congoChannelHalfM, congoRivers, patchCentre, riverIndex } from '@vana/shared';
+import { CONGO_GRID, ISLAND_GRID, congoChannelHalfM, congoRivers, patchCentre, riverIndex, treeAnchorForPatch } from '@vana/shared';
 import { setWorldGrid } from '../src/worldGrid.js';
 import { CONGO_KINDS, congoPlantGeometry, planCongoPatch, type CongoKind } from '../src/congoPlants.js';
 import type { PatchView } from '../src/terrain.js';
@@ -18,6 +18,23 @@ describe('Congo plants', () => {
     expect(a).toEqual(b);
     const c = patchCentre(CONGO_GRID, 12_880);
     for (const p of a) { expect(Math.abs(p.x - c.x)).toBeLessThanOrEqual(150); expect(Math.abs(p.z - c.z)).toBeLessThanOrEqual(150); }
+  });
+  // A leopard or golden cat climbs at its patch's tree anchor (shared/treeAnchor.ts), 6 m up; the
+  // forest stands a real canopy tree there, so a climbing cat is never drawn on thin air.
+  it('stands a canopy tree at every climbable patch\'s tree anchor, and none where nothing can climb', () => {
+    setWorldGrid(CONGO_GRID);
+    for (const habitat of ['terra_firme', 'flooded_forest']) {
+      const view = patch(12_880, habitat), anchor = treeAnchorForPatch(CONGO_GRID, view)!;
+      expect(anchor, habitat).not.toBeNull();
+      const at = planCongoPatch(view, 7).filter((p) => p.kind === 'canopy' && p.x === anchor.x && p.z === anchor.z);
+      expect(at, habitat).toHaveLength(1);
+      expect(planCongoPatch(view, 7, new Set(['canopy'])).some((p) => p.x === anchor.x && p.z === anchor.z)).toBe(true);
+      expect(planCongoPatch(view, 7, new Set(['herb'])).some((p) => p.x === anchor.x && p.z === anchor.z)).toBe(false);
+    }
+    const open = { ...patch(12_880, 'terra_firme'), canopyCover: 0.1 };
+    const anchorless = treeAnchorForPatch(CONGO_GRID, open);
+    expect(anchorless).toBeNull();
+    expect(planCongoPatch(patch(12_882, 'bai'), 7).filter((p) => p.kind === 'canopy')).toEqual([]);
   });
   it('make terra firme a layered forest, swamps Raphia palms, and bais open sedge', () => {
     setWorldGrid(CONGO_GRID);
