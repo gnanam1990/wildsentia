@@ -194,7 +194,7 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
   - `animals/Hare.glb`: sha256 `21c4e03805abedc2`
   - `animals/BlueDuiker.glb`: sha256 `c5ae0e49d7c94327`
   - `animals/WaterChevrotain.glb`: sha256 `faa47f04cf2a1471`
-  - `animals/AfricanLeopard.glb`: sha256 `8bdb2ac4f4b748d4`
+  - `animals/AfricanLeopard.glb`: sha256 `89e2b28182669488`
   - `animals/Tiger.glb`: sha256 `7d7c3d9546d1bbeb`
   - `animals/Elephant.glb`: sha256 `682e6b100ff1a6a23`
   - `animals/Rabbit.glb`: sha256 `763c19a2606208f05`
