@@ -129,3 +129,38 @@ Screenshots: [flooded forest in the monsoon](2026-10-13-congo-screens/flooded-fo
 - **The canopy is too open.** The forest uses the island's plant mixes and a budget of about 300 trees a patch, far fewer than a rainforest's.
 - **Water edges are square.** Rivers and floods are drawn one 300 m square at a time, which shows from the air.
 - **Placeholder models.** The species are on the temporary rigs, labelled so in the model status.
+
+## Balancing the Congo food web (14 October 2026)
+
+One-year soaks, seed 7, the full founding population (`SEED=7 DAYS=365 SOAK_PROGRESS=1 npx tsx packages/runner/src/congoSoak.ts`),
+counts at day 365 (founding in brackets).
+
+| Run | Blue duiker | Bay / Peters's | Red river hog | Golden cat | Leopard |
+|---|---|---|---|---|---|
+| 2A as built (18,000) | 4,339 (−76%) | 3,125 / 3,115 | 3,310 | 94 | 57; rose to 179 by day 180, then crashed |
+| + founders across their breeding cycle | stopped at day 150: 12,931 | 4,174 / 4,253 | 2,920 | 128 | 102 |
+| + food from beyond the roster | 11,888 (−34%) | 4,102 / 4,208 | 3,636 | 164 | 76; no boom |
+
+- **Founders across their breeding cycle.** In the first run every founding female was receptive at once. The leopards bred in lockstep and no duiker was born before day 207. Founders are now drawn somewhere in their inter-birth interval, already pregnant when within a gestation of the next birth.
+- **Food from beyond the roster.** The cats had been eating their whole diet as the nine simulated species. Their hunger now falls on those species only for the share of food the world holds (`diet.offRosterShare`). The leopard's is 0.35 and the golden cat's 0.6; sources are in `docs/2026-10-13-congo-species-sources.md`.
+- **Phase B and the attribution soak.** The new species were added: forest elephant, agile mangabey, crowned eagle and dwarf crocodile. A 60-day soak then counted kills by predator. In 60 days predators took about 3,400 blue duikers, against about 1,800 born:
+
+  | Blue duikers taken | Count |
+  |---|---|
+  | Eagles | 1,455 |
+  | Golden cats | 1,009 |
+  | Leopards | 893 |
+  | Crocodiles | 58 |
+
+  Eagles took 251 of the 2,500 mangabeys. Two causes:
+  - The eagles killed about twice the share of simulated prey that their diet implies.
+  - The 2A budget had halved the blue duikers to 7.8/km², below their cited 16/km².
+
+  The fix:
+  - Blue duikers up to 22,000 (12.7/km²). That is as many as the 2 s hour holds; 27,000 took a median 1.69 s and a worst 2.16 s.
+  - The eagle's off-roster share calibrated to its kill rate (0.92), with lower preferences for mangabeys and blue duikers.
+  - Eagles at one pair per 15 km² (307).
+  - Mangabeys also founded on terra firme at 0.5/km², to 3,300.
+
+  At about 41,000 animals the hour's median is 1.13 s and its worst 1.28 s. The one-year soak of this tuned web follows below.
+- **Hour cost.** Under the founders and diet fixes the hour's p95 was 1.58 s and its maximum 5.6 s. That run shared the machine with the CI gate and two other soaks; the budget benchmark run alone stays under 2 s.

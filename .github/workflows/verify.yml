@@ -41,6 +41,8 @@ jobs:
       # founding population steps in about 0.9 s. This runner is about 2.4x slower (2.13 s,
       # 14 October 2026), so it checks a budget scaled to it: a 1.6x regression still fails here.
       VANA_CONGO_HOUR_BUDGET_MS: '3500'
+      # One garbage-collection pause in a sliced checkpoint, scaled as the hour budget is (about 2.4x).
+      VANA_CONGO_SLICE_PAUSE_MS: '600'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
