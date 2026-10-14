@@ -9,6 +9,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import {
   arenaCommand,
   labRequest,
+  leagueChoices,
   leagueRequest,
   type FollowedLife,
 } from "@vana/shared";
@@ -116,6 +117,8 @@ export function installExperiences(
       scenarios: ["no_rain", "fewer_predators"],
       days: [3, 7, 30],
       voiceSeconds: 180,
+      world: service.leagueWorld(),
+      leagueSpecies: leagueChoices(service.leagueWorld()),
     }));
     scope.get("/experiences/moments", async () => {
       const p = await moments();
@@ -169,6 +172,7 @@ export function installExperiences(
         const request = leagueRequest(
           req.body,
           config.models.map((p) => p.id),
+          service.leagueWorld(),
         );
         if (!request) return reply.code(400).send({ error: "invalid_match" });
         const job = await service.create(owner(req, reply), request, "league");

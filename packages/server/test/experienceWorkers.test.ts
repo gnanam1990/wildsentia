@@ -55,6 +55,19 @@ function run(
 }
 
 describe("actual experience simulation workers", () => {
+  it("counts the Congo forest's leopards and golden cats as predators in the fewer-predators lab", () => {
+    const source = takeSnapshot(createWorld(options));
+    for (const a of source.agents) {
+      if (a.speciesId === "tiger") a.speciesId = "african_leopard";
+      else if (a.speciesId === "leopard") a.speciesId = "african_golden_cat";
+    }
+    const counts = (s: typeof source) => ["african_leopard", "african_golden_cat"]
+      .map((id) => s.agents.filter((a) => a.speciesId === id).length);
+    const [leopards, cats] = counts(source);
+    const changed = experimentSnapshot(source, "fewer_predators");
+    expect(counts(changed.snapshot)).toEqual([Math.ceil(leopards! / 2), Math.ceil(cats! / 2)]);
+    expect(changed.removed).toBeGreaterThanOrEqual(Math.floor(leopards! / 2) + Math.floor(cats! / 2));
+  });
   it("removes exactly half each predator species without mutating the source or losing nutrient accounting", () => {
     const w = createWorld(options),
       source = takeSnapshot(w),
@@ -163,6 +176,34 @@ describe("actual experience simulation workers", () => {
     expect(frames[0]!.animal).not.toBeNull();
     expect(frames[0]!.water.length).toBeGreaterThan(0);
     expect(result.frame.points).toBeGreaterThanOrEqual(100);
+  }, 150000);
+  it("plays a match in the Congo forest with its own animals when the world is the Congo", async () => {
+    const frames: ArenaFrame[] = [];
+    const result = await run(
+      {
+        kind: "league",
+        request: {
+          mission: "water",
+          species: "blue_duiker",
+          durationSeconds: 180,
+          seed: 42,
+          players: ["local:forager", "local:careful"],
+        },
+        player: { id: "local:forager", label: "Forager", source: "local" },
+        speciesDir: fileURLToPath(new URL("../../../config/species-congo", import.meta.url)),
+        world: "congo",
+      },
+      (m) => {
+        if (m.type === "league_frame") frames.push(m.frame);
+      },
+      120000,
+    );
+    expect(result.providerError).toBe(false);
+    expect(frames[0]!.animal?.speciesId).toBe("blue_duiker");
+    const seen = new Set(frames.flatMap((f) => f.nearby.map((a) => a.speciesId)));
+    expect([...seen].every((id) => !["tiger", "chital", "hare", "leopard"].includes(id))).toBe(true);
+    expect(seen.size).toBeGreaterThan(0);
+    expect(result.frame.drank).toBe(true);
   }, 150000);
   it("disqualifies a failed model, and cannot silently substitute a local strategy", async () => {
     let requests = 0;

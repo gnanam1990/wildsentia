@@ -8,7 +8,9 @@ import type {
   ArenaFrame,
   LeaguePlayer,
   LabResult,
+  LeagueWorld,
 } from "@vana/shared";
+import { isCongoProfile } from "@vana/shared";
 import { SnapshotStore } from "../db/snapshotStore.js";
 import type { SimHost } from "../simHost.js";
 import type { ExperienceStore } from "./store.js";
@@ -44,6 +46,10 @@ export class ExperienceService {
     readonly speciesDir: string,
   ) {
     this.provider = new LeagueProvider(config, store);
+  }
+  /** The server's own world, where its matches are played. */
+  leagueWorld(): LeagueWorld {
+    return isCongoProfile(this.host.world?.terrainProfile) ? "congo" : "island";
   }
   async start(): Promise<void> {
     await this.store.recover();
@@ -98,6 +104,7 @@ export class ExperienceService {
             request: request as LeagueRequest,
             player,
             speciesDir: this.speciesDir,
+            world: this.leagueWorld(),
           });
         }
     } catch {

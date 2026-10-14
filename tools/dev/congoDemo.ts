@@ -18,6 +18,9 @@ import { buildApi } from '../../packages/server/src/api.js';
 import { Gateway } from '../../packages/server/src/gateway.js';
 import { liveRuntime } from '../../packages/server/src/live/runtime.js';
 import { CONGO_POPULATION } from '../../packages/sim/src/forest.js';
+import { ExperienceStore } from '../../packages/server/src/experiences/store.js';
+import { ExperienceService } from '../../packages/server/src/experiences/service.js';
+import { experienceConfig } from '../../packages/server/src/experiences/config.js';
 
 const PORT = Number(process.env.PORT ?? 8080), HOST = '127.0.0.1', ORIGIN = process.env.VANA_DEMO_ORIGIN ?? 'http://localhost:5173';
 /** Test people of this demo only: test wallets, never anyone's real one. */
@@ -58,7 +61,11 @@ async function main(): Promise<void> {
     const n = Number(cookie(req.headers.cookie));
     return PEOPLE.some((p) => p.n === n) ? { agentId: `ag_${n.toString(16).padStart(16, 'd')}`, xAccountDays: 365 } : null;
   } };
-  const api = buildApi({ host, pool, live: { ...live.routes, spot: live.spot, species: () => [...host.world.species.values()], humans } });
+  // The experiences (league, lab), played among the Congo forest's own animals.
+  const experiences = new ExperienceService(new ExperienceStore(pool), host, experienceConfig(process.env),
+    fileURLToPath(new URL('../../config/species-congo', import.meta.url)));
+  await experiences.start();
+  const api = buildApi({ host, pool, experiences, live: { ...live.routes, spot: live.spot, species: () => [...host.world.species.values()], humans } });
   // The demo's own sign-in: test people only, a cookie only this demo reads.
   api.get('/dev/people', async () => ({ people: PEOPLE }));
   api.get<{ Querystring: { person?: string } }>('/dev/signin', async (req, reply) => {

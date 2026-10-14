@@ -8,6 +8,7 @@ import type {
   LabSample,
   LeaguePlayer,
   LeagueStanding,
+  LeagueWorld,
   SafariAnswer,
 } from "@vana/shared";
 import { mountThemeButton } from "./theme.js";
@@ -15,6 +16,9 @@ import { isAnimalLinkId } from "./animalLink.js";
 import type { ArenaView } from "./arenaView.js";
 import { SafariVoice } from "./safariVoice.js";
 import { nearestHuntable } from "./arenaControls.js";
+import { leagueOptionLabel, worldWords } from "./experienceWorld.js";
+import { setWorldGrid } from "./worldGrid.js";
+import { CONGO_GRID } from "@vana/shared";
 const $ = <T extends HTMLElement = HTMLElement>(id: string): T =>
   document.getElementById(id) as T;
 const node = <K extends keyof HTMLElementTagNameMap>(
@@ -289,7 +293,7 @@ async function renderLeague(job: ExperienceJob): Promise<void> {
     players: string[];
   };
   $("league-match-title").textContent =
-    `${request.species} · ${request.mission === "water" ? "Find water" : request.mission === "hunt" ? "Complete a hunt" : "Stay alive"}`;
+    `${leagueOptionLabel({ id: request.species, hunts: false })} · ${request.mission === "water" ? "Find water" : request.mission === "hunt" ? "Complete a hunt" : "Stay alive"}`;
   const result = job.result && "standings" in job.result ? job.result : null;
   const standings = result?.standings ?? job.progress.standings ?? [];
   for (const s of standings) await drawStanding(s);
@@ -457,7 +461,7 @@ async function refreshLeaderboard() {
       );
     for (const t of [
       m.request.mission,
-      m.request.species,
+      leagueOptionLabel({ id: m.request.species, hunts: false }),
       w.map((s) => s.player.label).join(" & ") || "No finisher",
       w.map((s) => String(s.frame.points)).join(" / ") || "—",
     ])
@@ -1071,9 +1075,13 @@ async function start() {
   // Otherwise first-visit responses can each set a different owner cookie.
   const jobs = await refreshJobs();
   profileReady = true;
-  const config = await api<{ models: LeaguePlayer[]; liveVoice: boolean }>(
-    "info",
-  );
+  const config = await api<{
+    models: LeaguePlayer[];
+    liveVoice: boolean;
+    world?: LeagueWorld;
+    leagueSpecies?: Array<{ id: string; hunts: boolean }>;
+  }>("info");
+  showWorld(config.world ?? "island", config.leagueSpecies);
   for (const id of ["league-first", "league-second"]) {
     const select = $(id) as HTMLSelectElement;
     for (const m of config.models)
@@ -1106,9 +1114,7 @@ async function start() {
   schedulePoll();
   scheduleLives();
   selectTab();
-  chat(
-    "Welcome to the island. Ask about an animal or let me show you a saved forest moment.",
-  );
+  chat(worldWords(config.world ?? "island").welcome);
 }
 document
   .querySelectorAll<HTMLButtonElement>(
@@ -1137,10 +1143,29 @@ const missionInput = document.querySelector<HTMLSelectElement>(
   speciesInput = document.querySelector<HTMLSelectElement>(
     "#league-form [name=species]",
   )!;
+let hunters = new Set(["tiger", "leopard"]);
 missionInput.onchange = () => {
   for (const option of speciesInput.options)
-    option.disabled =
-      missionInput.value === "hunt" &&
-      !["tiger", "leopard"].includes(option.value);
-  if (speciesInput.selectedOptions[0]?.disabled) speciesInput.value = "tiger";
+    option.disabled = missionInput.value === "hunt" && !hunters.has(option.value);
+  if (speciesInput.selectedOptions[0]?.disabled)
+    speciesInput.value = [...hunters][0] ?? speciesInput.value;
 };
+/** The server's world: its words, and its own animals in the league. */
+function showWorld(world: LeagueWorld, choices?: Array<{ id: string; hunts: boolean }>) {
+  const words = worldWords(world);
+  // A match's positions are in its world's own 48 km grid (the island's is the default).
+  if (world === "congo") setWorldGrid(CONGO_GRID);
+  $("experiences-eyebrow").textContent = words.eyebrow;
+  $("lab-title").textContent = words.labTitle;
+  $("lab-changed-key").textContent = words.changed;
+  $("league-seed-label").textContent = words.seed;
+  $("footer-story").textContent = words.story;
+  const showMe = $("ask-show-me"), meet = $("ask-meet");
+  showMe.textContent = words.showMe; showMe.dataset.question = words.showMe;
+  meet.textContent = words.meet; meet.dataset.question = words.meetQuestion;
+  ($("safari-question") as HTMLInputElement).placeholder = words.placeholder;
+  if (!choices?.length) return;
+  hunters = new Set(choices.filter((c) => c.hunts).map((c) => c.id));
+  speciesInput.replaceChildren(...choices.map((c) => new Option(leagueOptionLabel(c), c.id)));
+  missionInput.onchange?.(new Event("change"));
+}
