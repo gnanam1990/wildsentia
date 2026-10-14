@@ -1,4 +1,4 @@
-import { isCommunityMotion, type CommunityMotion, type CommunityState, type HumanMotionSample } from '@vana/shared';
+import { ISLAND_GRID, isCommunityMotion, type CommunityMotion, type CommunityState, type HumanMotionSample, type WorldGrid } from '@vana/shared';
 import type { Database } from './pool.js';
 
 interface MotionRow {
@@ -24,11 +24,11 @@ export class HumanMotionStore {
   }
 
   /** Called only by the lock-owning world writer. A retried checkpoint cannot duplicate a segment. */
-  async append(recordings: readonly { community: CommunityState; motion: CommunityMotion }[]): Promise<void> {
+  async append(recordings: readonly { community: CommunityState; motion: CommunityMotion }[], grid: WorldGrid = ISLAND_GRID): Promise<void> {
     if (recordings.length === 0) return;
     const rows: Array<[string, number, number, string]> = [];
     for (const { community, motion } of recordings) {
-      if (!isCommunityMotion(motion, community)) throw new Error('invalid executed human motion');
+      if (!isCommunityMotion(motion, community, grid)) throw new Error('invalid executed human motion');
       for (const track of motion.tracks) rows.push([track.personId, motion.startWorldTime, motion.endWorldTime, JSON.stringify(track.samples)]);
     }
     for (let start = 0; start < rows.length; start += 250) {

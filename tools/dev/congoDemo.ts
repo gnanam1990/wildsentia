@@ -38,6 +38,8 @@ async function main(): Promise<void> {
   await migrate(pool);
   const host = new SimHost({ pool, seed: Number(process.env.WORLD_SEED ?? 7), speciesDir: fileURLToPath(new URL('../../config/species-congo', import.meta.url)),
     terrainProfile: 'congo_v1', initialAgents: CONGO_POPULATION, minPopulation: {}, landscape: null,
+    // The Congo forest's village (fictional, riverside; fishing and gathering): the island's engine on the Congo grid.
+    communityProfile: 'household_v1',
     worldHoursPerRealHour: Number(process.env.WORLD_HOURS_PER_REAL_HOUR ?? 12) });
   const boot = await host.boot();
   console.log(boot.restoredFrom === null ? 'demo: booted a fresh Congo world' : `demo: restored the Congo world at ${boot.restoredFrom}`);
