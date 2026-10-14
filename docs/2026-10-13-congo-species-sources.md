@@ -105,3 +105,18 @@ These are the source values for the Phase 1 Congo species configs (sub-project 1
 18. Animal Diversity Web, *Hyemoschus aquaticus*
 19. Ultimate Ungulate, water chevrotain (Dubost 1984, 2016; Kingdon 1997)
 20. Wikipedia, Chevrotain (Kingdon 1989, diving)
+21. Ultimate Ungulate, bay duiker: https://www.ultimateungulate.com/Artiodactyla/Cephalophus_dorsalis.html
+22. Ultimate Ungulate, Peters's duiker: https://ultimateungulate.com/Artiodactyla/Cephalophorus_callipygus.html
+23. Henschel et al. 2005, Lopé leopard diet (WCS library): https://library.wcs.org/en-us/doi/ctl/view/mid/33065/pubid/PUB12363.aspx
+24. Animal Diversity Web, *Potamochoerus porcus*: https://animaldiversity.org/accounts/Potamochoerus_porcus/
+25. Ultimate Ungulate, red river hog and African buffalo: https://www.ultimateungulate.com/Artiodactyla/Potamochoerus_porcus.html, https://www.ultimateungulate.com/Artiodactyla/Syncerus_caffer.html
+26. IUCN Wild Pig Specialist Group, red river hog: https://iucn-wpsg.org/red-river-hog-detailed
+27. Korte 2008, Lopé forest buffalo (*J. Mammal.* 89:115): https://bioone.org/journals/Journal-of-Mammalogy/volume-89/issue-1/06-MAMM-A-423.1/
+28. Ultimate Ungulate, sitatunga: https://www.ultimateungulate.com/Artiodactyla/Tragelaphus_spekii.html
+29. IUCN SSC Cat Specialist Group, African golden cat: https://catsg.org/living-species-africangoldencat
+30. Bahaa-el-din 2015, PhD thesis, UKZN (golden cat ecology): https://researchspace.ukzn.ac.za/handle/10413/13517
+
+## Phase 2A (14 October 2026)
+
+Six species join the three of Phase 1 (plan: `docs/superpowers/plans/2026-10-14-congo-2a-species.md`): bay and Peters's duikers, red river hog, forest buffalo, sitatunga and the African golden cat. Field values and their sources are in `config/species-congo.sources.json`; every value without a source is marked as an assumption there. The leopard's prey now leans toward mid-sized prey, as at Lopé [3],[23]: hogs, red duikers, buffalo calves and sitatunga, with blue duikers and chevrotains less preferred.
+

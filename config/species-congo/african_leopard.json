@@ -61,7 +61,13 @@
   "hunting": {
     "preferredPrey": [
       "blue_duiker",
-      "water_chevrotain"
+      "water_chevrotain",
+      "bay_duiker",
+      "peters_duiker",
+      "red_river_hog",
+      "forest_buffalo",
+      "sitatunga",
+      "african_golden_cat"
     ],
     "stalkConcealment": 0.8,
     "commitDistanceM": 15,
@@ -92,7 +98,17 @@
       ]
     ],
     "subdueBreakFree": 0.2,
-    "cachesKills": false
+    "cachesKills": false,
+    "preyPreference": {
+      "blue_duiker": 0.8,
+      "water_chevrotain": 0.8,
+      "bay_duiker": 1.5,
+      "peters_duiker": 1.5,
+      "red_river_hog": 2.0,
+      "forest_buffalo": 0.8,
+      "sitatunga": 1.0,
+      "african_golden_cat": 0.3
+    }
   },
   "social": {
     "structure": "solitary",

@@ -1,0 +1,209 @@
+{
+  "id": "african_golden_cat",
+  "displayName": "African golden cat",
+  "archetype": "apex_predator",
+  "trophicRole": [
+    "mesopredator"
+  ],
+  "body": {
+    "adultMassKg": 9,
+    "shoulderHeightM": 0.42,
+    "massBySexKg": {
+      "female": 7,
+      "male": 11
+    }
+  },
+  "locomotion": {
+    "walkMs": 1.0,
+    "trotMs": 3.0,
+    "sprintMs": 12.0,
+    "sprintStaminaS": 8,
+    "climbsTrees": true,
+    "terrainCost": {
+      "shola": 1.0,
+      "grassland": 1.1,
+      "riparian": 1.0,
+      "rock": 1.0,
+      "marsh": 1.6,
+      "water": 3.0,
+      "terra_firme": 1.0,
+      "flooded_forest": 1.4,
+      "swamp_forest": 1.6,
+      "bai": 1.1
+    },
+    "floodedTerrainCost": {
+      "flooded_forest": 3.0
+    }
+  },
+  "senses": {
+    "sightRangeM": 50,
+    "hearingRangeM": 150,
+    "smellRangeM": 100
+  },
+  "escape": {
+    "detectionDistanceM": 60,
+    "flightInitiationM": 40,
+    "evasiveness": 0.7,
+    "avoids": [
+      "african_leopard"
+    ]
+  },
+  "diet": {
+    "eats": [
+      {
+        "target": "meat",
+        "preference": 1.0
+      }
+    ],
+    "dailyIntakeKg": 0.6,
+    "gutCapacityBodyFraction": 0.14,
+    "waterNeedLPerDay": 0.4,
+    "canScavenge": true,
+    "carrionTolerance": 0.6
+  },
+  "hunting": {
+    "preferredPrey": [
+      "blue_duiker",
+      "water_chevrotain",
+      "bay_duiker",
+      "peters_duiker",
+      "red_river_hog"
+    ],
+    "stalkConcealment": 0.8,
+    "commitDistanceM": 8,
+    "baseSuccess": 0.45,
+    "staminaCostPerChase": 0.3,
+    "huntFromHunger": 0.3,
+    "maxPreyKg": 8,
+    "preferredPreyKg": [
+      1,
+      6
+    ],
+    "subdueSeconds": [
+      [
+        0,
+        4
+      ],
+      [
+        5,
+        20
+      ],
+      [
+        8,
+        60
+      ]
+    ],
+    "subdueBreakFree": 0.2,
+    "cachesKills": false,
+    "preyPreference": {
+      "blue_duiker": 1.0,
+      "water_chevrotain": 0.3,
+      "bay_duiker": 0.2,
+      "peters_duiker": 0.2,
+      "red_river_hog": 0.3
+    }
+  },
+  "social": {
+    "structure": "solitary",
+    "groupSize": [
+      1,
+      1
+    ],
+    "alarmSharing": false,
+    "territory": {
+      "femaleKm2": 6,
+      "maleKm2": 14,
+      "floaterMortalityPerDay": 0.004
+    }
+  },
+  "activity": {
+    "hourly": [
+      0.35,
+      0.35,
+      0.35,
+      0.35,
+      0.5,
+      0.85,
+      1,
+      1,
+      0.8,
+      0.7,
+      0.7,
+      0.7,
+      0.7,
+      0.7,
+      0.7,
+      0.75,
+      0.9,
+      1,
+      1,
+      0.8,
+      0.5,
+      0.4,
+      0.35,
+      0.35
+    ]
+  },
+  "learning": {
+    "innate": {
+      "stalk_technique": 0.25,
+      "water_locations": 0.2,
+      "predator_avoidance": 0.3
+    },
+    "learnRateFromParent": 0.05
+  },
+  "lifecycle": {
+    "followFromDays": 60,
+    "maxAgeDays": 4380,
+    "baselineMortalityPerDay": 0.00018,
+    "stages": [
+      {
+        "name": "newborn",
+        "startDays": 0,
+        "sizeFactor": 0.1,
+        "dependent": true,
+        "mortalityPerDay": 0.004
+      },
+      {
+        "name": "juvenile",
+        "startDays": 30,
+        "sizeFactor": 0.35,
+        "dependent": true,
+        "mortalityPerDay": 0.002
+      },
+      {
+        "name": "subadult",
+        "startDays": 90,
+        "sizeFactor": 0.7,
+        "dependent": false,
+        "mortalityPerDay": 0.0008
+      },
+      {
+        "name": "adult",
+        "startDays": 540,
+        "sizeFactor": 1.0,
+        "dependent": false,
+        "mortalityPerDay": 0.0004
+      },
+      {
+        "name": "elder",
+        "startDays": 3650,
+        "sizeFactor": 0.95,
+        "dependent": false,
+        "mortalityPerDay": 0.002
+      }
+    ],
+    "sexualMaturityDays": 540,
+    "gestationDays": 75,
+    "litterSize": [
+      1,
+      2
+    ],
+    "interBirthIntervalDays": 365,
+    "oestrusCycleDays": 46,
+    "weanDays": 90,
+    "drinkFromDays": 60,
+    "meatFromDays": 45,
+    "dispersalDays": 360
+  }
+}

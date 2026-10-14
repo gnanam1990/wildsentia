@@ -105,7 +105,10 @@ export const ISLAND_V2_POPULATION: Record<string, number> = {
  *   decline; the one-year soak decides. A Phase 1 assumption.
  */
 export const CONGO_POPULATION: Record<string, number> = {
-  blue_duiker: 27_600, water_chevrotain: 1_840, african_leopard: 46,
+  // Phase 2A: mid-sized prey (red duikers, hogs, buffalo calves, sitatunga) feed most forest
+  // leopards; blue duikers are fewer so the hour still steps within its budget.
+  blue_duiker: 18_000, water_chevrotain: 1_840, bay_duiker: 4_600, peters_duiker: 4_600, red_river_hog: 2_300,
+  forest_buffalo: 460, sitatunga: 460, african_golden_cat: 140, african_leopard: 92,
 };
 
 /** The founding cohort of a closed island, by terrain profile. */

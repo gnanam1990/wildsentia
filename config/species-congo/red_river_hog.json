@@ -1,0 +1,179 @@
+{
+  "id": "red_river_hog",
+  "displayName": "Red river hog",
+  "archetype": "omnivore_rooter",
+  "trophicRole": [
+    "omnivore",
+    "scavenger"
+  ],
+  "body": {
+    "adultMassKg": 65,
+    "shoulderHeightM": 0.7,
+    "massBySexKg": {
+      "female": 58,
+      "male": 72
+    }
+  },
+  "locomotion": {
+    "walkMs": 1.1,
+    "trotMs": 4.0,
+    "sprintMs": 11.0,
+    "sprintStaminaS": 35,
+    "terrainCost": {
+      "shola": 1.0,
+      "grassland": 1.3,
+      "riparian": 1.1,
+      "rock": 1.6,
+      "marsh": 1.2,
+      "water": 2.0,
+      "terra_firme": 1.0,
+      "flooded_forest": 1.3,
+      "swamp_forest": 1.3,
+      "bai": 1.2
+    },
+    "floodedTerrainCost": {
+      "flooded_forest": 2.0
+    }
+  },
+  "senses": {
+    "sightRangeM": 60,
+    "hearingRangeM": 200,
+    "smellRangeM": 450
+  },
+  "escape": {
+    "detectionDistanceM": 70,
+    "flightInitiationM": 25,
+    "evasiveness": 0.5
+  },
+  "diet": {
+    "eats": [
+      {
+        "target": "roots",
+        "preference": 1.0
+      },
+      {
+        "target": "grass",
+        "preference": 0.03,
+        "foodValue": 0.5
+      },
+      {
+        "target": "browse",
+        "preference": 0.05,
+        "foodValue": 0.6
+      },
+      {
+        "target": "meat",
+        "preference": 0.2
+      }
+    ],
+    "dailyIntakeKg": 5,
+    "maxDailyIntakeKg": 9,
+    "waterNeedLPerDay": 7,
+    "canScavenge": true,
+    "carrionTolerance": 0.7
+  },
+  "social": {
+    "structure": "herd",
+    "groupSize": [
+      6,
+      20
+    ],
+    "alarmSharing": true
+  },
+  "learning": {
+    "innate": {
+      "forage_efficiency": 0.3,
+      "water_locations": 0.2,
+      "predator_avoidance": 0.3
+    },
+    "learnRateFromParent": 0.01
+  },
+  "lifecycle": {
+    "maxAgeDays": 5475,
+    "baselineMortalityPerDay": 0.0005,
+    "stages": [
+      {
+        "name": "newborn",
+        "startDays": 0,
+        "sizeFactor": 0.1,
+        "dependent": true,
+        "mortalityPerDay": 0.006
+      },
+      {
+        "name": "juvenile",
+        "startDays": 30,
+        "sizeFactor": 0.35,
+        "dependent": true,
+        "mortalityPerDay": 0.003
+      },
+      {
+        "name": "subadult",
+        "startDays": 90,
+        "sizeFactor": 0.7,
+        "dependent": false,
+        "mortalityPerDay": 0.001
+      },
+      {
+        "name": "adult",
+        "startDays": 730,
+        "sizeFactor": 1.0,
+        "dependent": false,
+        "mortalityPerDay": 0.0004
+      },
+      {
+        "name": "elder",
+        "startDays": 4745,
+        "sizeFactor": 0.95,
+        "dependent": false,
+        "mortalityPerDay": 0.002
+      }
+    ],
+    "sexualMaturityDays": 730,
+    "gestationDays": 122,
+    "litterSize": [
+      2,
+      5
+    ],
+    "interBirthIntervalDays": 365,
+    "oestrusCycleDays": 21,
+    "weanDays": 90,
+    "followFromDays": 10,
+    "gatherFromDays": 0,
+    "forageFromDays": 21,
+    "drinkFromDays": 10,
+    "dispersalDays": 600,
+    "condition": {
+      "conditionDays": 30,
+      "minBreedingCondition": 0.2,
+      "fullBreedingCondition": 0.6
+    }
+  },
+  "activity": {
+    "hourly": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      0.9,
+      0.5,
+      0.15,
+      0.1,
+      0.1,
+      0.1,
+      0.1,
+      0.1,
+      0.1,
+      0.1,
+      0.1,
+      0.15,
+      0.3,
+      0.6,
+      0.9,
+      1,
+      1,
+      1,
+      1
+    ]
+  }
+}
