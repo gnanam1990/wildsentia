@@ -126,6 +126,20 @@ function floodSheet(seed: number, bounds: LoadedGround): THREE.BufferGeometry | 
   return geometry;
 }
 
+/**
+ * The water surface where an animal stands: a river's over its channel, the flood's over the belt
+ * beside it in a flooding season, or null on dry ground. Matches what buildCongoWater draws.
+ */
+export function congoWaterSurface(seed: number, flooded: boolean): (x: number, z: number) => number | null {
+  const grid = worldGrid(), { near } = riversOf(seed), ground = congoLattice(seed).sample;
+  return (x, z) => {
+    const at = near(x, z), half = congoChannelHalfM(at.river, grid);
+    if (at.distanceM <= half) return at.levelM - RIVER_BELOW_LEVEL_M - CONGO_BASE_M;
+    if (flooded && at.distanceM <= half + at.river.floodBeltM) return ground(x, z) + FLOOD_DEPTH_M;
+    return null;
+  };
+}
+
 /** Congo 1A.5: the rivers within (and just beyond) the loaded ground, and the flood when `flooded`. */
 export function buildCongoWater(seed: number, bounds: LoadedGround, flooded: boolean): THREE.Group {
   const group = new THREE.Group();

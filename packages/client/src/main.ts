@@ -11,6 +11,7 @@ import { InsightPanel } from './insights.js';
 import { LiveAgents, activityOf, isLiveMessage, isRosterMessage, rosterActivity, usdc } from './liveAgents.js';
 import { COVER_RADIUS_M, GroundCover } from './groundCover.js';
 import { CongoForest } from './congoForest.js';
+import { congoWaterSurface } from './congoWater.js';
 import { congoCrownMaterials, congoPlantMaterials } from './congoPlants.js';
 import { AnimalLayer } from './animals.js';
 import { FollowCamera, followDistanceFor, viewMessage } from './camera.js';
@@ -566,7 +567,10 @@ const sceneUpdates = new SceneUpdates<{
           // Plants between the camera and a followed animal are cut away, as the island's trees are.
           for (const material of [...Object.values(congoPlantMaterials()), congoCrownMaterials().leaves]) observerVisibility.patch(material);
         }
-        congoForest.setScene(update.environment.patches, congoSeed, update.environment.patches.some((p) => p.flooded === true));
+        const flooded = update.environment.patches.some((p) => p.flooded === true);
+        congoForest.setScene(update.environment.patches, congoSeed, flooded);
+        // Animals swim where the river or the flood is deeper than they stand.
+        animals.waterSurfaceAt = congoWaterSurface(congoSeed, flooded);
         atmosphere.haze = 1;
       }
       const ground = waterGround(update.environment.patches);

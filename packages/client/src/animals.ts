@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { actClipTime, climbs, clipForObservedMotion, clipForState, clipPhase, elephantTrunkReach, renderStateFor, replayClipTime, struggleClip, vigilance,
   type ClimbVisualPhase, type FlightVisualPhase, climbPose } from './animation.js';
-import { PositionTracker, renderBaseY, type RenderPosition } from './space.js';
+import { PositionTracker, renderBaseY, swimBaseY, type RenderPosition } from './space.js';
 import type { AnimalState } from './protocol.js';
 import { chooseVisible } from './lod.js';
 import { RENDER_BUDGETS, type RenderTier } from './renderQuality.js';
@@ -54,6 +54,8 @@ interface Rig {
   gait: GaitClock;
   /** Hip height of the drawn animal, in metres, for its stride length. */
   hipM: number;
+  /** In water deeper than it stands at the hip (Congo rivers and flood): it swims. */
+  swimming: boolean;
   /** Stable per-animal number: its own clip phase and look-up rhythm. */
   seed: number;
   /**
@@ -100,6 +102,8 @@ export class AnimalLayer {
   #renderPositions = new Map<string, RenderPosition>();
   /** Set once the terrain is known, so animals stand on the ground rather than at sea level. */
   groundHeightAt: (x: number, z: number) => number = () => 0;
+  /** The water surface where an animal stands (the Congo's rivers and flood), or null on dry ground. */
+  waterSurfaceAt: ((x: number, z: number) => number | null) | null = null;
 
   readonly #templates = new Map<string, Promise<THREE.Group>>();
   readonly #rigs = new Map<string, Rig>();
@@ -278,7 +282,7 @@ export class AnimalLayer {
     const bodyLengthM = new THREE.Box3().setFromObject(visual).getSize(new THREE.Vector3()).z;
     const rig: Rig = { variantKey: key, group, mixer, actions, clipNames: clips.map((c) => c.name), playing: null,
       visual, footY: visual.position.y, restRotationZ: visual.rotation.z, bodyLengthM, climbRest: null,
-      needsCorpseGrounding: false, gait: new GaitClock(), hipM: hipHeightM(height * characterScale(animal)), seed: idSeed(animal.id), looksUp: animal.speciesId !== 'tiger' && animal.speciesId !== 'leopard',
+      needsCorpseGrounding: false, gait: new GaitClock(), hipM: hipHeightM(height * characterScale(animal)), swimming: false, seed: idSeed(animal.id), looksUp: animal.speciesId !== 'tiger' && animal.speciesId !== 'leopard',
       appearanceKey: '', materials };
     this.#pending.delete(animal.id);
     this.#rigs.set(animal.id, rig);
@@ -508,7 +512,11 @@ export class AnimalLayer {
   #place(rig: Rig, position: RenderPosition): void {
     if (rig.group.parent === null) this.root.add(rig.group);
     rig.group.visible = true;
-    rig.group.position.set(position.x, renderBaseY(position, this.groundHeightAt), position.z);
+    const base = renderBaseY(position, this.groundHeightAt);
+    const swim = (position.altitudeM ?? 0) === 0 && this.waterSurfaceAt
+      ? swimBaseY(base, this.waterSurfaceAt(position.x, position.z), rig.hipM) : { y: base, swimming: false };
+    rig.swimming = swim.swimming;
+    rig.group.position.set(position.x, swim.y, position.z);
     const current = rig.group.rotation.y;
     const diff = ((position.heading - current + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
     rig.group.rotation.y = current + diff * 0.1;
@@ -550,7 +558,8 @@ export class AnimalLayer {
     if (!action) return;
     const source = action.getClip();
     const wanted = grounded && isStrideClip(clip) && rig.gait.speedMs > 0
-      ? strideRate(source, cyclesOf(source), rig.gait.speedMs, rig.hipM) : 1;
+      // A swimmer's legs paddle slower than they would stride on land at its speed.
+      ? strideRate(source, cyclesOf(source), rig.gait.speedMs, rig.hipM) * (rig.swimming ? 0.6 : 1) : 1;
     // Eased, so a change of pace is not a visible jolt in the legs.
     action.timeScale += (wanted - action.timeScale) * 0.15;
   }

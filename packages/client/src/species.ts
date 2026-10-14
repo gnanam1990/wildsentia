@@ -110,7 +110,7 @@ export function modelStatus(speciesId: string): string {
   if (['bay_duiker', 'peters_duiker', 'sitatunga'].includes(speciesId)) return 'Generated from reference views, on the deer rig · the deer\'s clips';
   if (['red_river_hog', 'forest_buffalo'].includes(speciesId)) return 'Generated from reference views, on the bull rig · the bull\'s clips';
   if (speciesId === 'african_golden_cat') return 'Generated golden cat on the big-cat rig · planted-paw gaits, keyframed, not motion capture';
-  if (speciesId === 'water_chevrotain') return 'Generated water chevrotain on the deer rig · the deer\'s clips; swimming pose pending';
+  if (speciesId === 'water_chevrotain') return 'Generated water chevrotain on the deer rig · the deer\'s clips; it swims with its back at the waterline';
   if (speciesId === 'tiger') return 'Generated tiger on its own big-cat rig · planted-paw gaits, keyframed, not motion capture';
   if (speciesId === 'leopard') return 'Generated leopard on its own big-cat rig · planted-paw gaits, keyframed, not motion capture';
   if (speciesId === 'elephant') return 'Generic elephant rig · local walk added; gait polish pending';
