@@ -53,15 +53,27 @@ export function forestMoment(e: WorldEvent): ForestMoment {
     position: e.position ? { x: e.position.x, z: e.position.z } : null,
   };
 }
-const aliases: Record<string, string[]> = {
-  tiger: ["tiger", "புலி"],
-  leopard: ["leopard", "சிறுத்தை"],
-  elephant: ["elephant", "யானை"],
-  chital: ["deer", "chital", "மான்"],
-  dhole: ["dhole", "wild dog", "செந்நாய்"],
-  boar: ["boar", "பன்றி"],
-  hare: ["hare", "rabbit", "முயல்"],
-};
+/** The words a question may use for an animal, with the species they mean: the island's or the
+ * Congo forest's, whichever this world holds (the longest matching words are tried first). */
+const aliases: Array<[string[], string[]]> = [
+  [["tiger", "புலி"], ["tiger"]],
+  [["golden cat"], ["african_golden_cat"]],
+  [["leopard", "சிறுத்தை"], ["leopard", "african_leopard"]],
+  [["elephant", "யானை"], ["elephant"]],
+  [["bay duiker"], ["bay_duiker"]],
+  [["peters"], ["peters_duiker"]],
+  [["blue duiker", "duiker"], ["blue_duiker", "bay_duiker", "peters_duiker"]],
+  [["chevrotain", "mouse deer"], ["water_chevrotain"]],
+  [["sitatunga"], ["sitatunga"]],
+  [["buffalo", "எருமை"], ["forest_buffalo"]],
+  [["river hog", "hog"], ["red_river_hog"]],
+  [["deer", "chital", "மான்"], ["chital", "blue_duiker", "water_chevrotain"]],
+  [["dhole", "wild dog", "செந்நாய்"], ["dhole"]],
+  [["boar", "pig", "பன்றி"], ["boar", "red_river_hog"]],
+  [["hare", "rabbit", "முயல்"], ["hare"]],
+];
+const CONGO_SPECIES = new Set(["african_leopard", "african_golden_cat", "blue_duiker", "bay_duiker", "peters_duiker",
+  "water_chevrotain", "sitatunga", "forest_buffalo", "red_river_hog"]);
 export function safariAnswer(
   question: string,
   selectedId: string | null,
@@ -69,11 +81,16 @@ export function safariAnswer(
   moments: ForestMoment[],
 ): SafariAnswer {
   const q = question.toLowerCase();
-  const species = Object.entries(aliases).find(([, words]) =>
-    words.some((w) => q.includes(w)),
-  )?.[0];
+  const living = view.livingAnimals();
+  const words = aliases.flatMap(([ws, ids]) => ws.map((w) => [w, ids] as const))
+    .sort((a, b) => b[0].length - a[0].length);
+  const named = words.find(([w]) => q.includes(w));
+  const species = named
+    ? named[1].find((id) => living.some((a) => a.speciesId === id)) ?? named[0]
+    : undefined;
+  const congo = living.some((a) => CONGO_SPECIES.has(a.speciesId));
   const animal = species
-    ? view.livingAnimals().find((a) => a.speciesId === species)
+    ? living.find((a) => a.speciesId === species)
     : selectedId
       ? view.animal(selectedId)
       : undefined;
@@ -96,7 +113,7 @@ export function safariAnswer(
       ...base,
       animalId: null,
       eventIds: [],
-      answer: `No living ${species} is present in this saved checkpoint. I can show another animal or recent forest moments.`,
+      answer: `No living ${species.replaceAll("_", " ")} is present in this saved checkpoint. I can show another animal or recent forest moments.`,
     };
   const latest = moments[0];
   if (latest)
@@ -104,7 +121,7 @@ export function safariAnswer(
       ...base,
       animalId: latest.actorId,
       eventIds: [latest.id],
-      answer: `${latest.title}. ${latest.detail} You can open this saved moment or ask about a tiger, elephant, deer or another followed life.`,
+      answer: `${latest.title}. ${latest.detail} You can open this saved moment or ask about ${congo ? "a leopard, a forest buffalo, a duiker" : "a tiger, elephant, deer"} or another followed life.`,
     };
   return {
     ...base,
