@@ -132,6 +132,17 @@ describe('observer insights', () => {
     const result = await insights.highlights(events, 100, 5, (id) => id);
     expect(result.ok && result.value.highlights.map((h) => h.event.id)).toEqual(['ev1', 'ev2']);
   });
+  it('asks about the Congo forest\'s wildlife, not an island\'s, in a Congo world', async () => {
+    const asked: string[] = [];
+    const insights = new Insights(async (_state, questions) => {
+      asked.push(...Object.values(questions).map((q) => (q as { instructions: string }).instructions));
+      return { model: 'jev', answers: Object.fromEntries(Object.keys(questions).map((id) => [id, { type: 'score', score: 3, probabilities: {}, confidence: 0.7 }])) };
+    });
+    insights.profile = 'congo_v1';
+    await insights.highlights([{ id: 'ev0', type: 'hunt', outcome: 'success', actors: ['african_leopard_1'], worldTime: 100 } as unknown as WorldEvent], 100, 1, (id) => id);
+    expect(asked.join(' ')).toContain('this forest');
+    expect(asked.join(' ')).not.toContain('island');
+  });
 });
 
 const url = testDatabaseUrl();

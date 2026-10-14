@@ -561,6 +561,8 @@ const sceneUpdates = new SceneUpdates<{
       if (congoSeed !== undefined) {
         if (congoForest === null) {
           congoForest = new CongoForest(); scene.add(congoForest.root);
+          // The Congo forest has no village (yet): the island's Village button would open an empty page.
+          document.querySelector<HTMLButtonElement>('#open-community')!.hidden = true;
           // Plants between the camera and a followed animal are cut away, as the island's trees are.
           for (const material of [...Object.values(congoPlantMaterials()), congoCrownMaterials().leaves]) observerVisibility.patch(material);
         }

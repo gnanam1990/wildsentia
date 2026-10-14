@@ -190,7 +190,7 @@ export class Insights {
     return this.#ask(`highlights:${worldTime}:${nextSequence}`, async (ask) => {
       const questions = Object.fromEntries(batch.map((_, i) => [`e${i}`, {
         type: 'score' as const,
-        instructions: `How remarkable is event \`events.e${i}\` for someone watching this island's wildlife?`,
+        instructions: `How remarkable is event \`events.e${i}\` for someone watching this ${this.profile === 'congo_v1' ? 'forest' : 'island'}'s wildlife?`,
         criteria: HIGHLIGHT_LEVELS,
       }]));
       const result = await ask(highlightState(batch, speciesName, this.profile), questions);
