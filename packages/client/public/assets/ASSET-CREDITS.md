@@ -125,7 +125,8 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
   review sheets: `docs/art-review/congo-2026-10-14/`. (A mandrill mesh, 3bcd639e, was made and set
   aside when the research chose the agile mangabey.)
 - Skeletons and clips, by `tools/art/build_species.sh`: the elephant on the generic CC0 elephant rig
-  (ElephantWalking, OpenGameArt, below), the mangabey on the project's Langur rig, the eagle (both
+  (ElephantWalking, OpenGameArt, below; its walk given a swinging trunk and moving ears by
+  `tools/art/elephant_walk_life.py`), the mangabey on the project's Langur rig, the eagle (both
   models) on the project's Vulture rig. The crocodile on a skeleton of its own
   (`tools/art/rig_crocodile.py`: spine, eight-bone tail, sprawled legs, a lower jaw that gapes at rest and snaps when it feeds; weights by distance to the
   bones, as bone heat found no solution on its scutes), keyframed, not motion capture.
@@ -234,7 +235,7 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
   - `animals/ForestBuffalo.glb`: sha256 `41b1867fb33b0f74`
   - `animals/Sitatunga.glb`: sha256 `263724729507878d`
   - `animals/AfricanGoldenCat.glb`: sha256 `f224b1cff5928d55`
-  - `animals/ForestElephant.glb`: sha256 `857653ac2031adb9`
+  - `animals/ForestElephant.glb`: sha256 `4aa7f429069610e0`
   - `animals/AgileMangabey.glb`: sha256 `2d35e84625afd756`
   - `animals/CrownedEagle.glb`: sha256 `0385d33e2339dac3`
   - `animals/DwarfCrocodile.glb`: sha256 `43d33d841a068644`

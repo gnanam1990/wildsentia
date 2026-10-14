@@ -118,7 +118,7 @@ export function modelStatus(speciesId: string): string {
   if (['bay_duiker', 'peters_duiker', 'sitatunga'].includes(speciesId)) return 'Generated from reference views, on the deer rig · the deer\'s clips';
   if (['red_river_hog', 'forest_buffalo'].includes(speciesId)) return 'Generated from reference views, on the bull rig · the bull\'s clips';
   if (speciesId === 'african_golden_cat') return 'Generated golden cat on the big-cat rig · planted-paw gaits, keyframed, not motion capture';
-  if (speciesId === 'forest_elephant') return 'Generated forest elephant on the generic elephant rig · its walk and feeding clips; gait polish pending';
+  if (speciesId === 'forest_elephant') return 'Generated forest elephant on the generic elephant rig · its walk (with a swinging trunk) and feeding clips';
   if (speciesId === 'agile_mangabey') return 'Generated agile mangabey on the langur rig · the langur\'s clips';
   if (speciesId === 'crowned_eagle') return 'Generated crowned eagle on the vulture rig · a wings-spread model in the air; its side profile in flight pending';
   if (speciesId === 'dwarf_crocodile') return 'Generated dwarf crocodile on a skeleton of its own · high walk, swim, jaws and death keyframed, not motion capture';
