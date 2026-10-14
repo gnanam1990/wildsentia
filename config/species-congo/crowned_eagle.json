@@ -50,7 +50,7 @@
       }
     ],
     "dailyIntakeKg": 0.25,
-    "offRosterShare": 0.85,
+    "offRosterShare": 0.92,
     "waterNeedLPerDay": 0.1,
     "canScavenge": false,
     "carrionTolerance": 0.0
@@ -90,8 +90,8 @@
     "subdueBreakFree": 0.2,
     "cachesKills": true,
     "preyPreference": {
-      "agile_mangabey": 1.0,
-      "blue_duiker": 0.7,
+      "agile_mangabey": 0.5,
+      "blue_duiker": 0.4,
       "water_chevrotain": 0.2,
       "bay_duiker": 0.1,
       "peters_duiker": 0.1

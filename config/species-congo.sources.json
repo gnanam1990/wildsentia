@@ -19,7 +19,7 @@
     "lifecycle": "[1]: gestation 96 d, litter 2-3, weaned ~90 d, mature ~771-937 d, max 17 y, 15-24 months between litters",
     "hunting.preferredPrey/preyPreference (2A)": "[3],[4],[23]: Lopé diet: ungulates 59% of biomass, red river hog 20%, buffalo 13% (calves and young), mean prey 29.2 kg; 10-40 kg preferred; weights are assumptions from these shares; golden cat taken rarely (intraguild) [6]",
     "diet/offRosterShare": "[23] Henschel et al. 2005 (Lopé, 196 scats): by biomass 59% ungulates, 18% diurnal primates, 17% large rodents (cane rat 13%); 0.3 = primates other than the simulated agile mangabey, and large rodents (assumption for the mangabey's share)",
-    "hunting.agile_mangabey (Phase B)": "Phase B research [12],[20],[21]: leopards are a major predator of primates at Taï and Lopé; mangabeys forage on the ground in the leopard's ambush zone; preference 1.0 is an assumption"
+    "hunting.agile_mangabey (Phase B)": "Phase B research [12],[20],[21]: leopards take primates at Taï and Lopé (diurnal primates 18% of biomass at Lopé, most of them other species); preference 0.5 is an assumption"
   },
   "blue_duiker": {
     "body": "[11],[12],[4]: 3.5-9 kg, typically 4-5 kg; shoulder 0.32-0.41 m",
@@ -29,7 +29,8 @@
     "diet.dailyIntakeKg": "assumption: ~0.15 kg dry matter ≈ 0.45 kg fresh",
     "social": "[11],[12],[13],[14]: monogamous pairs on 2.5-4 ha",
     "activity": "[12],[14]: diurnal",
-    "lifecycle": "[12],[14]: gestation 196-216 d, 1 young, weaned 70-90 d, mature 270-540 d, max 12 y, ~265 d between births"
+    "lifecycle": "[12],[14]: gestation 196-216 d, 1 young, weaned 70-90 d, mature 270-540 d, max 12 y, ~265 d between births",
+    "density (2C)": "[11],[12]: 16/km² (Moukalaba-Doudou 16.4) over ~1,730 km² of terra firme and bais: 27,000, restored from the 18,000 the Phase 2A budget had cut to (the predators, at field densities, outran a prey base half its field density)"
   },
   "water_chevrotain": {
     "body": "[18],[19]: F ~12 kg, M ~9.7 kg; shoulder 0.30-0.40 m",
@@ -108,19 +109,20 @@
     "body": "docs/2026-10-14-congo-phase-b-research.md [12],[14]: males 7-13 kg, females 5-7 kg (Kingdon 1997); assumption male 10, female 6",
     "diet": "docs/2026-10-14-congo-phase-b-research.md [12],[13],[15]: fruit and seeds dominate; 26-30% of feeding time on insects; offRosterShare 0.25 (invertebrates, fungi) is an assumption",
     "social": "docs/2026-10-14-congo-phase-b-research.md [12],[14],[36]: groups of 7-22, one adult male",
-    "density": "assumption (docs/2026-10-14-congo-phase-b-research.md): 4/km² over the 625 km² of swamp and flooded forest, none counted on terra firme; 2,500",
+    "density": "assumption (docs/2026-10-14-congo-phase-b-research.md): 4/km² over the 625 km² of swamp and flooded forest and 1/km² over the 1,602 km² of terra firme (some groups live in non-flooded forest [12]); 4,100",
     "lifecycle": "docs/2026-10-14-congo-phase-b-research.md [12]: gestation 165-175 d, mature 4-5 y, up to 20 y wild; interbirth 640 d and max 25 y are assumptions",
     "activity": "docs/2026-10-14-congo-phase-b-research.md [12]: diurnal; climbs to escape cats, drops into cover from eagles",
     "status": "docs/2026-10-14-congo-phase-b-research.md [13]: Least Concern (Maisels et al. 2020); may be a bounty target"
   },
   "crowned_eagle": {
     "body": "docs/2026-10-14-congo-phase-b-research.md [25]: female 3.2-4.7 kg, male 2.55-4.12 kg; wingspan 1.51-1.81 m",
-    "diet": "docs/2026-10-14-congo-phase-b-research.md [22]-[25]: monkeys 81-88% of prey (Kibale, Ituri), 56% of Taï bones; small duikers taken; mean prey 5.67 kg at Taï, up to ~20 kg. offRosterShare 0.85 is an assumption: the agile mangabey is one of about eight monkeys an eagle hunts here and small duikers are a minor part, so the simulated prey are ~15% of its food. Intake 0.25 kg/day is an assumption",
+    "diet": "docs/2026-10-14-congo-phase-b-research.md [22]-[25]: monkeys 81-88% of prey (Kibale, Ituri), 56% of Taï bones; small duikers taken; mean prey 5.67 kg at Taï, up to ~20 kg; about one prey every 3-4 days [25] (~100 a year). offRosterShare 0.92 is calibrated so an eagle takes ~15 of the simulated prey a year (the 60-day soak at 0.85 measured ~31): the agile mangabey is one of about eight monkeys it hunts here and small duikers a minor part. Intake 0.25 kg/day is an assumption",
     "hunting": "docs/2026-10-14-congo-phase-b-research.md [25]: still-hunts from a perch and drops onto prey, most kills on the forest floor",
     "social": "docs/2026-10-14-congo-phase-b-research.md [25],[27]: territorial pairs, 6.5-16 km² hunting range per adult; one pair per 12 km² (assumption) gives 368 birds",
     "lifecycle": "docs/2026-10-14-congo-phase-b-research.md [25]: clutch 1-2, one chick raised, incubation ~49 d, fledging ~110 d, dependent ~11 months, breeds every 2 years, mature ~5 y; the egg stands in as a gestation",
     "status": "docs/2026-10-14-congo-phase-b-research.md [26]: Near Threatened; kept off the bounty list (decreasing)",
-    "hunting.cachesKills": "docs/2026-10-14-congo-phase-b-research.md [25]: lifts prey almost vertically to a branch; it feeds on a kill over days (caching is an assumption from that), so one duiker is not one meal"
+    "hunting.cachesKills": "docs/2026-10-14-congo-phase-b-research.md [25]: lifts prey almost vertically to a branch; it feeds on a kill over days (caching is an assumption from that), so one duiker is not one meal",
+    "hunting.preyPreference": "assumption: mangabey 0.5, blue duiker 0.4 (primates other than the mangabey carry most of its diet, off-roster)"
   },
   "dwarf_crocodile": {
     "body": "docs/2026-10-14-congo-phase-b-research.md [28]: males 18-45 kg, females 13.6-31.8 kg; assumption male 25, female 18",
