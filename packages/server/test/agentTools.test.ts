@@ -94,8 +94,15 @@ maybe('agent tools', () => {
     const board = (await asAgent('bot', 'GET', '/agents/me/bounties')).json();
     expect(board).toMatchObject({ simulated: true, bounties: [expect.objectContaining({ bountyId: d.bounty.bountyId, speciesId: 'blue_duiker' })],
       sensed: [expect.objectContaining({ bountyId: d.bounty.bountyId, animalId: duiker.animalId })] });
+    // Out of sense of the target but beside where it walked ten minutes ago: its tracks, not its id.
+    discovery.sample((id) => (id === duiker.animalId ? { x: prey.x + 700, z: prey.z, state: 'travelling' } : null), host.world.now() - 600);
+    avatar.x = prey.x + 710; avatar.z = prey.z;
+    const trail = (await asAgent('bot', 'GET', '/agents/me/bounties')).json();
+    expect(trail.sensed).toEqual([]);
+    expect(trail.clues).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'tracks', bountyId: d.bounty.bountyId, speciesId: 'blue_duiker' })]));
+    expect(JSON.stringify(trail.clues)).not.toContain(duiker.animalId);
     // The stranger, possessing nothing, sees the public board only.
-    expect((await asAgent('stranger', 'GET', '/agents/me/bounties')).json()).toMatchObject({ sensed: [], lastSeen: [] });
+    expect((await asAgent('stranger', 'GET', '/agents/me/bounties')).json()).toMatchObject({ sensed: [], lastSeen: [], clues: [] });
     expect((await app.inject({ method: 'GET', url: `/congo/bounties/${d.bounty.bountyId}` })).json()).toMatchObject({ status: 'active', speciesId: 'blue_duiker' });
     expect(JSON.stringify((await app.inject({ method: 'GET', url: `/congo/bounties/${d.bounty.bountyId}` })).json())).not.toContain(duiker.animalId);
   });

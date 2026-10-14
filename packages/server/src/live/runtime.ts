@@ -175,7 +175,20 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
         await bounties.engine.settlePending().catch((e) => console.error('[bounty] settle failed', e));
         await bounties.discovery.refresh().catch(() => undefined);
         timers.push(setInterval(() => { void bounties.engine.adjudicate().catch((e) => console.error('[bounty] adjudicate failed', e)); }, 10_000));
-        timers.push(setInterval(() => { void bounties.discovery.refresh().catch(() => undefined); }, 2000));
+        // Every two seconds: the active bounties, and where each target is and what it is doing, for
+        // the track log its clues come from.
+        const doing = (id: string) => {
+          const animal = host.world.animal(id);
+          const at = live.positionOf(id) ?? animal?.position;
+          if (!animal || !at) return null;
+          const runner = live.wild.get(id), avatar = live.avatars.byAnimal(id);
+          const state = runner?.mode === 'flee' ? 'fleeing' : runner?.mode === 'chase' ? 'chasing'
+            : avatar ? (avatar.moving ? 'travelling' : 'resting') : animal.state;
+          return { x: at.x, z: at.z, state };
+        };
+        timers.push(setInterval(() => {
+          void bounties.discovery.refresh().then(() => bounties.discovery.sample(doing, host.world.now())).catch(() => undefined);
+        }, 2000));
       }
       // Four times a second, filtered per viewer by the gateway; the roster every two seconds.
       timers.push(setInterval(() => broadcast.live(live.publicState(), Date.now()), 250));

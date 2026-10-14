@@ -423,12 +423,12 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
       });
       scope.get('/agents/me/bounties', async (req, reply) => {
         const ctx = await me(req, reply, observes); if (!ctx) return reply;
-        if (!deps.bounties) return { simulated: true, bounties: [], sensed: [], lastSeen: [] };
+        if (!deps.bounties) return { simulated: true, bounties: [], sensed: [], lastSeen: [], clues: [] };
         const avatar = live.avatars.get(ctx.agent.id), senses = avatar ? sensed(ctx.agent.id, avatar) : null;
         const board = (await deps.bounties.store.active()).filter((b) => b.status === 'active').map((b) => publicBounty(b, deps.bounties!.now()));
         return { simulated: true, bounties: board,
           sensed: (senses?.nearby ?? []).filter((a) => a.bounty).map((a) => ({ ...a.bounty!, animalId: a.id, x: Math.round(a.x * 10) / 10, z: Math.round(a.z * 10) / 10, sense: a.sense })),
-          lastSeen: senses?.lastSeen ?? [] };
+          lastSeen: senses?.lastSeen ?? [], clues: senses?.clues ?? [] };
       });
     }
     commandRoutes('/agents/me', me);
@@ -462,7 +462,8 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
       const p = live.positionOf(a.id) ?? a.position;
       return { id: a.id, x: p.x, z: p.z, ...motionOf(a, live.wild.get(a.id), live.avatars.byAnimal(a.id)) };
     }).filter((a) => Math.hypot(a.x - avatar.x, a.z - avatar.z) <= 400);
-    return deps.bounties!.discovery.view(agentId, avatar, near, { canopyAt: (x, z) => world.patchAt(x, z)?.canopyCover ?? 0, worldTime: world.now() });
+    return deps.bounties!.discovery.view(agentId, avatar, near, { canopyAt: (x, z) => world.patchAt(x, z)?.canopyCover ?? 0,
+      patchIdAt: (x, z) => world.patchAt(x, z)?.id ?? null, worldTime: world.now() });
   }
 
   function observation(agent: AgentRecord) {
@@ -512,7 +513,7 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
             steeredByAgent: a.controller ? (live.avatars.get(a.controller)?.agentName ?? 'an agent') : null };
         }) : [],
       /** Congo 1D: bounty targets this animal sensed before and no longer does: where and when last. */
-      ...(senses ? { lastSeen: senses.lastSeen } : {}),
+      ...(senses ? { lastSeen: senses.lastSeen, clues: senses.clues } : {}),
       carcass: at ? world.carcassNear(at.x, at.z, 60) : null,
       water: at ? world.waterPoints(at.x, at.z, 900).map((w) => ({ x: Math.round(w.x * 10) / 10, z: Math.round(w.z * 10) / 10,
         litres: Math.round(w.litres), distance: dist(w.x, w.z) })).sort((a, b) => a.distance! - b.distance!).slice(0, 5) : [],
