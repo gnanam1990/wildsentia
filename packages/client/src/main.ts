@@ -11,7 +11,7 @@ import { InsightPanel } from './insights.js';
 import { LiveAgents, activityOf, isLiveMessage, isRosterMessage, rosterActivity, usdc } from './liveAgents.js';
 import { COVER_RADIUS_M, GroundCover } from './groundCover.js';
 import { CongoForest } from './congoForest.js';
-import { congoPlantMaterials } from './congoPlants.js';
+import { congoCrownMaterials, congoPlantMaterials } from './congoPlants.js';
 import { AnimalLayer } from './animals.js';
 import { FollowCamera, followDistanceFor, viewMessage } from './camera.js';
 import { nearestOnScreen } from './picking.js';
@@ -562,7 +562,7 @@ const sceneUpdates = new SceneUpdates<{
         if (congoForest === null) {
           congoForest = new CongoForest(); scene.add(congoForest.root);
           // Plants between the camera and a followed animal are cut away, as the island's trees are.
-          for (const material of Object.values(congoPlantMaterials())) observerVisibility.patch(material);
+          for (const material of [...Object.values(congoPlantMaterials()), congoCrownMaterials().leaves]) observerVisibility.patch(material);
         }
         congoForest.setScene(update.environment.patches, congoSeed, update.environment.patches.some((p) => p.flooded === true));
         atmosphere.haze = 1;
@@ -817,9 +817,10 @@ function renderFrame(dt: number, now: number): void {
         nature.hasTreeLod ? Number.POSITIVE_INFINITY : TREE_DETAIL_RADIUS_M, COVER_RADIUS_M - 12);
     }
     nature.setDistantLight(store.world ? atmosphereAt(liveWorldTime(now)!, store.world.season).daylight : 1);
+    if (store.world) nature.setSeason(store.world.season);
   }
   groundCover?.update(camera.position, 2);
-  if (congoForest) { congoForest.update(follow.target, camera.position); atmosphere.underCanopy = congoForest.underCanopy; }
+  if (congoForest) { if (store.world) congoForest.setSeason(store.world.season); congoForest.update(follow.target, camera.position); atmosphere.underCanopy = congoForest.underCanopy; }
   communityLayer.update(dt, camera.position, quality.tier, reducedMotion.matches, now, followedPersonId);
   const communityText = communityLayer.playbackNotice(now, reducedMotion.matches);
   if (communityMotionNotice.textContent !== communityText) communityMotionNotice.textContent = communityText;

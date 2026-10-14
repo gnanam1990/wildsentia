@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { addCongoDeciduous } from './seasonalLeaves.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { congoChannelHalfM, congoRivers, patchCentre, riverIndex, spatialHash, type RiverPath } from '@vana/shared';
 import { worldGrid } from './worldGrid.js';
@@ -262,6 +263,9 @@ function leafTexture(): THREE.Texture | null {
 
 let materials: Record<keyof PlantParts, THREE.Material> | null = null;
 let leafDepth: THREE.MeshDepthMaterial | null = null;
+let crowns: { leaves: THREE.Material; depth: THREE.MeshDepthMaterial } | null = null;
+/** The world's season as a deciduous crown's dryness (seasonalLeaves.ts), shared by every tall tree. */
+export const congoSeasonDry = { value: 0 };
 /**
  * The leaf clusters' shadow: cut by the same leaf texture, so a crown casts dappled shade, not
  * the solid squares of its cards.
@@ -269,6 +273,19 @@ let leafDepth: THREE.MeshDepthMaterial | null = null;
 export function congoLeafDepthMaterial(): THREE.MeshDepthMaterial {
   const map = (congoPlantMaterials().leaves as THREE.MeshStandardMaterial).map;
   return leafDepth ??= new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, ...(map ? { map, alphaTest: 0.45 } : {}) });
+}
+/**
+ * The tall trees' leaves (emergents and canopy): the same leaf, but its deciduous share of crowns
+ * turns and sheds in the drier spells. The understory beneath stays evergreen.
+ */
+export function congoCrownMaterials(): { leaves: THREE.Material; depth: THREE.MeshDepthMaterial } {
+  if (crowns) return crowns;
+  const map = leafTexture();
+  const leaves = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide, emissive: 0x16300c, ...(map ? { map, alphaTest: 0.45 } : {}) });
+  const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, ...(map ? { map, alphaTest: 0.45 } : {}) });
+  addCongoDeciduous(leaves, congoSeasonDry, 'leaves');
+  addCongoDeciduous(depth, congoSeasonDry, 'depth');
+  return crowns = { leaves, depth };
 }
 export function congoPlantMaterials(): Record<keyof PlantParts, THREE.Material> {
   if (materials) return materials;
