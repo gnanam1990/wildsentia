@@ -43,6 +43,9 @@ jobs:
       VANA_CONGO_HOUR_BUDGET_MS: '3500'
       # One garbage-collection pause in a sliced checkpoint, scaled as the hour budget is (about 2.4x).
       VANA_CONGO_SLICE_PAUSE_MS: '600'
+      # The 99th-percentile slice, scaled the same way: 18.5 ms locally against a 60 ms limit; on this
+      # runner it measured 24-73 ms over eleven runs (14 October 2026), so 60 failed on noise alone.
+      VANA_CONGO_SLICE_MAX_MS: '140'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
