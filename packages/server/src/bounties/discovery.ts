@@ -4,6 +4,9 @@ interface ActiveBounty { bountyId: string; targetAnimalId: string; targetSpecies
 interface DiscoveryStore {
   active(): Promise<ActiveBounty[]>;
   recordEntrant(bountyId: string, agentId: string, animalId: string, worldTime: number): Promise<boolean>;
+  /** The track log's store, so a restart does not wipe a trail (optional: tests may keep it in memory). */
+  saveTrack?(s: TrackSample & { bountyId: string }): Promise<void>;
+  tracks?(bountyId: string, since: number): Promise<Array<TrackSample & { bountyId: string }>>;
 }
 export interface Sensed { id: string; x: number; z: number; moving: boolean; running: boolean }
 
@@ -65,18 +68,33 @@ export class BountyDiscovery {
   #lastSeen = new Map<string, Map<string, { x: number; z: number; worldTime: number }>>();
   #entered = new Set<string>();
   #tracks = new Map<string, TrackSample[]>();
+  #loaded = new Set<string>();
   #queue: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly store: DiscoveryStore, private readonly worldId: () => string) {}
 
-  /** Reloads the active bounties (a timer calls this every few seconds). */
-  async refresh(): Promise<void> {
+  /**
+   * Reloads the active bounties (a timer calls this every few seconds), and the saved track log of
+   * any bounty whose log is not yet in memory (after a restart), from `worldTime` back six hours.
+   */
+  async refresh(worldTime?: number): Promise<void> {
     // Held bounties are not on offer: no agent is told of them.
     const active = (await this.store.active()).filter((b) => (b as { status?: string }).status === undefined || (b as { status?: string }).status === 'active');
     this.#byTarget = new Map(active.map((b) => [b.targetAnimalId, b]));
     const live = new Set(active.map((b) => b.bountyId));
     for (const seen of this.#lastSeen.values()) for (const id of [...seen.keys()]) if (!live.has(id)) seen.delete(id);
     for (const id of [...this.#tracks.keys()]) if (!live.has(id)) this.#tracks.delete(id);
+    for (const id of [...this.#loaded]) if (!live.has(id)) this.#loaded.delete(id);
+    if (this.store.tracks) for (const b of active) {
+      if (this.#loaded.has(b.bountyId)) continue;
+      this.#loaded.add(b.bountyId);
+      const saved = await this.store.tracks(b.bountyId, worldTime === undefined ? 0 : worldTime - LOG_KEEP_S).catch(() => null);
+      if (saved === null) { this.#loaded.delete(b.bountyId); continue; } // tried again at the next refresh
+      const mine = this.#tracks.get(b.bountyId) ?? [];
+      const merged = [...saved.map(({ x, z, state, worldTime: t }) => ({ x, z, state, worldTime: t })), ...mine]
+        .sort((p, q) => p.worldTime - q.worldTime).slice(-LOG_MAX);
+      if (merged.length) this.#tracks.set(b.bountyId, merged);
+    }
   }
 
   /**
@@ -91,7 +109,12 @@ export class BountyDiscovery {
       const log = this.#tracks.get(b.bountyId) ?? [];
       const last = log.at(-1);
       if (last && Math.hypot(at.x - last.x, at.z - last.z) < 3 && last.state === at.state) continue;
-      log.push({ x: at.x, z: at.z, state: at.state, worldTime });
+      const kept = { x: at.x, z: at.z, state: at.state, worldTime };
+      log.push(kept);
+      if (this.store.saveTrack) {
+        const bountyId = b.bountyId;
+        this.#queue = this.#queue.then(() => this.store.saveTrack!({ bountyId, ...kept })).catch(() => undefined);
+      }
       while (log.length && (worldTime - log[0]!.worldTime > LOG_KEEP_S || log.length > LOG_MAX)) log.shift();
       this.#tracks.set(b.bountyId, log);
     }

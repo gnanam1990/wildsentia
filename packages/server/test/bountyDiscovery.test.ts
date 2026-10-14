@@ -155,3 +155,29 @@ describe('bounty clues', () => {
     expect(targetState(duiker, { mode: 'idle' }, null)).toBe('grazing');
   });
 });
+
+// The track log survives a restart: each kept sample is saved, and a bounty whose log is not in
+// memory has it loaded back at the next refresh.
+describe('the track log across a restart', () => {
+  const duiker = { ...bounty, speciesId: 'blue_duiker' };
+  const noon = 12 * 3600;
+  const leopard = { animalId: 'african_leopard_0002', speciesId: 'african_leopard', x: 0, z: 0 };
+  const saved: Array<{ bountyId: string; x: number; z: number; state: string; worldTime: number }> = [];
+  const store = {
+    active: async () => [duiker], recordEntrant: async () => true,
+    saveTrack: async (s: (typeof saved)[number]) => { saved.push(s); },
+    tracks: async (bountyId: string, since: number) => saved.filter((s) => s.bountyId === bountyId && s.worldTime >= since),
+  };
+  it('saves what it samples and reads it back after a restart, so clues do not vanish', async () => {
+    const before = new BountyDiscovery(store, () => 'w1');
+    await before.refresh();
+    before.sample(() => ({ x: 10, z: 10, state: 'travelling' }), noon - 1800);
+    before.sample(() => ({ x: 10, z: 200, state: 'travelling' }), noon - 600);
+    await before.idle();
+    expect(saved.map((s) => s.worldTime)).toEqual([noon - 1800, noon - 600]);
+    const after = new BountyDiscovery(store, () => 'w1');
+    await after.refresh(noon);
+    const tracks = after.view('ag_1', leopard, [], { canopyAt: () => 0.9, worldTime: noon }).clues.find((c) => c.kind === 'tracks');
+    expect(tracks).toMatchObject({ bountyId: 'b1', x: 10, z: 10, headingDeg: 0 });
+  });
+});

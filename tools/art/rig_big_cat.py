@@ -563,7 +563,8 @@ def gait_pose(name):
             scapulae(gait, t, legs)
             tail_shape([-72, -74, -72, -66, -52, -32, -12, 12, 34], sway=7, phase=two - 0.8, wave=4)
         elif name == "Run":
-            set_loc("root", Vector((0, 0, -0.02 + 0.011 * math.cos(2 * two - 0.4))))
+            # Cats run low: the body sinks so the legs reach the stride's ends.
+            set_loc("root", Vector((0, 0, -0.045 + 0.011 * math.cos(2 * two - 0.4))))
             set_rot("hips", roll_right(math.radians(2) * math.sin(two)) @ pitch_up(math.radians(1.5) * math.sin(2 * two)))
             set_rot("chest", pitch_up(math.radians(-1.5) * math.sin(2 * two)))
             set_rot("neck1", pitch_up(math.radians(-6)))
@@ -578,7 +579,7 @@ def gait_pose(name):
                 set_rot(bone, pitch_up(math.radians(-16) * share * flex))
             set_rot("hips", pitch_up(math.radians(18) * flex))
             set_rot("chest", pitch_up(math.radians(8) * flex))
-            set_loc("root", Vector((0, 0.02 * flex, -0.03 + 0.03 * math.cos(2 * two - 2 * math.pi * 0.36))))
+            set_loc("root", Vector((0, 0.02 * flex, -0.055 + 0.03 * math.cos(2 * two - 2 * math.pi * 0.36))))
             set_rot("root", pitch_up(math.radians(-5) * math.sin(two - 0.9)))
             set_rot("neck1", pitch_up(math.radians(-4) + math.radians(5) * flex))
             set_rot("head", pitch_up(math.radians(2) - math.radians(5) * flex))

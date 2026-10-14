@@ -63,6 +63,17 @@ maybe('bounty scenarios', () => {
   const ledger = async () => (await pool!.query('select category, amount_atomic::text as a, ref from sim_ledger order by entry_id')).rows;
   const people = async () => { n += 10; return [await person(pool!, n + 1), await person(pool!, n + 2)] as const; };
 
+  it('keeps a target\'s track log in the database: saved, read back in order, pruned after six world hours', async () => {
+    await fund();
+    const [owner] = await people();
+    const duiker = await owned(owner, 'blue_duiker'), b = await published(duiker.animalId);
+    for (const [t, x] of [[1_000, 1], [5_000, 2], [20_000, 3], [30_000, 4]] as const)
+      await bounties.saveTrack({ bountyId: b.bountyId, x, z: 0, state: 'travelling', worldTime: t });
+    // The last save pruned everything older than 30,000 - 21,600 = 8,400.
+    expect((await bounties.tracks(b.bountyId, 0)).map((s) => [s.worldTime, s.x])).toEqual([[20_000, 3], [30_000, 4]]);
+    expect((await bounties.tracks(b.bountyId, 25_000)).map((s) => s.worldTime)).toEqual([30_000]);
+  });
+
   it('pays the owner of an eligible owned predator that makes the kill, and settles once', async () => {
     await fund();
     const [prey, hunter] = await people();
