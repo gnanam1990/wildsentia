@@ -118,6 +118,8 @@ maybe('read API', () => {
     expect(body.population.sambar).toBe(12);
     expect(typeof body.formatted).toBe('string');
     expect(body.worldHoursPerRealHour).toBeGreaterThan(0);
+    // Pages that draw a map (a new challenge's) read the world's own grid: 20 patches or the Congo's 160.
+    expect(body.grid).toEqual(host.grid);
   });
 
   it('lists living animals', async () => {
