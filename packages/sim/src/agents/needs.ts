@@ -21,11 +21,13 @@ export function gutCapacityKg(agent: Agent, species: SpeciesConfig): number {
   return fraction ? agent.massKg * fraction : 0;
 }
 
-/** Digest stored meat at the daily intake rate, offsetting the hunger the hour adds. */
+/** Digest stored meat as fast as the hour adds hunger. Food from beyond the roster
+ * (`diet.offRosterShare`) feeds the rest of the day: digesting a whole day's intake from the
+ * stomach threw away a golden cat's (0.6) meal 2.5 times too fast, and it killed again sooner. */
 export function digestGut(agent: Agent, species: SpeciesConfig, hours: number): void {
   if (!(agent.gutKg! > 0)) { delete agent.gutKg; return; }
   const daily = needsOf(agent, species).foodKg;
-  const kg = Math.min(agent.gutKg!, daily * hours / 24);
+  const kg = Math.min(agent.gutKg!, daily * (1 - (species.diet.offRosterShare ?? 0)) * hours / 24);
   agent.drives.hunger = Math.max(0, agent.drives.hunger - kg / daily * HUNGER_PER_DAY);
   agent.gutKg = agent.gutKg! - kg;
   if (!(agent.gutKg > 1e-9)) delete agent.gutKg;
