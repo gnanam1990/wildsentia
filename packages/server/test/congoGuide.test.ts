@@ -20,6 +20,8 @@ describe('the agent guide in the Congo forest', () => {
     expect(text).not.toMatch(/chital|sambar|tiger|dhole|langur/);
     const info = (await app.inject({ url: '/agents/info' })).json();
     expect(info.world.season).toBe('monsoon'); expect(info.world.formatted).toContain('-monsoon-');
+    // The connect page reads the world from here, to suggest the Congo's own animals.
+    expect(info.world.profile).toBe('congo_v1');
     await app.close();
   });
 });

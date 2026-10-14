@@ -176,7 +176,7 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
       audience: audience(), slots: deps.limits.slots, registered: await store.count(), playing: live.avatars.size,
       clientScript: { path: '/agents/client.mjs', sha256: scriptHash },
       ...(llmHash ? { llmScript: { path: '/agents/llm.mjs', sha256: llmHash } } : {}),
-      guide: '/agents/guide.txt', world: { worldTime: world.now(), formatted: formatWorldTime(world.now(), world.terrainProfile?.()), season: seasonAt(world.now(), world.terrainProfile?.()) },
+      guide: '/agents/guide.txt', world: { worldTime: world.now(), formatted: formatWorldTime(world.now(), world.terrainProfile?.()), season: seasonAt(world.now(), world.terrainProfile?.()), profile: world.terrainProfile?.() ?? null },
       ...(deps.holding ? { holding: { tokenAddress: deps.holding.tokenAddress, chainId: deps.holding.chainId, minAtomic: String(deps.holding.minAtomic) } } : {}),
       rules: { openRadiusM: OPEN_RADIUS_M, openSeconds: 5, spotRadiusM: 10, idleReleaseMinutes: 15, possessMinutesBeforeOpening: 5,
         claimCooldownMinutes: 10, commandsPerSecond: 5, observesPerSecond: 2 },
