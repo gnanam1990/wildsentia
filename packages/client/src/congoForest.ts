@@ -183,9 +183,15 @@ export class CongoForest {
     const cols = Math.round((bounds.maxX - bounds.minX) / CONGO_STEP_M), rows = Math.round((bounds.maxZ - bounds.minZ) / CONGO_STEP_M);
     const near = riversNear(seed);
     // Open over the river's own channel, wherever it runs; a river patch's dry edge is flooded forest.
+    // The forest's edge at a bai or a swamp follows the 300 m grid; each lookup is nudged up to
+    // 35 m (fixed by place), so the edge runs ragged as a real forest edge does, not ruled. The
+    // river channel itself is never covered.
     const canopyAt = (x: number, z: number): number => {
       const at = near(x, z);
       if (at.distanceM <= congoChannelHalfM(at.river, grid) + 5) return 0;
+      const kx = Math.round(x / CONGO_STEP_M), kz = Math.round(z / CONGO_STEP_M);
+      x += ((spatialHash(`canopy-edge-x:${seed}:${kx}:${kz}`) / 0xffffffff) - 0.5) * 70;
+      z += ((spatialHash(`canopy-edge-z:${seed}:${kx}:${kz}`) / 0xffffffff) - 0.5) * 70;
       const col = Math.floor((x - origin) / grid.patchM), row = Math.floor((z - origin) / grid.patchM);
       const patch = col >= 0 && row >= 0 && col < grid.cols && row < grid.rows ? byId.get(row * grid.cols + col) : undefined;
       return patch ? CANOPY_HEIGHT_M[patch.habitat === 'water' ? 'flooded_forest' : patch.habitat] ?? 0 : 0;

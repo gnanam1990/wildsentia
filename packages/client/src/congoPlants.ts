@@ -244,13 +244,13 @@ function plantParts(kind: CongoKind): PlantParts {
       return { blades: merge(leaves) };
     }
     case 'sedge': {
-      const blades: THREE.BufferGeometry[] = [];
-      for (let k = 0; k < 14; k++) {
-        const h = 0.7 + random() * 0.7, tint = new THREE.Color(0x8a9a4a).lerp(new THREE.Color(0x5e7a32), random());
-        blades.push(finish(new THREE.PlaneGeometry(0.09, h).translate(0, h / 2, 0).rotateX((random() - 0.5) * 0.6).rotateY(random() * Math.PI)
-          .translate((random() - 0.5) * 0.4, 0, (random() - 0.5) * 0.4), () => tint));
+      // A bai's sedge tuft: the photographed clump on three crossed cards, about knee to waist high.
+      const cards: THREE.BufferGeometry[] = [], h = 1.1;
+      for (let k = 0; k < 3; k++) {
+        const v = random(), tint = new THREE.Color(0.85 + v * 0.2, 0.9 + v * 0.15, 0.8 + v * 0.15);
+        cards.push(finish(new THREE.PlaneGeometry(h, h).translate(0, h / 2, 0).rotateY((k / 3) * Math.PI + random() * 0.3), () => tint));
       }
-      return { blades: merge(blades) };
+      return { blades: merge(cards) };
     }
     case 'log': {
       const moss = new THREE.Color(0x4f5a2e), bark = new THREE.Color(0x5a4a34);
@@ -357,8 +357,9 @@ export function congoPartMaterial(kind: CongoKind, part: keyof PlantParts): THRE
     }
     return wood;
   }
-  // Blades: the Marantaceae's photographed leaf for the understory, the frond for Raphia, plain for sedge.
-  const image = kind === 'marantaceae' || kind === 'herb' ? 'marantaceae' : kind === 'raphia' ? 'raphia_frond' : null, key = image ?? 'plain';
+  // Blades: the Marantaceae's photographed leaf for the understory, the frond for Raphia, the clump for sedge.
+  const image = kind === 'marantaceae' || kind === 'herb' ? 'marantaceae' : kind === 'raphia' ? 'raphia_frond' : kind === 'sedge' ? 'sedge_clump' : null,
+    key = image ?? 'plain';
   let blade = bladeMaterials.get(key);
   if (!blade) {
     const map = image ? congoTexture(image) : null;

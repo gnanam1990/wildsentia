@@ -367,7 +367,7 @@ function buildCongoGround(patches: readonly PatchView[], seed: number): THREE.Me
   if (litter) litter.repeat.set(2, 2);
   const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, ...scannedGroundMaps([1, 1]), ...(litter ? { map: litter } : {}) });
   groundTint.apply(material);
-  if (litter) crossLitter(material);
+  if (litter && congoTexture('bai_marsh')) crossLitter(material);
   const mesh = new THREE.Mesh(geometry, material);
   mesh.name = 'ground'; mesh.receiveShadow = true;
   return mesh;
@@ -379,9 +379,12 @@ function buildCongoGround(patches: readonly PatchView[], seed: number): THREE.Me
  */
 function crossLitter(material: THREE.MeshStandardMaterial): void {
   const tinted = material.onBeforeCompile, key = material.customProgramCacheKey;
+  const span = worldGrid().cols * worldGrid().patchM, bai = congoTexture('bai_marsh');
   material.onBeforeCompile = (shader, renderer) => {
     tinted(shader, renderer);
-    shader.fragmentShader = `float litterHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    shader.uniforms.baiMap = { value: bai };
+    shader.fragmentShader = `uniform sampler2D baiMap;
+float litterHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float litterNoise(vec2 p) { vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
   return mix(mix(litterHash(i), litterHash(i + vec2(1.0, 0.0)), u.x), mix(litterHash(i + vec2(0.0, 1.0)), litterHash(i + vec2(1.0, 1.0)), u.x), u.y); }
 ` + shader.fragmentShader.replace('#include <map_fragment>', `#ifdef USE_MAP
@@ -392,10 +395,13 @@ float litterNoise(vec2 p) { vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 
       litterTex.rgb = mix(vec3(dot(litterTex.rgb, vec3(0.3, 0.55, 0.15))), litterTex.rgb, 0.75) * 0.8;
       // Drifts of fresher and older, wetter litter a few metres across, so no grid shows from above.
       litterTex.rgb *= 0.72 + 0.5 * litterNoise(vMapUv * 0.37 + 3.1) * litterNoise(vMapUv * 0.9 + 7.7);
-      diffuseColor *= litterTex;
+      // Where a patch carries no litter (a bai), sedge tufts, trampled mud and puddles (a 3.2 m tile).
+      float litterShare = texture2D(groundLayers, (vGroundWorld.xz + ${(worldGrid().patchM / 2).toFixed(1)}) / ${span.toFixed(1)}).r;
+      vec4 baiTex = texture2D(baiMap, vMapUv * 0.5) * 0.85;
+      diffuseColor *= mix(baiTex, litterTex, smoothstep(0.05, 0.35, litterShare));
       #endif`);
   };
-  material.customProgramCacheKey = () => `${key.call(material)}:congo-litter-v4`;
+  material.customProgramCacheKey = () => `${key.call(material)}:congo-litter-v5`;
 }
 
 function buildGroundMesh(patches: readonly PatchView[]): THREE.Mesh {
