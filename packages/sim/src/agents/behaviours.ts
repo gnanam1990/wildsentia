@@ -516,8 +516,9 @@ function hunt(ctx: BehaviourContext): void {
       : { landBoundaryM: (p: WorldPosition, heading: number) => landRayDistance(ctx.view.grid, ctx.patches, p, heading) }),
     predatorId: ctx.agent.id, preyId: victim.id, patchId: ctx.agent.patchId, worldTime: ctx.worldTime,
     predator: locateAgent(ctx.view.grid, ctx.agent), prey: locateAgent(ctx.view.grid, victim),
-    predatorWalkMs: ctx.species.locomotion.walkMs * predatorScale * 0.45 / predatorTerrainCost,
-    predatorSprintMs: ctx.species.locomotion.sprintMs * predatorCondition / predatorTerrainCost,
+    predatorWalkMs: stalkSpeedMs(ctx.species, predatorScale, predatorTerrainCost),
+    // A flier stoops through the air: the ground's going does not slow it.
+    predatorSprintMs: ctx.species.locomotion.sprintMs * predatorCondition / (fliesSpecies(ctx.species) ? 1 : predatorTerrainCost),
     preySprintMs: preySpecies.locomotion.sprintMs * preyCondition / preyTerrainCost,
     preyTrotMs: preySpecies.locomotion.trotMs * preyCondition / preyTerrainCost,
     predatorSprintSeconds: ctx.species.locomotion.sprintStaminaS,
@@ -747,8 +748,9 @@ function flee(ctx: BehaviourContext): void {
   // Only an actual local ground predator can initiate the bounded tree escape.
   const anchor = threat?.patchId === ctx.agent.patchId && mayClimb(ctx)
     ? treeAnchorForPatch(ctx.view.grid, ctx.percept.patch) : null;
-  // Tree climbers (langur, giant squirrel and, sim_0.37.0, the leopard escaping a tiger).
-  if (anchor && ctx.species.locomotion.climbsTrees) {
+  // Tree climbers (langur, giant squirrel and, sim_0.37.0, the leopard escaping a tiger). Not from
+  // an eagle, which takes monkeys in the canopy: from a flier an animal keeps to cover.
+  if (anchor && ctx.species.locomotion.climbsTrees && !fliesSpecies(ctx.view.speciesOf(threat!.agent.speciesId))) {
     climbTree(ctx, anchor, 'local_threat');
     return;
   }
@@ -849,6 +851,15 @@ function submergeToRest(ctx: BehaviourContext, refuge: { patchId: number; positi
   emit({ ...ctx, worldTime: ctx.worldTime + seconds }, 'rested', agent.patchId, [agent.id], { reason: 'submerged', submergedUntil: agent.submergedUntil }, 'success', { hours: ctx.hours });
 }
 
+/**
+ * How fast a hunter closes on prey before it commits: a stalk at under half its walk, slowed by
+ * the ground; a flier (the crowned eagle) drops from its perch at flight speed (it had walked up
+ * to its prey at about 0.2 m/s).
+ */
+export function stalkSpeedMs(species: SpeciesConfig, scale: number, terrainCost: number): number {
+  return fliesSpecies(species) ? species.locomotion.sprintMs * scale : species.locomotion.walkMs * scale * 0.45 / terrainCost;
+}
+
 /** Dependent young, pregnant animals and adults currently responsible for dependent offspring
  * stay with the existing ground/family policy: none of them climbs. */
 function mayClimb(ctx: BehaviourContext): boolean {
@@ -908,7 +919,7 @@ function climbTree(ctx: BehaviourContext, anchor: NonNullable<ReturnType<typeof 
 /** A saved perched animal spends real time returning along its exact stable trunk. Ground
  * actions resume on the next decision, never retroactively in the remainder of this hour. */
 export function descendPerchedAnimal(grid: WorldGrid, agent: Agent, patch: Patch, worldTime: WorldTime, hours: number,
-  reason: 'threat_gone' | 'canopy_lost' | 'urgent_need' | 'forage', log: EventLog, climbs?: boolean): void {
+  reason: 'threat_gone' | 'canopy_lost' | 'urgent_need' | 'forage' | 'take_cover', log: EventLog, climbs?: boolean): void {
   const anchor = treeAnchorGeometry(grid, patch.id);
   if (!anchor || !agent.altitudeM) throw new Error('descent requires a perched agent at a stable anchor');
   const vertical = advanceTreeVertical(grid, agent, patch, 'descend', 'rest', worldTime, Math.min(3600, hours * 3600), climbs);

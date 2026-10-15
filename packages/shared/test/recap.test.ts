@@ -37,6 +37,8 @@ describe('recapLine', () => {
     expect(recapLine(roost, 'mangabey_1')?.text).toBe('Went up into the canopy to rest');
     expect(recapLine({ ...roost, conditions: { direction: 'descend', reason: 'forage' } }, 'mangabey_1')?.text)
       .toBe('Came down to forage');
+    expect(recapLine({ ...roost, conditions: { direction: 'descend', reason: 'take_cover' } }, 'mangabey_1')?.text)
+      .toBe('Dropped from the tree to cover');
     expect(recapLine({ ...roost, outcome: 'interrupted', effects: { verticalDistanceM: 3 } }, 'mangabey_1')?.text)
       .toBe('Partly climbed a tree');
   });

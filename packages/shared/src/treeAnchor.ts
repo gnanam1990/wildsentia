@@ -85,7 +85,7 @@ export function treeAnchorForPatch(grid: WorldGrid, patch: TreeAnchorPatch): Tre
 export function treeClimbGoal(direction: unknown, reason: unknown): 'flee' | 'rest' | null {
   if (direction === 'ascend') return reason === 'local_threat' ? 'flee' : reason === 'roost' ? 'rest' : null;
   if (direction === 'descend')
-    return ['threat_gone', 'canopy_lost', 'urgent_need', 'forage'].includes(String(reason)) ? 'rest' : null;
+    return ['threat_gone', 'canopy_lost', 'urgent_need', 'forage', 'take_cover'].includes(String(reason)) ? 'rest' : null;
   return null;
 }
 
