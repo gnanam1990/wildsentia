@@ -23,6 +23,7 @@
     "sprintMs": 16.0,
     "sprintStaminaS": 15,
     "climbsTrees": true,
+    "climbHeightM": 8,
     "terrainCost": {
       "shola": 1.0,
       "grassland": 1.1,

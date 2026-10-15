@@ -1,6 +1,6 @@
 import { spatialHash } from './spatial.js';
 import { habitatAnalogue } from './types/patch.js';
-import { patchCentre, patchCount, type WorldGrid } from './grid.js';
+import { CONGO_GRID, patchCentre, patchCount, type WorldGrid } from './grid.js';
 import { congoRivers, riverIndex } from './congo/rivers.js';
 import { congoChannelHalfM } from './congo/terrain.js';
 
@@ -59,7 +59,9 @@ export function treeAnchorGeometry(grid: WorldGrid, patchId: number): TreeAnchor
     version: 1, id: `tree-v1:${patchId}`, patchId,
     x: centre.x + (h / 0x1_0000_0000 - 0.5) * span,
     z: centre.z + (j / 0x1_0000_0000 - 0.5) * span,
-    climbHeightM: 6,
+    // The Congo's climbable tree is a canopy tree (trunk about 24 m, limbs from 20 m: congoPlants.ts);
+    // the island's is a 6 m one. Each climber goes as high as it does (locomotion.climbHeightM).
+    climbHeightM: grid.cols === CONGO_GRID.cols && grid.rows === CONGO_GRID.rows ? 22 : 6,
   };
 }
 

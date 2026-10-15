@@ -887,7 +887,7 @@ function climbTree(ctx: BehaviourContext, anchor: NonNullable<ReturnType<typeof 
   let trace: MovementTrace = { ...ground.trace, completed: false }, verticalDistanceM = 0, verticalSeconds = 0;
   if (ground.trace.completed && !ground.unreachable && ground.seconds < budget) {
     const vertical = advanceTreeVertical(ctx.view.grid, agent, ctx.patches[anchor.patchId]!, 'ascend', goal, ctx.worldTime,
-      budget - ground.seconds, ctx.species.locomotion.climbsTrees === true);
+      budget - ground.seconds, ctx.species.locomotion.climbsTrees === true, ctx.species.locomotion.climbHeightM);
     if (!vertical.unreachable) {
       verticalDistanceM = vertical.distanceM; verticalSeconds = vertical.seconds;
       // The vertical segment starts at zero height. Make that boundary explicit so the

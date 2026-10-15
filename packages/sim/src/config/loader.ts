@@ -41,6 +41,7 @@ export const SpeciesConfigSchema = z
       sprintStaminaS: z.number().positive(),
       terrainCost: habitatCost,
       climbsTrees: z.boolean().optional(),
+      climbHeightM: z.number().positive().max(60).optional(),
       habitatPreference: z.record(z.string(), z.number().min(0).max(1)).optional(),
       canopyDweller: z.boolean().optional(),
       // Phase B: a bird that travels by air (the vulture, the crowned eagle).

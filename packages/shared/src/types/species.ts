@@ -40,6 +40,9 @@ export interface SpeciesConfig {
      * giant squirrel, leopard). Omitted: a ground animal.
      */
     climbsTrees?: boolean;
+    /** How high up its tree it goes, metres, at most the tree's own height: a mangabey roosts in the
+     * limbs, a cat escapes part way up. Omitted: the tree's height. */
+    climbHeightM?: number;
     /**
      * Phase B: lives in the canopy (the agile mangabey). It rests and sleeps up its patch's tree
      * and comes down to forage and drink. Needs `climbsTrees`. Omitted: climbs only to escape.
