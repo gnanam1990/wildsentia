@@ -1,6 +1,10 @@
 {
   "id": "dwarf_crocodile",
   "displayName": "Dwarf crocodile",
+  "persona": {
+    "temperament": "placid",
+    "sketch": "A small, armoured crocodile, dark and knobbly. It lies in a shaded pool by day with only its eyes above the water, and at night plods along the trails snapping up crabs and frogs."
+  },
   "archetype": "apex_predator",
   "trophicRole": [
     "mesopredator"

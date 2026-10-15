@@ -1,6 +1,10 @@
 {
   "id": "bay_duiker",
   "displayName": "Bay duiker",
+  "persona": {
+    "temperament": "secretive",
+    "sketch": "A chestnut duiker with a dark stripe down its back, seen mostly as eyeshine after dark. Days pass hidden in a tangle; nights are spent nosing for fruit under the trees."
+  },
   "archetype": "herd_grazer",
   "trophicRole": [
     "browser"

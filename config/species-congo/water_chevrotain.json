@@ -1,6 +1,10 @@
 {
   "id": "water_chevrotain",
   "displayName": "Water chevrotain",
+  "persona": {
+    "temperament": "secretive",
+    "sketch": "A small, hunched, deer-like animal dappled like moonlight on leaves. It shuffles along stream banks at night, and when startled it slips into the water and is gone."
+  },
   "archetype": "herd_grazer",
   "trophicRole": [
     "browser"

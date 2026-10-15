@@ -1,6 +1,10 @@
 {
   "id": "crowned_eagle",
   "displayName": "Crowned eagle",
+  "persona": {
+    "temperament": "imperious",
+    "sketch": "A huge, crested eagle with barred underwings. It sits motionless in an emergent tree for hours, watching, then drops through the canopy without a sound."
+  },
   "archetype": "raptor",
   "trophicRole": [
     "apex_predator"

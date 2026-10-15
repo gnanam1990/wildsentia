@@ -28,6 +28,8 @@ export interface Passport {
   asOfWorldTime?: number;
   nextEventSequence?: number;
   id: string; speciesId: string; displayName: string; sex: string; ageDays: number;
+  /** The species as players meet it (its config's persona), when it has one. */
+  persona?: { temperament: string; sketch: string };
   lifeStage: string; generation: number; alive: boolean; massKg: number;
   thought: { text: string; basis: string[]; confident: boolean } | null;
   lineage: {
@@ -373,7 +375,8 @@ export class Hud {
       <p class="prov">${animal ? animal.position ? 'Positions are recorded by the server; paths between updates are interpolated, not collision-aware.' : 'Legacy patch-only data: within-patch placement is approximate.'
         : 'This view uses the saved life record when available.'} Visual coverage is asset metadata. Narration never changes outcomes.</p>`;
     const panels: Record<PassportTab, string> = {
-      overview: overview + this.#recapCard(followedId),
+      overview: (p?.persona ? `<p class="subject-persona"><strong>${escape(readable(p.persona.temperament))}.</strong> ${escape(p.persona.sketch)}</p>` : '')
+        + overview + this.#recapCard(followedId),
       life: p ? this.#skills(p) + this.#lineage(p) + this.#timeline(p)
         : '<p class="hint">Life history is unavailable right now. The saved record will appear here when it is available.</p>',
       record,

@@ -1,6 +1,10 @@
 {
   "id": "agile_mangabey",
   "displayName": "Agile mangabey",
+  "persona": {
+    "temperament": "sociable",
+    "sketch": "A slim grey monkey with a dark cap, always in a chattering troop. It sleeps high in the trees and drops to the swampy floor to turn over leaves; at a leopard it barks, and the troop is up the trunks in seconds."
+  },
   "archetype": "arboreal_troop",
   "trophicRole": [
     "browser",

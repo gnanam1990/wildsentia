@@ -13,6 +13,16 @@ describe('the Congo species (1B)', () => {
       'crowned_eagle', 'dwarf_crocodile', 'forest_buffalo', 'forest_elephant', 'peters_duiker', 'red_river_hog', 'sitatunga', 'water_chevrotain']);
     for (const id of species.keys()) expect(SOURCES[id], id).toBeTruthy();
   });
+  it('each carry a persona for players: one temperament word and a short sketch (docs/2026-10-15-congo-species-behaviour-audit.md)', () => {
+    for (const [id, cfg] of species) {
+      expect(cfg.persona, id).toBeDefined();
+      expect(['shy', 'secretive', 'wary', 'bold', 'sociable', 'placid', 'imperious'], id).toContain(cfg.persona!.temperament);
+      expect(cfg.persona!.sketch.length, id).toBeGreaterThan(60);
+      expect(cfg.persona!.sketch.length, id).toBeLessThan(400);
+    }
+    expect(species.get('blue_duiker')!.persona!.temperament).toBe('shy');
+    expect(species.get('african_leopard')!.persona!.temperament).toBe('bold');
+  });
   it('sit inside the published ranges', () => {
     const leopard = species.get('african_leopard')!, duiker = species.get('blue_duiker')!, chevrotain = species.get('water_chevrotain')!;
     expect(leopard.body.massBySexKg).toEqual({ female: 30, male: 45 });

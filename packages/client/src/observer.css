@@ -91,6 +91,8 @@
 .observer-app .track i { border-radius: 0; }
 .observer-app .subject-activity { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; padding: 12px 0; border-top: 1px solid var(--line); font-size: 11px; color: var(--ink-2); }
 .observer-app .subject-activity p { margin: 0; }
+.observer-app .subject-persona { margin: 0 0 12px; font-size: 12px; line-height: 1.5; color: var(--ink-2); }
+.observer-app .subject-persona strong { color: var(--ink); font-weight: 600; }
 .observer-app .subject-activity > div { display: flex; align-items: center; gap: 7px; }
 .observer-app .subject-watchers { color: var(--ink-3); }
 .observer-app .subject-activity strong { color: var(--ink); font-weight: 650; }

@@ -1,6 +1,10 @@
 {
   "id": "african_leopard",
   "displayName": "African leopard",
+  "persona": {
+    "temperament": "bold",
+    "sketch": "A dark-rosetted cat that owns its stretch of forest. It walks the trails at first and last light, lies still near feeding hogs, then strikes in a few bounds."
+  },
   "archetype": "apex_predator",
   "trophicRole": [
     "apex_predator"
@@ -102,7 +106,7 @@
     "subdueBreakFree": 0.2,
     "cachesKills": false,
     "preyPreference": {
-      "blue_duiker": 0.8,
+      "blue_duiker": 0.3,
       "water_chevrotain": 0.8,
       "bay_duiker": 1.5,
       "peters_duiker": 1.5,

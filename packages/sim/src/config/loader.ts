@@ -21,6 +21,10 @@ export const SpeciesConfigSchema = z
   .object({
     id: z.string().min(1),
     displayName: z.string().min(1),
+    persona: z.object({
+      temperament: z.enum(['shy', 'secretive', 'wary', 'bold', 'sociable', 'placid', 'imperious']),
+      sketch: z.string().min(20).max(400),
+    }).optional(),
     archetype: z.enum([
       'apex_predator', 'pack_predator', 'herd_grazer',
       'mega_herbivore', 'omnivore_rooter', 'arboreal_troop', 'scavenger_flyer', 'raptor',

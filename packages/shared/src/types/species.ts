@@ -11,6 +11,11 @@ export type TrophicRole =
 export interface SpeciesConfig {
   id: string;
   displayName: string;
+  /**
+   * For players, not the simulation: one temperament word and a two- or three-sentence sketch of
+   * the animal as it is seen in the forest (observable behaviour only). Omitted: none is shown.
+   */
+  persona?: { temperament: 'shy' | 'secretive' | 'wary' | 'bold' | 'sociable' | 'placid' | 'imperious'; sketch: string };
   archetype: Archetype;
   trophicRole: TrophicRole[];
   body: {

@@ -1,6 +1,10 @@
 {
   "id": "peters_duiker",
   "displayName": "Peters's duiker",
+  "persona": {
+    "temperament": "wary",
+    "sketch": "A sturdy red duiker that forages alone by day, head low and ears turning. It is more often heard crashing away than seen."
+  },
   "archetype": "herd_grazer",
   "trophicRole": [
     "browser"
