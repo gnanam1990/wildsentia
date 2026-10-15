@@ -390,10 +390,12 @@ float litterNoise(vec2 p) { vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 
       vec4 litterTex = mix(litterA, litterB, smoothstep(0.3, 0.7, litterNoise(vMapUv * 0.11)));
       // Damp, shaded litter: a little darker and less red than the photograph's dry leaves.
       litterTex.rgb = mix(vec3(dot(litterTex.rgb, vec3(0.3, 0.55, 0.15))), litterTex.rgb, 0.75) * 0.8;
+      // Drifts of fresher and older, wetter litter a few metres across, so no grid shows from above.
+      litterTex.rgb *= 0.72 + 0.5 * litterNoise(vMapUv * 0.37 + 3.1) * litterNoise(vMapUv * 0.9 + 7.7);
       diffuseColor *= litterTex;
       #endif`);
   };
-  material.customProgramCacheKey = () => `${key.call(material)}:congo-litter-v3`;
+  material.customProgramCacheKey = () => `${key.call(material)}:congo-litter-v4`;
 }
 
 function buildGroundMesh(patches: readonly PatchView[]): THREE.Mesh {
