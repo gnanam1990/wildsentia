@@ -23,6 +23,23 @@ describe('the Congo species (1B)', () => {
     expect(species.get('blue_duiker')!.persona!.temperament).toBe('shy');
     expect(species.get('african_leopard')!.persona!.temperament).toBe('bold');
   });
+  it('live and eat as the behaviour audit found them to (docs/2026-10-15-congo-species-behaviour-audit.md)', () => {
+    const g = (id: string) => species.get(id)!;
+    // Elephant families keep together: a lone cow is not a family.
+    expect(g('forest_elephant').social.groupSize[0]).toBe(2);
+    // Duikers listen for the mangabey troop's alarm calls.
+    for (const id of ['blue_duiker', 'peters_duiker']) expect(g(id).social.heedsAlarmOf, id).toContain('agile_mangabey');
+    // The mangabey eats mostly fruit and seeds (the forest's fallen fruit, `roots`), and some leaves.
+    const eats = g('agile_mangabey').diet.eats;
+    expect(eats.find((e) => e.target === 'roots')?.preference).toBe(1);
+    expect(eats.find((e) => e.target === 'browse')?.preference).toBeLessThan(0.5);
+    // The golden cat takes juvenile mangabeys, never an adult (6-10 kg), and still a blue duiker.
+    expect(g('african_golden_cat').hunting!.maxPreyKg).toBeLessThan(g('agile_mangabey').body.massBySexKg!.female);
+    expect(g('african_golden_cat').hunting!.maxPreyKg).toBeGreaterThan(g('blue_duiker').body.adultMassKg);
+    // The sitatunga is solitary or in small groups of females, not a pair.
+    expect(g('sitatunga').social.structure).toBe('solitary');
+    expect(g('sitatunga').social.groupSize).toEqual([1, 3]);
+  });
   it('sit inside the published ranges', () => {
     const leopard = species.get('african_leopard')!, duiker = species.get('blue_duiker')!, chevrotain = species.get('water_chevrotain')!;
     expect(leopard.body.massBySexKg).toEqual({ female: 30, male: 45 });

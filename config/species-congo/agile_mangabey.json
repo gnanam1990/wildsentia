@@ -55,8 +55,13 @@
   "diet": {
     "eats": [
       {
-        "target": "browse",
+        "target": "roots",
         "preference": 1.0
+      },
+      {
+        "target": "browse",
+        "preference": 0.33,
+        "foodValue": 0.7
       }
     ],
     "dailyIntakeKg": 0.35,

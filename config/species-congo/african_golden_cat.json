@@ -80,7 +80,7 @@
     "baseSuccess": 0.45,
     "staminaCostPerChase": 0.3,
     "huntFromHunger": 0.3,
-    "maxPreyKg": 8,
+    "maxPreyKg": 5,
     "preferredPreyKg": [
       1,
       6

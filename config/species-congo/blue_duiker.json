@@ -74,7 +74,10 @@
       2
     ],
     "alarmSharing": true,
-    "pairBond": true
+    "pairBond": true,
+    "heedsAlarmOf": [
+      "agile_mangabey"
+    ]
   },
   "activity": {
     "hourly": [

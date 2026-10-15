@@ -73,7 +73,7 @@
     "carrionTolerance": 0.0
   },
   "social": {
-    "structure": "pair",
+    "structure": "solitary",
     "groupSize": [
       1,
       3
