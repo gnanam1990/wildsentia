@@ -120,6 +120,9 @@ export function threatFear(posture: ThreatPosture, distanceM: number, rangeM: nu
   return distanceM <= escape.flightInitiationM ? 0.5 : 0.2 + 0.2 * closeness(rangeM);
 }
 
+/** The most a predator that cannot take an animal frightens it: watchful, below fleeing. */
+export const UNTAKEABLE_FEAR = 0.3;
+
 export function threatPosture(predator: Agent): ThreatPosture {
   if (predator.currentGoal === 'hunt' || predator.state === 'stalking') return 'hunting';
   return predator.state === 'travelling' || predator.state === 'fleeing' ? 'moving' : 'settled';
@@ -223,8 +226,12 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
       const rangeM = posture === 'hunting' ? senseM * (1 - (otherSpecies.hunting?.stalkConcealment ?? 0)) : senseM;
       const at = where(view.grid, other), distanceM = Math.hypot(at.x - here.x, at.z - here.z);
       if (distanceM > rangeM) continue;
-      dangerous.add(p.id);
-      const fear = threatFear(posture, distanceM, rangeM, species.escape);
+      // A predator that cannot take this animal (heavier than its maxPreyKg: a grown buffalo and a
+      // leopard) leaves it watchful, not fleeing, and does not make the patch one to keep from.
+      const takeable = agent.massKg <= (otherSpecies.hunting?.maxPreyKg ?? Infinity);
+      if (takeable) dangerous.add(p.id);
+      const fear = takeable ? threatFear(posture, distanceM, rangeM, species.escape)
+        : Math.min(UNTAKEABLE_FEAR, threatFear(posture, distanceM, rangeM, species.escape));
       if (threat === null || fear > threat.fear) threat = { agent: other, patchId: p.id, distanceM, posture, fear };
     }
   }
