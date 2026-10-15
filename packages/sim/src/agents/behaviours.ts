@@ -10,7 +10,7 @@ import { choosePrey } from './predation.js';
 import { resolveSpatialHunt } from './encounters.js';
 import { canRetryPrey, rememberFailedHunt } from './huntMemory.js';
 import type { GoalChoice } from './goals.js';
-import { HUNGER_DESPERATION, perceive, canReachCarcass, heldByPredatorOf, type Percept, type WorldView } from './perception.js';
+import { HUNGER_DESPERATION, perceive, canHunt, canReachCarcass, heldByPredatorOf, type Percept, type WorldView } from './perception.js';
 import { locateAgent, locateCarcass } from './spatial.js';
 import { approachContact } from './movement.js';
 import { navigate } from './navigation.js';
@@ -222,9 +222,39 @@ function feed(ctx: BehaviourContext, mayMove = true): void {
     { hunger: ctx.agent.drives.hunger, available }, 'success', { kg: eaten, ...(fromRoots > 0 ? { rootsKg: fromRoots } : {}) });
 }
 
+/** Hunter and hunted keep this far apart at the water. */
+const WATER_WARINESS_M = 15;
+/** Thirst past which an animal drinks whoever stands at the water. */
+const WATER_DESPERATE_THIRST = 0.85;
+
+/**
+ * Whether an animal that hunts this one, or that this one hunts, stands at a patch's water now.
+ * Animals deciding in the same hour cannot have seen each other set out, so a golden cat and a
+ * blue duiker came to one access point together and drank side by side. Whoever comes second
+ * holds back (sees the other there, as decisions run in turn), unless desperate. An animal up a
+ * tree or under water is not at the bank.
+ */
+function waterShared(ctx: BehaviourContext, patchId: number): boolean {
+  if (ctx.agent.drives.thirst >= WATER_DESPERATE_THIRST) return false;
+  const source = waterAccessPosition(ctx.view.grid, patchId, ctx.patches);
+  for (const other of ctx.view.agentsInPatch(patchId)) {
+    if (!other.alive || other.id === ctx.agent.id || (other.altitudeM ?? 0) > 0 || other.locomotionMode === 'submerged') continue;
+    const at = locateAgent(ctx.view.grid, other);
+    if (Math.hypot(at.x - source.x, at.z - source.z) > WATER_WARINESS_M) continue;
+    const species = ctx.view.speciesOf(other.speciesId);
+    if (canHunt(species, ctx.species, ctx.agent) || canHunt(ctx.species, species, other)) return true;
+  }
+  return false;
+}
+
 function drink(ctx: BehaviourContext, mayMove = true, causalParents: string[] = []): void {
   const patch = ctx.patches[ctx.agent.patchId]!;
   const target = ctx.percept.bestWater;
+  // Hunter and hunted do not drink side by side: hold back this hour (no move, no drink).
+  if (mayMove && waterShared(ctx, target !== null && (patch.waterVolume <= 0 || ctx.percept.dangerous.has(patch.id)) ? target.patchId : patch.id)) {
+    delete ctx.agent.journey; ctx.agent.state = 'resting';
+    return;
+  }
 
   // An animal at water drinks its fill: whatever takes its thirst back to nothing. Rationed to
   // a fraction an hour, a thirsty gaur drank for an hour, got hungry, walked off to pasture and
