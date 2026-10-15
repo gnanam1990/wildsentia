@@ -38,6 +38,13 @@
       "swamp_forest": 1.0,
       "bai": 1.4
     },
+    "habitatPreference": {
+      "flooded_forest": 1,
+      "swamp_forest": 1,
+      "water": 1,
+      "bai": 0.3,
+      "terra_firme": 0.2
+    },
     "floodedTerrainCost": {
       "flooded_forest": 0.8,
       "water": 0.8

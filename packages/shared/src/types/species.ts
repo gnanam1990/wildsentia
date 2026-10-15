@@ -49,6 +49,12 @@ export interface SpeciesConfig {
     flies?: boolean;
     /** Congo 1B: swims, and dives to escape, staying under for up to `diveSeconds`. Omitted: never swims. */
     swims?: { swimMs: number; diveSeconds: number };
+    /**
+     * How strongly it keeps to each habitat, 0-1 (1, or omitted, for any habitat it does not name
+     * when it names none): a wetland specialist chooses food and wanders by it, so a sitatunga
+     * stays in the swamp though dry forest holds more browse.
+     */
+    habitatPreference?: Partial<Record<string, number>>;
     /** Congo 1B: what crossing water or flooded forest costs while it is flooded, where not `terrainCost`. */
     floodedTerrainCost?: { water?: number; flooded_forest?: number };
   };

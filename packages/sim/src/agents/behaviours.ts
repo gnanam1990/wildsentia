@@ -13,7 +13,7 @@ import type { GoalChoice } from './goals.js';
 import { HUNGER_DESPERATION, perceive, canHunt, canReachCarcass, heldByPredatorOf, threatens, type Percept, type WorldView } from './perception.js';
 import { locateAgent, locateCarcass } from './spatial.js';
 import { approachContact } from './movement.js';
-import { floodShy, navigate } from './navigation.js';
+import { floodShy, habitatWeight, navigate } from './navigation.js';
 import { allowsDependentGoal, cannotYetWalk, canEatMaternalCarcass, canHuntIndependently, creditMeal, gutCapacityKg, locomotionFactor,
   mealRoom, needsOf, needsProvisioning } from './needs.js';
 import { exposeToCarrion } from './illness.js';
@@ -335,7 +335,10 @@ function wander(ctx: BehaviourContext): void {
   }
   const walkable = ctx.percept.patch.neighbours.filter(id => landWalkable(ctx.patches[id]));
   const safe = walkable.filter(id => !avoid(id));
-  const options = safe.length ? safe : walkable;
+  const unpicky = safe.length ? safe : walkable;
+  // A wetland specialist wanders within the habitats it keeps to (habitatWeight 0.5 or more), if it can.
+  const liked = unpicky.filter(id => habitatWeight(ctx.species, ctx.patches[id]!.habitat) >= 0.5);
+  const options = liked.length ? liked : unpicky;
   if (options.length === 0) { ctx.agent.state = 'resting'; return; }
 
   const structure = ctx.species.social.structure;

@@ -1,6 +1,6 @@
 import { edibleMass, landWalkable, patchCentre, patchIdAt, positionInPatch, type WorldGrid, type Agent, type Carcass, type Patch, type SpeciesConfig, type Season } from '@vana/shared';
 import { confidenceOf } from './learning.js';
-import { floodShy } from './navigation.js';
+import { floodShy, habitatWeight } from './navigation.js';
 import { canEatMaternalCarcass, canFollowParent, needsOf, needsProvisioning } from './needs.js';
 
 /** What the behaviour layer is allowed to ask the world. Agents never read global state. */
@@ -201,7 +201,7 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
   const neighbours = patch.neighbours.map((id) => view.patches[id]!).filter(landWalkable);
   const visible = patchesWithin(view.grid, patch, perceptionRadius(view.grid, species), view.patches);
 
-  let bestFood: Percept['bestFood'] = null;
+  let bestFood: Percept['bestFood'] = null, bestFoodScore = 0;
   let bestWater: Percept['bestWater'] = null;
   let carrion: Percept['carrion'] = null;
   let threat: Percept['threat'] = null;
@@ -234,7 +234,9 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
   const shy = floodShy(species);
   for (const p of visible) {
     const kg = edibleKg(p, species);
-    if (kg > 0 && (starving || !dangerous.has(p.id) && !(shy && p.flooded === true)) && (bestFood === null || kg > bestFood.kg)) bestFood = { patchId: p.id, kg };
+    // A wetland specialist weighs food by how much it keeps to that habitat (habitatWeight).
+    if (kg > 0 && (starving || !dangerous.has(p.id) && !(shy && p.flooded === true))
+      && (bestFood === null || kg * habitatWeight(species, p.habitat) > bestFoodScore)) { bestFood = { patchId: p.id, kg }; bestFoodScore = kg * habitatWeight(species, p.habitat); }
     if (p.waterVolume > 0 && (thirsty || !dangerous.has(p.id)) && (bestWater === null || p.waterVolume > bestWater.litres)) {
       bestWater = { patchId: p.id, litres: p.waterVolume };
     }
@@ -304,7 +306,9 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
       const steps = Math.abs(p.x - patch.x) + Math.abs(p.y - patch.y);
       if (needFood && steps <= foodReach) {
         const kg = edibleKg(p, species);
-        if (kg > (bestFood?.kg ?? 0) && !(shy && p.flooded === true && !starving)) bestFood = { patchId: p.id, kg };
+        if (kg * habitatWeight(species, p.habitat) > bestFoodScore && !(shy && p.flooded === true && !starving)) {
+          bestFood = { patchId: p.id, kg }; bestFoodScore = kg * habitatWeight(species, p.habitat);
+        }
       }
       if (needWater && steps <= waterReach && p.waterVolume > (bestWater?.litres ?? 0)) {
         bestWater = { patchId: p.id, litres: p.waterVolume };

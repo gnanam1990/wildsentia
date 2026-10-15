@@ -64,6 +64,11 @@ export function standingPoint(grid: WorldGrid, id: string, patch: Pick<Patch, 'i
   return best < 0 ? spot : { x: dry[best]!, z: dry[best + 1]!, heading: 0 };
 }
 
+/** How strongly a species keeps to a habitat (locomotion.habitatPreference): 1 where unnamed. */
+export function habitatWeight(cfg: SpeciesConfig, habitat: string): number {
+  return cfg.locomotion.habitatPreference?.[habitat] ?? 1;
+}
+
 /** A flood-shy animal (crossing flooded forest costs it 3 or more: the duikers, the cats, the
  * buffalo) does not feed or rest standing in a flood; waders (sitatunga, chevrotain, hogs,
  * elephants) and swimmers do. */
