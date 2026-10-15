@@ -563,7 +563,7 @@ const sceneUpdates = new SceneUpdates<{
         if (congoForest === null) {
           congoForest = new CongoForest(); scene.add(congoForest.root);
           // Plants between the camera and a followed animal are cut away, as the island's trees are.
-          for (const material of [...Object.values(congoPlantMaterials()), congoCrownMaterials().leaves]) observerVisibility.patch(material);
+          for (const material of [...congoPlantMaterials(), congoCrownMaterials().leaves]) observerVisibility.patch(material);
         }
         const flooded = update.environment.patches.some((p) => p.flooded === true);
         congoForest.setScene(update.environment.patches, congoSeed, flooded);
@@ -779,6 +779,13 @@ setInterval(() => {
   void insightPanel.outlook(followedId !== null && liveAgents.avatarForAnimal(followedId) ? null : followedId);
 }, 30_000);
 
+// Dev-only: `?hour=11` lights the scene at that hour of the shown day (presentation only), so the
+// forest can be compared in daylight whatever the world's clock says.
+const litHour = import.meta.env.DEV ? Number(new URLSearchParams(location.search).get('hour') ?? NaN) : NaN;
+function litTime(worldTime: number): number {
+  return Number.isFinite(litHour) ? Math.floor(worldTime / 86400) * 86400 + litHour * 3600 : worldTime;
+}
+
 // Dev-only handle so the running world can be inspected from the console.
 if (import.meta.env.DEV) {
   (window as unknown as Record<string, unknown>).__vana = { scene, camera, follow, animals, store, liveEncounters, startReplay };
@@ -822,7 +829,7 @@ function renderFrame(dt: number, now: number): void {
       hideFarFieldNear(terrainRoot, camera.position, NEAR_RADIUS_M,
         nature.hasTreeLod ? Number.POSITIVE_INFINITY : TREE_DETAIL_RADIUS_M, COVER_RADIUS_M - 12);
     }
-    nature.setDistantLight(store.world ? atmosphereAt(liveWorldTime(now)!, store.world.season).daylight : 1);
+    nature.setDistantLight(store.world ? atmosphereAt(litTime(liveWorldTime(now)!), store.world.season).daylight : 1);
     if (store.world) nature.setSeason(store.world.season);
   }
   groundCover?.update(camera.position, 2);
@@ -855,7 +862,7 @@ function frame(): void {
   follow.reducedMotion = reducedMotion.matches;
   refreshEncounterPicker(now);
   if (store.world !== null) {
-    const shownTime = liveWorldTime(now)!;
+    const shownTime = litTime(liveWorldTime(now)!);
     atmosphere.update(shownTime, store.world.season, now / 1000, follow.target, reducedMotion.matches, follow.distance, camera.position);
     renderer.toneMappingExposure = observerExposure(atmosphereAt(shownTime, store.world.season).daylight, follow.distance);
   }

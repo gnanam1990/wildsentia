@@ -131,6 +131,28 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
   (`tools/art/rig_crocodile.py`: spine, eight-bone tail, sprawled legs, a lower jaw that gapes at rest and snaps when it feeds; weights by distance to the
   bones, as bone heat found no solution on its scutes), keyframed, not motion capture.
 
+
+## VANA — Congo forest textures (14 October 2026)
+- Used for: the Congo forest's bark (pale emergents, brown canopy and midstory trees and lianas,
+  Raphia trunks), leaf cards (a 2 x 2 atlas of sprays: dark glossy, bronze-flushed, feathery
+  compound), the Marantaceae understory leaf, the Raphia frond, the leaf-litter floor and the canopy
+  seen from above. Files: `congo/*.webp`.
+- Generated for this project with Higgsfield under the owner's paid plan (Pro): GPT Image 2.5, high
+  quality, 1k (leaf sprays 9ac1d293, f6b9a06e, 37b9f281; barks 05a86265, d0aa1b52, feae9a20; leaf litter
+  c766cb2e; Marantaceae leaf 507ec5e2; Raphia frond 33b3d4c9; canopy 6d57a72b). Leaf, leaf-card and frond
+  images were made with transparent backgrounds.
+- Processed locally (Pillow): bark, litter and canopy made tileable by blending each with its own
+  half-offset copy; leaf colours bled into the transparent pixels so cut edges show no dark rim; the
+  three sprays packed into the atlas (its fourth tile is the first, mirrored and turned); WebP.
+- They show what such a forest looks like; they are not species identifications. SHA-256 (first 16):
+  - `congo/bark_pale.webp`: `330fc9b47b253574`
+  - `congo/bark_brown.webp`: `d78bf770390790c9`
+  - `congo/bark_raphia.webp`: `504b6b8dbc3078fa`
+  - `congo/leaves_atlas.webp`: `1512040f255d1009`
+  - `congo/marantaceae.webp`: `d5c16cbd254b26e9`
+  - `congo/raphia_frond.webp`: `1f7d4d3352eeb9c3`
+  - `congo/floor_litter.webp`: `55d3030f1257c562`
+  - `congo/canopy_aerial.webp`: `058ea249b6a5efb4`
 ## VANA — generated wild boar (WildBoar)
 - Used for: boar (WildBoar), from 5 October 2026.
 - Surface: generated for this project with Higgsfield under the owner's paid plan (Pro). Three

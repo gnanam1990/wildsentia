@@ -18,7 +18,7 @@ const RIVER_BELOW_LEVEL_M = 0.4;
 /** Flood water over the flooded forest's floor in the rains. */
 export const FLOOD_DEPTH_M = 0.6;
 
-const COLOURS = { main: 0x7d6444, tributary: 0x4a3a26, flood: 0x3a3020 } as const;
+const COLOURS = { main: 0x3a2814, tributary: 0x2a1d0e, flood: 0x2e2414 } as const;
 
 let riverCache: { seed: number; rivers: RiverPath[]; near: ReturnType<typeof riverIndex> } | null = null;
 function riversOf(seed: number): NonNullable<typeof riverCache> {
@@ -48,10 +48,39 @@ function rippleNormals(): THREE.Texture | null {
   return ripples = texture;
 }
 
+let forest: THREE.Texture | null | undefined;
+/**
+ * What still blackwater mirrors under a rainforest: a band of bright sky overhead, the dark green
+ * wall of the forest around, and nothing below (an equirectangular image drawn once on a canvas).
+ */
+function forestReflection(): THREE.Texture | null {
+  if (forest !== undefined) return forest;
+  if (typeof document === 'undefined') return forest = null;
+  const canvas = document.createElement('canvas');
+  canvas.width = 256; canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return forest = null;
+  const sky = ctx.createLinearGradient(0, 0, 0, 128);
+  sky.addColorStop(0, '#dfe6e2'); sky.addColorStop(0.28, '#a9b8a4'); sky.addColorStop(0.42, '#3d5230');
+  sky.addColorStop(0.5, '#1d2a16'); sky.addColorStop(1, '#0c0f08');
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, 256, 128);
+  // Crowns along the far bank break the horizon.
+  for (let x = 0; x < 256; x += 3) {
+    const top = 40 + Math.sin(x * 0.21) * 4 + Math.sin(x * 0.067) * 7;
+    ctx.fillStyle = `hsl(${95 + (x % 17)}, 30%, ${14 + (x % 11)}%)`; ctx.fillRect(x, top, 3, 64 - top);
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.mapping = THREE.EquirectangularReflectionMapping;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return forest = texture;
+}
+
+/** Tea-coloured blackwater: dark, still, mirroring the forest and the sky through its ripples. */
 function waterMaterial(colour: number, opacity: number): THREE.MeshStandardMaterial {
-  const normalMap = rippleNormals();
-  return new THREE.MeshStandardMaterial({ color: colour, roughness: 0.06, metalness: 0.25, transparent: opacity < 1, opacity, depthWrite: opacity >= 1,
-    ...(normalMap ? { normalMap, normalScale: new THREE.Vector2(0.35, 0.35) } : {}) });
+  const normalMap = rippleNormals(), envMap = forestReflection();
+  return new THREE.MeshStandardMaterial({ color: colour, roughness: 0.08, metalness: 0, transparent: opacity < 1, opacity, depthWrite: opacity >= 1,
+    ...(envMap ? { envMap, envMapIntensity: 1.1 } : {}),
+    ...(normalMap ? { normalMap, normalScale: new THREE.Vector2(0.3, 0.3) } : {}) });
 }
 
 /** Texture coordinates from world position: one ripple tile every 24 m wherever the water is. */

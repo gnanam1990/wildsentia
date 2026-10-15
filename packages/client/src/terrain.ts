@@ -1,6 +1,7 @@
 import { ISLAND_GRID } from '@vana/shared';
 import { worldGrid } from './worldGrid.js';
 import { congoHeightFn } from '@vana/shared';
+import { congoTexture } from './congoTextures.js';
 import * as THREE from 'three';
 import { ISLAND_SEGMENTS, treeAnchorForPatch, treeAnchorRemnantForPatch } from '@vana/shared';
 import { islandHeightField } from './islandHeightField.js';
@@ -360,11 +361,39 @@ function buildCongoGround(patches: readonly PatchView[], seed: number): THREE.Me
   for (let i = 0; i < position.count; i++) uv.setXY(i, position.getX(i) / 3.2, position.getZ(i) / 3.2);
   geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(position.count * 3).fill(1), 3));
   geometry.computeVertexNormals();
-  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, ...scannedGroundMaps([1, 1]) });
+  // The Congo floor: a photographed leaf litter, a tile every 1.6 m, over the scanned soil's relief.
+  // Its own copy, as the terrain's textures are disposed with it.
+  const litter = congoTexture('floor_litter')?.clone() ?? null;
+  if (litter) litter.repeat.set(2, 2);
+  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, ...scannedGroundMaps([1, 1]), ...(litter ? { map: litter } : {}) });
   groundTint.apply(material);
+  if (litter) crossLitter(material);
   const mesh = new THREE.Mesh(geometry, material);
   mesh.name = 'ground'; mesh.receiveShadow = true;
   return mesh;
+}
+
+/**
+ * Crosses the leaf litter with a turned, larger copy of itself where a slow noise says, so its
+ * 1.6 m repeat does not show as a pattern across the floor.
+ */
+function crossLitter(material: THREE.MeshStandardMaterial): void {
+  const tinted = material.onBeforeCompile, key = material.customProgramCacheKey;
+  material.onBeforeCompile = (shader, renderer) => {
+    tinted(shader, renderer);
+    shader.fragmentShader = `float litterHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float litterNoise(vec2 p) { vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(litterHash(i), litterHash(i + vec2(1.0, 0.0)), u.x), mix(litterHash(i + vec2(0.0, 1.0)), litterHash(i + vec2(1.0, 1.0)), u.x), u.y); }
+` + shader.fragmentShader.replace('#include <map_fragment>', `#ifdef USE_MAP
+      vec4 litterA = texture2D(map, vMapUv);
+      vec4 litterB = texture2D(map, mat2(0.8, -0.6, 0.6, 0.8) * vMapUv * 0.63 + 0.29);
+      vec4 litterTex = mix(litterA, litterB, smoothstep(0.3, 0.7, litterNoise(vMapUv * 0.11)));
+      // Damp, shaded litter: a little darker and less red than the photograph's dry leaves.
+      litterTex.rgb = mix(vec3(dot(litterTex.rgb, vec3(0.3, 0.55, 0.15))), litterTex.rgb, 0.75) * 0.8;
+      diffuseColor *= litterTex;
+      #endif`);
+  };
+  material.customProgramCacheKey = () => `${key.call(material)}:congo-litter-v3`;
 }
 
 function buildGroundMesh(patches: readonly PatchView[]): THREE.Mesh {
