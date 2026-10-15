@@ -67,6 +67,7 @@
     "dailyIntakeKg": 0.35,
     "offRosterShare": 0.25,
     "waterNeedLPerDay": 0.3,
+    "preformedWaterShare": 0.7,
     "canScavenge": false,
     "carrionTolerance": 0.0
   },

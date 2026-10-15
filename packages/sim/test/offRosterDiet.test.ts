@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { Agent } from '@vana/shared';
 import { loadSpeciesDir } from '../src/config/loader.js';
-import { HUNGER_PER_DAY, updateDrives } from '../src/agents/drives.js';
+import { HUNGER_PER_DAY, THIRST_PER_DAY, updateDrives } from '../src/agents/drives.js';
 import { digestGut, needsOf } from '../src/agents/needs.js';
 
 const congo = loadSpeciesDir(fileURLToPath(new URL('../../../config/species-congo', import.meta.url)));
@@ -32,5 +32,21 @@ describe('food from beyond the roster', () => {
     updateDrives(a, cfg, 24); digestGut(a, cfg, 24);
     expect(a.drives.hunger).toBeCloseTo(0, 10);
     expect(a.gutKg).toBeCloseTo(1 - daily * (1 - 0.72), 10);
+  });
+});
+
+// Fruit-eaters get most of their water from their food, and a crowned eagle from its prey: they
+// do not walk to water every day (docs/2026-10-15-congo-species-behaviour-audit.md).
+describe('water from food', () => {
+  it('leaves only the rest of a day\'s thirst to drinking', () => {
+    for (const [id, share] of [['blue_duiker', 0.8], ['bay_duiker', 0.7], ['peters_duiker', 0.7], ['agile_mangabey', 0.7], ['crowned_eagle', 0.95]] as const) {
+      const cfg = congo.get(id)!, a = animal();
+      expect(cfg.diet.preformedWaterShare, id).toBe(share);
+      updateDrives(a, cfg, 24);
+      expect(a.drives.thirst, id).toBeCloseTo(THIRST_PER_DAY * (1 - share), 10);
+    }
+    const hog = congo.get('red_river_hog')!, h = animal();
+    updateDrives(h, hog, 24);
+    expect(h.drives.thirst).toBeCloseTo(THIRST_PER_DAY, 10);
   });
 });

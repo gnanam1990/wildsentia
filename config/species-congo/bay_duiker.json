@@ -64,6 +64,7 @@
     "dailyIntakeKg": 1.4,
     "maxDailyIntakeKg": 2.0,
     "waterNeedLPerDay": 0.6,
+    "preformedWaterShare": 0.7,
     "canScavenge": false,
     "carrionTolerance": 0.0
   },

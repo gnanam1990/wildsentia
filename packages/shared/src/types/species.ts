@@ -83,6 +83,11 @@ export interface SpeciesConfig {
      */
     offRosterShare?: number;
     /**
+     * The share of its water an animal gets from its food (fruit, leaves, prey), 0-0.98: only the
+     * rest of a day's thirst sends it to drink. Omitted: it drinks all it needs.
+     */
+    preformedWaterShare?: number;
+    /**
      * sim_0.37.0: the most food (kg as eaten) the gut can process in a day. Where some food is
      * worth less than a kilogram of need (foodValue), this is what stops an animal making up poor
      * food by eating more of it (wild boar on fibrous grass). Omitted: no daily limit.
