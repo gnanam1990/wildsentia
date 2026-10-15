@@ -13,7 +13,7 @@ import type { GoalChoice } from './goals.js';
 import { HUNGER_DESPERATION, perceive, canHunt, canReachCarcass, heldByPredatorOf, threatens, type Percept, type WorldView } from './perception.js';
 import { locateAgent, locateCarcass } from './spatial.js';
 import { approachContact } from './movement.js';
-import { navigate } from './navigation.js';
+import { floodShy, navigate } from './navigation.js';
 import { allowsDependentGoal, cannotYetWalk, canEatMaternalCarcass, canHuntIndependently, creditMeal, gutCapacityKg, locomotionFactor,
   mealRoom, needsOf, needsProvisioning } from './needs.js';
 import { exposeToCarrion } from './illness.js';
@@ -164,9 +164,10 @@ function feed(ctx: BehaviourContext, mayMove = true): void {
   // What an hour here can actually give it, once gut fill bounds the green forage.
   const availableNeed = roots + Math.min(available, Math.max(0, wanted - roots)) * plantValue;
 
-  // Move only if this patch cannot feed the animal now, or a predator that hunts it stands
-  // here (sim_0.34.0). Otherwise eat where it stands.
-  if (mayMove && (availableNeed < wanted || ctx.percept.dangerous.has(patch.id)) && target !== null && target.patchId !== patch.id) {
+  // Move only if this patch cannot feed the animal now, a predator that hunts it stands here
+  // (sim_0.34.0), or it is flood-shy and standing in a flood. Otherwise eat where it stands.
+  const wet = floodShy(ctx.species) && patch.flooded === true;
+  if (mayMove && (availableNeed < wanted || ctx.percept.dangerous.has(patch.id) || wet) && target !== null && target.patchId !== patch.id) {
     const travel = moveTo(ctx, target.patchId);
     if (travel.trace.completed && travel.seconds < ctx.hours * 3600) feed(afterTravel(ctx, travel.seconds), false);
     return;
@@ -304,6 +305,11 @@ function rest(ctx: BehaviourContext): void {
   const anchor = ctx.species.locomotion.canopyDweller && ctx.species.locomotion.climbsTrees && mayClimb(ctx)
     ? treeAnchorForPatch(ctx.view.grid, ctx.percept.patch) : null;
   if (anchor) { climbTree(ctx, anchor, 'roost'); return; }
+  // A flood-shy animal does not lie down in a flood: it walks to the nearest dry ground first.
+  if (floodShy(ctx.species) && ctx.percept.patch.flooded === true) {
+    const dry = ctx.percept.neighbours.find((n) => n.flooded !== true && landWalkable(n) && !ctx.percept.dangerous.has(n.id));
+    if (dry) { moveTo(ctx, dry.id); return; }
+  }
   delete ctx.agent.journey;
   ctx.agent.state = 'resting';
   ctx.agent.stamina = clamp01((ctx.agent.stamina ?? 1) + 0.25 * ctx.hours);

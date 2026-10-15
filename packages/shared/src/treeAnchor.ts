@@ -31,11 +31,17 @@ export interface TreeAnchorPatch {
 /** Rivers by seed and grid, built once: a Congo anchor in a channel has no tree to climb. */
 const riversBySeed = new Map<string, ReturnType<typeof riverIndex>>();
 export function inCongoChannel(grid: WorldGrid, seed: number, x: number, z: number): boolean {
+  const at = congoRiverAt(grid, seed, x, z);
+  return at.distanceM <= at.halfM + 3;
+}
+
+/** The nearest Congo river to a point: how far its centre line is, and its channel's half-width. */
+export function congoRiverAt(grid: WorldGrid, seed: number, x: number, z: number): { distanceM: number; halfM: number } {
   const key = `${seed}:${grid.cols}x${grid.rows}:${grid.patchM}`;
   let near = riversBySeed.get(key);
   if (!near) { near = riverIndex(congoRivers(seed, grid)); riversBySeed.set(key, near); }
   const at = near(x, z);
-  return at.distanceM <= congoChannelHalfM(at.river, grid) + 3;
+  return { distanceM: at.distanceM, halfM: congoChannelHalfM(at.river, grid) };
 }
 
 /**

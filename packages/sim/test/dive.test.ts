@@ -24,6 +24,8 @@ function stage(world: World) {
   // A sated chevrotain (nothing to do but get away) beside a leopard on the move.
   chevrotain.drives.thirst = 0; chevrotain.drives.hunger = 0; chevrotain.drives.fear = 0.9;
   leopard.state = 'travelling'; leopard.currentGoal = 'wander';
+  // Not tired: a resting leopard, flood-shy, would first walk out of the flood to dry ground.
+  Object.assign(leopard.drives, { hunger: 0.1, thirst: 0.1, fatigue: 0, fear: 0 });
   return { chevrotain, leopard, shore };
 }
 

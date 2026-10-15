@@ -1,3 +1,4 @@
+import { warmDryGround } from './agents/navigation.js';
 import {
   NUTRIENT_PER_KG_BIOMASS, gridForProfile, patchCentre, patchCount, type WorldGrid, WORLD_SECONDS_PER_DAY, WORLD_SECONDS_PER_HOUR,
   createRng, isClosedProfile, isCongoProfile, isFlooded, isIslandProfile, seasonAt, carcassMass, edibleMass, landWalkable, spatialHash, treeAnchorForPatch, patchAtPosition, positionInPatch, isWorldPosition, type TerrainProfile,
@@ -143,6 +144,8 @@ export class World {
     this.#edgeIds = edgePatchIds(this.grid);
     this.#edges = new Set(this.#edgeIds);
     this.patches = buildGrid(options.seed, this.terrainProfile, this.grid);
+    // A land animal's dry footing beside each Congo river (navigation.ts), found once, not in an hour.
+    warmDryGround(this.grid, this.patches);
     this.microEcology = seedMicroEcology(this.patches, 0);
     establishFloweringGuild(this.patches, 0);
     establishRooting(this.patches);

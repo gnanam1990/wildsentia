@@ -1,5 +1,6 @@
 import { edibleMass, landWalkable, patchCentre, patchIdAt, positionInPatch, type WorldGrid, type Agent, type Carcass, type Patch, type SpeciesConfig, type Season } from '@vana/shared';
 import { confidenceOf } from './learning.js';
+import { floodShy } from './navigation.js';
 import { canEatMaternalCarcass, canFollowParent, needsOf, needsProvisioning } from './needs.js';
 
 /** What the behaviour layer is allowed to ask the world. Agents never read global state. */
@@ -229,9 +230,11 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
   }
   const thirsty = agent.drives.thirst >= THIRST_DESPERATION, starving = agent.drives.hunger >= HUNGER_DESPERATION;
 
+  // Flood-shy animals look for food on dry ground in a flood (floodShy, navigation.ts).
+  const shy = floodShy(species);
   for (const p of visible) {
     const kg = edibleKg(p, species);
-    if (kg > 0 && (starving || !dangerous.has(p.id)) && (bestFood === null || kg > bestFood.kg)) bestFood = { patchId: p.id, kg };
+    if (kg > 0 && (starving || !dangerous.has(p.id) && !(shy && p.flooded === true)) && (bestFood === null || kg > bestFood.kg)) bestFood = { patchId: p.id, kg };
     if (p.waterVolume > 0 && (thirsty || !dangerous.has(p.id)) && (bestWater === null || p.waterVolume > bestWater.litres)) {
       bestWater = { patchId: p.id, litres: p.waterVolume };
     }
@@ -301,7 +304,7 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
       const steps = Math.abs(p.x - patch.x) + Math.abs(p.y - patch.y);
       if (needFood && steps <= foodReach) {
         const kg = edibleKg(p, species);
-        if (kg > (bestFood?.kg ?? 0)) bestFood = { patchId: p.id, kg };
+        if (kg > (bestFood?.kg ?? 0) && !(shy && p.flooded === true && !starving)) bestFood = { patchId: p.id, kg };
       }
       if (needWater && steps <= waterReach && p.waterVolume > (bestWater?.litres ?? 0)) {
         bestWater = { patchId: p.id, litres: p.waterVolume };
