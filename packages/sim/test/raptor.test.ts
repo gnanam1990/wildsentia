@@ -31,7 +31,7 @@ describe('the crowned eagle, a raptor', () => {
 
   it('carries every kill up into the canopy, swamp forest too, so one duiker feeds it for days', () => {
     const w = createWorld({ seed: 5, speciesDir: fileURLToPath(new URL('../../../config/species-congo', import.meta.url)), terrainProfile: 'congo_v1',
-      initialAgents: { blue_duiker: 2500, water_chevrotain: 400, agile_mangabey: 400, crowned_eagle: 40 }, minPopulation: {}, retainEvents: 'all' });
+      initialAgents: { blue_duiker: 2500, water_chevrotain: 400, agile_mangabey: 400, crowned_eagle: 80 }, minPopulation: {}, retainEvents: 'all' });
     w.step(24 * 6);
     const kills = w.log.all().filter((e) => e.type === 'hunt' && e.outcome === 'success' && e.actors[0]!.startsWith('crowned_eagle_'));
     expect(kills.length).toBeGreaterThan(5);

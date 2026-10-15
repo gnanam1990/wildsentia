@@ -18,7 +18,7 @@
     "activity": "[2],[7]: diurnal and crepuscular in forest",
     "lifecycle": "[1]: gestation 96 d, litter 2-3, weaned ~90 d, mature ~771-937 d, max 17 y, 15-24 months between litters",
     "hunting.preferredPrey/preyPreference (2A)": "[3],[4],[23]: Lopé diet: ungulates 59% of biomass, red river hog 20%, buffalo 13% (calves and young), mean prey 29.2 kg; 10-40 kg preferred; weights are assumptions from these shares; golden cat taken rarely (intraguild) [6]",
-    "diet/offRosterShare": "[23] Henschel et al. 2005 (Lopé, 196 scats): by biomass 59% ungulates, 18% diurnal primates, 17% large rodents (cane rat 13%); 0.3 = primates other than the simulated agile mangabey, and large rodents (assumption for the mangabey's share)",
+    "diet/offRosterShare": "[23] Henschel et al. 2005 (Lopé, 196 scats): by biomass 59% ungulates, 18% diurnal primates, 17% large rodents (cane rat 13%); 0.35 = primates other than the simulated agile mangabey (about 16%), large rodents (17%) and the blue duikers the world does not hold (docs/2026-10-13-congo-species-sources.md); a calibration, after the one-year soak of 14 October 2026 where 0.3 took 14,061 blue duikers a year among all predators",
     "hunting.agile_mangabey (Phase B)": "Phase B research [12],[20],[21]: leopards take primates at Taï and Lopé (diurnal primates 18% of biomass at Lopé, most of them other species); preference 0.5 is an assumption"
   },
   "blue_duiker": {
@@ -92,7 +92,7 @@
     "social": "[29],[30]: solitary; 16.2 per 100 km2 unhunted, 3.8 where snared; territory sizes are assumptions from that density",
     "lifecycle": "assumption: gestation 75 d (as other Caracal), 1-2 kittens, mature 18 months, 12 y",
     "status": "[29]: Vulnerable (IUCN); never a bounty target",
-    "diet/offRosterShare": "assumption 0.6, informed by Hart, Katembo & Punga 1996 (Ituri, scats): rodents 50.9% and ungulates 20.2% of prey items, mean prey 1.4 kg; [30]: mainly rodents",
+    "diet/offRosterShare": "0.72, calibrated: 0.6 plus the blue duikers the world does not hold (at 0.6 a golden cat took ~35 blue duikers a year, about twice its diet's share), informed by Hart, Katembo & Punga 1996 (Ituri, scats): rodents 50.9% and ungulates 20.2% of prey items, mean prey 1.4 kg; [30]: mainly rodents",
     "hunting.agile_mangabey (Phase B)": "assumption: juveniles only (no source records golden cats taking mangabeys; Phase B research [35]); preference 0.1"
   },
   "forest_elephant": {
@@ -116,7 +116,7 @@
   },
   "crowned_eagle": {
     "body": "docs/2026-10-14-congo-phase-b-research.md [25]: female 3.2-4.7 kg, male 2.55-4.12 kg; wingspan 1.51-1.81 m",
-    "diet": "docs/2026-10-14-congo-phase-b-research.md [22]-[25]: monkeys 81-88% of prey (Kibale, Ituri), 56% of Taï bones; small duikers taken; mean prey 5.67 kg at Taï, up to ~20 kg; about one prey every 3-4 days [25] (~100 a year). offRosterShare 0.92 is calibrated so an eagle takes ~15 of the simulated prey a year (the 60-day soak at 0.85 measured ~31): the agile mangabey is one of about eight monkeys it hunts here and small duikers a minor part. Intake 0.25 kg/day is an assumption",
+    "diet": "docs/2026-10-14-congo-phase-b-research.md [22]-[25]: monkeys 81-88% of prey (Kibale, Ituri), 56% of Taï bones; small duikers taken; mean prey 5.67 kg at Taï, up to ~20 kg; about one prey every 3-4 days [25] (~100 a year). offRosterShare 0.94 is calibrated (0.92 plus the blue duikers the world does not hold; the 60-day soak at 0.85 measured ~31 simulated prey an eagle a year, at 0.92 ~16). Mangabeys resting in the canopy are beyond its reach (the hunt solver is planar), so its share of them is small: the agile mangabey is one of about eight monkeys it hunts here and small duikers a minor part. Intake 0.25 kg/day is an assumption",
     "hunting": "docs/2026-10-14-congo-phase-b-research.md [25]: still-hunts from a perch and drops onto prey, most kills on the forest floor",
     "social": "docs/2026-10-14-congo-phase-b-research.md [25],[27]: territorial pairs, 6.5-16 km² hunting range per adult; one pair per 15 km² (the sparse end of the assumption) gives 307 birds",
     "lifecycle": "docs/2026-10-14-congo-phase-b-research.md [25]: clutch 1-2, one chick raised, incubation ~49 d, fledging ~110 d, dependent ~11 months, breeds every 2 years, mature ~5 y; the egg stands in as a gestation",
