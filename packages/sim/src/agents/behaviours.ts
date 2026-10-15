@@ -716,6 +716,18 @@ function flee(ctx: BehaviourContext): void {
   const options = ctx.percept.patch.neighbours.filter(id => landWalkable(ctx.patches[id]));
   const threat = ctx.percept.threat;
 
+  // A freezer (the duikers, the chevrotain, the sitatunga: escape.freezeFirst) goes still while
+  // the predator it has seen is not hunting and is farther than its flight distance; it bolts,
+  // dives or climbs only when the predator closes or turns on it.
+  if (ctx.species.escape.freezeFirst && threat && threat.posture !== 'hunting'
+    && threat.distanceM > ctx.species.escape.flightInitiationM) {
+    delete ctx.agent.journey;
+    ctx.agent.state = 'resting';
+    emit(ctx, 'rested', ctx.agent.patchId, [ctx.agent.id],
+      { reason: 'froze', from: threat.agent.speciesId, distanceM: Math.round(threat.distanceM) }, 'success', { hours: ctx.hours });
+    return;
+  }
+
   // Only an actual local ground predator can initiate the bounded tree escape.
   const anchor = threat?.patchId === ctx.agent.patchId && mayClimb(ctx)
     ? treeAnchorForPatch(ctx.view.grid, ctx.percept.patch) : null;
