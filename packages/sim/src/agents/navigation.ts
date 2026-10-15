@@ -128,6 +128,21 @@ class RouteQueue {
   }
 }
 
+/** The cost of one route step: the same sum as walking `pieces`, without building them (the
+ * route search prices every neighbour it considers). */
+function stepCost(grid: WorldGrid, from: WorldPosition, fromId: number, toId: number, id: string, patches: Patch[], cfg: SpeciesConfig,
+  endpoint: WorldPosition | undefined, final: boolean): number {
+  const target = endpoint ?? (final ? standingPoint(grid, id, patches[toId]!, cfg) : initialPosition(grid, id, toId));
+  const toCost = costOf(grid, patches[toId]!, cfg);
+  if (fromId === toId) return distance(from, target) * toCost;
+  const a = patchCentre(grid, fromId), b = patchCentre(grid, toId);
+  if (Math.abs(a.x - b.x) + Math.abs(a.z - b.z) !== grid.patchM) throw new Error('non-cardinal route edge');
+  const alongX = a.x !== b.x, boundary = alongX ? (a.x + b.x) / 2 : (a.z + b.z) / 2;
+  const fraction = (boundary - (alongX ? from.x : from.z)) / ((alongX ? target.x : target.z) - (alongX ? from.x : from.z));
+  const ex = from.x + (target.x - from.x) * fraction, ez = from.z + (target.z - from.z) * fraction;
+  return Math.hypot(ex - from.x, ez - from.z) * costOf(grid, patches[fromId]!, cfg) + Math.hypot(target.x - ex, target.z - ez) * toCost;
+}
+
 /** Deterministic least-cost search over the static terrain graph. It knows terrain, not animals.
  * Costs are metres weighted by species terrain cost; actual speeds are applied during travel.
  * No decorative tree/rock collision or shoreline topology is claimed. */
@@ -150,11 +165,7 @@ export function planRoute(grid: WorldGrid, agent: Agent, destination: number, pa
     const point = current.id === start ? origin : initialPosition(grid, agent.id, current.id);
     for (const next of [...patches[current.id]!.neighbours].sort((a, b) => a - b)) {
       if (!patches[next]) continue;
-      let length = 0; let last = point;
-      for (const piece of pieces(grid, point, current.id, next, agent.id, patches, cfg, next === destination ? endpoint : undefined, next === destination)) {
-        length += distance(last, piece.target) * piece.cost; last = piece.target;
-      }
-      const value = current.cost + length;
+      const value = current.cost + stepCost(grid, point, current.id, next, agent.id, patches, cfg, next === destination ? endpoint : undefined, next === destination);
       if (!Number.isFinite(value) || value >= (costs.get(next) ?? Infinity)) continue;
       costs.set(next, value); parents.set(next, current.id); queue.push(next, value);
     }
