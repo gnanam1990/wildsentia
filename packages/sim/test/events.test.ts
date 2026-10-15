@@ -62,6 +62,18 @@ describe('EventLog', () => {
     expect(() => (log.all() as WorldEvent[]).push({} as never)).toThrow();
   });
 
+  it('reads a bounded log\'s newest events without copying its window', () => {
+    // The world reads the tail of the log after every animal's turn (about 41,000 a Congo hour).
+    const log = new EventLog(1, 'test', { retain: 20_000 });
+    for (let i = 0; i < 30_000; i++) log.append({ ...base, effects: { kg: i } });
+    expect(log.tail(2).map((e) => e.effects.kg)).toEqual([29_998, 29_999]);
+    expect(log.tail(50_000)).toHaveLength(20_000);
+    expect(log.tail(50_000)[0]!.effects.kg).toBe(10_000);
+    const started = performance.now();
+    for (let i = 0; i < 41_000; i++) log.tail(1);
+    expect(performance.now() - started).toBeLessThan(250);
+  });
+
   it('indexes events by actor', () => {
     const log = new EventLog(1, 'sim_0.1.0');
     log.append({ ...base, actors: ['a1'] });

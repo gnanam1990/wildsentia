@@ -83,6 +83,54 @@ const costOf = (grid: WorldGrid, p: Patch, cfg: SpeciesConfig): number => {
   return Number.isFinite(value) && value > 0 ? value : Infinity;
 };
 
+/**
+ * Each species' connected regions of a world's patches, built once: a patch counts as passable if
+ * it is passable flooded or dry, so a destination outside the start's region cannot be reached in
+ * any season. Without this a route search that could not arrive visited every patch it could reach
+ * first (about 15,000 for a duiker), and a few such searches were most of a Congo hour's routing.
+ * Terrain, surface and river channels are fixed when a world is made; only the flood changes.
+ * Null where a patch's neighbours are not mutual, when the search is left to answer alone.
+ */
+const regionCache = new WeakMap<Patch[], WeakMap<SpeciesConfig, Int32Array | null>>();
+
+function passableInAnySeason(grid: WorldGrid, p: Patch, cfg: SpeciesConfig): boolean {
+  if (!landWalkable(p)) return false;
+  if (p.habitat === 'water' && p.congoSeed !== undefined && !crossesRivers(cfg) && allChannel(grid, p.congoSeed, p.id)) return false;
+  return [false, true].some((flooded) => { const v = terrainCostFor(cfg, p.habitat, flooded); return Number.isFinite(v) && v > 0; });
+}
+
+function regionsOf(grid: WorldGrid, patches: Patch[], cfg: SpeciesConfig): Int32Array | null {
+  let bySpecies = regionCache.get(patches);
+  if (!bySpecies) regionCache.set(patches, bySpecies = new WeakMap());
+  if (bySpecies.has(cfg)) return bySpecies.get(cfg)!;
+  const regions = new Int32Array(patches.length).fill(-1), passable = patches.map((p) => passableInAnySeason(grid, p, cfg));
+  let mutual = true, region = 0;
+  for (let seed = 0; seed < patches.length && mutual; seed++) {
+    if (!passable[seed] || regions[seed]! >= 0) continue;
+    const stack = [seed]; regions[seed] = region;
+    while (stack.length) {
+      const id = stack.pop()!;
+      for (const next of patches[id]!.neighbours) {
+        if (!patches[next]!.neighbours.includes(id)) { mutual = false; break; }
+        if (passable[next] && regions[next]! < 0) { regions[next] = region; stack.push(next); }
+      }
+    }
+    region++;
+  }
+  const result = mutual ? regions : null;
+  bySpecies.set(cfg, result);
+  return result;
+}
+
+/** Whether no route can join two patches: the search expands from the start (passable or not)
+ * into its passable neighbours, so a start standing on impassable ground reaches their regions. */
+function beyondReach(grid: WorldGrid, patches: Patch[], cfg: SpeciesConfig, start: number, destination: number): boolean {
+  const regions = regionsOf(grid, patches, cfg);
+  if (!regions || regions[destination]! < 0) return false;
+  const to = regions[destination]!;
+  return regions[start]! >= 0 ? regions[start] !== to : !patches[start]!.neighbours.some((n) => regions[n] === to);
+}
+
 /** Split each cardinal edge at its real patch boundary, charging the terrain actually crossed. */
 function pieces(grid: WorldGrid, from: WorldPosition, fromId: number, toId: number, id: string, patches: Patch[], cfg: SpeciesConfig, endpoint?: WorldPosition, final = false): Piece[] {
   // Only where the animal ends up needs dry footing; the patches it passes through keep their
@@ -151,6 +199,7 @@ export function planRoute(grid: WorldGrid, agent: Agent, destination: number, pa
   const start = agent.patchId; const origin = locateAgent(grid, agent);
   if (!patches[destination] || !Number.isFinite(costOf(grid, patches[destination]!, cfg))) return null;
   if (start === destination) return [destination];
+  if (beyondReach(grid, patches, cfg, start, destination)) return null;
   const costs = new Map<number, number>([[start, 0]]); const parents = new Map<number, number>();
   const queue = new RouteQueue(); queue.push(start, 0);
   // Stable tie-breaking (cost, then patch id) makes replay independent of neighbour-array order.

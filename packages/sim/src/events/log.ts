@@ -95,7 +95,9 @@ export class EventLog {
   }
 
   tail(n: number): WorldEvent[] {
-    return this.#window().slice(-n);
+    // Read after every animal's turn: slice only the newest n, never a copy of the whole window.
+    if (!(n > 0)) return this.#window().slice(-n);
+    return this.#events.slice(this.#events.length - Math.min(n, this.retainedCount()));
   }
 
   /** The retained events: all of them, or the newest `retain` of a bounded log. */

@@ -54,4 +54,22 @@ describe('a land animal keeps its feet dry', () => {
     world.step(1);
     expect(world.patches[duiker.patchId]!.flooded).not.toBe(true);
   }, 120_000);
+  it('answers a destination beyond its rivers without searching the whole forest', () => {
+    // A route search that cannot arrive used to visit every patch it could reach first (about
+    // 15,000 for a duiker); a few such searches an hour were most of a Congo hour's routing.
+    const world = createWorld({ seed: 7, speciesDir: CONGO_SPECIES, terrainProfile: 'congo_v1',
+      initialAgents: { blue_duiker: 1 }, minPopulation: {} });
+    const duiker = world.species.get('blue_duiker')!, agent = world.agents[0]!;
+    let beyond = -1, reached = 0;
+    for (let id = 0; id < world.patches.length; id += 97) {
+      if (!landWalkable(world.patches[id]) || world.patches[id]!.habitat === 'water') continue;
+      if (planRoute(world.grid, agent, id, world.patches, duiker) !== null) reached++;
+      else if (beyond < 0) beyond = id;
+    }
+    expect(beyond).toBeGreaterThanOrEqual(0);
+    expect(reached).toBeGreaterThan(20);
+    const started = performance.now();
+    for (let i = 0; i < 20; i++) expect(planRoute(world.grid, agent, beyond, world.patches, duiker)).toBeNull();
+    expect(performance.now() - started).toBeLessThan(60);
+  }, 120_000);
 });
