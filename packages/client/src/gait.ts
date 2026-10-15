@@ -18,9 +18,13 @@ const TROT_FROM = 0.5, GALLOP_FROM = 2.5, HYSTERESIS = 0.15;
 /** Stride rate is held to this range of the clip's own rate; beyond it a clip stops reading as itself. */
 const MIN_RATE = 0.35, MAX_RATE = 3.2;
 
-/** Hip height from the drawn height (top of the back or head): legs are most of it. */
-export function hipHeightM(drawnHeightM: number): number {
-  return Math.max(0.05, drawnHeightM * 0.85);
+/**
+ * Hip height from the drawn height (top of the back or head): legs are most of it, 0.85 of it in a
+ * crouching cat or deer. A species can give its own share (species.ts hipFraction): an elephant
+ * stands on columns under a deep body, its hip joint near half its height.
+ */
+export function hipHeightM(drawnHeightM: number, hipFraction = 0.85): number {
+  return Math.max(0.05, drawnHeightM * hipFraction);
 }
 
 export function froude(speedMs: number, hipM: number): number {

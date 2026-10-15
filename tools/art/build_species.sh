@@ -12,7 +12,8 @@ OUT="${OUT:-$RIGS}"
 # Tripo meshes face +X (head first); FORWARD overrides. PITCH (degrees) levels a body that comes out
 # tilted (the flying eagle: FORWARD=-Y PITCH=46.5).
 # species  rig       output         bones that must not deform  clips to review  [fit]
-# The elephant rig skins much of its body to its IK and knee-pole bones; they are kept from deforming.
+# The elephant rig skins much of its body to its IK and knee-pole bones; they are kept from deforming,
+# and its foot bones lie along the sole, so its feet are matched at the ankles.
 table='
 boar     Bull     WildBoar      Tail4,Tail5,Tail6,Tail7  Idle,Walk,Eating,Gallop,Idle_Headlow,Death  bbox
 chital   Deer     Chital        -                        Idle,Walk,Eating,Gallop,Idle_Headlow,Death
@@ -32,7 +33,7 @@ peters   Deer     PetersDuiker  -                        Idle,Walk,Eating,Gallop
 hog      Bull     RedRiverHog   Tail4,Tail5,Tail6,Tail7  Idle,Walk,Eating,Gallop,Idle_Headlow,Death  bbox
 buffalo  Bull     ForestBuffalo -                        Idle,Walk,Eating,Gallop,Idle_Headlow,Death  feet Head
 sitatunga Deer    Sitatunga     -                        Idle,Walk,Eating,Gallop,Idle_Headlow,Death
-elephant ElephantWalking ForestElephant TrunkIK,Bone.016,Bone.017,Bone.018,Bone.019,Bone.020,KneeBack.L,KneeBack.L.001,KneeFront.L,KneeFront.L.001  Idle,Walk,Eating,Angry
+elephant ElephantWalking ForestElephant TrunkIK,Bone.016,Bone.017,Bone.018,Bone.019,Bone.020,KneeBack.L,KneeBack.L.001,KneeFront.L,KneeFront.L.001  Idle,Walk,Eating,Angry  ankles
 eagle    Vulture  CrownedEagle  -                        Idle,Walk,Flap,Glide,Eating,Death  bbox
 eagleflight Vulture CrownedEagleFlying -                 Flap,Glide  bbox
 mangabey Langur   AgileMangabey -                        Idle,Walk,Run,Eating,Drinking,Death
@@ -43,9 +44,16 @@ echo "$table" | while read -r species rig out nodeform clips fit rigidhead; do
   if [ -n "$wanted" ]; then case " $wanted " in *" $species "*) ;; *) continue ;; esac; fi
   [ "$nodeform" = "-" ] && nodeform=""
   mkdir -p "$ART/review/$species"
-  "$BLENDER" -b --python tools/art/bind_to_rig.py -- --mesh "$ART/$species-tripo.glb" --rig "$RIGS/$rig.glb" \
+  mesh="$ART/$species-tripo.glb"
+  # The generated elephant stands mid-stride; its legs are turned upright to match the rig's.
+  if [ "$species" = elephant ]; then
+    "$BLENDER" -b --python tools/art/square_stance.py -- --in "$mesh" --out "$ART/review/$species/$species-square.glb" 2>&1 \
+      | grep -E "LEG|SQUARED|Traceback|Error" | sed "s/^/$species: /"
+    mesh="$ART/review/$species/$species-square.glb"
+  fi
+  "$BLENDER" -b --python tools/art/bind_to_rig.py -- --mesh "$mesh" --rig "$RIGS/$rig.glb" \
     --mesh-forward="${FORWARD:-X}" --out "$ART/review/$species/$out.glb" --no-deform "$nodeform" --review-clips "$clips" --fit "${fit:-feet}" --pitch="${PITCH:-0}" ${rigidhead:+--rigid-head "$rigidhead"} 2>&1 \
-    | grep -E "FIT|SKIN|WROTE|Traceback|Error" | sed "s/^/$species: /"
+    | grep -E "RIG|FIT|FEET|SKIN|WROTE|Traceback|Error" | sed "s/^/$species: /"
   # The elephant rig's own walk barely lifts its feet and it has no drinking or death clip.
   if [ "$species" = elephant ]; then
     "$BLENDER" -b --python tools/art/forest_elephant_clips.py -- --in "$ART/review/$species/$out.glb" \

@@ -282,7 +282,7 @@ export class AnimalLayer {
     const bodyLengthM = new THREE.Box3().setFromObject(visual).getSize(new THREE.Vector3()).z;
     const rig: Rig = { variantKey: key, group, mixer, actions, clipNames: clips.map((c) => c.name), playing: null,
       visual, footY: visual.position.y, restRotationZ: visual.rotation.z, bodyLengthM, climbRest: null,
-      needsCorpseGrounding: false, gait: new GaitClock(), hipM: hipHeightM(height * characterScale(animal)), swimming: false, seed: idSeed(animal.id), looksUp: animal.speciesId !== 'tiger' && animal.speciesId !== 'leopard',
+      needsCorpseGrounding: false, gait: new GaitClock(), hipM: hipHeightM(height * characterScale(animal), visualFor(animal.speciesId).hipFraction), swimming: false, seed: idSeed(animal.id), looksUp: animal.speciesId !== 'tiger' && animal.speciesId !== 'leopard',
       appearanceKey: '', materials };
     this.#pending.delete(animal.id);
     this.#rigs.set(animal.id, rig);
@@ -571,7 +571,7 @@ export class AnimalLayer {
     if (rig.appearanceKey === key) return;
     rig.appearanceKey = key;
     rig.group.scale.setScalar(characterScale(animal));
-    rig.hipM = hipHeightM(visualFor(animal.speciesId).heightM * characterScale(animal));
+    rig.hipM = hipHeightM(visualFor(animal.speciesId).heightM * characterScale(animal), visualFor(animal.speciesId).hipFraction);
     const decay = animal.decayStage ?? 0;
     for (const { material, base } of rig.materials) {
       material.color.copy(base).multiplyScalar(coatMultiplier(animal.coatVariant));

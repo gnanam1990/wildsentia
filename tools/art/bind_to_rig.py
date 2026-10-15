@@ -37,7 +37,9 @@ parser.add_argument("--no-deform", default="")
 parser.add_argument("--fit-tail", action="store_true")
 # feet: align front and hind feet with the rig's (right when tails differ, e.g. canids).
 # bbox: match nose-to-tail length (right when the rig's legs are much longer, e.g. boar on bull).
-parser.add_argument("--fit", choices=["feet", "bbox"], default="feet")
+# ankles: as feet, measuring the rig's feet at its foot bones' heads (ankles and wrists): right
+# when those bones lie along the sole, their tails at the toes (the elephant).
+parser.add_argument("--fit", choices=["feet", "bbox", "ankles"], default="feet")
 # Degrees to pitch the mesh nose-down about the side axis once it faces -Y (a generated bird in
 # flight can come out with its body tilted up).
 parser.add_argument("--pitch", type=float, default=0.0)
@@ -91,6 +93,20 @@ old_body = max(skinned or old_meshes, key=lambda o: len(o.data.vertices))
 rig_lo, rig_hi = world_bbox([old_body])
 for mesh in old_meshes:
     bpy.data.objects.remove(mesh, do_unlink=True)
+# Everything below reads the skeleton in its own space as if it were the world's, so an armature
+# that carries a scale (the elephant rig's, x1.597) has it applied first; its clips' location keys,
+# in bone space, grow with it.
+rig_scale = armature.matrix_world.to_scale()
+if max(abs(c - 1.0) for c in rig_scale) > 1e-4:
+    apply_transforms(armature)
+    for action in bpy.data.actions:
+        for curve in action_fcurves(action):
+            if curve.data_path.endswith(".location"):
+                for key in curve.keyframe_points:
+                    key.co.y *= rig_scale[curve.array_index]
+                    key.handle_left.y *= rig_scale[curve.array_index]
+                    key.handle_right.y *= rig_scale[curve.array_index]
+    print(f"RIG scale x{rig_scale.x:.3f} applied")
 
 # ---- The new mesh: one object, head toward -Y, feet on z = 0 ------------------------------
 rig_actions = set(bpy.data.actions)
@@ -150,7 +166,9 @@ apply_transforms(body)
 def mesh_feet_y(obj):
     verts = [obj.matrix_world @ v.co for v in obj.data.vertices]
     floor, top = min(v.z for v in verts), max(v.z for v in verts)
-    low = [v for v in verts if v.z < floor + (top - floor) * 0.12]
+    # The elephant's trunk hangs to within a tenth of its height of the ground: its feet are read
+    # from the lowest twentieth.
+    low = [v for v in verts if v.z < floor + (top - floor) * (0.05 if args.fit == "ankles" else 0.12)]
     mid = (min(v.y for v in low) + max(v.y for v in low)) / 2
     front = sorted(v.y for v in low if v.y < mid) or [mid]
     back = sorted(v.y for v in low if v.y >= mid) or [mid]
@@ -158,13 +176,19 @@ def mesh_feet_y(obj):
 
 
 def rig_feet_y(arm):
+    # Control bones (IK targets, knee poles, the --no-deform list) are not feet, though some hang
+    # at foot level.
+    control = set(n for n in args.no_deform.split(",") if n)
     bones = list(arm.data.bones)
-    deform = [b for b in bones if b.use_deform and not b.name.startswith(("IK", "Pole"))]
+    deform = [b for b in bones if b.use_deform and not b.name.startswith(("IK", "Pole")) and b.name not in control]
     leaves = [b for b in deform if not any(c.use_deform for c in b.children)]
-    floor = min(b.tail_local.z for b in leaves)
-    top = max(max(b.head_local.z, b.tail_local.z) for b in deform)
-    feet = [b for b in leaves if b.tail_local.z < floor + (top - floor) * 0.2]
-    ys = sorted(b.tail_local.y for b in feet)
+    # In world space, as the meshes are measured: an armature can carry a scale (the elephant's).
+    head = {b.name: arm.matrix_world @ b.head_local for b in bones}
+    tail = {b.name: arm.matrix_world @ b.tail_local for b in bones}
+    floor = min(tail[b.name].z for b in leaves)
+    top = max(max(head[b.name].z, tail[b.name].z) for b in deform)
+    feet = [b for b in leaves if tail[b.name].z < floor + (top - floor) * 0.2]
+    ys = sorted((head if args.fit == "ankles" else tail)[b.name].y for b in feet)
     mid = (ys[0] + ys[-1]) / 2
     front = [y for y in ys if y < mid] or ys
     back = [y for y in ys if y >= mid] or ys
@@ -194,6 +218,17 @@ lo, hi = world_bbox([body])
 
 # ---- Fit the skeleton's rest pose to the new body ----------------------------------------
 fit = Vector(((hi.x - lo.x) / (rig_hi.x - rig_lo.x), 1.0, (hi.z - lo.z) / (rig_hi.z - rig_lo.z)))
+if args.fit == "ankles":
+    # Spread the legs as far apart as the new body's feet, not by its width (an elephant's ears
+    # stand out well beyond its legs).
+    verts = [body.matrix_world @ v.co for v in body.data.vertices]
+    floor, top = min(v.z for v in verts), max(v.z for v in verts)
+    low = [v for v in verts if v.z < floor + (top - floor) * 0.05]
+    centre = sum(v.x for v in low) / len(low)
+    mesh_half = sum(abs(v.x - centre) for v in low) / len(low)
+    feet = [b for b in armature.data.bones if b.name.startswith("Foot")]
+    rig_half = sum(abs((armature.matrix_world @ b.head_local).x) for b in feet) / len(feet)
+    fit.x = mesh_half / rig_half
 print(f"FIT width x{fit.x:.3f} height x{fit.z:.3f} (forward {forward}, uniform {uniform:.4f})")
 bpy.ops.object.select_all(action="DESELECT")
 armature.select_set(True)
@@ -281,6 +316,35 @@ bpy.context.view_layer.objects.active = armature
 bpy.ops.object.parent_set(type="ARMATURE_AUTO")
 proxy_unweighted = sum(1 for v in proxy.data.vertices if not v.groups)
 print(f"SKIN proxy vertices {len(proxy.data.vertices)} unweighted {proxy_unweighted}")
+if proxy_unweighted > len(proxy.data.vertices) * 0.02:
+    # A remesh can leave a few loose specks beside the body (the elephant's had three of 8-16
+    # vertices), and they sink the whole heat solve. Keep the body's own surface and try again.
+    import bmesh as _bmesh
+    shell = _bmesh.new()
+    shell.from_mesh(proxy.data)
+    shell.verts.ensure_lookup_table()
+    part = {}
+    for start in shell.verts:
+        if start.index in part:
+            continue
+        label, stack = len(set(part.values())), [start]
+        while stack:
+            v = stack.pop()
+            if v.index not in part:
+                part[v.index] = label
+                stack.extend(e.other_vert(v) for e in v.link_edges)
+    sizes = {}
+    for label in part.values():
+        sizes[label] = sizes.get(label, 0) + 1
+    largest = max(sizes, key=sizes.get)
+    _bmesh.ops.delete(shell, geom=[v for v in shell.verts if part[v.index] != largest], context="VERTS")
+    shell.to_mesh(proxy.data)
+    shell.free()
+    for group in list(proxy.vertex_groups):
+        proxy.vertex_groups.remove(group)
+    bpy.ops.object.parent_set(type="ARMATURE_AUTO")
+    proxy_unweighted = sum(1 for v in proxy.data.vertices if not v.groups)
+    print(f"SKIN dropped {len(sizes) - 1} loose specks; proxy vertices {len(proxy.data.vertices)} unweighted {proxy_unweighted}")
 if proxy_unweighted > len(proxy.data.vertices) * 0.02:
     print("SKIN bone heat failed on the proxy too; using envelope weights")
     for group in list(proxy.vertex_groups):
