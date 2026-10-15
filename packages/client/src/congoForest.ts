@@ -9,7 +9,7 @@ import { congoTexture } from './congoTextures.js';
 
 /** How far from the camera's focus each kind of plant is drawn one by one (metres). */
 export const KIND_RADIUS_M: Record<CongoKind, number> = {
-  emergent: 420, canopy: 380, midstory: 320, raphia: 380, sapling: 200, marantaceae: 140, herb: 70, sedge: 220, log: 260, rock: 300,
+  emergent: 420, canopy: 380, midstory: 320, raphia: 380, sapling: 200, marantaceae: 140, herb: 70, groundcover: 45, sedge: 220, log: 260, rock: 300,
 };
 /** The focus moves this far before the near plants are planted again. */
 const REFILL_MOVE_M = 60;

@@ -14,7 +14,7 @@ import type { PatchView } from './terrain.js';
  * - Swamps grow Raphia palms; flooded forest a lower canopy with palms; bais are open sedge.
  * - Rocks lie only along river banks; fallen logs on the forest floor.
  */
-export const CONGO_KINDS = ['emergent', 'canopy', 'midstory', 'sapling', 'raphia', 'marantaceae', 'herb', 'sedge', 'log', 'rock'] as const;
+export const CONGO_KINDS = ['emergent', 'canopy', 'midstory', 'sapling', 'raphia', 'marantaceae', 'herb', 'groundcover', 'sedge', 'log', 'rock'] as const;
 export type CongoKind = typeof CONGO_KINDS[number];
 
 /** The parts of a plant, each drawn with its own material: bark and wood, textured leaf clusters, solid blades. */
@@ -22,9 +22,9 @@ export interface PlantParts { wood?: THREE.BufferGeometry; leaves?: THREE.Buffer
 
 /** Plants per 300 m patch (9 ha) of each habitat, near the camera. */
 const PER_PATCH: Record<string, Partial<Record<CongoKind, number>>> = {
-  terra_firme: { emergent: 12, canopy: 190, midstory: 280, sapling: 600, marantaceae: 3500, herb: 14000, log: 6 },
-  flooded_forest: { canopy: 150, midstory: 200, raphia: 20, sapling: 260, marantaceae: 900, herb: 3000, log: 4 },
-  swamp_forest: { raphia: 200, canopy: 50, midstory: 100, sapling: 160, marantaceae: 1200, herb: 6000 },
+  terra_firme: { emergent: 12, canopy: 190, midstory: 280, sapling: 600, marantaceae: 3500, herb: 14000, groundcover: 40000, log: 6 },
+  flooded_forest: { canopy: 150, midstory: 200, raphia: 20, sapling: 260, marantaceae: 900, herb: 3000, groundcover: 30000, log: 4 },
+  swamp_forest: { raphia: 200, canopy: 50, midstory: 100, sapling: 160, marantaceae: 1200, herb: 6000, groundcover: 22000 },
   bai: { sedge: 9000, log: 2 },
 };
 /** Bank rocks tried per patch beside a river; kept only within this distance of the channel's edge. */
@@ -195,14 +195,14 @@ function plantParts(kind: CongoKind): PlantParts {
   switch (kind) {
     case 'emergent':
       return { wood: merge([trunk(44, 0.95, 0.5, 0xb7a990, random), ...buttresses(5, 5, 3.4, 0xa89a80, random), ...limbs(5, 37, 9, 0.35, 0x9a8c72, random)]),
-        leaves: crown(90, 9.5, 46, 12, 3.6, random) };
+        leaves: crown(220, 4.5, 46, 12, 3.6, random) };
     case 'canopy':
       return { wood: merge([trunk(28, 0.6, 0.32, 0x8c7c64, random), ...buttresses(3, 2.6, 1.8, 0x7e6f58, random), ...limbs(4, 23, 6, 0.22, 0x7a6a52, random), ...lianas(3, 25, 5, random)]),
-        leaves: crown(80, 8.5, 29.5, 8.5, 4.2, random) };
+        leaves: crown(190, 4.2, 29.5, 8.5, 4.2, random) };
     case 'midstory':
-      return { wood: trunk(14, 0.26, 0.14, 0x6e604c, random), leaves: crown(40, 4.8, 14, 4.2, 3, random) };
+      return { wood: trunk(14, 0.26, 0.14, 0x6e604c, random), leaves: crown(70, 2.8, 14, 4.2, 3, random) };
     case 'sapling':
-      return { wood: trunk(3.6, 0.06, 0.03, 0x5e5240, random), leaves: crown(6, 1.4, 3.2, 0.9, 0.8, random) };
+      return { wood: trunk(3.6, 0.06, 0.03, 0x5e5240, random), leaves: crown(12, 0.9, 3.1, 0.8, 0.7, random) };
     case 'raphia': {
       // Raphia: a short trunk and long fronds arching out, each a rachis with drooping leaflets.
       // Each frond is the photographed frond's image on a strip arching out and down, its
@@ -210,7 +210,7 @@ function plantParts(kind: CongoKind): PlantParts {
       const fronds: THREE.BufferGeometry[] = [];
       for (let f = 0; f < 16; f++) {
         const yaw = (f / 16) * Math.PI * 2 + random() * 0.3, lift = 0.45 + random() * 0.55, length = 8.5 + random() * 2.5;
-        const strip = new THREE.PlaneGeometry(length * 0.67, length, 4, 10).translate(0, length / 2, 0), p = strip.getAttribute('position');
+        const strip = new THREE.PlaneGeometry(length * 0.3, length, 4, 10).translate(0, length / 2, 0), p = strip.getAttribute('position');
         for (let i = 0; i < p.count; i++) {
           const along = p.getY(i), across = p.getX(i);
           p.setXYZ(i, along * Math.cos(lift), Math.sin(lift) * along - 0.045 * along * along - 0.35 * Math.abs(across), across);
@@ -224,24 +224,40 @@ function plantParts(kind: CongoKind): PlantParts {
     case 'marantaceae': {
       // Broad paddle leaves on long stalks, 1-2.5 m tall: the Congo forest's understory.
       const leaves: THREE.BufferGeometry[] = [], stalks: THREE.BufferGeometry[] = [];
-      for (let k = 0; k < 9; k++) {
-        const yaw = random() * Math.PI * 2, height = 0.8 + random() * 1.6, lean = 0.15 + random() * 0.25;
+      for (let k = 0; k < 14; k++) {
+        const yaw = random() * Math.PI * 2, height = 0.6 + random() * 1.4, lean = 0.15 + random() * 0.3;
         stalks.push(finish(new THREE.CylinderGeometry(0.012, 0.02, height, 4).translate(0, height / 2, 0).rotateZ(lean).rotateY(yaw), () => new THREE.Color(0x4d6b2a)));
         const tip = new THREE.Vector3(0, height, 0).applyAxisAngle(new THREE.Vector3(0, 0, 1), lean).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
         const v = random(), tint = new THREE.Color(0.85 + v * 0.25, 0.9 + v * 0.2, 0.85 + v * 0.15);
-        leaves.push(finish(leafCard(0.9 + random() * 0.5, 0.67, 0.18).rotateX(-1.1 + random() * 0.4).rotateY(yaw).translate(tip.x, tip.y, tip.z), () => tint));
+        leaves.push(finish(leafCard(0.4 + random() * 0.25, 0.67, 0.18).rotateX(-1.1 + random() * 0.4).rotateY(yaw).translate(tip.x, tip.y, tip.z), () => tint));
       }
       return { wood: merge(stalks), blades: merge(leaves) };
     }
     case 'herb': {
-      // Seedlings and small herbs carpeting the floor between the larger plants.
+      // Seedlings and small herbs carpeting the floor between the larger plants: ankle high, their
+      // leaves a hand long (a blue duiker stands 36 cm at the shoulder).
       const leaves: THREE.BufferGeometry[] = [];
-      for (let k = 0; k < 5; k++) {
-        const yaw = random() * Math.PI * 2, h = 0.2 + random() * 0.45, v = random(), tint = new THREE.Color(0.75 + v * 0.3, 0.85 + v * 0.2, 0.7 + v * 0.2);
-        leaves.push(finish(leafCard(0.35 + random() * 0.25, 0.67, 0.12).rotateX(-0.9 + random() * 0.6).rotateY(yaw)
-          .translate((random() - 0.5) * 0.3, h, (random() - 0.5) * 0.3), () => tint));
+      for (let k = 0; k < 6; k++) {
+        const yaw = random() * Math.PI * 2, h = 0.03 + random() * 0.2, v = random(), tint = new THREE.Color(0.75 + v * 0.3, 0.85 + v * 0.2, 0.7 + v * 0.2);
+        leaves.push(finish(leafCard(0.12 + random() * 0.1, 0.67, 0.12).rotateX(-0.9 + random() * 0.6).rotateY(yaw)
+          .translate((random() - 0.5) * 0.25, h, (random() - 0.5) * 0.25), () => tint));
       }
       return { blades: merge(leaves) };
+    }
+    case 'groundcover': {
+      // The forest floor's carpet: tufts of broad-leaved forest grass (as Olyra) and young ferns
+      // with seedlings, 0.3-0.55 m, four clumps a metre or so apart on crossed cards.
+      const cards: THREE.BufferGeometry[] = [];
+      for (let c = 0; c < 4; c++) {
+        const h = 0.3 + random() * 0.25, tile = random() < 0.55 ? 0 : 1, x = (random() - 0.5) * 1.4, z = (random() - 0.5) * 1.4, turn = random() * Math.PI;
+        for (let k = 0; k < 2; k++) {
+          const v = random(), card = new THREE.PlaneGeometry(h, h).translate(0, h / 2, 0).rotateY(turn + k * Math.PI / 2).translate(x, 0, z);
+          const uv = card.getAttribute('uv');
+          for (let i = 0; i < uv.count; i++) uv.setX(i, (uv.getX(i) + tile) / 2);
+          cards.push(finish(card, () => new THREE.Color(0.8 + v * 0.25, 0.85 + v * 0.2, 0.75 + v * 0.2)));
+        }
+      }
+      return { blades: merge(cards) };
     }
     case 'sedge': {
       // A bai's sedge tuft: the photographed clump on three crossed cards, about knee to waist high.
@@ -358,7 +374,7 @@ export function congoPartMaterial(kind: CongoKind, part: keyof PlantParts): THRE
     return wood;
   }
   // Blades: the Marantaceae's photographed leaf for the understory, the frond for Raphia, the clump for sedge.
-  const image = kind === 'marantaceae' || kind === 'herb' ? 'marantaceae' : kind === 'raphia' ? 'raphia_frond' : kind === 'sedge' ? 'sedge_clump' : null,
+  const image = kind === 'marantaceae' || kind === 'herb' ? 'marantaceae' : kind === 'raphia' ? 'raphia_frond' : kind === 'sedge' ? 'sedge_clump' : kind === 'groundcover' ? 'groundcover' : null,
     key = image ?? 'plain';
   let blade = bladeMaterials.get(key);
   if (!blade) {
