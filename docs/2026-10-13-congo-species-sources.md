@@ -123,3 +123,13 @@ Six species join the three of Phase 1 (plan: `docs/superpowers/plans/2026-10-14-
 
 **Food from beyond the roster (14 October 2026).** The one-year soaks lost blue duikers steadily: the cats were taking their whole diet from the nine simulated species. In life much of it is other prey: at Lopé a leopard's food was 18% diurnal primates and 17% large rodents by biomass [23], and a golden cat lives mostly on rodents [30],[31]. `diet.offRosterShare` (leopard 0.35 from [23]; golden cat 0.6, an assumption informed by [31]) is the share of a day's food eaten off-stage; only the rest of the cat's hunger falls on the simulated prey.
 
+**The blue duikers the world cannot hold (14 October 2026).** The 2 s hour holds 22,000 blue duikers, 60% of the cited 16/km² over the world's 2,304 km². The predators, though, are founded at field density, so their whole take of blue duikers fell on 60% of them. The missing 40% are now counted as food from beyond the roster. Each predator's on-roster share shrinks by 40% of the blue duiker's share of its simulated food by mass, measured in the year soak of 14 October:
+
+| Predator | Blue duiker share of its simulated food | `offRosterShare` |
+|---|---|---|
+| Leopard | 18% | 0.3 → 0.35 |
+| Golden cat | 78% | 0.6 → 0.72 |
+| Crowned eagle | 73% | 0.92 → 0.94 |
+
+These are model calibrations, not field values.
+
