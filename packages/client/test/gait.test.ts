@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { clipForGait, GaitClock, gaitFor, hipHeightM, stateAtSpeed, strideCycles, strideHz, strideLengthM, strideRate } from '../src/gait.js';
+import { clipForGait, GaitClock, gaitFor, hipHeightM, stateAtSpeed, strideCeiling, strideCycles, strideHz, strideLengthM, strideRate } from '../src/gait.js';
 
 const TIGER_CLIPS = ['Death', 'Drinking', 'Eating', 'Gallop', 'Idle', 'Resting', 'Run', 'Sneak', 'Walk'];
 const DEER_CLIPS = ['Death', 'Eating', 'Gallop', 'Gallop_Jump', 'Idle', 'Idle_2', 'Idle_Headlow', 'Walk'];
@@ -37,6 +37,12 @@ describe('stride length and rate', () => {
     expect(strideRate(gallop, 1, 60, tigerHip)).toBe(3.2);
     expect(strideRate(gallop, 1, 0.01, tigerHip)).toBe(0.35);
     expect(strideRate(gallop, 1, 0, tigerHip)).toBe(1);
+    // An animal with no faster clip than its walk (a crocodile lunging, an elephant hurrying) may
+    // scurry its walk up to five times, so its feet keep pace rather than slide.
+    expect(strideCeiling(['Idle', 'Walk', 'Swim'])).toBe(5);
+    expect(strideCeiling(['Idle', 'Walk', 'Gallop'])).toBe(3.2);
+    expect(strideRate(gallop, 1, 60, tigerHip, 5)).toBeGreaterThan(3.2);
+    expect(strideRate(gallop, 1, 200, tigerHip, 5)).toBe(5);
   });
   it('plays a six-second, three-stride walk at the same rate as a two-second, one-stride walk', () => {
     const rate = strideRate(swinging(3, 6), 3, 1.3, elephantHip);
@@ -71,7 +77,10 @@ describe('gait choice', () => {
     expect(clipForGait('chasing', 'trot', TIGER_CLIPS)).toBe('Run');
     expect(clipForGait('chasing', 'walk', TIGER_CLIPS)).toBe('Walk');
     expect(clipForGait('fleeing', 'gallop', DEER_CLIPS)).toBe('Gallop');
-    expect(clipForGait('fleeing', 'trot', DEER_CLIPS)).toBe('Walk');
+    // With no trot or run clip, a trot is a slowed gallop (a duiker's bounding canter): its walk
+    // played over three times its pace slid its feet.
+    expect(clipForGait('fleeing', 'trot', DEER_CLIPS)).toBe('Gallop');
+    expect(clipForGait('fleeing', 'trot', ['Idle', 'Walk', 'Swim'])).toBe('Walk');
   });
   it('leaves a stalk, a still animal and non-moving states to their own clips', () => {
     expect(clipForGait('stalking', 'gallop', TIGER_CLIPS)).toBeNull();

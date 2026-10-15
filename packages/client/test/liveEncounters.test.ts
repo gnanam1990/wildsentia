@@ -30,6 +30,17 @@ describe('checkpointed live encounter playback', () => {
       .toMatchObject({ sex: 'male', lifeStage: 'juvenile' });
     expect(withRecordedVisualIdentity(recorded, { ...current, speciesId: 'tiger' })).toBe(recorded);
   });
+  it('draws a hunting eagle stooping through the air, high while far and down at its prey', () => {
+    const player = new LiveEncounterPlayer(), f = frame();
+    f.encounters[0] = { ...f.encounters[0]!, predatorSpecies: 'crowned_eagle', predator: { ...f.encounters[0]!.predator, speciesId: 'crowned_eagle' } };
+    expect(player.apply(f, 0)).toBe(true);
+    const early = player.poses(500).get('t')!;
+    expect(early.flightVisualPhase).toBe('descending');
+    expect(early.position.altitudeM!).toBeGreaterThan(1);
+    // A tiger keeps its feet on the ground.
+    const tiger = new LiveEncounterPlayer(); tiger.apply(frame(), 0);
+    expect(tiger.poses(500).get('t')!.flightVisualPhase).toBeUndefined();
+  });
   it('advances the animation clip in real time, not at the world rate', () => {
     const player = new LiveEncounterPlayer();
     expect(player.apply(frame(), 0)).toBe(true);

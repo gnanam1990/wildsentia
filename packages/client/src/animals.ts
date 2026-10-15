@@ -14,7 +14,7 @@ import type { LivePose } from './liveEncounters.js';
 import { AnimalDots } from './animalDots.js';
 import { elephantSurface } from './elephantSurface.js';
 import { ACT_STATES } from './huntActs.js';
-import { clipForGait, GaitClock, hipHeightM, isStrideClip, stateAtSpeed, strideCycles, strideRate } from './gait.js';
+import { clipForGait, GaitClock, hipHeightM, isStrideClip, stateAtSpeed, strideCeiling, strideCycles, strideRate } from './gait.js';
 
 /**
  * A plain stand-in for a species with no rigged model yet: a body and a head in the species'
@@ -456,7 +456,7 @@ export class AnimalLayer {
       // A stride is sampled from a clock run at the pace of the ground covered, not the playhead.
       action.time = act !== undefined && ACT_STATES.has(state) ? actClipTime(state, source.duration, act)
         : grounded && isStrideClip(source.name) && rig.gait.speedMs > 0
-        ? rig.gait.advance(strideRate(source, cyclesOf(source), rig.gait.speedMs, rig.hipM), source.duration)
+        ? rig.gait.advance(strideRate(source, cyclesOf(source), rig.gait.speedMs, rig.hipM, strideCeiling(rig.clipNames)), source.duration)
         : replayClipTime(state, source.duration, seconds + clipPhase(rig.seed, source.duration));
       action.paused = true;
       // A struggling prey weakens: its kicks fade toward the stillness of its death pose.
@@ -561,7 +561,7 @@ export class AnimalLayer {
     const source = action.getClip();
     const wanted = grounded && isStrideClip(clip) && rig.gait.speedMs > 0
       // A swimmer's legs paddle slower than they would stride on land at its speed.
-      ? strideRate(source, cyclesOf(source), rig.gait.speedMs, rig.hipM) * (rig.swimming ? 0.6 : 1) : 1;
+      ? strideRate(source, cyclesOf(source), rig.gait.speedMs, rig.hipM, strideCeiling(rig.clipNames)) * (rig.swimming ? 0.6 : 1) : 1;
     // Eased, so a change of pace is not a visible jolt in the legs.
     action.timeScale += (wanted - action.timeScale) * 0.15;
   }
