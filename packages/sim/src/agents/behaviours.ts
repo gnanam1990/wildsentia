@@ -9,7 +9,7 @@ import type { EventLog } from '../events/log.js';
 import { choosePrey } from './predation.js';
 import { resolveSpatialHunt } from './encounters.js';
 import { canRetryPrey, rememberFailedHunt } from './huntMemory.js';
-import type { GoalChoice } from './goals.js';
+import { activityAt, type GoalChoice } from './goals.js';
 import { HUNGER_DESPERATION, perceive, canHunt, canReachCarcass, heldByPredatorOf, threatens, type Percept, type WorldView } from './perception.js';
 import { locateAgent, locateCarcass } from './spatial.js';
 import { approachContact } from './movement.js';
@@ -301,6 +301,19 @@ function drink(ctx: BehaviourContext, mayMove = true, causalParents: string[] = 
 }
 
 function rest(ctx: BehaviourContext): void {
+  // A flier (the crowned eagle) rests on a branch of its patch's tree, as it still-hunts and roosts there.
+  if (fliesSpecies(ctx.species)) {
+    const anchor = treeAnchorForPatch(ctx.view.grid, ctx.percept.patch);
+    const perched = ctx.agent.locomotionMode === 'climb' && ctx.agent.treeAnchorId === anchor?.id;
+    if (anchor && !perched && mayClimb(ctx)) { perchFlight(ctx, anchor); return; }
+  }
+  // A long diver (the dwarf crocodile, a dive of ten minutes or more) lies up in the water through
+  // its inactive hours (the day), where it is out of sight; it rests on land when active.
+  const swims = ctx.species.locomotion.swims;
+  if (swims && swims.diveSeconds >= 600 && activityAt(ctx.species, ctx.worldTime) < 0.5 && ctx.agent.locomotionMode !== 'submerged') {
+    const refuge = waterRefuge(ctx.view.grid, ctx.agent, ctx.patches, ctx.view.season, locateAgent(ctx.view.grid, ctx.agent));
+    if (refuge) { submergeToRest(ctx, refuge); return; }
+  }
   // A canopy dweller (the agile mangabey) rests up its patch's tree, as it sleeps there.
   const anchor = ctx.species.locomotion.canopyDweller && ctx.species.locomotion.climbsTrees && mayClimb(ctx)
     ? treeAnchorForPatch(ctx.view.grid, ctx.percept.patch) : null;
@@ -795,6 +808,47 @@ function diveToEscape(ctx: BehaviourContext, refuge: { patchId: number; position
     causalParents: [], confidence: 'authoritative', movement: travel.trace });
 }
 
+/**
+ * A flier settles on its patch's tree: it flies to the trunk's planar point and lands on a branch
+ * at the anchor's height (the flight's last sample ends there), perched until it acts again.
+ */
+function perchFlight(ctx: BehaviourContext, anchor: NonNullable<ReturnType<typeof treeAnchorForPatch>>): void {
+  const agent = ctx.agent, budget = ctx.hours * 3600, startPatchId = agent.patchId;
+  const travel = navigate(ctx.view.grid, agent, ctx.species, ctx.patches, anchor.patchId, 'rest', ctx.worldTime, budget, false,
+    { x: anchor.x, z: anchor.z, heading: agent.position?.heading ?? 0 });
+  const trace = travel.trace, landed = trace.completed && !travel.unreachable;
+  if (landed) {
+    const last = trace.samples.at(-1)!;
+    if (trace.samples.length === 1) trace.samples.push({ seconds: Math.min(8, budget), position: { ...last.position }, altitudeM: anchor.climbHeightM });
+    else last.altitudeM = anchor.climbHeightM;
+    agent.altitudeM = anchor.climbHeightM; agent.locomotionMode = 'climb'; agent.treeAnchorId = anchor.id;
+  }
+  agent.state = landed ? 'resting' : 'travelling';
+  const seconds = trace.samples.at(-1)!.seconds;
+  ctx.log.append({ type: 'moved', worldTime: Math.floor(ctx.worldTime + seconds), simVersion: '', patchId: agent.patchId,
+    position: { ...locateAgent(ctx.view.grid, agent) }, actors: [agent.id], goal: 'rest',
+    conditions: { reason: 'perch', from: startPatchId, destination: anchor.patchId, treeAnchorId: anchor.id },
+    outcome: landed ? 'success' : 'interrupted',
+    effects: { distanceM: travel.distanceM, durationSeconds: seconds, sprintSeconds: 0 },
+    causalParents: [], confidence: 'authoritative', movement: trace });
+}
+
+/** A long diver walks or swims to its water and lies under it for the rest of the hour. */
+function submergeToRest(ctx: BehaviourContext, refuge: { patchId: number; position: WorldPosition }): void {
+  const agent = ctx.agent, budget = ctx.hours * 3600;
+  let seconds = 0;
+  if (Math.hypot(refuge.position.x - locateAgent(ctx.view.grid, agent).x, refuge.position.z - locateAgent(ctx.view.grid, agent).z) > 1e-6) {
+    const travel = moveTo(ctx, refuge.patchId, false, refuge.position);
+    if (!travel.trace.completed || travel.unreachable || travel.seconds >= budget) return;
+    seconds = travel.seconds;
+  }
+  delete agent.journey;
+  agent.locomotionMode = 'submerged';
+  agent.submergedUntil = Math.floor(ctx.worldTime + budget);
+  agent.state = 'resting';
+  emit({ ...ctx, worldTime: ctx.worldTime + seconds }, 'rested', agent.patchId, [agent.id], { reason: 'submerged', submergedUntil: agent.submergedUntil }, 'success', { hours: ctx.hours });
+}
+
 /** Dependent young, pregnant animals and adults currently responsible for dependent offspring
  * stay with the existing ground/family policy: none of them climbs. */
 function mayClimb(ctx: BehaviourContext): boolean {
@@ -898,6 +952,10 @@ export function executeGoal(ctx: BehaviourContext): void {
     || (ctx.choice.goal === 'hunt' && !canHuntIndependently(ctx.agent, ctx.species))) {
     ctx = { ...ctx, choice: { goal: 'rest', score: 1, alternative: null } };
     ctx.agent.targetId = null;
+  }
+  // A perched flier leaves its branch for anything but rest (it lands where it acts).
+  if (ctx.choice.goal !== 'rest' && ctx.agent.locomotionMode === 'climb' && fliesSpecies(ctx.species)) {
+    delete ctx.agent.altitudeM; delete ctx.agent.locomotionMode; delete ctx.agent.treeAnchorId;
   }
   ctx.agent.currentGoal = ctx.choice.goal;
   if (ctx.agent.journey?.goal !== ctx.choice.goal) delete ctx.agent.journey;

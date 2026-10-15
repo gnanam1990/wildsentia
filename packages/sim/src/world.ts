@@ -1,7 +1,7 @@
 import { warmDryGround } from './agents/navigation.js';
 import {
   NUTRIENT_PER_KG_BIOMASS, gridForProfile, patchCentre, patchCount, type WorldGrid, WORLD_SECONDS_PER_DAY, WORLD_SECONDS_PER_HOUR,
-  createRng, isClosedProfile, isCongoProfile, isFlooded, isIslandProfile, seasonAt, carcassMass, edibleMass, landWalkable, spatialHash, treeAnchorForPatch, patchAtPosition, positionInPatch, isWorldPosition, type TerrainProfile,
+  createRng, fliesSpecies, isClosedProfile, isCongoProfile, isFlooded, isIslandProfile, seasonAt, carcassMass, edibleMass, landWalkable, spatialHash, treeAnchorForPatch, patchAtPosition, positionInPatch, isWorldPosition, type TerrainProfile,
   type WorldPosition, type MovementTrace,
   type Agent, type Carcass, type DeathCause, type Patch, type Rng, type SkillId,
   type RngState, type SpeciesConfig, type WorldTime, type WaterBudget, type MicroEcologyState, type CommunityState, type CommunityProfile,
@@ -1523,7 +1523,8 @@ export class World {
       // A perched animal cannot take a ground-only action. Stay at the fixed trunk while
       // a local threat remains, then spend real time descending; depleted canopy keeps a
       // stable remnant for that descent. Urgent needs compel descent despite the threat.
-      if ((agent.altitudeM ?? 0) > 0 && agent.locomotionMode === 'climb') {
+      // A perched flier (the crowned eagle on a branch) decides as it likes; it takes off by flying.
+      if ((agent.altitudeM ?? 0) > 0 && agent.locomotionMode === 'climb' && !fliesSpecies(cfg)) {
         const patch = this.patches[agent.patchId]!;
         const canopyLost = treeAnchorForPatch(this.grid, patch) === null;
         // Stays up while the threat frightens it (sim_0.34.0: a predator merely in sight no longer holds it there).

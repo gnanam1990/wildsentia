@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { modelStatus, visualFor } from '../src/species.js';
-import { underWater } from '../src/animals.js';
+import { airborne, underWater } from '../src/animals.js';
 
 // Congo 1A.4: the Congo species are drawn, honestly labelled, and a diver is not drawn at all.
 describe('the Congo species in the browser', () => {
@@ -18,6 +18,11 @@ describe('the Congo species in the browser', () => {
   it('hides an animal under water', () => {
     expect(underWater({ locomotionMode: 'submerged' })).toBe(true);
     expect(underWater({ locomotionMode: 'climb' })).toBe(false);
+    // A crowned eagle perched on a branch stands; one in the air or on a recorded flight spreads its wings.
+    expect(airborne({ speciesId: 'crowned_eagle', locomotionMode: 'climb' }, 6, false)).toBe(false);
+    expect(airborne({ speciesId: 'crowned_eagle', locomotionMode: 'flight' }, 30, false)).toBe(true);
+    expect(airborne({ speciesId: 'crowned_eagle' }, 0, true)).toBe(true);
+    expect(airborne({ speciesId: 'african_leopard', locomotionMode: 'climb' }, 6, false)).toBe(false);
     expect(underWater({})).toBe(false);
   });
 });

@@ -317,8 +317,8 @@ export class AnimalLayer {
     const partner = followedId === null ? undefined : recorded.get(followedId)?.partnerId;
     if (partner && positions.has(partner)) visible.add(partner);
     this.#wanted = visible;
-    this.#airborne = new Set([...visible].filter((id) => flies(animals.get(id)!.speciesId)
-      && ((positions.get(id)!.altitudeM ?? 0) > 0.5 || recorded.get(id)?.flightVisualPhase !== undefined)));
+    this.#airborne = new Set([...visible].filter((id) => airborne(animals.get(id)!, positions.get(id)!.altitudeM,
+      recorded.get(id)?.flightVisualPhase !== undefined)));
     this.#wantedVariants = new Map([...visible].map(id => [id, variantKey(animals.get(id)!, this.#airborne.has(id))]));
     this.#renderPositions = positions;
     this.#prepareRigs([followedId, partner]);
@@ -609,6 +609,16 @@ export class AnimalLayer {
     this.root.remove(rig.group);
     this.#rigs.delete(id);
   }
+}
+
+/**
+ * A flier is drawn in flight (wings spread) while a recorded flight plays or it is above the
+ * ground, but not when it is perched on a branch (mode climb): there it stands.
+ */
+export function airborne(animal: { speciesId: string; locomotionMode?: string | undefined }, altitudeM: number | undefined, flying: boolean): boolean {
+  if (!flies(animal.speciesId)) return false;
+  if (flying) return true;
+  return (altitudeM ?? 0) > 0.5 && animal.locomotionMode !== 'climb';
 }
 
 /** Congo 1B: an animal under water (a diving chevrotain) is out of sight. */
