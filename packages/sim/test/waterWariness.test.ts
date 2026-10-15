@@ -36,6 +36,20 @@ describe('hunter and hunted at the water', () => {
     expect(near(cat) && near(duiker)).toBe(false);
   }, 120_000);
 
+  it('keeps prey from the water where a crocodile lies, though it takes only their young', () => {
+    const world = createWorld({ seed: 7, speciesDir: CONGO_SPECIES, terrainProfile: 'congo_v1',
+      initialAgents: { dwarf_crocodile: 1, blue_duiker: 1 }, minPopulation: {}, retainEvents: 'all' });
+    const water = world.patches.find((p) => p.habitat === 'flooded_forest' && p.waterVolume > 10_000)!;
+    const source = waterAccessPosition(world.grid, water.id, world.patches), c = patchCentre(world.grid, water.id);
+    const croc = world.agents.find((a) => a.speciesId === 'dwarf_crocodile')!, duiker = world.agents.find((a) => a.speciesId === 'blue_duiker')!;
+    Object.assign(croc, { patchId: water.id, position: { x: source.x + 1, z: source.z, heading: 0 }, offspringIds: [],
+      drives: { hunger: 0, thirst: 0, fatigue: 0.9, fear: 0 } });
+    Object.assign(duiker, { patchId: water.id, position: { x: c.x - 145, z: c.z - 145, heading: 0 }, dependentOn: null, pregnantSince: null,
+      offspringIds: [], drives: { hunger: 0, thirst: 0.6, fatigue: 0, fear: 0 } });
+    world.step(1);
+    expect(world.log.all().some((e) => e.type === 'drank' && e.actors[0] === duiker.id && e.patchId === water.id)).toBe(false);
+  }, 120_000);
+
   it('drink side by side only when one is desperate for water', () => {
     const { world, water, cat, duiker } = converging(0.95);
     world.step(1);

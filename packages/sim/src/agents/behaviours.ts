@@ -10,7 +10,7 @@ import { choosePrey } from './predation.js';
 import { resolveSpatialHunt } from './encounters.js';
 import { canRetryPrey, rememberFailedHunt } from './huntMemory.js';
 import type { GoalChoice } from './goals.js';
-import { HUNGER_DESPERATION, perceive, canHunt, canReachCarcass, heldByPredatorOf, type Percept, type WorldView } from './perception.js';
+import { HUNGER_DESPERATION, perceive, canHunt, canReachCarcass, heldByPredatorOf, threatens, type Percept, type WorldView } from './perception.js';
 import { locateAgent, locateCarcass } from './spatial.js';
 import { approachContact } from './movement.js';
 import { navigate } from './navigation.js';
@@ -228,7 +228,7 @@ const WATER_WARINESS_M = 15;
 const WATER_DESPERATE_THIRST = 0.85;
 
 /**
- * Whether an animal that hunts this one, or that this one hunts, stands at a patch's water now.
+ * Whether an animal of a kind that hunts this one's, or one this one could take, stands at a patch's water now.
  * Animals deciding in the same hour cannot have seen each other set out, so a golden cat and a
  * blue duiker came to one access point together and drank side by side. Whoever comes second
  * holds back (sees the other there, as decisions run in turn), unless desperate. An animal up a
@@ -242,7 +242,9 @@ function waterShared(ctx: BehaviourContext, patchId: number): boolean {
     const at = locateAgent(ctx.view.grid, other);
     if (Math.hypot(at.x - source.x, at.z - source.z) > WATER_WARINESS_M) continue;
     const species = ctx.view.speciesOf(other.speciesId);
-    if (canHunt(species, ctx.species, ctx.agent) || canHunt(ctx.species, species, other)) return true;
+    // Prey are wary of any kind that hunts theirs (a duiker cannot tell a crocodile that takes only
+    // fawns from one that would take it); a hunter holds back only from prey it could take.
+    if (threatens(species, ctx.species) || canHunt(ctx.species, species, other)) return true;
   }
   return false;
 }
