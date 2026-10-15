@@ -181,3 +181,34 @@ counts at day 365 (founding in brackets).
   - Mangabeys held (−2%). An independent mangabey spends about 75% of its hours aloft.
   - The hour's p95 was 1.75 s and its maximum 3.75 s, on a machine shared with other work.
 - **Hour cost.** Under the founders and diet fixes the hour's p95 was 1.58 s and its maximum 5.6 s. That run shared the machine with the CI gate and two other soaks; the budget benchmark run alone stays under 2 s.
+
+## One year after the digestion fix (15 October 2026)
+
+Two fixes changed what the earlier runs measured:
+- **Digestion now follows the on-roster share** (04886ba). Before it, a predator's meal from the
+  simulated species was digested as if it were its whole diet, so off-roster food cut its intake
+  twice. #37's shares (leopard 0.45, golden cat 0.85, eagle 0.97) were measured on that code.
+- **Shares in force** (aad99c7, kept when #37 was merged in): leopard 0.35 (it also eats blue
+  duikers the world cannot hold, preference 0.3), golden cat 0.72, eagle 0.94.
+
+The same one-year soak on the final code (seed 7, 365 days, 16336f7):
+
+| | Blue duiker | Bay / Peters's | Chevrotain | Mangabey | Leopard | Golden cat | Eagle | Red river hog | Crocodile | Elephant |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Start | 22,000 | 4,600 / 4,600 | 1,840 | 3,300 | 92 | 140 | 307 | 2,300 | 375 | 876 |
+| Day 180 | 20,237 | 4,466 / 4,567 | 1,738 | 3,385 | 83 | 151 | 282 | 3,268 | 754 | 891 |
+| Day 365 | 15,865 (−28%) | 4,117 / 4,215 | 1,516 | 3,244 | 82 | 158 | 256 | 3,835 | 643 | 912 |
+
+- Predators took 9,747 blue duikers in the year: leopards 3,609, golden cats 3,098, eagles 2,922,
+  crocodiles 118. That is more than #37's run (8,108). Leopards also took 1,314 bay and 1,298
+  Peters's duikers, 326 hogs, 163 mangabeys, 42 sitatunga and 14 forest buffalo.
+- **Still drifting.** Blue duikers held to day 180 (−8%), then fell 300-1,000 a month, about 600 a
+  month at the year's end. Red river hogs grew 67% and are still growing. Leopards fell from 92
+  to 82, 32 of them starved; eagles from 307 to 256, 55 in territorial fights. Mangabeys held (−2%),
+  and so did elephants, buffalo and sitatunga. No animal was stranded mid-river.
+- **Next step (open):** a further calibration toward fewer blue duikers taken by golden cats and
+  eagles (each takes 10-20 a year): golden cat 0.72 → 0.80, eagle 0.94 → 0.96, then another year's soak.
+- **The hour.** Its p95 was 1.17 s, the lowest of any year soak. One hour took 8.35 s. That was
+  within minutes of the local demo server booting a fresh 41,000-animal world on the same machine.
+  Every earlier year soak here also had a worst hour of 3.1-7.9 s. The soak's own pass check
+  (worst hour ≤ 2 s) failed on that one hour alone. Within a run the hour no longer grows (16336f7).
