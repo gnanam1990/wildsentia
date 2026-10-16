@@ -58,6 +58,20 @@ maybe('OwnershipStore (Congo 1C)', () => {
     expect(await store.openLeaseOf(life.lifeId)).toBeNull();
   });
 
+  it('dates a lease by the server\'s own clock, so an end notice is judged against the same clock, whatever the database\'s', async () => {
+    const owner = await person(pool!, 1), assetId = await ownedAsset(store, owner);
+    const life = await store.openLife({ assetId, ownerAccountId: owner.accountId, maxAlive: 2, now: new Date() }) as { ok: true; lifeId: string };
+    // A minute behind the database's clock, as if the two machines' clocks disagreed.
+    const took = new Date(Date.now() - 60_000);
+    const opened = await store.openLease(life.lifeId, { kind: 'owner', id: owner.agentId }, took);
+    expect(opened.ok && opened.lease.startedAt.getTime()).toBe(took.getTime());
+    // A notice of a possession that ended before this lease began is stale: the lease stays open.
+    expect(await store.endLeaseOf(life.lifeId, owner.agentId, 'died', new Date(took.getTime() - 5))).toBe(false);
+    // One that ended after it began closes it, though the database's clock is a minute later.
+    expect(await store.endLeaseOf(life.lifeId, owner.agentId, 'died', new Date(took.getTime() + 5))).toBe(true);
+    expect(await store.openLeaseOf(life.lifeId)).toBeNull();
+  });
+
   it('writes only SIMULATED money, and keeps grants one per agent until revoked', async () => {
     const owner = await person(pool!, 1), agent = await person(pool!, 3), assetId = await ownedAsset(store, owner);
     await expect(pool!.query("insert into sim_ledger (category, amount_atomic, decimals, simulated) values ('reward_pool', 1, 6, false)")).rejects.toThrow();

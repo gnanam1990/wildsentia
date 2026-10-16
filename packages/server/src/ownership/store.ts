@@ -217,16 +217,18 @@ export class OwnershipStore {
   /**
    * Gives a life a new controller: in one transaction, with the life's row locked, the open
    * lease (if any) ends as a handover and the new one opens. Returns the holder it replaced.
+   * The lease is dated by the server's clock (`startedAt`), the clock the live layer dates a
+   * possession's end by: `endLeaseOf` compares the two, and the database's clock may differ.
    */
-  async openLease(lifeId: string, holder: { kind: HolderKind; id: string }):
+  async openLease(lifeId: string, holder: { kind: HolderKind; id: string }, startedAt: Date = new Date()):
     Promise<{ ok: true; lease: Lease; previous: { kind: HolderKind; id: string } | null } | { ok: false; reason: 'not_alive' }> {
     return this.tx(async (db) => {
       const row = (await db.query('select status from animal_lives where life_id=$1 for update', [lifeId])).rows[0];
       if (!row || row.status !== 'alive') return { ok: false, reason: 'not_alive' } as const;
       const ended = (await db.query(`update control_leases set ended_at=now(), end_reason='handover' where life_id=$1 and ended_at is null
         returning holder_kind, holder_id`, [lifeId])).rows[0];
-      const lease = (await db.query(`insert into control_leases (lease_id, life_id, holder_kind, holder_id) values ($1,$2,$3,$4) returning *`,
-        [randomUUID(), lifeId, holder.kind, holder.id])).rows[0];
+      const lease = (await db.query(`insert into control_leases (lease_id, life_id, holder_kind, holder_id, started_at) values ($1,$2,$3,$4,$5) returning *`,
+        [randomUUID(), lifeId, holder.kind, holder.id, startedAt])).rows[0];
       return { ok: true, lease: { leaseId: lease.lease_id, lifeId, holderKind: holder.kind, holderId: holder.id, startedAt: lease.started_at },
         previous: ended ? { kind: ended.holder_kind as HolderKind, id: ended.holder_id as string } : null } as const;
     });
