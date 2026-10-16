@@ -4,7 +4,7 @@ import { worldGrid } from './worldGrid.js';
 import { CONGO_STEP_M, congoLattice, type PatchView } from './terrain.js';
 import { CONGO_DECIDUOUS_SHARE, congoSeasonalDryness } from './seasonalLeaves.js';
 import { CONGO_KINDS, congoCrownMaterials, congoLeafDepthMaterial, congoPartMaterial, congoSeasonDry, congoPlantParts, planCongoPatch, type CongoKind, type PlacedPlant, type PlantParts } from './congoPlants.js';
-import { buildCongoWater, type LoadedGround } from './congoWater.js';
+import { buildCongoWater, buildDistantRivers, type LoadedGround } from './congoWater.js';
 import { congoTexture } from './congoTextures.js';
 
 /** How far from the camera's focus each kind of plant is drawn one by one (metres). */
@@ -26,8 +26,6 @@ const TREES = new Set<CongoKind>(['emergent', 'canopy', 'midstory', 'raphia', 's
 const DECIDUOUS = new Set<CongoKind>(['emergent', 'canopy']);
 /** The distant forest: its lattice step, and its canopy height away from the rivers (metres). */
 const DISTANT_STEP_M = 200, DISTANT_CANOPY_M = 27;
-/** Within this much of a river's channel the distant forest opens to the water: at its 200 m step every river shows unbroken. */
-const DISTANT_RIVER_MARGIN_M = 120;
 /** The canopy leans down to a river over this much of its bank (metres). */
 const RIVER_BANK_LEAN_M = 80;
 /** Plans kept for this many patches (the most recently used): about a kilometre around the camera. */
@@ -52,7 +50,7 @@ export class CongoForest {
   #focus: THREE.Vector3 | null = null;
   #shell: THREE.Mesh | null = null;
   #water: THREE.Group | null = null;
-  #distant: THREE.Mesh | null = null;
+  #distant: THREE.Group | null = null;
   readonly #hole = { centre: { value: new THREE.Vector2() }, radius: { value: this.canopyHole.radius } };
 
   /** 1 while the eye is down among the trees, 0 above the canopy: how much the forest interior closes the view. */
@@ -76,7 +74,7 @@ export class CongoForest {
     const ground = loadedGround(patches);
     this.#replace('shell', this.#buildShell(patches, seed));
     this.#replace('water', ground ? buildCongoWater(seed, ground, flooded) : null);
-    this.#replace('distant', ground ? buildDistantForest(seed, ground.regions) : null);
+    this.#replace('distant', ground ? distantForestAndRivers(seed, ground.regions) : null);
   }
 
   /**
@@ -117,7 +115,7 @@ export class CongoForest {
     if (next) this.root.add(next);
     if (which === 'shell') this.#shell = next as THREE.Mesh | null;
     else if (which === 'water') this.#water = next as THREE.Group | null;
-    else this.#distant = next as THREE.Mesh | null;
+    else this.#distant = next as THREE.Group | null;
   }
 
   #plant(focus: THREE.Vector3): void {
@@ -268,7 +266,7 @@ export class CongoForest {
     geometry.setAttribute('uv', new THREE.BufferAttribute(new Float32Array((cols + 1) * (rows + 1) * 2), 2));
     geometry.setIndex(index);
     geometry.computeVertexNormals();
-    const material = canopyMaterial(this.#hole, false);
+    const material = canopyMaterial(this.#hole);
     const mesh = new THREE.Mesh(geometry, material);
     mesh.name = 'canopy-shell'; mesh.receiveShadow = false; mesh.castShadow = false;
     return mesh;
@@ -279,20 +277,16 @@ export class CongoForest {
  * The canopy seen from above, shared by the near surface and the distant forest. The photographed
  * canopy carries the leaves; over it each tree's crown (about 16 m across, an emergent's about
  * 34 m) is shaded as a dome lit by the sun, in its own green, a few in the red-bronze of a flush of
- * new leaves, with dark gaps between crowns. `distant` adds the rivers' water.
+ * new leaves, with dark gaps between crowns.
  */
-function canopyMaterial(hole: { centre: { value: THREE.Vector2 }; radius: { value: number } }, distant: boolean): THREE.MeshStandardMaterial {
+function canopyMaterial(hole: { centre: { value: THREE.Vector2 }; radius: { value: number } }): THREE.MeshStandardMaterial {
   const canopy = congoTexture('canopy_aerial');
   const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide, ...(canopy ? { map: canopy } : {}) });
-  if (distant) material.defines = { DISTANT_FOREST: '' };
   material.onBeforeCompile = (shader) => {
     shader.uniforms.holeCentre = hole.centre; shader.uniforms.holeRadius = hole.radius; shader.uniforms.uSeasonDry = congoSeasonDry;
-    shader.vertexShader = 'varying vec3 vShellWorld;\n#ifdef DISTANT_FOREST\nattribute float waterOpen; varying float vWaterOpen;\n#endif\n' + shader.vertexShader.replace('#include <worldpos_vertex>',
-      '#include <worldpos_vertex>\nvShellWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\n#ifdef DISTANT_FOREST\nvWaterOpen = waterOpen;\n#endif');
+    shader.vertexShader = 'varying vec3 vShellWorld;\n' + shader.vertexShader.replace('#include <worldpos_vertex>',
+      '#include <worldpos_vertex>\nvShellWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     shader.fragmentShader = `uniform vec2 holeCentre; uniform float holeRadius; uniform float uSeasonDry; varying vec3 vShellWorld;
-#ifdef DISTANT_FOREST
-varying float vWaterOpen;
-#endif
 float shellHash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 float shellNoise(vec2 p) { vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
   return mix(mix(shellHash(i), shellHash(i + vec2(1.0, 0.0)), u.x), mix(shellHash(i + vec2(0.0, 1.0)), shellHash(i + vec2(1.0, 1.0)), u.x), u.y); }
@@ -338,31 +332,34 @@ vec4 shellCrowns(vec2 p) {
       float deciduous = step(fract(crown.y * 7.13), ${CONGO_DECIDUOUS_SHARE.toFixed(3)}) * uSeasonDry;
       diffuseColor.rgb *= 1.0 - deciduous * 0.3 * (1.0 - shellNoise(vShellWorld.xz / 0.9));
       vec3 dryCrown = vec3(dot(diffuseColor.rgb, vec3(0.42, 0.42, 0.16))) * vec3(1.55, 1.1, 0.45);
-      diffuseColor.rgb = mix(diffuseColor.rgb, dryCrown, deciduous * 0.85);
-      #ifdef DISTANT_FOREST
-      // A river far off: dark forest water under the sky.
-      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.2, 0.26, 0.27), smoothstep(0.3, 0.9, vWaterOpen));
-      #endif`).replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+      diffuseColor.rgb = mix(diffuseColor.rgb, dryCrown, deciduous * 0.85);`).replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
       // The crown's dome turns the surface toward the sun on one side and away on the other.
       {
         vec2 slope = tree.zw / 0.62 * dome;
-        #ifdef DISTANT_FOREST
-        slope *= 1.0 - vWaterOpen;
-        #endif
         vec3 crownNormal = normalize(vec3(slope.x * 1.4, 1.0, slope.y * 1.4));
         normal = normalize(mix(normal, normalize((viewMatrix * vec4(crownNormal, 0.0)).xyz), 0.8));
       }`);
   };
-  material.customProgramCacheKey = () => `congo-canopy-shell-v5${distant ? '-distant' : ''}`;
+  material.customProgramCacheKey = () => 'congo-canopy-shell-v5';
   return material;
 }
 
 /** The distant forest's vertices for a seed: the whole world at a 200 m step, kept while the loaded regions change. */
 let distantCache: { seed: number; attributes: Record<string, THREE.BufferAttribute>; cols: number; rows: number } | null = null;
 
+/** The forest past the loaded regions, with its rivers. */
+function distantForestAndRivers(seed: number, loaded: ReadonlySet<string>): THREE.Group {
+  const group = new THREE.Group();
+  group.name = 'distant';
+  const forest = buildDistantForest(seed, loaded);
+  if (forest) group.add(forest);
+  group.add(buildDistantRivers(seed, loaded));
+  return group;
+}
+
 /**
- * The forest past the loaded regions: the whole world's canopy at a 200 m step, open to the water
- * over the rivers, drawn wherever no region is loaded. From above the land then runs on to the
+ * The forest past the loaded regions: the whole world's canopy at a 200 m step, leaning down to
+ * the rivers, drawn wherever no region is loaded. From above the land then runs on to the
  * world's edge instead of stopping at the loaded regions.
  */
 function buildDistantForest(seed: number, loaded: ReadonlySet<string>): THREE.Mesh | null {
@@ -371,16 +368,17 @@ function buildDistantForest(seed: number, loaded: ReadonlySet<string>): THREE.Me
     const lattice = congoLattice(seed), near = riversNear(seed);
     const cols = Math.floor(grid.cols * grid.patchM / DISTANT_STEP_M), rows = Math.floor(grid.rows * grid.patchM / DISTANT_STEP_M);
     const positions = new Float32Array((cols + 1) * (rows + 1) * 3), colours = new Float32Array((cols + 1) * (rows + 1) * 3);
-    const water = new Float32Array((cols + 1) * (rows + 1));
     const light = new THREE.Color(0xffffff), dark = new THREE.Color(0xb8c4b0), c = new THREE.Color();
     for (let row = 0; row <= rows; row++) for (let col = 0; col <= cols; col++) {
       const i = row * (cols + 1) + col, x = origin + col * DISTANT_STEP_M, z = origin + row * DISTANT_STEP_M;
-      const at = near(x, z), open = at.distanceM <= congoChannelHalfM(at.river, grid) + DISTANT_RIVER_MARGIN_M;
-      // Lower, flooded forest along the rivers; the tall forest away from them.
-      const height = open ? 0 : (at.distanceM < 700 ? CANOPY_HEIGHT_M.flooded_forest! : DISTANT_CANOPY_M)
-        + ((spatialHash(`distant:${seed}:${col}:${row}`) / 0xffffffff) - 0.5) * 6;
+      // Lower, flooded forest along the rivers, the tall forest away from them; toward a river the
+      // canopy leans down over the bank and below the water (signed, as the near canopy does), so
+      // its edge runs along the river's course between the lattice's vertices.
+      const at = near(x, z), bank = at.distanceM - congoChannelHalfM(at.river, grid) - 5;
+      const lean = Math.max(-0.3, Math.min(1, bank / RIVER_BANK_LEAN_M));
+      const canopy = bank < 700 ? CANOPY_HEIGHT_M.flooded_forest! : DISTANT_CANOPY_M;
+      const height = lean > 0 ? canopy * lean + ((spatialHash(`distant:${seed}:${col}:${row}`) / 0xffffffff) - 0.5) * 6 * lean : canopy * lean;
       positions.set([x, lattice.vertex(col * ratio, row * ratio) + height, z], i * 3);
-      water[i] = open ? 1 : 0;
       c.copy(dark).lerp(light, spatialHash(`distant-tone:${seed}:${col}:${row}`) / 0xffffffff);
       colours.set([c.r, c.g, c.b], i * 3);
     }
@@ -390,7 +388,7 @@ function buildDistantForest(seed: number, loaded: ReadonlySet<string>): THREE.Me
     whole.computeVertexNormals();
     distantCache = { seed, cols, rows, attributes: {
       position: whole.getAttribute('position') as THREE.BufferAttribute, normal: whole.getAttribute('normal') as THREE.BufferAttribute,
-      color: new THREE.BufferAttribute(colours, 3), waterOpen: new THREE.BufferAttribute(water, 1),
+      color: new THREE.BufferAttribute(colours, 3),
       uv: new THREE.BufferAttribute(new Float32Array((cols + 1) * (rows + 1) * 2), 2),
     } };
   }
@@ -402,7 +400,7 @@ function buildDistantForest(seed: number, loaded: ReadonlySet<string>): THREE.Me
   for (const [name, attribute] of Object.entries(attributes)) geometry.setAttribute(name, attribute);
   geometry.setIndex(index);
   geometry.computeBoundingSphere();
-  const mesh = new THREE.Mesh(geometry, canopyMaterial({ centre: { value: new THREE.Vector2() }, radius: { value: 0 } }, true));
+  const mesh = new THREE.Mesh(geometry, canopyMaterial({ centre: { value: new THREE.Vector2() }, radius: { value: 0 } }));
   mesh.name = 'distant-forest'; mesh.receiveShadow = false; mesh.castShadow = false;
   return mesh;
 }

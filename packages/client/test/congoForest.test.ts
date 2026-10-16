@@ -144,6 +144,18 @@ describe('the Congo forest layer', () => {
     }
     expect(canopy).toBeGreaterThan(10_000);
     expect(river).toBeGreaterThan(20);
+    // The rivers past the loaded regions are drawn as rivers (their ribbons), not as the lattice's cells.
+    const ribbons: THREE.Mesh[] = [];
+    forest.root.getObjectByName('distant-rivers')!.traverse((o) => { if ((o as THREE.Mesh).isMesh) ribbons.push(o as THREE.Mesh); });
+    expect(ribbons.length).toBeGreaterThan(0);
+    for (const ribbon of ribbons) {
+      const r = ribbon.geometry.attributes.position!;
+      for (let i = 0; i < r.count; i++) {
+        const x = r.getX(i), z = r.getZ(i);
+        // At most one course point (some 200 m, plus the channel's width) into the loaded region.
+        expect(x > loaded.min + 800 && x < loaded.max - 800 && z > loaded.min + 800 && z < loaded.max - 800).toBe(false);
+      }
+    }
     // It wears the near canopy's own look, so the two meet without a seam.
     const shell = forest.root.getObjectByName('canopy-shell') as THREE.Mesh;
     expect((distant.material as THREE.Material).customProgramCacheKey()).toContain('congo-canopy-shell');
