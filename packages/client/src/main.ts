@@ -864,7 +864,7 @@ function frame(): void {
   if (store.world !== null) {
     const shownTime = litTime(liveWorldTime(now)!);
     atmosphere.update(shownTime, store.world.season, now / 1000, follow.target, reducedMotion.matches, follow.distance, camera.position);
-    renderer.toneMappingExposure = observerExposure(atmosphereAt(shownTime, store.world.season).daylight, follow.distance);
+    renderer.toneMappingExposure = observerExposure(atmosphereAt(shownTime, store.world.season).daylight, follow.distance, atmosphere.underCanopy);
   }
 
   // Grass, leaves, branches and the wind channel share one presentation-only wind (wind.ts).

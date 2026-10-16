@@ -24,6 +24,12 @@ const TREE_SINK_M = 0.3;
 const TREES = new Set<CongoKind>(['emergent', 'canopy', 'midstory', 'raphia', 'sapling']);
 /** The kinds whose crowns may be deciduous (seasonalLeaves.ts); the understory stays evergreen. */
 const DECIDUOUS = new Set<CongoKind>(['emergent', 'canopy']);
+/** The distant forest: its lattice step, and its canopy height away from the rivers (metres). */
+const DISTANT_STEP_M = 200, DISTANT_CANOPY_M = 27;
+/** Within this much of a river's channel the distant forest opens to the water: at its 200 m step every river shows unbroken. */
+const DISTANT_RIVER_MARGIN_M = 120;
+/** The canopy leans down to a river over this much of its bank (metres). */
+const RIVER_BANK_LEAN_M = 80;
 /** Plans kept for this many patches (the most recently used): about a kilometre around the camera. */
 const PLAN_CACHE_PATCHES = 96;
 
@@ -46,6 +52,7 @@ export class CongoForest {
   #focus: THREE.Vector3 | null = null;
   #shell: THREE.Mesh | null = null;
   #water: THREE.Group | null = null;
+  #distant: THREE.Mesh | null = null;
   readonly #hole = { centre: { value: new THREE.Vector2() }, radius: { value: this.canopyHole.radius } };
 
   /** 1 while the eye is down among the trees, 0 above the canopy: how much the forest interior closes the view. */
@@ -69,6 +76,7 @@ export class CongoForest {
     const ground = loadedGround(patches);
     this.#replace('shell', this.#buildShell(patches, seed));
     this.#replace('water', ground ? buildCongoWater(seed, ground, flooded) : null);
+    this.#replace('distant', ground ? buildDistantForest(seed, ground.regions) : null);
   }
 
   /**
@@ -97,17 +105,19 @@ export class CongoForest {
   dispose(): void {
     for (const mesh of this.#meshes.values()) mesh.dispose();
     this.#meshes.clear();
-    this.#replace('shell', null); this.#replace('water', null);
+    this.#replace('shell', null); this.#replace('water', null); this.#replace('distant', null);
   }
 
-  #replace(which: 'shell' | 'water', next: THREE.Mesh | THREE.Group | null): void {
-    const old = which === 'shell' ? this.#shell : this.#water;
+  #replace(which: 'shell' | 'water' | 'distant', next: THREE.Mesh | THREE.Group | null): void {
+    const old = which === 'shell' ? this.#shell : which === 'water' ? this.#water : this.#distant;
     if (old) {
       old.removeFromParent();
       old.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) { m.geometry.dispose(); (m.material as THREE.Material).dispose(); } });
     }
     if (next) this.root.add(next);
-    if (which === 'shell') this.#shell = next as THREE.Mesh | null; else this.#water = next as THREE.Group | null;
+    if (which === 'shell') this.#shell = next as THREE.Mesh | null;
+    else if (which === 'water') this.#water = next as THREE.Group | null;
+    else this.#distant = next as THREE.Mesh | null;
   }
 
   #plant(focus: THREE.Vector3): void {
@@ -187,14 +197,28 @@ export class CongoForest {
     // 35 m (fixed by place), so the edge runs ragged as a real forest edge does, not ruled. The
     // river channel itself is never covered.
     const canopyAt = (x: number, z: number): number => {
-      const at = near(x, z);
-      if (at.distanceM <= congoChannelHalfM(at.river, grid) + 5) return 0;
+
+      // A bai is a round clearing with a ragged edge, not its square patch.
+      const bc = Math.floor((x - origin) / grid.patchM), br = Math.floor((z - origin) / grid.patchM);
+      let inBai = false;
+      for (let dr = -1; dr <= 1 && !inBai; dr++) for (let dc = -1; dc <= 1 && !inBai; dc++) {
+        const id = (br + dr) * grid.cols + bc + dc, bai = byId.get(id);
+        if (bai?.habitat !== 'bai' || bc + dc < 0 || bc + dc >= grid.cols) continue;
+        const centre = patchCentre(grid, id), angle = Math.atan2(z - centre.z, x - centre.x);
+        inBai = Math.hypot(x - centre.x, z - centre.z) < baiRadius(seed, id, angle);
+      }
+      if (inBai) return 0;
       const kx = Math.round(x / CONGO_STEP_M), kz = Math.round(z / CONGO_STEP_M);
       x += ((spatialHash(`canopy-edge-x:${seed}:${kx}:${kz}`) / 0xffffffff) - 0.5) * 70;
       z += ((spatialHash(`canopy-edge-z:${seed}:${kx}:${kz}`) / 0xffffffff) - 0.5) * 70;
       const col = Math.floor((x - origin) / grid.patchM), row = Math.floor((z - origin) / grid.patchM);
-      const patch = col >= 0 && row >= 0 && col < grid.cols && row < grid.rows ? byId.get(row * grid.cols + col) : undefined;
-      return patch ? CANOPY_HEIGHT_M[patch.habitat === 'water' ? 'flooded_forest' : patch.habitat] ?? 0 : 0;
+      const inside = col >= 0 && row >= 0 && col < grid.cols && row < grid.rows, patch = inside ? byId.get(row * grid.cols + col) : undefined;
+      // Past the loaded regions the distant forest goes on at its own height: the surface meets it
+      // level instead of dropping to the ground in a wall.
+      if (!patch) return inside ? -DISTANT_CANOPY_M : 0;
+      // A bai patch's corners, outside its round clearing, are the forest around it.
+      const habitat = patch.habitat === 'water' || patch.habitat === 'bai' ? 'flooded_forest' : patch.habitat;
+      return CANOPY_HEIGHT_M[habitat] ?? 0;
     };
     const positions = new Float32Array((cols + 1) * (rows + 1) * 3), colours = new Float32Array((cols + 1) * (rows + 1) * 3), lifted = new Uint8Array((cols + 1) * (rows + 1));
     // The photographed canopy carries the crowns' colours; the vertices only vary its brightness.
@@ -202,10 +226,18 @@ export class CongoForest {
     for (let row = 0; row <= rows; row++) for (let col = 0; col <= cols; col++) {
       const i = row * (cols + 1) + col, x = origin + (c0 + col) * CONGO_STEP_M, z = origin + (r0 + row) * CONGO_STEP_M;
       // The lowest canopy among the four cells around the vertex: the surface drops to the ground at an opening.
-      const h = Math.min(canopyAt(x - 25, z - 25), canopyAt(x + 25, z - 25), canopyAt(x - 25, z + 25), canopyAt(x + 25, z + 25));
+      // (A cell past the loaded regions is marked by a negative height: it holds the surface up but is not drawn.)
+      const cells = [canopyAt(x - 25, z - 25), canopyAt(x + 25, z - 25), canopyAt(x - 25, z + 25), canopyAt(x + 25, z + 25)];
+      const loadedCell = cells.some((v) => v > 0);
+      // Toward a river the canopy leans down over the bank and, past the bank, below the water: a
+      // signed height, so the edge seen from above runs where the river's own bank does, between
+      // the lattice's vertices, not along them in steps.
+      const at = near(x, z), bank = at.distanceM - congoChannelHalfM(at.river, grid) - 5;
+      const lean = Math.max(-0.3, Math.min(1, bank / RIVER_BANK_LEAN_M));
+      const forest = Math.min(...cells.map(Math.abs)), h = forest * lean;
       const bump = h > 0 ? ((spatialHash(`canopy:${seed}:${c0 + col}:${r0 + row}`) / 0xffffffff) - 0.5) * 8 : 0;
-      positions.set([x, lattice.vertex(c0 + col, r0 + row) + Math.max(0, h + bump), z], i * 3);
-      lifted[i] = h > 0 ? 1 : 0;
+      positions.set([x, lattice.vertex(c0 + col, r0 + row) + (h > 0 ? Math.max(0, h + bump) : forest > 0 ? h : 0), z], i * 3);
+      lifted[i] = h > 0 && loadedCell ? 1 : 0;
       c.copy(dark).lerp(light, (spatialHash(`canopy-tone:${seed}:${c0 + col}:${r0 + row}`) / 0xffffffff));
       colours.set([c.r, c.g, c.b], i * 3);
     }
@@ -236,53 +268,162 @@ export class CongoForest {
     geometry.setAttribute('uv', new THREE.BufferAttribute(new Float32Array((cols + 1) * (rows + 1) * 2), 2));
     geometry.setIndex(index);
     geometry.computeVertexNormals();
-    const canopy = congoTexture('canopy_aerial');
-    const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide, ...(canopy ? { map: canopy } : {}) });
-    const hole = this.#hole;
-    material.onBeforeCompile = (shader) => {
-      shader.uniforms.holeCentre = hole.centre; shader.uniforms.holeRadius = hole.radius; shader.uniforms.uSeasonDry = congoSeasonDry;
-      shader.vertexShader = 'varying vec3 vShellWorld;\n' + shader.vertexShader.replace('#include <worldpos_vertex>',
-        '#include <worldpos_vertex>\nvShellWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-      shader.fragmentShader = `uniform vec2 holeCentre; uniform float holeRadius; uniform float uSeasonDry; varying vec3 vShellWorld;
-float shellHash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
-float shellNoise(vec2 p) { vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
-  return mix(mix(shellHash(i), shellHash(i + vec2(1.0, 0.0)), u.x), mix(shellHash(i + vec2(0.0, 1.0)), shellHash(i + vec2(1.0, 1.0)), u.x), u.y); }
-// Treetops: the distance to the nearest crown centre (cellular noise), and that crown's own random.
-vec2 shellCrowns(vec2 p) {
-  vec2 i = floor(p), f = fract(p); float best = 8.0, id = 0.0;
-  for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
-    vec2 g = vec2(float(x), float(y)), c = i + g;
-    vec2 o = vec2(shellHash(c), shellHash(c + 17.31)) * 0.8 + 0.1;
-    float d = length(g + o - f);
-    if (d < best) { best = d; id = shellHash(c + 3.7); }
-  }
-  return vec2(best, id);
-}
-` + shader.fragmentShader.replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
-        // Cut away where the plants themselves stand, with a dithered edge.
-        float holeEdge = (distance(vShellWorld.xz, holeCentre) - holeRadius) / 60.0;
-        if (holeRadius > 0.0 && holeEdge < shellHash(floor(vShellWorld.xz))) discard;`).replace('#include <map_fragment>', `
-        #ifdef USE_MAP
-        // The photographed canopy (about 170 m a tile), crossed with a turned, larger copy of itself
-        // where a slow noise says, so its repeat does not show from above.
-        vec2 shellAt = vShellWorld.xz;
-        vec4 canopyA = texture2D(map, shellAt / 170.0);
-        vec4 canopyB = texture2D(map, mat2(0.8, -0.6, 0.6, 0.8) * shellAt / 241.0 + 0.37);
-        diffuseColor *= mix(canopyA, canopyB, smoothstep(0.3, 0.7, shellNoise(shellAt / 420.0)));
-        #endif`).replace('#include <color_fragment>', `#include <color_fragment>
-        // In a drier spell the deciduous share of crowns (about 16 m across) turns yellow-brown and
-        // opens to its branches.
-        vec2 crown = shellCrowns(vShellWorld.xz / 16.0);
-        float deciduous = step(fract(crown.y * 7.13), ${CONGO_DECIDUOUS_SHARE.toFixed(3)}) * uSeasonDry;
-        diffuseColor.rgb *= 1.0 - deciduous * 0.3 * (1.0 - shellNoise(vShellWorld.xz / 0.9));
-        vec3 dryCrown = vec3(dot(diffuseColor.rgb, vec3(0.42, 0.42, 0.16))) * vec3(1.55, 1.1, 0.45);
-        diffuseColor.rgb = mix(diffuseColor.rgb, dryCrown, deciduous * 0.85);`);
-    };
-    material.customProgramCacheKey = () => 'congo-canopy-shell-v4';
+    const material = canopyMaterial(this.#hole, false);
     const mesh = new THREE.Mesh(geometry, material);
     mesh.name = 'canopy-shell'; mesh.receiveShadow = false; mesh.castShadow = false;
     return mesh;
   }
+}
+
+/**
+ * The canopy seen from above, shared by the near surface and the distant forest. The photographed
+ * canopy carries the leaves; over it each tree's crown (about 16 m across, an emergent's about
+ * 34 m) is shaded as a dome lit by the sun, in its own green, a few in the red-bronze of a flush of
+ * new leaves, with dark gaps between crowns. `distant` adds the rivers' water.
+ */
+function canopyMaterial(hole: { centre: { value: THREE.Vector2 }; radius: { value: number } }, distant: boolean): THREE.MeshStandardMaterial {
+  const canopy = congoTexture('canopy_aerial');
+  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide, ...(canopy ? { map: canopy } : {}) });
+  if (distant) material.defines = { DISTANT_FOREST: '' };
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.holeCentre = hole.centre; shader.uniforms.holeRadius = hole.radius; shader.uniforms.uSeasonDry = congoSeasonDry;
+    shader.vertexShader = 'varying vec3 vShellWorld;\n#ifdef DISTANT_FOREST\nattribute float waterOpen; varying float vWaterOpen;\n#endif\n' + shader.vertexShader.replace('#include <worldpos_vertex>',
+      '#include <worldpos_vertex>\nvShellWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\n#ifdef DISTANT_FOREST\nvWaterOpen = waterOpen;\n#endif');
+    shader.fragmentShader = `uniform vec2 holeCentre; uniform float holeRadius; uniform float uSeasonDry; varying vec3 vShellWorld;
+#ifdef DISTANT_FOREST
+varying float vWaterOpen;
+#endif
+float shellHash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+float shellNoise(vec2 p) { vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(shellHash(i), shellHash(i + vec2(1.0, 0.0)), u.x), mix(shellHash(i + vec2(0.0, 1.0)), shellHash(i + vec2(1.0, 1.0)), u.x), u.y); }
+// Treetops: the distance to the nearest crown centre (cellular noise), that crown's own random,
+// and the way from its centre (for the dome's slope).
+vec4 shellCrowns(vec2 p) {
+  vec2 i = floor(p), f = fract(p), way = vec2(0.0); float best = 8.0, id = 0.0;
+  for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+    vec2 g = vec2(float(x), float(y)), c = i + g;
+    vec2 o = vec2(shellHash(c), shellHash(c + 17.31)) * 0.8 + 0.1;
+    vec2 d2 = f - g - o; float d = length(d2);
+    if (d < best) { best = d; id = shellHash(c + 3.7); way = d2; }
+  }
+  return vec4(best, id, way);
+}
+` + shader.fragmentShader.replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+      // Cut away where the plants themselves stand, with a dithered edge.
+      float holeEdge = (distance(vShellWorld.xz, holeCentre) - holeRadius) / 60.0;
+      if (holeRadius > 0.0 && holeEdge < shellHash(floor(vShellWorld.xz))) discard;`).replace('#include <map_fragment>', `
+      #ifdef USE_MAP
+      // The photographed canopy (about 170 m a tile), crossed with a turned, larger copy of itself
+      // where a slow noise says, so its repeat does not show from above.
+      vec2 shellAt = vShellWorld.xz;
+      vec4 canopyA = texture2D(map, shellAt / 170.0);
+      vec4 canopyB = texture2D(map, mat2(0.8, -0.6, 0.6, 0.8) * shellAt / 241.0 + 0.37);
+      diffuseColor *= mix(canopyA, canopyB, smoothstep(0.3, 0.7, shellNoise(shellAt / 420.0)));
+      #endif`).replace('#include <color_fragment>', `#include <color_fragment>
+      vec4 crown = shellCrowns(vShellWorld.xz / 16.0);
+      // A few emergents stand above the rest, their crowns twice as wide.
+      vec4 tall = shellCrowns(vShellWorld.xz / 34.0 + 11.3);
+      float emergent = step(0.8, tall.y) * (1.0 - smoothstep(0.35, 0.5, tall.x));
+      vec4 tree = emergent > 0.5 ? tall : crown;
+      float dome = 1.0 - smoothstep(0.3, 0.62, tree.x);
+      // Each crown its own green (lime to blue-green), a few flushing red-bronze with new leaves.
+      vec3 tone = mix(vec3(0.9, 1.1, 0.72), vec3(0.74, 0.96, 0.9), fract(tree.y * 5.31));
+      diffuseColor.rgb *= tone * (1.0 + 0.12 * emergent);
+      float flush = step(0.955, fract(tree.y * 13.7)) * dome;
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(dot(diffuseColor.rgb, vec3(0.5))) * vec3(1.6, 0.95, 0.62), flush * 0.75);
+      // Dark gaps between crowns, the crowns themselves a touch lighter and more saturated.
+      diffuseColor.rgb *= 0.66 + 0.52 * dome;
+      diffuseColor.rgb = mix(vec3(dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11))), diffuseColor.rgb, 1.25);
+      // In a drier spell the deciduous share of crowns turns yellow-brown and opens to its branches.
+      float deciduous = step(fract(crown.y * 7.13), ${CONGO_DECIDUOUS_SHARE.toFixed(3)}) * uSeasonDry;
+      diffuseColor.rgb *= 1.0 - deciduous * 0.3 * (1.0 - shellNoise(vShellWorld.xz / 0.9));
+      vec3 dryCrown = vec3(dot(diffuseColor.rgb, vec3(0.42, 0.42, 0.16))) * vec3(1.55, 1.1, 0.45);
+      diffuseColor.rgb = mix(diffuseColor.rgb, dryCrown, deciduous * 0.85);
+      #ifdef DISTANT_FOREST
+      // A river far off: dark forest water under the sky.
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.2, 0.26, 0.27), smoothstep(0.3, 0.9, vWaterOpen));
+      #endif`).replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+      // The crown's dome turns the surface toward the sun on one side and away on the other.
+      {
+        vec2 slope = tree.zw / 0.62 * dome;
+        #ifdef DISTANT_FOREST
+        slope *= 1.0 - vWaterOpen;
+        #endif
+        vec3 crownNormal = normalize(vec3(slope.x * 1.4, 1.0, slope.y * 1.4));
+        normal = normalize(mix(normal, normalize((viewMatrix * vec4(crownNormal, 0.0)).xyz), 0.8));
+      }`);
+  };
+  material.customProgramCacheKey = () => `congo-canopy-shell-v5${distant ? '-distant' : ''}`;
+  return material;
+}
+
+/** The distant forest's vertices for a seed: the whole world at a 200 m step, kept while the loaded regions change. */
+let distantCache: { seed: number; attributes: Record<string, THREE.BufferAttribute>; cols: number; rows: number } | null = null;
+
+/**
+ * The forest past the loaded regions: the whole world's canopy at a 200 m step, open to the water
+ * over the rivers, drawn wherever no region is loaded. From above the land then runs on to the
+ * world's edge instead of stopping at the loaded regions.
+ */
+function buildDistantForest(seed: number, loaded: ReadonlySet<string>): THREE.Mesh | null {
+  const grid = worldGrid(), origin = -grid.patchM / 2, span = grid.regionPatches * grid.patchM, ratio = DISTANT_STEP_M / CONGO_STEP_M;
+  if (distantCache?.seed !== seed) {
+    const lattice = congoLattice(seed), near = riversNear(seed);
+    const cols = Math.floor(grid.cols * grid.patchM / DISTANT_STEP_M), rows = Math.floor(grid.rows * grid.patchM / DISTANT_STEP_M);
+    const positions = new Float32Array((cols + 1) * (rows + 1) * 3), colours = new Float32Array((cols + 1) * (rows + 1) * 3);
+    const water = new Float32Array((cols + 1) * (rows + 1));
+    const light = new THREE.Color(0xffffff), dark = new THREE.Color(0xb8c4b0), c = new THREE.Color();
+    for (let row = 0; row <= rows; row++) for (let col = 0; col <= cols; col++) {
+      const i = row * (cols + 1) + col, x = origin + col * DISTANT_STEP_M, z = origin + row * DISTANT_STEP_M;
+      const at = near(x, z), open = at.distanceM <= congoChannelHalfM(at.river, grid) + DISTANT_RIVER_MARGIN_M;
+      // Lower, flooded forest along the rivers; the tall forest away from them.
+      const height = open ? 0 : (at.distanceM < 700 ? CANOPY_HEIGHT_M.flooded_forest! : DISTANT_CANOPY_M)
+        + ((spatialHash(`distant:${seed}:${col}:${row}`) / 0xffffffff) - 0.5) * 6;
+      positions.set([x, lattice.vertex(col * ratio, row * ratio) + height, z], i * 3);
+      water[i] = open ? 1 : 0;
+      c.copy(dark).lerp(light, spatialHash(`distant-tone:${seed}:${col}:${row}`) / 0xffffffff);
+      colours.set([c.r, c.g, c.b], i * 3);
+    }
+    const whole = new THREE.BufferGeometry();
+    whole.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    whole.setIndex(gridIndex(cols, rows, () => true));
+    whole.computeVertexNormals();
+    distantCache = { seed, cols, rows, attributes: {
+      position: whole.getAttribute('position') as THREE.BufferAttribute, normal: whole.getAttribute('normal') as THREE.BufferAttribute,
+      color: new THREE.BufferAttribute(colours, 3), waterOpen: new THREE.BufferAttribute(water, 1),
+      uv: new THREE.BufferAttribute(new Float32Array((cols + 1) * (rows + 1) * 2), 2),
+    } };
+  }
+  const { attributes, cols, rows } = distantCache;
+  const index = gridIndex(cols, rows, (col, row) => !loaded.has(`${Math.floor((col + 0.5) * DISTANT_STEP_M / span)},${Math.floor((row + 0.5) * DISTANT_STEP_M / span)}`));
+  if (index.length === 0) return null;
+  // Each mesh its own geometry (its index), over the seed's shared vertices.
+  const geometry = new THREE.BufferGeometry();
+  for (const [name, attribute] of Object.entries(attributes)) geometry.setAttribute(name, attribute);
+  geometry.setIndex(index);
+  geometry.computeBoundingSphere();
+  const mesh = new THREE.Mesh(geometry, canopyMaterial({ centre: { value: new THREE.Vector2() }, radius: { value: 0 } }, true));
+  mesh.name = 'distant-forest'; mesh.receiveShadow = false; mesh.castShadow = false;
+  return mesh;
+}
+
+/** A bai's clearing: about 140 m out from its patch's centre, ragged by direction (eight fixed radii, blended). */
+function baiRadius(seed: number, id: number, angle: number): number {
+  const at = ((angle / (Math.PI * 2)) * 8 + 8) % 8, k = Math.floor(at), f = at - k;
+  const r = (i: number) => spatialHash(`bai-edge:${seed}:${id}:${i % 8}`) / 0xffffffff;
+  const n = r(k) + (r(k + 1) - r(k)) * f * f * (3 - 2 * f);
+  return 140 * (0.9 + 0.3 * n);
+}
+
+/** Two triangles for each cell of a (cols × rows) vertex lattice that `keep` keeps. */
+function gridIndex(cols: number, rows: number, keep: (col: number, row: number) => boolean): number[] {
+  const index: number[] = [];
+  for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++) {
+    if (!keep(col, row)) continue;
+    const a = row * (cols + 1) + col, b = a + cols + 1;
+    index.push(a, b, a + 1, b, b + 1, a + 1);
+  }
+  return index;
 }
 
 let riverCache: { seed: number; near: ReturnType<typeof riverIndex> } | null = null;

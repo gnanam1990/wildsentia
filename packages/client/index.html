@@ -26,7 +26,7 @@
     <button id="open-event-map" title="Where hunts, births and deaths happened"><span>Events</span></button>
     <button id="open-community" aria-haspopup="dialog" title="The village"><span>Village</span></button>
     <span class="dock-divider" aria-hidden="true"></span>
-    <button id="toggle-journal" type="button" aria-controls="feed-panel" aria-expanded="true" title="Forest journal"><span>Journal</span></button>
+    <button id="toggle-journal" type="button" aria-controls="feed-panel" aria-expanded="false" title="Forest journal"><span>Journal</span></button>
     <button id="toggle-animal" type="button" aria-controls="passport-panel" aria-expanded="true" title="Animal details"><span>Animal</span></button>
     <button id="toggle-settings" type="button" aria-controls="view-settings" aria-expanded="false" title="View settings"><span>Settings</span></button>
   </nav>
@@ -58,9 +58,9 @@
         <button type="button" id="live-agents" aria-expanded="false" aria-controls="agents-list" hidden></button>
         <div id="agents-list" class="agents-list" hidden></div>
       </div>
-      <label for="theme-choice">Account and challenge page theme</label>
+      <label for="theme-choice">Theme</label>
       <select id="theme-choice" aria-describedby="theme-help"><option value="light">Light</option><option value="dark">Dark</option><option value="auto">Same as device</option></select>
-      <p id="theme-help">Saved for the other pages. The forest observer keeps its smoked glass.</p>
+      <p id="theme-help">Light gives the panels frosted daylight glass; dark gives them smoked glass. Saved for every page.</p>
       <label for="render-quality">Graphics quality</label>
       <select id="render-quality" aria-describedby="render-quality-help">
         <option value="auto">Auto (recommended)</option><option value="smooth">Smooth / low power</option>

@@ -269,7 +269,8 @@ function plantParts(kind: CongoKind): PlantParts {
       return { blades: merge(cards) };
     }
     case 'log': {
-      const moss = new THREE.Color(0x4f5a2e), bark = new THREE.Color(0x5a4a34);
+      // Light tints: the bark photograph carries the log's darkness (dark tints over it drew a black log).
+      const moss = new THREE.Color(0x9aa86a), bark = new THREE.Color(0xc2ad8c);
       const log = new THREE.CylinderGeometry(0.5, 0.6, 11, 8).rotateZ(Math.PI / 2).translate(0, 0.45, 0);
       return { wood: finish(log, (y) => bark.clone().lerp(moss, Math.max(0, Math.min(1, (y - 0.45) / 0.6)))) };
     }

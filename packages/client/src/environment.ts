@@ -26,8 +26,12 @@ export function atmosphereAt(worldTime: number, season: string) {
  * coats (boar, gaur) read as animals rather than holes, while the sky and light colour still
  * say it is night. Presentation only; the world's time and light are unchanged.
  */
-export function observerExposure(daylight: number, viewDistance = 0): number {
-  return 1.1 + (1 - Math.min(1, Math.max(0, daylight))) * (0.35 + 0.65 * closeness(viewDistance));
+export function observerExposure(daylight: number, viewDistance = 0, underCanopy = 0): number {
+  const d = Math.min(1, Math.max(0, daylight));
+  // Congo: among the trees by day the eye adapts to the shade, so the forest floor reads in
+  // colour rather than as a dark hole (the owner found it too dark to see).
+  const shade = Math.min(1, Math.max(0, underCanopy)) * 0.45 * d;
+  return 1.1 + (1 - d) * (0.35 + 0.65 * closeness(viewDistance)) + shade;
 }
 
 /** 1 near the ground, falling to 0 by 2 km up: close up the eye adapts, from above it does not. */
@@ -46,7 +50,12 @@ export function observerLights(daylight: number, sunIntensity: number, viewDista
   return { sun: sunIntensity * dim, sky: (0.85 + d * 0.45) * dim };
 }
 
-const HAZE = new THREE.Color(0x9ea67c), INTERIOR = new THREE.Color(0x2c3d24);
+/** The rainforest's humid air from above, and the sunlit leaf-green mist among its trees. */
+const HAZE = new THREE.Color(0xaabb9c), INTERIOR = new THREE.Color(0x88a86a);
+/** Under the canopy the sky light is light bounced and passed through leaves: green from below. */
+const LEAF_BOUNCE = new THREE.Color(0x6f8f4a), OPEN_GROUND = new THREE.Color(0x3f4a33);
+/** At night the shade is filled with moonlight scattered through the leaves: cool, so it still reads as night. */
+const MOON_FLOOR = new THREE.Color(0x56627a);
 
 export class Atmosphere {
   readonly rain: THREE.LineSegments;
@@ -86,9 +95,9 @@ export class Atmosphere {
       if (this.haze > 0) this.scene.fog.color.lerp(HAZE.clone().multiplyScalar(0.25 + 0.75 * state.daylight), 0.6 * this.haze);
       // Among the trees the view closes into dim green depth a few hundred metres off.
       if (this.underCanopy > 0) {
-        this.scene.fog.color.lerp(INTERIOR.clone().multiplyScalar(0.3 + 0.7 * state.daylight), 0.75 * this.underCanopy);
-        this.scene.fog.far += (Math.min(this.scene.fog.far, 650) - this.scene.fog.far) * this.underCanopy;
-        this.scene.fog.near += (Math.min(this.scene.fog.near, 40) - this.scene.fog.near) * this.underCanopy;
+        this.scene.fog.color.lerp(INTERIOR.clone().multiplyScalar(0.3 + 0.7 * state.daylight), 0.7 * this.underCanopy);
+        this.scene.fog.far += (Math.min(this.scene.fog.far, 950) - this.scene.fog.far) * this.underCanopy;
+        this.scene.fog.near += (Math.min(this.scene.fog.near, 70) - this.scene.fog.near) * this.underCanopy;
         // Past the haze among the trees is more forest, not open sky: the dome gives way to a
         // background between the sky and the haze, as light comes through the leaves.
         (this.scene.background as THREE.Color).lerp(this.scene.fog.color, 0.55 * this.underCanopy);
@@ -103,9 +112,12 @@ export class Atmosphere {
     const hemi = this.scene.children.find((o) => (o as THREE.HemisphereLight).isHemisphereLight) as THREE.HemisphereLight | undefined;
     // Moonlit observer exposure keeps silhouettes legible without changing world time.
     if (hemi) {
-      hemi.intensity = lights.sky;
+      // Under the canopy by day the shade is filled with light bounced from the leaves.
+      hemi.intensity = lights.sky * (1 + this.underCanopy * (0.6 * state.daylight + 0.7 * (1 - state.daylight)));
       // Sky light cools toward moonlight as the sun goes down.
       hemi.color.copy(DAY_SKY_LIGHT).lerp(MOON_SKY_LIGHT, 1 - state.daylight);
+      hemi.groundColor.copy(OPEN_GROUND).lerp(LEAF_BOUNCE, this.underCanopy * state.daylight)
+        .lerp(MOON_FLOOR, this.underCanopy * (1 - state.daylight));
     }
     const count = reducedMotion ? 0 : Math.round(600 * state.rain);
     this.rain.geometry.setDrawRange(0, count * 2);

@@ -100,7 +100,49 @@ describe('inside the Congo forest (1A.5)', () => {
       return scene.fog as THREE.Fog;
     };
     const above = fogAt(0), inside = fogAt(1);
-    expect(inside.far).toBeLessThanOrEqual(700);
-    expect(inside.color.getHSL({ h: 0, s: 0, l: 0 }).l).toBeLessThan(above.color.getHSL({ h: 0, s: 0, l: 0 }).l * 0.6);
+    expect(inside.far).toBeLessThan(above.far);
+    // A sunlit leaf-green mist, not a black wall: the owner found the forest floor too dark to see.
+    const hsl = inside.color.getHSL({ h: 0, s: 0, l: 0 });
+    expect(hsl.l).toBeGreaterThan(0.3);
+    expect(hsl.h).toBeGreaterThan(0.2); expect(hsl.h).toBeLessThan(0.4);
+    expect(hsl.l).toBeLessThan(above.color.getHSL({ h: 0, s: 0, l: 0 }).l);
+  });
+
+  it('lets the eye adapt to the shade under the trees by day, and not above them', () => {
+    expect(observerExposure(1, 20, 1)).toBeGreaterThan(observerExposure(1, 20, 0) + 0.3);
+    expect(observerExposure(1, 20, 0)).toBeCloseTo(1.1);
+    expect(observerExposure(0.5, 20, 0.5)).toBeGreaterThan(observerExposure(0.5, 20, 0));
+    // At night the moonlit exposure already adapts; the canopy lift does not stack on it.
+    expect(observerExposure(0, 20, 1)).toBeLessThan(observerExposure(0, 20, 0) + 0.15);
+  });
+
+  it('fills the shade with green light bounced from the leaves', () => {
+    const lightsAt = (under: number) => {
+      const scene = new THREE.Scene(); scene.background = new THREE.Color(); scene.fog = new THREE.Fog(0, 200, 2600);
+      const hemi = new THREE.HemisphereLight(0xffffff, 0x000000, 1); scene.add(hemi);
+      const atmosphere = new Atmosphere(scene, new THREE.DirectionalLight());
+      atmosphere.haze = 1; atmosphere.underCanopy = under;
+      atmosphere.update(12 * 3600, 'dry', 3, new THREE.Vector3(), false, 20);
+      return { intensity: hemi.intensity, ground: hemi.groundColor.clone() };
+    };
+    const open = lightsAt(0), shade = lightsAt(1);
+    expect(shade.intensity).toBeGreaterThan(open.intensity * 1.3);
+    expect(shade.ground.g).toBeGreaterThan(shade.ground.r);
+    expect(shade.ground.getHSL({ h: 0, s: 0, l: 0 }).l).toBeGreaterThan(open.ground.getHSL({ h: 0, s: 0, l: 0 }).l);
+  });
+
+  it('fills the shade under the trees with cool moonlight at night, so the floor is not black', () => {
+    const lightsAt = (under: number) => {
+      const scene = new THREE.Scene(); scene.background = new THREE.Color(); scene.fog = new THREE.Fog(0, 200, 2600);
+      const hemi = new THREE.HemisphereLight(0xffffff, 0x000000, 1); scene.add(hemi);
+      const atmosphere = new Atmosphere(scene, new THREE.DirectionalLight());
+      atmosphere.haze = 1; atmosphere.underCanopy = under;
+      atmosphere.update(0, 'dry', 3, new THREE.Vector3(), false, 20);
+      return { intensity: hemi.intensity, ground: hemi.groundColor.clone() };
+    };
+    const open = lightsAt(0), shade = lightsAt(1);
+    expect(shade.intensity).toBeGreaterThan(open.intensity * 1.4);
+    expect(shade.ground.b).toBeGreaterThan(shade.ground.r); // moonlight, not leaf-green
+    expect(shade.ground.getHSL({ h: 0, s: 0, l: 0 }).l).toBeGreaterThan(open.ground.getHSL({ h: 0, s: 0, l: 0 }).l);
   });
 });
