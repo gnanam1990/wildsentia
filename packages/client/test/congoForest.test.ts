@@ -75,11 +75,15 @@ describe('the Congo forest layer', () => {
     forest.setScene(region(1, 1, (id) => id === baiId ? 'bai' : 'terra_firme'), 7, false);
     const shell = forest.root.getObjectByName('canopy-shell') as THREE.Mesh, p = shell.geometry.attributes.position!, ground = congoLattice(7).sample;
     const bai = patchCentre(CONGO_GRID, baiId), deep = patchCentre(CONGO_GRID, 32 * 160 + 32);
+    let corners = 0;
     for (let i = 0; i < p.count; i++) {
       const x = p.getX(i), z = p.getZ(i), above = p.getY(i) - ground(x, z);
       if (Math.abs(x - bai.x) < 100 && Math.abs(z - bai.z) < 100) expect(above).toBeLessThan(0.5);
+      // A round clearing: the bai patch's far corners are forest.
+      if (Math.abs(x - bai.x) <= 150 && Math.abs(z - bai.z) <= 150 && Math.hypot(x - bai.x, z - bai.z) > 205) { expect(above).toBeGreaterThan(10); corners++; }
       if (Math.abs(x - deep.x) < 100 && Math.abs(z - deep.z) < 100) expect(Math.abs(above - CANOPY_HEIGHT_M.terra_firme)).toBeLessThanOrEqual(5);
     }
+    expect(corners).toBeGreaterThan(0);
     const floor = ground(deep.x, deep.z);
     forest.update(new THREE.Vector3(deep.x, 0, deep.z), new THREE.Vector3(deep.x, floor + 12, deep.z));
     expect(forest.canopyHole).toEqual({ x: deep.x, z: deep.z, radius: KIND_RADIUS_M.canopy - 40 });
@@ -110,6 +114,63 @@ describe('the Congo forest layer', () => {
     let shown = 0;
     forest.root.traverse((o) => { if ((o as THREE.InstancedMesh).isInstancedMesh && o.visible) shown++; });
     expect(shown).toBe(0);
+  });
+  it('stretches a distant forest over the rest of the world, so the land seen from above has no edge', () => {
+    setWorldGrid(CONGO_GRID);
+    const forest = new CongoForest(), ground = congoLattice(7).sample;
+    forest.setScene(region(1, 1), 7, false);
+    const distant = forest.root.getObjectByName('distant-forest') as THREE.Mesh;
+    expect(distant).toBeDefined();
+    const p = distant.geometry.attributes.position!, index = distant.geometry.index!;
+    distant.geometry.computeBoundingBox();
+    const box = distant.geometry.boundingBox!, span = CONGO_GRID.cols * CONGO_GRID.patchM;
+    expect(box.max.x - box.min.x).toBeGreaterThan(span - 400);
+    expect(box.max.z - box.min.z).toBeGreaterThan(span - 400);
+    // Nothing of it inside the loaded region, where the near canopy and the plants stand.
+    const loaded = { min: -150 + 6000, max: -150 + 12000 };
+    for (let t = 0; t < index.count; t += 3) {
+      let cx = 0, cz = 0;
+      for (let k = 0; k < 3; k++) { cx += p.getX(index.getX(t + k)) / 3; cz += p.getZ(index.getX(t + k)) / 3; }
+      expect(cx > loaded.min && cx < loaded.max && cz > loaded.min && cz < loaded.max).toBe(false);
+    }
+    // A forest at canopy height away from the rivers, down at the water over a river.
+    const near = riverIndex(congoRivers(7, CONGO_GRID));
+    let canopy = 0, river = 0;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), z = p.getZ(i), above = p.getY(i) - ground(x, z), at = near(x, z);
+      const half = congoChannelHalfM(at.river, CONGO_GRID);
+      if (at.distanceM > half + 300) { expect(above).toBeGreaterThan(12); expect(above).toBeLessThan(34); canopy++; }
+      if (at.distanceM < half) { expect(above).toBeLessThan(1); river++; }
+    }
+    expect(canopy).toBeGreaterThan(10_000);
+    expect(river).toBeGreaterThan(20);
+    // The rivers past the loaded regions are drawn as rivers (their ribbons), not as the lattice's cells.
+    const ribbons: THREE.Mesh[] = [];
+    forest.root.getObjectByName('distant-rivers')!.traverse((o) => { if ((o as THREE.Mesh).isMesh) ribbons.push(o as THREE.Mesh); });
+    expect(ribbons.length).toBeGreaterThan(0);
+    for (const ribbon of ribbons) {
+      const r = ribbon.geometry.attributes.position!;
+      for (let i = 0; i < r.count; i++) {
+        const x = r.getX(i), z = r.getZ(i);
+        // At most one course point (some 200 m, plus the channel's width) into the loaded region.
+        expect(x > loaded.min + 800 && x < loaded.max - 800 && z > loaded.min + 800 && z < loaded.max - 800).toBe(false);
+      }
+    }
+    // It wears the near canopy's own look, so the two meet without a seam.
+    const shell = forest.root.getObjectByName('canopy-shell') as THREE.Mesh;
+    expect((distant.material as THREE.Material).customProgramCacheKey()).toContain('congo-canopy-shell');
+    expect((shell.material as THREE.Material).customProgramCacheKey()).toContain('congo-canopy-shell');
+    // Other loaded regions: the distant forest makes way for them.
+    forest.setScene(region(2, 1), 7, false);
+    const moved = forest.root.getObjectByName('distant-forest') as THREE.Mesh, q = moved.geometry.attributes.position!, j = moved.geometry.index!;
+    let insideOld = 0;
+    for (let t = 0; t < j.count; t += 3) {
+      let cx = 0, cz = 0;
+      for (let k = 0; k < 3; k++) { cx += q.getX(j.getX(t + k)) / 3; cz += q.getZ(j.getX(t + k)) / 3; }
+      if (cx > loaded.min && cx < loaded.max && cz > loaded.min && cz < loaded.max) insideOld++;
+      expect(cx > loaded.max && cx < loaded.max + 6000 && cz > loaded.min && cz < loaded.max).toBe(false);
+    }
+    expect(insideOld).toBeGreaterThan(0);
   });
   it('opens the canopy over the river channel itself, and closes it over a river patch\'s dry edge', () => {
     setWorldGrid(CONGO_GRID);

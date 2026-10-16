@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { addCameraInteriorFade, cameraInteriorKeep, cutawayVisibility, ObserverVisibility, projectObserverSubjects } from '../src/observerVisibility.js';
+import { addCameraInteriorFade, cameraInteriorKeep, cutawayVisibility, lensKeep, ObserverVisibility, projectObserverSubjects } from '../src/observerVisibility.js';
 import { addTreeDetailFade, treeImpostorMaterial } from '../src/treeLod.js';
 
 function camera() {
@@ -112,5 +112,24 @@ describe('observer-only occlusion reveal', () => {
     expect(shader.fragmentShader).toContain('screenNoise < detail');
     expect(shader.fragmentShader).toContain('gl_FragCoord.z < subject.w');
     target.dispose(); material.dispose();
+  });
+  it('opens leaves pressed against the lens, so a plant at the camera never fills the view', () => {
+    expect(lensKeep(0.4)).toBe(0);
+    expect(lensKeep(6)).toBe(1);
+    expect(lensKeep(2)).toBeGreaterThan(lensKeep(1.5));
+    expect(lensKeep(2)).toBeLessThan(1);
+    const material = new THREE.MeshStandardMaterial();
+    new ObserverVisibility().patch(material);
+    const shader = { uniforms: {} as Record<string, { value: unknown }>,
+      vertexShader: '#include <begin_vertex>\n#include <project_vertex>\n#include <fog_vertex>',
+      fragmentShader: '#include <map_fragment>\n#include <alphatest_fragment>' };
+    material.onBeforeCompile(shader as never, {} as THREE.WebGLRenderer);
+    expect(shader.vertexShader).toContain('vObserverLens = gl_Position.w');
+    expect(shader.fragmentShader).toContain('observerNoise >= observerLensKeep');
+    // A shader that projects its own way and has no fog step (a far-tree card) keeps every pixel.
+    const card = compile(material);
+    expect(card.vertexShader).not.toContain('vObserverLens');
+    expect(card.fragmentShader).not.toContain('observerLensKeep');
+    material.dispose();
   });
 });

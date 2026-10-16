@@ -133,3 +133,9 @@ Six species join the three of Phase 1 (plan: `docs/superpowers/plans/2026-10-14-
 
 These are model calibrations, not field values.
 
+**Calibrated again (16 October 2026).** After a year's soak on the corrected digestion
+(`docs/2026-10-13-congo-measurements.md`), the shares are:
+- golden cat 0.80 and crowned eagle 0.96: each still took 10-20 blue duikers a year;
+- leopard 0.45: at 0.35, 36 of 92 leopards starved in a year. Lopé's 59% ungulates [23]
+  include duikers, bongo and bushbuck that this world does not hold.
+

@@ -8,7 +8,8 @@ export function initObserverChrome(onCenter?: (centerY: number | null) => void):
   const animalButton = document.querySelector<HTMLButtonElement>('#toggle-animal')!;
   const settingsButton = document.querySelector<HTMLButtonElement>('#toggle-settings')!;
   const clearButton = document.querySelector<HTMLButtonElement>('#clear-view')!;
-  let journalOpen = !compact.matches;
+  // The journal waits to be asked for: the forest is what the viewer comes to see.
+  let journalOpen = false;
   let side: 'animal' | 'settings' | null = 'animal';
   let clear = false;
   let replaying = false;
@@ -70,7 +71,7 @@ export function initObserverChrome(onCenter?: (centerY: number | null) => void):
     else if (!settings.hidden) { showSide('animal'); settingsButton.focus(); }
   });
   compact.addEventListener('change', () => {
-    journalOpen = !compact.matches;
+    if (compact.matches) journalOpen = false;
     render();
   });
   const geometry = new ResizeObserver(scheduleMeasure);

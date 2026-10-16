@@ -3,6 +3,14 @@ import * as THREE from 'three';
 export interface ObserverSubject { x: number; y: number; z: number; radius: number }
 export interface ScreenSubject { x: number; y: number; radius: number; depth: number }
 const KEEP = 0.08;
+/** Decoration nearer the lens than the first distance (metres) is open, beyond the second whole. */
+const LENS_OPEN_M = 0.8, LENS_WHOLE_M = 3.2;
+
+/** Same as the shader: how much of a decorative surface this far in front of the lens is drawn. */
+export function lensKeep(distance: number): number {
+  const t = Math.max(0, Math.min(1, (distance - LENS_OPEN_M) / (LENS_WHOLE_M - LENS_OPEN_M)));
+  return t * t * (3 - 2 * t);
+}
 
 /** Fade only decorative instances whose anchor crowds the observer lens. Horizontal
  * distance matters: a camera 8 m above a root can still sit inside its canopy. */
@@ -108,7 +116,14 @@ export class ObserverVisibility {
       previous(shader, renderer);
       shader.uniforms.observerSubjects = this.#subjects;
       shader.uniforms.observerSubjectCount = this.#count;
-      shader.fragmentShader = 'uniform vec4 observerSubjects[2]; uniform int observerSubjectCount;\n' + shader.fragmentShader;
+      // A leaf pressed against the lens (the camera following an animal through the understory)
+      // opens rather than filling the view.
+      // Read from the projected position after every other hook (a far-tree card projects itself);
+      // a shader without the fog step keeps every pixel.
+      const lens = shader.vertexShader.includes('#include <fog_vertex>');
+      if (lens) shader.vertexShader = 'varying float vObserverLens;\n' + shader.vertexShader.replace('#include <fog_vertex>',
+        '#include <fog_vertex>\nvObserverLens = gl_Position.w;');
+      shader.fragmentShader = `uniform vec4 observerSubjects[2]; uniform int observerSubjectCount;${lens ? ' varying float vObserverLens;' : ''}\n` + shader.fragmentShader;
       shader.fragmentShader = shader.fragmentShader.replace('#include <alphatest_fragment>', `
         #include <alphatest_fragment>
         float observerKeep = 1.0;
@@ -124,9 +139,11 @@ export class ObserverVisibility {
         // overlapping branches. No animated noise, transparent sorting or extra draw pass.
         float observerNoise = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
         if (observerNoise >= observerKeep) discard;
+        ${lens ? `float observerLensKeep = smoothstep(${LENS_OPEN_M.toFixed(2)}, ${LENS_WHOLE_M.toFixed(2)}, vObserverLens);
+        if (observerNoise >= observerLensKeep) discard;` : ''}
       `);
     };
-    material.customProgramCacheKey = () => `${key}:observer-cutaway-v1`;
+    material.customProgramCacheKey = () => `${key}:observer-cutaway-v2`;
     material.needsUpdate = true;
   }
 }

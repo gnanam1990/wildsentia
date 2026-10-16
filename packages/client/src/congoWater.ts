@@ -90,9 +90,8 @@ function worldUv(geometry: THREE.BufferGeometry): void {
   geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
 }
 
-/** One river's course within the bounds, as a ribbon as wide as its channel at the river's own level. */
-function riverRibbon(river: RiverPath, ground: LoadedGround, half: number): THREE.BufferGeometry | null {
-  const loaded = (x: number, z: number) => ground.regions.has(regionKey(x, z));
+/** One river's course where `loaded` says (within the bounds, or past them), as a ribbon as wide as its channel at the river's own level. */
+function riverRibbon(river: RiverPath, loaded: (x: number, z: number) => boolean, half: number): THREE.BufferGeometry | null {
   const positions: number[] = [], index: number[] = [];
   const pts = river.points;
   // A course point is drawn when it, or a neighbour, stands on loaded ground: the ribbon reaches
@@ -174,7 +173,7 @@ export function buildCongoWater(seed: number, bounds: LoadedGround, flooded: boo
   const group = new THREE.Group();
   group.name = 'congo-water';
   riversOf(seed).rivers.forEach((river, i) => {
-    const geometry = riverRibbon(river, bounds, congoChannelHalfM(river, worldGrid()));
+    const geometry = riverRibbon(river, (x, z) => bounds.regions.has(regionKey(x, z)), congoChannelHalfM(river, worldGrid()));
     if (!geometry) return;
     const mesh = new THREE.Mesh(geometry, waterMaterial(COLOURS[river.kind], 0.94));
     mesh.name = `river:${i}`; mesh.receiveShadow = true; mesh.renderOrder = RENDER_ORDER[river.kind];
@@ -188,6 +187,23 @@ export function buildCongoWater(seed: number, bounds: LoadedGround, flooded: boo
       group.add(mesh);
     }
   }
+  return group;
+}
+
+/**
+ * The rivers past the loaded regions, for the distant forest: the same ribbons, over the regions
+ * that are not loaded (each meeting the loaded ribbon one course point inside).
+ */
+export function buildDistantRivers(seed: number, loadedRegions: ReadonlySet<string>): THREE.Group {
+  const group = new THREE.Group();
+  group.name = 'distant-rivers';
+  riversOf(seed).rivers.forEach((river, i) => {
+    const geometry = riverRibbon(river, (x, z) => !loadedRegions.has(regionKey(x, z)), congoChannelHalfM(river, worldGrid()));
+    if (!geometry) return;
+    const mesh = new THREE.Mesh(geometry, waterMaterial(COLOURS[river.kind], 0.94));
+    mesh.name = `distant-river:${i}`; mesh.renderOrder = RENDER_ORDER[river.kind];
+    group.add(mesh);
+  });
   return group;
 }
 
