@@ -13,7 +13,7 @@ const animal = () => ({ state: 'resting', drives: { hunger: 0, thirst: 0, fatigu
 // the rest of their hunger falls on the simulated prey, or the duikers carry the whole forest's.
 describe('food from beyond the roster', () => {
   it('leaves only the simulated share of a day\'s hunger to the simulated prey', () => {
-    for (const [id, share] of [['african_leopard', 0.35], ['african_golden_cat', 0.72], ['crowned_eagle', 0.94], ['dwarf_crocodile', 0.95]] as const) {
+    for (const [id, share] of [['african_leopard', 0.45], ['african_golden_cat', 0.8], ['crowned_eagle', 0.96], ['dwarf_crocodile', 0.95]] as const) {
       const cfg = congo.get(id)!, a = animal();
       expect(cfg.diet.offRosterShare, id).toBe(share);
       updateDrives(a, cfg, 24);
@@ -31,7 +31,7 @@ describe('food from beyond the roster', () => {
     const daily = needsOf(a, cfg).foodKg;
     updateDrives(a, cfg, 24); digestGut(a, cfg, 24);
     expect(a.drives.hunger).toBeCloseTo(0, 10);
-    expect(a.gutKg).toBeCloseTo(1 - daily * (1 - 0.72), 10);
+    expect(a.gutKg).toBeCloseTo(1 - daily * (1 - 0.8), 10);
   });
 });
 

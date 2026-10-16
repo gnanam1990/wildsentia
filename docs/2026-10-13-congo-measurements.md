@@ -212,3 +212,60 @@ The same one-year soak on the final code (seed 7, 365 days, 16336f7):
   within minutes of the local demo server booting a fresh 41,000-animal world on the same machine.
   Every earlier year soak here also had a worst hour of 3.1-7.9 s. The soak's own pass check
   (worst hour ≤ 2 s) failed on that one hour alone. Within a run the hour no longer grows (16336f7).
+
+## The next calibration step (16 October 2026)
+
+**Step 1:** golden cat 0.72 → 0.80 and crowned eagle 0.94 → 0.96, the step listed above. Same
+one-year soak (seed 7, 365 days):
+
+| | Blue duiker | Bay / Peters's | Chevrotain | Mangabey | Leopard | Golden cat | Eagle | Red river hog | Crocodile | Elephant |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Start | 22,000 | 4,600 / 4,600 | 1,840 | 3,300 | 92 | 140 | 307 | 2,300 | 375 | 876 |
+| Day 180 | 21,399 | 4,617 / 4,668 | 1,798 | 3,410 | 83 | 167 | 286 | 3,284 | 785 | 888 |
+| Day 365 | 17,923 (−18.5%) | 4,336 / 4,366 | 1,624 | 3,303 | 67 | 191 | 265 | 3,939 | 733 | 911 |
+
+- **Blue duikers:** they fell 18.5% instead of 28%. Predators took 7,902, against 9,747:
+  - golden cats 2,314 (was 3,098);
+  - eagles 2,037 (was 2,922);
+  - leopards 3,413 (was 3,609);
+  - crocodiles 138.
+
+  The duikers held to day 180 (−3%), then fell about 600 a month as before.
+- **Leopards fell to 67:** 36 starved, 25 died in territorial fights and 11 of natural
+  causes.
+  - A leopard still had to find 65% of its food among the simulated animals. With golden cats
+    up to 191 (+36%) competing for the same small prey, more leopards starved.
+- **Red river hogs:** still growing, +71%. 341 were killed by leopards and 1,451 died naturally.
+- **The hour:** p95 1.11 s. Its worst hour, 3.4 s, came with the demo server and browser
+  screenshots running on the same machine, so the soak's pass check failed on that alone.
+- **Step 2:** leopard 0.35 → 0.45. At Lopé, 59% of a leopard's food by biomass is ungulates
+  (Henschel et al. 2005, [23] in the sources). Some of those are ones this world does not hold
+  (the yellow-backed, black-fronted and white-bellied duikers, the bongo and the bushbuck), so
+  about a tenth more of its food is off the roster. Raising the share means fewer simulated
+  kills to stay fed.
+
+**Step 2:** leopard 0.35 → 0.45, with golden cat 0.80 and eagle 0.96 kept. Same soak:
+
+| | Blue duiker | Bay / Peters's | Chevrotain | Mangabey | Leopard | Golden cat | Eagle | Red river hog | Crocodile | Elephant |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Day 180 | 21,903 | 4,628 / 4,689 | 1,802 | 3,401 | 91 | 153 | 286 | 3,293 | 789 | 896 |
+| Day 365 | 18,532 (−15.8%) | 4,397 / 4,408 | 1,605 | 3,391 | 71 | 161 | 274 | 3,900 | 707 | 923 |
+
+- **Blue duikers** fell 15.8% in the year: 47% before #37, 28% after the digestion fix, 18.5%
+  at step 1. Predators took 7,321 (leopards 3,000, golden cats 2,129, eagles 2,035,
+  crocodiles 157).
+- **Leopards** ended at 71: 32 starved, 31 died in territorial fights and 10 of natural causes.
+  Golden cats ended at 161 instead of 191.
+- **The hour:** p95 1.15 s, worst 1.56 s. The soak passed its own check.
+- **Kept:** these shares (leopard 0.45, golden cat 0.80, eagle 0.96). Both steps helped the
+  blue duikers and the leopards.
+- **Open: the second half of the year.** In all three soaks the blue duikers and the leopards
+  hold to about day 200 (within 1-3%), then fall through the short rains (days 181-270, the
+  flood) and the drier spell after. A one-year soak cannot tell a seasonal dip from a decline.
+  - The next measurement is a two-year soak, to see whether the long rains of year 2 bring
+    them back.
+  - Then look at how the flood moves duikers and leopards (flood-shy animals crowding onto dry
+    ground, leopards starving there).
+- **Open: red river hogs** grow about 70% a year with little predation (274 a year).
+  - They are limited only by roots, and are still growing at the year's end.
+  - The same two-year soak shows where they level off.

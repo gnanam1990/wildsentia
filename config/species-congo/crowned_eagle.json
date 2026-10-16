@@ -54,7 +54,7 @@
       }
     ],
     "dailyIntakeKg": 0.25,
-    "offRosterShare": 0.94,
+    "offRosterShare": 0.96,
     "waterNeedLPerDay": 0.1,
     "preformedWaterShare": 0.95,
     "canScavenge": false,
