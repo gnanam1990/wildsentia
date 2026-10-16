@@ -125,12 +125,41 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
   review sheets: `docs/art-review/congo-2026-10-14/`. (A mandrill mesh, 3bcd639e, was made and set
   aside when the research chose the agile mangabey.)
 - Skeletons and clips, by `tools/art/build_species.sh`: the elephant on the generic CC0 elephant rig
-  (ElephantWalking, OpenGameArt, below; its walk given a swinging trunk and moving ears by
-  `tools/art/elephant_walk_life.py`), the mangabey on the project's Langur rig, the eagle (both
+  (ElephantWalking, OpenGameArt, below; its generated mesh, which came out mid-stride, stood square
+  by `tools/art/square_stance.py` and fitted at the ankles; skinned to its deform bones only, as the
+  rig weights much of its body to IK and knee-pole bones; and given a keyframed walk on straight,
+  grounded legs, a drinking clip and a death by `tools/art/forest_elephant_clips.py`), the mangabey on the project's Langur rig, the eagle (both
   models) on the project's Vulture rig. The crocodile on a skeleton of its own
   (`tools/art/rig_crocodile.py`: spine, eight-bone tail, sprawled legs, a lower jaw that gapes at rest and snaps when it feeds; weights by distance to the
   bones, as bone heat found no solution on its scutes), keyframed, not motion capture.
 
+
+## VANA — Congo forest textures (14 October 2026)
+- Used for: the Congo forest's bark (pale emergents, brown canopy and midstory trees and lianas,
+  Raphia trunks), leaf cards (a 2 x 2 atlas of sprays: dark glossy, bronze-flushed, feathery
+  compound), the Marantaceae understory leaf, the Raphia frond, the leaf-litter floor and the canopy
+  seen from above, and a bai's floor and sedge clumps. Files: `congo/*.webp`.
+- Generated for this project with Higgsfield under the owner's paid plan (Pro): GPT Image 2.5, high
+  quality, 1k (leaf sprays 9ac1d293, f6b9a06e, 37b9f281; barks 05a86265, d0aa1b52, feae9a20; leaf litter
+  c766cb2e; Marantaceae leaf 507ec5e2; Raphia frond 33b3d4c9; canopy 6d57a72b; a bai's sedge and mud
+  f9033435; sedge clump 72a9733d; forest-floor grass e7176458 and fern with seedlings 134a2d66, packed side by
+  side in `groundcover.webp`). Leaf, leaf-card and frond
+  images were made with transparent backgrounds.
+- Processed locally (Pillow): bark, litter and canopy made tileable by blending each with its own
+  half-offset copy; leaf colours bled into the transparent pixels so cut edges show no dark rim; the
+  three sprays packed into the atlas (its fourth tile is the first, mirrored and turned); WebP.
+- They show what such a forest looks like; they are not species identifications. SHA-256 (first 16):
+  - `congo/bark_pale.webp`: `330fc9b47b253574`
+  - `congo/bark_brown.webp`: `d78bf770390790c9`
+  - `congo/bark_raphia.webp`: `504b6b8dbc3078fa`
+  - `congo/leaves_atlas.webp`: `1512040f255d1009`
+  - `congo/marantaceae.webp`: `d5c16cbd254b26e9`
+  - `congo/raphia_frond.webp`: `1f7d4d3352eeb9c3`
+  - `congo/bai_marsh.webp`: `7d9489324fff4e58`
+  - `congo/sedge_clump.webp`: `9c8f2d21f86789e6`
+  - `congo/groundcover.webp`: `41898865cf7ab041`
+  - `congo/floor_litter.webp`: `55d3030f1257c562`
+  - `congo/canopy_aerial.webp`: `058ea249b6a5efb4`
 ## VANA — generated wild boar (WildBoar)
 - Used for: boar (WildBoar), from 5 October 2026.
 - Surface: generated for this project with Higgsfield under the owner's paid plan (Pro). Three
@@ -235,7 +264,7 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
   - `animals/ForestBuffalo.glb`: sha256 `41b1867fb33b0f74`
   - `animals/Sitatunga.glb`: sha256 `263724729507878d`
   - `animals/AfricanGoldenCat.glb`: sha256 `f224b1cff5928d55`
-  - `animals/ForestElephant.glb`: sha256 `4aa7f429069610e0`
+  - `animals/ForestElephant.glb`: sha256 `33d64bad0e5bfb24`
   - `animals/AgileMangabey.glb`: sha256 `2d35e84625afd756`
   - `animals/CrownedEagle.glb`: sha256 `0385d33e2339dac3`
   - `animals/DwarfCrocodile.glb`: sha256 `43d33d841a068644`

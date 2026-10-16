@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { CONGO_GRID, ISLAND_GRID, congoChannelHalfM, congoRivers, patchCentre, riverIndex, treeAnchorForPatch } from '@vana/shared';
 import { setWorldGrid } from '../src/worldGrid.js';
-import { CONGO_KINDS, congoPlantGeometry, planCongoPatch, type CongoKind } from '../src/congoPlants.js';
+import { CONGO_KINDS, congoPartMaterial, congoPlantGeometry, congoPlantParts, planCongoPatch, type CongoKind } from '../src/congoPlants.js';
 import type { PatchView } from '../src/terrain.js';
 
 afterEach(() => setWorldGrid(ISLAND_GRID));
@@ -92,5 +92,31 @@ describe('Congo plants', () => {
     expect(box('raphia').max.x - box('raphia').min.x).toBeGreaterThan(12);
     expect(box('marantaceae').max.y).toBeLessThan(3.5);
     for (const k of CONGO_KINDS) expect(congoPlantGeometry(k).getAttribute('color')).toBeDefined();
+  });
+  it('lay each crown card on one photographed spray of the leaf atlas', () => {
+    const uv = congoPlantParts('canopy').leaves!.getAttribute('uv');
+    // Each card is two triangles (six vertices), all within one quarter of the 2 x 2 atlas.
+    for (let card = 0; card < uv.count; card += 6) {
+      let u = 0, v = 0;
+      for (let k = card; k < card + 6; k++) { u += uv.getX(k) / 6; v += uv.getY(k) / 6; }
+      const u0 = Math.floor(u * 2) / 2, v0 = Math.floor(v * 2) / 2;
+      for (let k = card; k < card + 6; k++) {
+        expect(uv.getX(k)).toBeGreaterThanOrEqual(u0 - 1e-6); expect(uv.getX(k)).toBeLessThanOrEqual(u0 + 0.5 + 1e-6);
+        expect(uv.getY(k)).toBeGreaterThanOrEqual(v0 - 1e-6); expect(uv.getY(k)).toBeLessThanOrEqual(v0 + 0.5 + 1e-6);
+      }
+    }
+  });
+  it('hang lianas from the canopy trees down to the forest floor, away from the trunk', () => {
+    const p = congoPlantParts('canopy').wood!.getAttribute('position');
+    let hanging = 0;
+    for (let i = 0; i < p.count; i++) if (p.getY(i) < 1 && Math.hypot(p.getX(i), p.getZ(i)) > 2) hanging++;
+    expect(hanging).toBeGreaterThan(0);
+  });
+  it('dress each kind in its own bark and its own leaf', () => {
+    expect(congoPartMaterial('emergent', 'wood')).not.toBe(congoPartMaterial('canopy', 'wood'));
+    expect(congoPartMaterial('canopy', 'wood')).toBe(congoPartMaterial('midstory', 'wood'));
+    expect(congoPartMaterial('raphia', 'wood')).not.toBe(congoPartMaterial('canopy', 'wood'));
+    expect(congoPartMaterial('marantaceae', 'blades')).toBe(congoPartMaterial('herb', 'blades'));
+    expect(congoPartMaterial('raphia', 'blades')).not.toBe(congoPartMaterial('marantaceae', 'blades'));
   });
 });

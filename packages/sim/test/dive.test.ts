@@ -18,12 +18,17 @@ function stage(world: World) {
   const bank = world.patches.find((p) => p.habitat === 'flooded_forest' && cardinalNeighbours(world.grid, p.id).some((n) => world.patches[n]!.habitat === 'water'))!;
   const shore = waterAccessPosition(world.grid, cardinalNeighbours(world.grid, bank.id).find((n) => world.patches[n]!.habitat === 'water')!, world.patches);
   const centre = { x: bank.x * world.grid.patchM, z: bank.y * world.grid.patchM };
-  for (const [a, dx] of [[chevrotain, 0], [leopard, 8]] as const) {
+  for (const [a, dx] of [[chevrotain, 0], [leopard, 5]] as const) {
     a.patchId = bank.id; a.position = { x: centre.x + dx, z: centre.z, heading: 0 }; delete a.journey;
   }
-  // A sated chevrotain (nothing to do but get away) beside a leopard on the move.
+  // A sated chevrotain (nothing to do but get away) 5 m from a leopard, inside its 10 m flight
+  // distance: too close to freeze (escape.freezeFirst), so it dives.
   chevrotain.drives.thirst = 0; chevrotain.drives.hunger = 0; chevrotain.drives.fear = 0.9;
-  leopard.state = 'travelling'; leopard.currentGoal = 'wander';
+  leopard.state = 'resting'; leopard.currentGoal = 'rest';
+  Object.assign(leopard.drives, { hunger: 0, thirst: 0, fatigue: 0.9, fear: 0 });
+  // The chevrotain decides first, while the leopard still lies there (a flood-shy leopard then
+  // walks out of the monsoon flood to rest on dry ground).
+  world.agents.splice(world.agents.indexOf(chevrotain), 1); world.agents.unshift(chevrotain);
   return { chevrotain, leopard, shore };
 }
 

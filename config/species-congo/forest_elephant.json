@@ -1,6 +1,10 @@
 {
   "id": "forest_elephant",
   "displayName": "Forest elephant",
+  "persona": {
+    "temperament": "placid",
+    "sketch": "A small, round-eared elephant with straight, down-pointing tusks. Families pad through the forest almost silently, stripping leaves and fruit, and gather now and then at a bai to dig at the mineral soil."
+  },
   "archetype": "mega_herbivore",
   "trophicRole": [
     "browser",
@@ -64,7 +68,7 @@
   "social": {
     "structure": "family",
     "groupSize": [
-      1,
+      2,
       8
     ],
     "alarmSharing": true

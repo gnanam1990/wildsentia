@@ -1,5 +1,6 @@
 import { edibleMass, landWalkable, patchCentre, patchIdAt, positionInPatch, type WorldGrid, type Agent, type Carcass, type Patch, type SpeciesConfig, type Season } from '@vana/shared';
 import { confidenceOf } from './learning.js';
+import { floodShy, habitatWeight } from './navigation.js';
 import { canEatMaternalCarcass, canFollowParent, needsOf, needsProvisioning } from './needs.js';
 
 /** What the behaviour layer is allowed to ask the world. Agents never read global state. */
@@ -119,6 +120,9 @@ export function threatFear(posture: ThreatPosture, distanceM: number, rangeM: nu
   return distanceM <= escape.flightInitiationM ? 0.5 : 0.2 + 0.2 * closeness(rangeM);
 }
 
+/** The most a predator that cannot take an animal frightens it: watchful, below fleeing. */
+export const UNTAKEABLE_FEAR = 0.3;
+
 export function threatPosture(predator: Agent): ThreatPosture {
   if (predator.currentGoal === 'hunt' || predator.state === 'stalking') return 'hunting';
   return predator.state === 'travelling' || predator.state === 'fleeing' ? 'moving' : 'settled';
@@ -200,7 +204,7 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
   const neighbours = patch.neighbours.map((id) => view.patches[id]!).filter(landWalkable);
   const visible = patchesWithin(view.grid, patch, perceptionRadius(view.grid, species), view.patches);
 
-  let bestFood: Percept['bestFood'] = null;
+  let bestFood: Percept['bestFood'] = null, bestFoodScore = 0;
   let bestWater: Percept['bestWater'] = null;
   let carrion: Percept['carrion'] = null;
   let threat: Percept['threat'] = null;
@@ -222,16 +226,24 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
       const rangeM = posture === 'hunting' ? senseM * (1 - (otherSpecies.hunting?.stalkConcealment ?? 0)) : senseM;
       const at = where(view.grid, other), distanceM = Math.hypot(at.x - here.x, at.z - here.z);
       if (distanceM > rangeM) continue;
-      dangerous.add(p.id);
-      const fear = threatFear(posture, distanceM, rangeM, species.escape);
+      // A predator that cannot take this animal (heavier than its maxPreyKg: a grown buffalo and a
+      // leopard) leaves it watchful, not fleeing, and does not make the patch one to keep from.
+      const takeable = agent.massKg <= (otherSpecies.hunting?.maxPreyKg ?? Infinity);
+      if (takeable) dangerous.add(p.id);
+      const fear = takeable ? threatFear(posture, distanceM, rangeM, species.escape)
+        : Math.min(UNTAKEABLE_FEAR, threatFear(posture, distanceM, rangeM, species.escape));
       if (threat === null || fear > threat.fear) threat = { agent: other, patchId: p.id, distanceM, posture, fear };
     }
   }
   const thirsty = agent.drives.thirst >= THIRST_DESPERATION, starving = agent.drives.hunger >= HUNGER_DESPERATION;
 
+  // Flood-shy animals look for food on dry ground in a flood (floodShy, navigation.ts).
+  const shy = floodShy(species);
   for (const p of visible) {
     const kg = edibleKg(p, species);
-    if (kg > 0 && (starving || !dangerous.has(p.id)) && (bestFood === null || kg > bestFood.kg)) bestFood = { patchId: p.id, kg };
+    // A wetland specialist weighs food by how much it keeps to that habitat (habitatWeight).
+    if (kg > 0 && (starving || !dangerous.has(p.id) && !(shy && p.flooded === true))
+      && (bestFood === null || kg * habitatWeight(species, p.habitat) > bestFoodScore)) { bestFood = { patchId: p.id, kg }; bestFoodScore = kg * habitatWeight(species, p.habitat); }
     if (p.waterVolume > 0 && (thirsty || !dangerous.has(p.id)) && (bestWater === null || p.waterVolume > bestWater.litres)) {
       bestWater = { patchId: p.id, litres: p.waterVolume };
     }
@@ -301,7 +313,9 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
       const steps = Math.abs(p.x - patch.x) + Math.abs(p.y - patch.y);
       if (needFood && steps <= foodReach) {
         const kg = edibleKg(p, species);
-        if (kg > (bestFood?.kg ?? 0)) bestFood = { patchId: p.id, kg };
+        if (kg * habitatWeight(species, p.habitat) > bestFoodScore && !(shy && p.flooded === true && !starving)) {
+          bestFood = { patchId: p.id, kg }; bestFoodScore = kg * habitatWeight(species, p.habitat);
+        }
       }
       if (needWater && steps <= waterReach && p.waterVolume > (bestWater?.litres ?? 0)) {
         bestWater = { patchId: p.id, litres: p.waterVolume };

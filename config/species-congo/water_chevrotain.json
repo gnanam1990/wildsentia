@@ -1,6 +1,10 @@
 {
   "id": "water_chevrotain",
   "displayName": "Water chevrotain",
+  "persona": {
+    "temperament": "secretive",
+    "sketch": "A small, hunched, deer-like animal dappled like moonlight on leaves. It shuffles along stream banks at night, and when startled it slips into the water and is gone."
+  },
   "archetype": "herd_grazer",
   "trophicRole": [
     "browser"
@@ -33,6 +37,13 @@
       "flooded_forest": 0.9,
       "swamp_forest": 1.0,
       "bai": 1.4
+    },
+    "habitatPreference": {
+      "flooded_forest": 1,
+      "swamp_forest": 1,
+      "water": 1,
+      "bai": 0.3,
+      "terra_firme": 0.2
     },
     "floodedTerrainCost": {
       "flooded_forest": 0.8,

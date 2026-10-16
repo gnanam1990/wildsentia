@@ -54,7 +54,9 @@ export class EventLog {
         if (list) list.push(full);
         else this.#byActor.set(actor, [full]);
       }
-    } else if (this.#events.length > this.#retain) {
+    } else if (this.#events.length >= this.#retain * 2) {
+      // Trimmed in a block once twice the window is held: shifting the whole buffer on every
+      // append past the limit was an eighth of a Congo hour. Readers see only the window.
       this.#events.splice(0, this.#events.length - this.#retain);
     }
 
@@ -63,7 +65,7 @@ export class EventLog {
 
   /** Every event still held in memory. With a bounded log this is a window, not the history. */
   all(): readonly WorldEvent[] {
-    return Object.freeze(this.#events.slice());
+    return Object.freeze(this.#window());
   }
 
   /**
@@ -72,7 +74,9 @@ export class EventLog {
    */
   take(): WorldEvent[] {
     this.#byActor.clear();
-    return this.#events.splice(0, this.#events.length);
+    const held = this.#window();
+    this.#events.length = 0;
+    return held;
   }
 
   exportSequence(): number { return this.#sequence; }
@@ -91,7 +95,14 @@ export class EventLog {
   }
 
   tail(n: number): WorldEvent[] {
-    return this.#events.slice(-n);
+    // Read after every animal's turn: slice only the newest n, never a copy of the whole window.
+    if (!(n > 0)) return this.#window().slice(-n);
+    return this.#events.slice(this.#events.length - Math.min(n, this.retainedCount()));
+  }
+
+  /** The retained events: all of them, or the newest `retain` of a bounded log. */
+  #window(): WorldEvent[] {
+    return this.#retain === 'all' || this.#events.length <= this.#retain ? this.#events.slice() : this.#events.slice(-this.#retain);
   }
 
   /** Total appended over the log's life, including events already taken or dropped. */
@@ -100,6 +111,6 @@ export class EventLog {
   }
 
   retainedCount(): number {
-    return this.#events.length;
+    return this.#retain === 'all' ? this.#events.length : Math.min(this.#events.length, this.#retain);
   }
 }

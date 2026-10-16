@@ -49,7 +49,7 @@ describe('the 2A food web: prey sized for the leopard, small prey for the golden
   it('the golden cat takes blue duikers and young, never grown red duikers or hogs, and avoids leopards that hunt it', () => {
     expect(canHunt(cat, ...prey('blue_duiker'))).toBe(true);
     expect(canHunt(cat, ...prey('bay_duiker'))).toBe(false);
-    expect(canHunt(cat, ...prey('bay_duiker', { massKg: 6, lifeStage: 'juvenile' }))).toBe(true);
+    expect(canHunt(cat, ...prey('bay_duiker', { massKg: 4.5, lifeStage: 'juvenile' }))).toBe(true);
     expect(canHunt(cat, ...prey('red_river_hog'))).toBe(false);
     expect(canHunt(cat, ...prey('red_river_hog', { massKg: 3, lifeStage: 'newborn' }))).toBe(true);
     expect(canHunt(leopard, ...prey('african_golden_cat'))).toBe(true);

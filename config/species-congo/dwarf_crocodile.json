@@ -1,6 +1,10 @@
 {
   "id": "dwarf_crocodile",
   "displayName": "Dwarf crocodile",
+  "persona": {
+    "temperament": "placid",
+    "sketch": "A small, armoured crocodile, dark and knobbly. It lies in a shaded pool by day with only its eyes above the water, and at night plods along the trails snapping up crabs and frogs."
+  },
   "archetype": "apex_predator",
   "trophicRole": [
     "mesopredator"
@@ -33,6 +37,13 @@
       "flooded_forest": 0.8,
       "swamp_forest": 0.7,
       "bai": 2.0
+    },
+    "habitatPreference": {
+      "water": 1,
+      "swamp_forest": 1,
+      "flooded_forest": 1,
+      "bai": 0.3,
+      "terra_firme": 0.1
     },
     "floodedTerrainCost": {
       "flooded_forest": 0.6

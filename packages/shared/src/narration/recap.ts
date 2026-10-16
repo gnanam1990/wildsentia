@@ -112,7 +112,7 @@ export function recapLine(event: WorldEvent, subjectId: string): RecapLine | nul
       const reason = event.conditions.reason;
       return line(ascent
         ? event.outcome === 'success' ? reason === 'roost' ? 'Went up into the canopy to rest' : 'Climbed into a tree' : 'Partly climbed a tree'
-        : event.outcome === 'success' ? reason === 'forage' ? 'Came down to forage' : 'Descended from a tree' : 'Partly descended from a tree');
+        : event.outcome === 'success' ? reason === 'forage' ? 'Came down to forage' : reason === 'take_cover' ? 'Dropped from the tree to cover' : 'Descended from a tree' : 'Partly descended from a tree');
     }
     case 'emigration':
       return subjectId === first ? line('Walked out of the forest') : null;

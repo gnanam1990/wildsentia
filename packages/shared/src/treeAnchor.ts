@@ -1,6 +1,6 @@
 import { spatialHash } from './spatial.js';
 import { habitatAnalogue } from './types/patch.js';
-import { patchCentre, patchCount, type WorldGrid } from './grid.js';
+import { CONGO_GRID, patchCentre, patchCount, type WorldGrid } from './grid.js';
 import { congoRivers, riverIndex } from './congo/rivers.js';
 import { congoChannelHalfM } from './congo/terrain.js';
 
@@ -31,11 +31,17 @@ export interface TreeAnchorPatch {
 /** Rivers by seed and grid, built once: a Congo anchor in a channel has no tree to climb. */
 const riversBySeed = new Map<string, ReturnType<typeof riverIndex>>();
 export function inCongoChannel(grid: WorldGrid, seed: number, x: number, z: number): boolean {
+  const at = congoRiverAt(grid, seed, x, z);
+  return at.distanceM <= at.halfM + 3;
+}
+
+/** The nearest Congo river to a point: how far its centre line is, and its channel's half-width. */
+export function congoRiverAt(grid: WorldGrid, seed: number, x: number, z: number): { distanceM: number; halfM: number } {
   const key = `${seed}:${grid.cols}x${grid.rows}:${grid.patchM}`;
   let near = riversBySeed.get(key);
   if (!near) { near = riverIndex(congoRivers(seed, grid)); riversBySeed.set(key, near); }
   const at = near(x, z);
-  return at.distanceM <= congoChannelHalfM(at.river, grid) + 3;
+  return { distanceM: at.distanceM, halfM: congoChannelHalfM(at.river, grid) };
 }
 
 /**
@@ -53,7 +59,9 @@ export function treeAnchorGeometry(grid: WorldGrid, patchId: number): TreeAnchor
     version: 1, id: `tree-v1:${patchId}`, patchId,
     x: centre.x + (h / 0x1_0000_0000 - 0.5) * span,
     z: centre.z + (j / 0x1_0000_0000 - 0.5) * span,
-    climbHeightM: 6,
+    // The Congo's climbable tree is a canopy tree (trunk about 24 m, limbs from 20 m: congoPlants.ts);
+    // the island's is a 6 m one. Each climber goes as high as it does (locomotion.climbHeightM).
+    climbHeightM: grid.cols === CONGO_GRID.cols && grid.rows === CONGO_GRID.rows ? 22 : 6,
   };
 }
 
@@ -79,7 +87,7 @@ export function treeAnchorForPatch(grid: WorldGrid, patch: TreeAnchorPatch): Tre
 export function treeClimbGoal(direction: unknown, reason: unknown): 'flee' | 'rest' | null {
   if (direction === 'ascend') return reason === 'local_threat' ? 'flee' : reason === 'roost' ? 'rest' : null;
   if (direction === 'descend')
-    return ['threat_gone', 'canopy_lost', 'urgent_need', 'forage'].includes(String(reason)) ? 'rest' : null;
+    return ['threat_gone', 'canopy_lost', 'urgent_need', 'forage', 'take_cover'].includes(String(reason)) ? 'rest' : null;
   return null;
 }
 

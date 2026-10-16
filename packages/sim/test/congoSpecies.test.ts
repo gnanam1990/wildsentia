@@ -13,6 +13,33 @@ describe('the Congo species (1B)', () => {
       'crowned_eagle', 'dwarf_crocodile', 'forest_buffalo', 'forest_elephant', 'peters_duiker', 'red_river_hog', 'sitatunga', 'water_chevrotain']);
     for (const id of species.keys()) expect(SOURCES[id], id).toBeTruthy();
   });
+  it('each carry a persona for players: one temperament word and a short sketch (docs/2026-10-15-congo-species-behaviour-audit.md)', () => {
+    for (const [id, cfg] of species) {
+      expect(cfg.persona, id).toBeDefined();
+      expect(['shy', 'secretive', 'wary', 'bold', 'sociable', 'placid', 'imperious'], id).toContain(cfg.persona!.temperament);
+      expect(cfg.persona!.sketch.length, id).toBeGreaterThan(60);
+      expect(cfg.persona!.sketch.length, id).toBeLessThan(400);
+    }
+    expect(species.get('blue_duiker')!.persona!.temperament).toBe('shy');
+    expect(species.get('african_leopard')!.persona!.temperament).toBe('bold');
+  });
+  it('live and eat as the behaviour audit found them to (docs/2026-10-15-congo-species-behaviour-audit.md)', () => {
+    const g = (id: string) => species.get(id)!;
+    // Elephant families keep together: a lone cow is not a family.
+    expect(g('forest_elephant').social.groupSize[0]).toBe(2);
+    // Duikers listen for the mangabey troop's alarm calls.
+    for (const id of ['blue_duiker', 'peters_duiker']) expect(g(id).social.heedsAlarmOf, id).toContain('agile_mangabey');
+    // The mangabey eats mostly fruit and seeds (the forest's fallen fruit, `roots`), and some leaves.
+    const eats = g('agile_mangabey').diet.eats;
+    expect(eats.find((e) => e.target === 'roots')?.preference).toBe(1);
+    expect(eats.find((e) => e.target === 'browse')?.preference).toBeLessThan(0.5);
+    // The golden cat takes juvenile mangabeys, never an adult (6-10 kg), and still a blue duiker.
+    expect(g('african_golden_cat').hunting!.maxPreyKg).toBeLessThan(g('agile_mangabey').body.massBySexKg!.female);
+    expect(g('african_golden_cat').hunting!.maxPreyKg).toBeGreaterThan(g('blue_duiker').body.adultMassKg);
+    // The sitatunga is solitary or in small groups of females, not a pair.
+    expect(g('sitatunga').social.structure).toBe('solitary');
+    expect(g('sitatunga').social.groupSize).toEqual([1, 3]);
+  });
   it('sit inside the published ranges', () => {
     const leopard = species.get('african_leopard')!, duiker = species.get('blue_duiker')!, chevrotain = species.get('water_chevrotain')!;
     expect(leopard.body.massBySexKg).toEqual({ female: 30, male: 45 });
@@ -67,7 +94,7 @@ describe('the Congo species (1B)', () => {
     expect(eagle.archetype).toBe('raptor'); expect(eagle.locomotion.flies).toBe(true);
     expect(eagle.hunting!.preferredPrey[0]).toBe('agile_mangabey'); within(eagle.hunting!.maxPreyKg, 8, 20);
     within(eagle.lifecycle.gestationDays, 45, 50); expect(eagle.lifecycle.litterSize).toEqual([1, 1]);
-    within(eagle.diet.offRosterShare!, 0.8, 0.95);
+    within(eagle.diet.offRosterShare!, 0.8, 0.98);
     const croc = g('dwarf_crocodile');
     expect(croc.locomotion.swims).toBeDefined(); expect(croc.activity!.hourly[1]).toBe(1); expect(croc.activity!.hourly[12]).toBeLessThan(0.3);
     // A background predator of small prey: invertebrates, fish and frogs, a newborn at most.

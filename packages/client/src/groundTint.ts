@@ -56,7 +56,7 @@ const CONGO_FLOOR: Record<string, { near: THREE.Color; far: THREE.Color }> = {
   flooded_forest: { near: hex(0x6a5844), far: hex(0x382f22) },
   swamp_forest: { near: hex(0x66603f), far: hex(0x37341f) },
 };
-const CONGO_BAI = { lush: { near: hex(0xa6c466), far: hex(0x5e8a34) }, mud: { near: hex(0xb49a74), far: hex(0x6a5a3c) } };
+const CONGO_BAI = { lush: { near: hex(0xa6c466), far: hex(0x8cb850) }, mud: { near: hex(0xb49a74), far: hex(0x9a8a68) } };
 const isCongoHabitat = (habitat: string): boolean => habitat in HABITAT_ANALOGUE;
 
 /** The two colours for one patch, in linear RGB. */

@@ -1,6 +1,10 @@
 {
   "id": "sitatunga",
   "displayName": "Sitatunga",
+  "persona": {
+    "temperament": "secretive",
+    "sketch": "A shaggy, long-hoofed antelope that splays its feet across the mud. It browses the reed edges at dusk, and when disturbed it wades out and sinks until only its nose shows."
+  },
   "archetype": "herd_grazer",
   "trophicRole": [
     "browser"
@@ -33,6 +37,13 @@
       "flooded_forest": 0.9,
       "swamp_forest": 1.0,
       "bai": 1.4
+    },
+    "habitatPreference": {
+      "swamp_forest": 1,
+      "flooded_forest": 0.8,
+      "water": 0.8,
+      "bai": 0.5,
+      "terra_firme": 0.1
     },
     "floodedTerrainCost": {
       "flooded_forest": 0.8,
@@ -69,7 +80,7 @@
     "carrionTolerance": 0.0
   },
   "social": {
-    "structure": "pair",
+    "structure": "solitary",
     "groupSize": [
       1,
       3

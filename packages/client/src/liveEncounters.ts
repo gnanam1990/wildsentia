@@ -216,14 +216,19 @@ export class LiveEncounterPlayer {
       const predatorAt = moment.facePrey
         ? { ...at.predator, heading: Math.atan2(at.prey.x - at.predator.x, at.prey.z - at.predator.z) } : at.predator;
       const add = (body: EncounterAppearance, position: RenderPosition, act: { state: string; act?: number; weight?: number },
-        partnerId: string): void => {
+        partnerId: string, stooping = false): void => {
         result.set(body.id, { animal: { ...body, patchId: patchAtPosition(worldGrid(), position), position,
           state: act.state, currentGoal: '', drives: { hunger: 0, thirst: 0, fatigue: 0, fear: 0 } },
           position, seconds: Math.min(seconds, e.trace.samples.at(-1)!.seconds), clipSeconds, partnerId,
           ...(act.act === undefined ? {} : { act: act.act }), ...(act.weight === undefined ? {} : { actWeight: act.weight }),
-          eventId: e.eventId, phase: at.finished ? `recorded ${e.outcome}` : at.phase });
+          eventId: e.eventId, phase: at.finished ? `recorded ${e.outcome}` : at.phase,
+          ...(stooping ? { flightVisualPhase: 'descending' as const } : {}) });
       };
-      add(e.predator, predatorAt, moment.predator, e.prey.id);
+      // A flier hunts from the air: while it closes it is drawn stooping, higher the farther its
+      // prey (up to 12 m), down at contact; on foot it covered 18 m a second at a walk.
+      const stoop = flies(e.predator.speciesId) && predatorAt.moving && !at.finished;
+      const gap = Math.hypot(at.prey.x - predatorAt.x, at.prey.z - predatorAt.z);
+      add(e.predator, stoop ? { ...predatorAt, altitudeM: Math.min(12, gap * 0.4) } : predatorAt, moment.predator, e.prey.id, stoop);
       add(e.prey, at.prey, moment.prey, e.predator.id);
     }
     for (const m of frame.movements ?? []) {

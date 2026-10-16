@@ -57,7 +57,7 @@ export interface VerticalTravel {
  */
 export function advanceTreeVertical(grid: WorldGrid, agent: Agent, patch: TreeAnchorPatch,
   direction: 'ascend' | 'descend', goal: GoalId, startWorldTime: number,
-  secondsAvailable: number, climbs = legacyClimber(agent.speciesId)): VerticalTravel {
+  secondsAvailable: number, climbs = legacyClimber(agent.speciesId), heightM?: number): VerticalTravel {
   if (!Number.isSafeInteger(startWorldTime) || startWorldTime < 0
     || !Number.isFinite(secondsAvailable) || secondsAvailable < 0 || secondsAvailable > 3600)
     throw new Error('invalid tree travel time budget');
@@ -82,7 +82,8 @@ export function advanceTreeVertical(grid: WorldGrid, agent: Agent, patch: TreeAn
   const eligible = direction === 'descend' ? current > 0 : treeAnchorForPatch(grid, patch) !== null;
   if (!validContact || !supported || !eligible) return { trace, seconds: 0, distanceM: 0, unreachable: true };
 
-  const target = direction === 'ascend' ? geometry.climbHeightM : 0;
+  // Up to the climber's own height (locomotion.climbHeightM), at most the tree's.
+  const target = direction === 'ascend' ? Math.min(geometry.climbHeightM, heightM ?? geometry.climbHeightM) : 0;
   const remaining = Math.abs(target - current);
   if (remaining <= HEIGHT_EPSILON_M) {
     trace.completed = true;

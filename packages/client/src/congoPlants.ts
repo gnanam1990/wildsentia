@@ -1,18 +1,20 @@
 import * as THREE from 'three';
 import { addCongoDeciduous } from './seasonalLeaves.js';
+import { congoTexture, LEAF_ATLAS_TILES } from './congoTextures.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { congoChannelHalfM, congoRivers, patchCentre, riverIndex, spatialHash, treeAnchorForPatch, type RiverPath } from '@vana/shared';
 import { worldGrid } from './worldGrid.js';
 import type { PatchView } from './terrain.js';
 
 /**
- * Congo 1A.5: the plants of a Congo rainforest, built procedurally (no downloaded models).
+ * Congo 1A.5: the plants of a Congo rainforest, built procedurally and dressed in photographic
+ * bark and leaf textures (congoTextures.ts).
  * - Terra firme is a layered forest: emergents with pale buttressed trunks and flat crowns over
  *   a closed canopy, a midstory, saplings, and an understory of broad Marantaceae leaves.
  * - Swamps grow Raphia palms; flooded forest a lower canopy with palms; bais are open sedge.
  * - Rocks lie only along river banks; fallen logs on the forest floor.
  */
-export const CONGO_KINDS = ['emergent', 'canopy', 'midstory', 'sapling', 'raphia', 'marantaceae', 'herb', 'sedge', 'log', 'rock'] as const;
+export const CONGO_KINDS = ['emergent', 'canopy', 'midstory', 'sapling', 'raphia', 'marantaceae', 'herb', 'groundcover', 'sedge', 'log', 'rock'] as const;
 export type CongoKind = typeof CONGO_KINDS[number];
 
 /** The parts of a plant, each drawn with its own material: bark and wood, textured leaf clusters, solid blades. */
@@ -20,9 +22,9 @@ export interface PlantParts { wood?: THREE.BufferGeometry; leaves?: THREE.Buffer
 
 /** Plants per 300 m patch (9 ha) of each habitat, near the camera. */
 const PER_PATCH: Record<string, Partial<Record<CongoKind, number>>> = {
-  terra_firme: { emergent: 12, canopy: 190, midstory: 280, sapling: 600, marantaceae: 3500, herb: 14000, log: 6 },
-  flooded_forest: { canopy: 150, midstory: 200, raphia: 20, sapling: 260, marantaceae: 900, herb: 3000, log: 4 },
-  swamp_forest: { raphia: 200, canopy: 50, midstory: 100, sapling: 160, marantaceae: 1200, herb: 6000 },
+  terra_firme: { emergent: 12, canopy: 190, midstory: 280, sapling: 600, marantaceae: 3500, herb: 14000, groundcover: 40000, log: 6 },
+  flooded_forest: { canopy: 150, midstory: 200, raphia: 20, sapling: 260, marantaceae: 900, herb: 3000, groundcover: 30000, log: 4 },
+  swamp_forest: { raphia: 200, canopy: 50, midstory: 100, sapling: 160, marantaceae: 1200, herb: 6000, groundcover: 22000 },
   bai: { sedge: 9000, log: 2 },
 };
 /** Bank rocks tried per patch beside a river; kept only within this distance of the channel's edge. */
@@ -86,8 +88,6 @@ export function planCongoPatch(patch: Pick<PatchView, 'id' | 'habitat'> & Partia
 
 // ---- Geometry ---------------------------------------------------------------------------------
 
-const GREENS = [0x2b4f1f, 0x355e24, 0x3f6b29, 0x4a7a2f, 0x2f5627, 0x51803a].map((c) => new THREE.Color(c));
-
 /** Gives every vertex a colour and drops index and attributes the merge does not share. */
 function finish(geometry: THREE.BufferGeometry, colour: (y: number, i: number) => THREE.Color): THREE.BufferGeometry {
   const g = geometry.index ? geometry.toNonIndexed() : geometry;
@@ -100,11 +100,20 @@ function finish(geometry: THREE.BufferGeometry, colour: (y: number, i: number) =
   return g;
 }
 
-/** A tapering trunk with darker streaks of bark. */
+/** Bark repeats every this many metres along and around a trunk. */
+const BARK_TILE_M = 2.2;
+/** Stretches a cylinder's 0-1 UVs so its bark texture keeps its size on any trunk. */
+function barkUvs(g: THREE.BufferGeometry, radius: number, height: number): THREE.BufferGeometry {
+  const uv = g.getAttribute('uv');
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * Math.max(1, Math.round(2 * Math.PI * radius / BARK_TILE_M)), uv.getY(i) * height / BARK_TILE_M);
+  return g;
+}
+
+/** A tapering trunk, its bark tinted a little, with faint darker streaks. */
 function trunk(height: number, r0: number, r1: number, bark: number, random: () => number): THREE.BufferGeometry {
-  const g = new THREE.CylinderGeometry(r1, r0, height, 9, 6, true).translate(0, height / 2, 0);
-  const base = new THREE.Color(bark), streak = base.clone().multiplyScalar(0.72);
-  const shade = Array.from({ length: 9 * 7 * 2 }, () => random());
+  const g = barkUvs(new THREE.CylinderGeometry(r1, r0, height, 12, 6, true).translate(0, height / 2, 0), (r0 + r1) / 2, height);
+  const base = new THREE.Color(bark).lerp(new THREE.Color(0xffffff), 0.6), streak = base.clone().multiplyScalar(0.82);
+  const shade = Array.from({ length: 12 * 7 * 2 }, () => random());
   return finish(g, (_y, i) => base.clone().lerp(streak, shade[i % shade.length]! * 0.6));
 }
 
@@ -115,7 +124,7 @@ function buttresses(count: number, height: number, reach: number, colour: number
     const shape = new THREE.Shape([new THREE.Vector2(0, 0), new THREE.Vector2(reach * (0.8 + random() * 0.4), 0), new THREE.Vector2(0, height * (0.8 + random() * 0.4))]);
     const fin = new THREE.ExtrudeGeometry(shape, { depth: 0.18, bevelEnabled: false }).translate(0, 0, -0.09)
       .rotateY((i / count) * Math.PI * 2 + random() * 0.4);
-    fins.push(finish(fin, () => new THREE.Color(colour)));
+    fins.push(finish(fin, () => new THREE.Color(colour).lerp(new THREE.Color(0xffffff), 0.55)));
   }
   return fins;
 }
@@ -124,32 +133,60 @@ function buttresses(count: number, height: number, reach: number, colour: number
 function limbs(count: number, fromY: number, length: number, radius: number, colour: number, random: () => number): THREE.BufferGeometry[] {
   const out: THREE.BufferGeometry[] = [];
   for (let i = 0; i < count; i++) {
-    const limb = new THREE.CylinderGeometry(radius * 0.5, radius, length, 5).translate(0, length / 2, 0)
+    const limb = barkUvs(new THREE.CylinderGeometry(radius * 0.5, radius, length, 6).translate(0, length / 2, 0), radius, length)
       .rotateZ(-(0.7 + random() * 0.5)).rotateY((i / count) * Math.PI * 2 + random()).translate(0, fromY + random() * 3, 0);
-    out.push(finish(limb, () => new THREE.Color(colour)));
+    out.push(finish(limb, () => new THREE.Color(colour).lerp(new THREE.Color(0xffffff), 0.55)));
   }
   return out;
 }
 
-/** Leaf clusters: cards scattered through a flattened crown, each tinted a different green. */
-function crown(cards: number, size: number, centreY: number, rx: number, ry: number, random: () => number): THREE.BufferGeometry {
+/** Lianas: woody vines hanging in loose loops from the crown's limbs to the forest floor. */
+function lianas(count: number, fromY: number, reach: number, random: () => number): THREE.BufferGeometry[] {
+  const out: THREE.BufferGeometry[] = [];
+  for (let i = 0; i < count; i++) {
+    const yaw = random() * Math.PI * 2, r = reach * (0.5 + random() * 0.5), top = fromY - random() * 3;
+    const along = (t: number, sag: number) => new THREE.Vector3(Math.cos(yaw) * r * (1 - t * 0.15) + sag, top * (1 - t), Math.sin(yaw) * r * (1 - t * 0.15));
+    const curve = new THREE.CatmullRomCurve3([along(0, 0), along(0.3, 0.8 + random()), along(0.62, -0.6 - random()), along(1, 0.4)]);
+    const vine = new THREE.TubeGeometry(curve, 10, 0.05 + random() * 0.05, 3, false);
+    const uv = vine.getAttribute('uv');
+    for (let k = 0; k < uv.count; k++) uv.setXY(k, uv.getX(k) * top / BARK_TILE_M, uv.getY(k) * 0.3);
+    out.push(finish(vine, () => new THREE.Color(0xc8bca6)));
+  }
+  return out;
+}
+
+/**
+ * Leaf clusters: cards scattered through a flattened crown, each carrying one of the leaf atlas's
+ * sprays (`tiles` of them, from the first) and its own slight shade.
+ */
+function crown(cards: number, size: number, centreY: number, rx: number, ry: number, random: () => number, tiles = LEAF_ATLAS_TILES): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
   for (let i = 0; i < cards; i++) {
     const a = random() * Math.PI * 2, r = Math.sqrt(random()) * rx, y = centreY + (random() * 2 - 1) * ry * (1 - (r / rx) * 0.5);
     const card = new THREE.PlaneGeometry(size * (0.7 + random() * 0.6), size * (0.7 + random() * 0.6))
-      .rotateX(-Math.PI / 2 + (random() - 0.5) * 1.3).rotateY(random() * Math.PI * 2)
+      .rotateX(-Math.PI / 2 + (random() - 0.5) * 1.9).rotateY(random() * Math.PI * 2)
       .translate(Math.cos(a) * r, y, Math.sin(a) * r);
-    const tint = GREENS[Math.floor(random() * GREENS.length)]!.clone().multiplyScalar(0.85 + random() * 0.3);
+    const tile = Math.floor(random() * tiles), uv = card.getAttribute('uv');
+    for (let k = 0; k < uv.count; k++) uv.setXY(k, (uv.getX(k) + (tile % 2)) / 2, (uv.getY(k) + 1 - Math.floor(tile / 2)) / 2);
+    const v = random(), tint = new THREE.Color(0.82 + v * 0.26, 0.86 + v * 0.22, 0.8 + v * 0.18);
     parts.push(finish(card, () => tint));
   }
   return mergeGeometries(parts)!;
 }
 
-/** A broad, pointed leaf blade (Marantaceae), a little cupped. */
-function blade(length: number, width: number): THREE.BufferGeometry {
-  const shape = new THREE.Shape();
-  shape.moveTo(0, 0); shape.quadraticCurveTo(width, length * 0.45, 0, length); shape.quadraticCurveTo(-width, length * 0.45, 0, 0);
-  return new THREE.ShapeGeometry(shape, 4);
+/**
+ * A textured leaf on a stalk's tip: a plane cut by its leaf's alpha, cupped along its length.
+ * `aspect` is the leaf image's width over its height.
+ */
+function leafCard(length: number, aspect: number, cup: number): THREE.BufferGeometry {
+  const g = new THREE.PlaneGeometry(length * aspect, length, 2, 4).translate(0, length / 2, 0);
+  const p = g.getAttribute('position');
+  for (let i = 0; i < p.count; i++) {
+    const t = p.getY(i) / length, across = p.getX(i) / (length * aspect);
+    p.setZ(i, cup * (t * t * 0.6 + across * across * 0.8) * length);
+  }
+  g.computeVertexNormals();
+  return g;
 }
 
 function plantParts(kind: CongoKind): PlantParts {
@@ -158,62 +195,78 @@ function plantParts(kind: CongoKind): PlantParts {
   switch (kind) {
     case 'emergent':
       return { wood: merge([trunk(44, 0.95, 0.5, 0xb7a990, random), ...buttresses(5, 5, 3.4, 0xa89a80, random), ...limbs(5, 37, 9, 0.35, 0x9a8c72, random)]),
-        leaves: crown(56, 8, 46, 12, 3.2, random) };
+        leaves: crown(220, 4.5, 46, 12, 3.6, random) };
     case 'canopy':
-      return { wood: merge([trunk(28, 0.6, 0.32, 0x8c7c64, random), ...buttresses(3, 2.6, 1.8, 0x7e6f58, random), ...limbs(4, 23, 6, 0.22, 0x7a6a52, random)]),
-        leaves: crown(52, 7, 30, 8.5, 3.6, random) };
+      return { wood: merge([trunk(28, 0.6, 0.32, 0x8c7c64, random), ...buttresses(3, 2.6, 1.8, 0x7e6f58, random), ...limbs(4, 23, 6, 0.22, 0x7a6a52, random), ...lianas(3, 25, 5, random)]),
+        leaves: crown(190, 4.2, 29.5, 8.5, 4.2, random) };
     case 'midstory':
-      return { wood: trunk(14, 0.26, 0.14, 0x6e604c, random), leaves: crown(26, 4, 14, 4.2, 3, random) };
+      return { wood: trunk(14, 0.26, 0.14, 0x6e604c, random), leaves: crown(70, 2.8, 14, 4.2, 3, random) };
     case 'sapling':
-      return { wood: trunk(3.6, 0.06, 0.03, 0x5e5240, random), leaves: crown(6, 1.4, 3.2, 0.9, 0.8, random) };
+      return { wood: trunk(3.6, 0.06, 0.03, 0x5e5240, random), leaves: crown(12, 0.9, 3.1, 0.8, 0.7, random) };
     case 'raphia': {
       // Raphia: a short trunk and long fronds arching out, each a rachis with drooping leaflets.
+      // Each frond is the photographed frond's image on a strip arching out and down, its
+      // leaflets drooping to both sides.
       const fronds: THREE.BufferGeometry[] = [];
-      for (let f = 0; f < 14; f++) {
-        const yaw = (f / 14) * Math.PI * 2 + random() * 0.3, lift = 0.5 + random() * 0.5, length = 8.5 + random() * 2;
-        const leaflets: THREE.BufferGeometry[] = [];
-        for (let k = 1; k <= 18; k++) {
-          const t = k / 18, along = t * length, rise = Math.sin(lift) * along - 0.045 * along * along;
-          for (const side of [-1, 1]) {
-            const leaflet = new THREE.PlaneGeometry(0.16, 1.5 * (1 - t * 0.5)).translate(0, -0.7 * (1 - t * 0.5), 0)
-              .rotateX(0.5).rotateZ(side * 1.1).translate(along * Math.cos(lift), rise, 0);
-            leaflets.push(leaflet);
-          }
+      for (let f = 0; f < 16; f++) {
+        const yaw = (f / 16) * Math.PI * 2 + random() * 0.3, lift = 0.45 + random() * 0.55, length = 8.5 + random() * 2.5;
+        const strip = new THREE.PlaneGeometry(length * 0.3, length, 4, 10).translate(0, length / 2, 0), p = strip.getAttribute('position');
+        for (let i = 0; i < p.count; i++) {
+          const along = p.getY(i), across = p.getX(i);
+          p.setXYZ(i, along * Math.cos(lift), Math.sin(lift) * along - 0.045 * along * along - 0.35 * Math.abs(across), across);
         }
-        fronds.push(merge(leaflets.map((g) => finish(g, () => GREENS[3]!))).rotateY(yaw).translate(0, 7, 0));
+        strip.computeVertexNormals();
+        const v = random();
+        fronds.push(finish(strip, () => new THREE.Color(0.85 + v * 0.2, 0.9 + v * 0.15, 0.8 + v * 0.15)).rotateY(yaw).translate(0, 7, 0));
       }
       return { wood: trunk(7, 0.42, 0.34, 0x4f4232, random), blades: merge(fronds) };
     }
     case 'marantaceae': {
       // Broad paddle leaves on long stalks, 1-2.5 m tall: the Congo forest's understory.
       const leaves: THREE.BufferGeometry[] = [], stalks: THREE.BufferGeometry[] = [];
-      for (let k = 0; k < 9; k++) {
-        const yaw = random() * Math.PI * 2, height = 0.8 + random() * 1.6, lean = 0.15 + random() * 0.25;
+      for (let k = 0; k < 14; k++) {
+        const yaw = random() * Math.PI * 2, height = 0.6 + random() * 1.4, lean = 0.15 + random() * 0.3;
         stalks.push(finish(new THREE.CylinderGeometry(0.012, 0.02, height, 4).translate(0, height / 2, 0).rotateZ(lean).rotateY(yaw), () => new THREE.Color(0x4d6b2a)));
         const tip = new THREE.Vector3(0, height, 0).applyAxisAngle(new THREE.Vector3(0, 0, 1), lean).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
-        const tint = GREENS[2 + Math.floor(random() * 3)]!.clone().multiplyScalar(1.1);
-        leaves.push(finish(blade(0.9 + random() * 0.4, 0.4).rotateX(-1.1 + random() * 0.4).rotateY(yaw).translate(tip.x, tip.y, tip.z), () => tint));
+        const v = random(), tint = new THREE.Color(0.85 + v * 0.25, 0.9 + v * 0.2, 0.85 + v * 0.15);
+        leaves.push(finish(leafCard(0.4 + random() * 0.25, 0.67, 0.18).rotateX(-1.1 + random() * 0.4).rotateY(yaw).translate(tip.x, tip.y, tip.z), () => tint));
       }
       return { wood: merge(stalks), blades: merge(leaves) };
     }
     case 'herb': {
-      // Seedlings and small herbs carpeting the floor between the larger plants.
+      // Seedlings and small herbs carpeting the floor between the larger plants: ankle high, their
+      // leaves a hand long (a blue duiker stands 36 cm at the shoulder).
       const leaves: THREE.BufferGeometry[] = [];
-      for (let k = 0; k < 5; k++) {
-        const yaw = random() * Math.PI * 2, h = 0.2 + random() * 0.45, tint = GREENS[1 + Math.floor(random() * 4)]!.clone();
-        leaves.push(finish(blade(0.35 + random() * 0.25, 0.16).rotateX(-0.9 + random() * 0.6).rotateY(yaw)
-          .translate((random() - 0.5) * 0.3, h, (random() - 0.5) * 0.3), () => tint));
+      for (let k = 0; k < 6; k++) {
+        const yaw = random() * Math.PI * 2, h = 0.03 + random() * 0.2, v = random(), tint = new THREE.Color(0.75 + v * 0.3, 0.85 + v * 0.2, 0.7 + v * 0.2);
+        leaves.push(finish(leafCard(0.12 + random() * 0.1, 0.67, 0.12).rotateX(-0.9 + random() * 0.6).rotateY(yaw)
+          .translate((random() - 0.5) * 0.25, h, (random() - 0.5) * 0.25), () => tint));
       }
       return { blades: merge(leaves) };
     }
-    case 'sedge': {
-      const blades: THREE.BufferGeometry[] = [];
-      for (let k = 0; k < 14; k++) {
-        const h = 0.7 + random() * 0.7, tint = new THREE.Color(0x8a9a4a).lerp(new THREE.Color(0x5e7a32), random());
-        blades.push(finish(new THREE.PlaneGeometry(0.09, h).translate(0, h / 2, 0).rotateX((random() - 0.5) * 0.6).rotateY(random() * Math.PI)
-          .translate((random() - 0.5) * 0.4, 0, (random() - 0.5) * 0.4), () => tint));
+    case 'groundcover': {
+      // The forest floor's carpet: tufts of broad-leaved forest grass (as Olyra) and young ferns
+      // with seedlings, 0.3-0.55 m, four clumps a metre or so apart on crossed cards.
+      const cards: THREE.BufferGeometry[] = [];
+      for (let c = 0; c < 4; c++) {
+        const h = 0.3 + random() * 0.25, tile = random() < 0.55 ? 0 : 1, x = (random() - 0.5) * 1.4, z = (random() - 0.5) * 1.4, turn = random() * Math.PI;
+        for (let k = 0; k < 2; k++) {
+          const v = random(), card = new THREE.PlaneGeometry(h, h).translate(0, h / 2, 0).rotateY(turn + k * Math.PI / 2).translate(x, 0, z);
+          const uv = card.getAttribute('uv');
+          for (let i = 0; i < uv.count; i++) uv.setX(i, (uv.getX(i) + tile) / 2);
+          cards.push(finish(card, () => new THREE.Color(0.8 + v * 0.25, 0.85 + v * 0.2, 0.75 + v * 0.2)));
+        }
       }
-      return { blades: merge(blades) };
+      return { blades: merge(cards) };
+    }
+    case 'sedge': {
+      // A bai's sedge tuft: the photographed clump on three crossed cards, about knee to waist high.
+      const cards: THREE.BufferGeometry[] = [], h = 1.1;
+      for (let k = 0; k < 3; k++) {
+        const v = random(), tint = new THREE.Color(0.85 + v * 0.2, 0.9 + v * 0.15, 0.8 + v * 0.15);
+        cards.push(finish(new THREE.PlaneGeometry(h, h).translate(0, h / 2, 0).rotateY((k / 3) * Math.PI + random() * 0.3), () => tint));
+      }
+      return { blades: merge(cards) };
     }
     case 'log': {
       const moss = new THREE.Color(0x4f5a2e), bark = new THREE.Color(0x5a4a34);
@@ -245,8 +298,8 @@ export function congoPlantGeometry(kind: CongoKind): THREE.BufferGeometry {
 
 // ---- Materials --------------------------------------------------------------------------------
 
-/** A cluster of small leaves drawn on a canvas, alpha-cut: the texture every crown card carries. */
-function leafTexture(): THREE.Texture | null {
+/** A cluster of small leaves drawn on a canvas: the leaf cards' stand-in until the photographed atlas loads, and in tests. */
+function canvasLeaves(): THREE.Texture | null {
   if (typeof document === 'undefined') return null;
   const size = 256, canvas = document.createElement('canvas');
   canvas.width = canvas.height = size;
@@ -255,50 +308,87 @@ function leafTexture(): THREE.Texture | null {
   const random = rng(17);
   for (let i = 0; i < 150; i++) {
     const r = Math.sqrt(random()) * size * 0.46, a = random() * Math.PI * 2;
-    const x = size / 2 + Math.cos(a) * r, y = size / 2 + Math.sin(a) * r;
-    const l = 26 + random() * 22;
-    ctx.fillStyle = `hsl(${88 + random() * 30}, ${38 + random() * 25}%, ${l}%)`;
-    ctx.beginPath(); ctx.ellipse(x, y, 7 + random() * 7, 3 + random() * 3, random() * Math.PI, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = `hsl(${88 + random() * 30}, ${38 + random() * 25}%, ${26 + random() * 22}%)`;
+    ctx.beginPath(); ctx.ellipse(size / 2 + Math.cos(a) * r, size / 2 + Math.sin(a) * r, 7 + random() * 7, 3 + random() * 3, random() * Math.PI, 0, Math.PI * 2); ctx.fill();
   }
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
 }
 
-let materials: Record<keyof PlantParts, THREE.Material> | null = null;
+/** The leaf atlas (photographed sprays), or the canvas stand-in where there is no browser. */
+function leafMap(): THREE.Texture | null { return congoTexture('leaves_atlas') ?? canvasLeaves(); }
+
+/** Which bark each kind's wood wears: pale smooth emergents, brown fissured canopy, fibrous palms. */
+const BARK: Partial<Record<CongoKind, 'bark_pale' | 'bark_brown' | 'bark_raphia'>> = {
+  emergent: 'bark_pale', canopy: 'bark_brown', midstory: 'bark_brown', sapling: 'bark_brown', raphia: 'bark_raphia', log: 'bark_brown',
+};
+
+const woods = new Map<string, THREE.Material>();
+const bladeMaterials = new Map<string, THREE.Material>();
 let leafDepth: THREE.MeshDepthMaterial | null = null;
+let leaves: THREE.Material | null = null;
 let crowns: { leaves: THREE.Material; depth: THREE.MeshDepthMaterial } | null = null;
 /** The world's season as a deciduous crown's dryness (seasonalLeaves.ts), shared by every tall tree. */
 export const congoSeasonDry = { value: 0 };
+
+function leafMaterial(map: THREE.Texture | null): THREE.MeshStandardMaterial {
+  // A faint green glow stands in for light through the leaves, so a crown's underside is not black.
+  return new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, side: THREE.DoubleSide, emissive: 0x0c1c06,
+    ...(map ? { map, alphaTest: 0.5 } : {}) });
+}
+
 /**
  * The leaf clusters' shadow: cut by the same leaf texture, so a crown casts dappled shade, not
  * the solid squares of its cards.
  */
 export function congoLeafDepthMaterial(): THREE.MeshDepthMaterial {
-  const map = (congoPlantMaterials().leaves as THREE.MeshStandardMaterial).map;
-  return leafDepth ??= new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, ...(map ? { map, alphaTest: 0.45 } : {}) });
+  const map = leafMap();
+  return leafDepth ??= new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, ...(map ? { map, alphaTest: 0.5 } : {}) });
 }
 /**
- * The tall trees' leaves (emergents and canopy): the same leaf, but its deciduous share of crowns
- * turns and sheds in the drier spells. The understory beneath stays evergreen.
+ * The tall trees' leaves (emergents and canopy): the same leaves, but their deciduous share of
+ * crowns turns and sheds in the drier spells. The understory beneath stays evergreen.
  */
 export function congoCrownMaterials(): { leaves: THREE.Material; depth: THREE.MeshDepthMaterial } {
   if (crowns) return crowns;
-  const map = leafTexture();
-  const leaves = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide, emissive: 0x16300c, ...(map ? { map, alphaTest: 0.45 } : {}) });
-  const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, ...(map ? { map, alphaTest: 0.45 } : {}) });
+  const map = leafMap();
+  const leaves = leafMaterial(map);
+  const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, ...(map ? { map, alphaTest: 0.5 } : {}) });
   addCongoDeciduous(leaves, congoSeasonDry, 'leaves');
   addCongoDeciduous(depth, congoSeasonDry, 'depth');
   return crowns = { leaves, depth };
 }
-export function congoPlantMaterials(): Record<keyof PlantParts, THREE.Material> {
-  if (materials) return materials;
-  const map = leafTexture();
-  materials = {
-    wood: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }),
-    // A faint green glow stands in for light through the leaves, so a crown's underside is not black.
-    leaves: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide, emissive: 0x16300c, ...(map ? { map, alphaTest: 0.45 } : {}) }),
-    blades: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, side: THREE.DoubleSide, emissive: 0x0e2208 }),
-  };
-  return materials;
+
+/** The material for one part of one kind of plant. */
+export function congoPartMaterial(kind: CongoKind, part: keyof PlantParts): THREE.Material {
+  if (part === 'leaves') return leaves ??= leafMaterial(leafMap());
+  if (part === 'wood') {
+    const bark = BARK[kind], key = bark ?? 'plain';
+    let wood = woods.get(key);
+    if (!wood) {
+      const map = bark ? congoTexture(bark) : null;
+      wood = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, ...(map ? { map } : {}) });
+      woods.set(key, wood);
+    }
+    return wood;
+  }
+  // Blades: the Marantaceae's photographed leaf for the understory, the frond for Raphia, the clump for sedge.
+  const image = kind === 'marantaceae' || kind === 'herb' ? 'marantaceae' : kind === 'raphia' ? 'raphia_frond' : kind === 'sedge' ? 'sedge_clump' : kind === 'groundcover' ? 'groundcover' : null,
+    key = image ?? 'plain';
+  let blade = bladeMaterials.get(key);
+  if (!blade) {
+    const map = image ? congoTexture(image) : null;
+    blade = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, side: THREE.DoubleSide, emissive: 0x0a1a06,
+      ...(map ? { map, alphaTest: 0.5 } : {}) });
+    bladeMaterials.set(key, blade);
+  }
+  return blade;
+}
+
+/** Every material the Congo's plants are drawn with (one each, shared by all instances). */
+export function congoPlantMaterials(): THREE.Material[] {
+  const all = new Set<THREE.Material>();
+  for (const kind of CONGO_KINDS) for (const part of Object.keys(congoPlantParts(kind)) as Array<keyof PlantParts>) all.add(congoPartMaterial(kind, part));
+  return [...all];
 }

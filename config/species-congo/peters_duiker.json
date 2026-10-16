@@ -1,6 +1,10 @@
 {
   "id": "peters_duiker",
   "displayName": "Peters's duiker",
+  "persona": {
+    "temperament": "wary",
+    "sketch": "A sturdy red duiker that forages alone by day, head low and ears turning. It is more often heard crashing away than seen."
+  },
   "archetype": "herd_grazer",
   "trophicRole": [
     "browser"
@@ -60,6 +64,7 @@
     "dailyIntakeKg": 1.4,
     "maxDailyIntakeKg": 2.0,
     "waterNeedLPerDay": 0.6,
+    "preformedWaterShare": 0.7,
     "canScavenge": false,
     "carrionTolerance": 0.0
   },
@@ -69,7 +74,10 @@
       1,
       1
     ],
-    "alarmSharing": false
+    "alarmSharing": false,
+    "heedsAlarmOf": [
+      "agile_mangabey"
+    ]
   },
   "activity": {
     "hourly": [

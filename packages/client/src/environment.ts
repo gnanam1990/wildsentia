@@ -89,7 +89,11 @@ export class Atmosphere {
         this.scene.fog.color.lerp(INTERIOR.clone().multiplyScalar(0.3 + 0.7 * state.daylight), 0.75 * this.underCanopy);
         this.scene.fog.far += (Math.min(this.scene.fog.far, 650) - this.scene.fog.far) * this.underCanopy;
         this.scene.fog.near += (Math.min(this.scene.fog.near, 40) - this.scene.fog.near) * this.underCanopy;
+        // Past the haze among the trees is more forest, not open sky: the dome gives way to a
+        // background between the sky and the haze, as light comes through the leaves.
+        (this.scene.background as THREE.Color).lerp(this.scene.fog.color, 0.55 * this.underCanopy);
       }
+      this.dome.mesh.visible = this.underCanopy < 0.5;
     }
     const lights = observerLights(state.daylight, state.sunIntensity, viewDistance);
     this.sun.intensity = lights.sun;

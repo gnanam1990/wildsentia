@@ -278,6 +278,7 @@ export function buildApi({ host, pool, narrator, insights: insightDeps, live, re
       id: agent.id,
       speciesId: agent.speciesId,
       displayName: config.displayName,
+      ...(config.persona ? { persona: config.persona } : {}),
       sex: agent.sex,
       ageDays: agent.ageDays,
       lifeStage: agent.lifeStage,

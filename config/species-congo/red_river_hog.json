@@ -1,6 +1,10 @@
 {
   "id": "red_river_hog",
   "displayName": "Red river hog",
+  "persona": {
+    "temperament": "sociable",
+    "sketch": "A russet pig with white-tufted ears, never alone. The sounder moves through the night in a grunting line, ploughing the leaf litter for roots and fallen fruit."
+  },
   "archetype": "omnivore_rooter",
   "trophicRole": [
     "omnivore",

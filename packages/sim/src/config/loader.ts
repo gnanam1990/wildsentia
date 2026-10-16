@@ -21,6 +21,10 @@ export const SpeciesConfigSchema = z
   .object({
     id: z.string().min(1),
     displayName: z.string().min(1),
+    persona: z.object({
+      temperament: z.enum(['shy', 'secretive', 'wary', 'bold', 'sociable', 'placid', 'imperious']),
+      sketch: z.string().min(20).max(400),
+    }).optional(),
     archetype: z.enum([
       'apex_predator', 'pack_predator', 'herd_grazer',
       'mega_herbivore', 'omnivore_rooter', 'arboreal_troop', 'scavenger_flyer', 'raptor',
@@ -37,6 +41,8 @@ export const SpeciesConfigSchema = z
       sprintStaminaS: z.number().positive(),
       terrainCost: habitatCost,
       climbsTrees: z.boolean().optional(),
+      climbHeightM: z.number().positive().max(60).optional(),
+      habitatPreference: z.record(z.string(), z.number().min(0).max(1)).optional(),
       canopyDweller: z.boolean().optional(),
       // Phase B: a bird that travels by air (the vulture, the crowned eagle).
       flies: z.boolean().optional(),
@@ -68,6 +74,7 @@ export const SpeciesConfigSchema = z
         .min(1),
       dailyIntakeKg: z.number().positive(),
       offRosterShare: z.number().min(0).max(0.98).optional(),
+      preformedWaterShare: z.number().min(0).max(0.98).optional(),
       gutCapacityBodyFraction: z.number().gt(0).max(0.3).optional(),
       maxDailyIntakeKg: z.number().positive().finite().optional(),
       waterNeedLPerDay: z.number().positive(),

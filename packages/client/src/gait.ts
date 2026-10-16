@@ -18,9 +18,13 @@ const TROT_FROM = 0.5, GALLOP_FROM = 2.5, HYSTERESIS = 0.15;
 /** Stride rate is held to this range of the clip's own rate; beyond it a clip stops reading as itself. */
 const MIN_RATE = 0.35, MAX_RATE = 3.2;
 
-/** Hip height from the drawn height (top of the back or head): legs are most of it. */
-export function hipHeightM(drawnHeightM: number): number {
-  return Math.max(0.05, drawnHeightM * 0.85);
+/**
+ * Hip height from the drawn height (top of the back or head): legs are most of it, 0.85 of it in a
+ * crouching cat or deer. A species can give its own share (species.ts hipFraction): an elephant
+ * stands on columns under a deep body, its hip joint near half its height.
+ */
+export function hipHeightM(drawnHeightM: number, hipFraction = 0.85): number {
+  return Math.max(0.05, drawnHeightM * hipFraction);
 }
 
 export function froude(speedMs: number, hipM: number): number {
@@ -51,7 +55,8 @@ export function gaitFor(speedMs: number, hipM: number, previous: Gait | null = n
 const STRIDING = new Set(['travelling', 'chasing', 'fleeing', 'stalking']);
 const GAIT_CLIPS: Record<Gait, readonly string[]> = {
   walk: ['Walk'],
-  trot: ['Trot', 'Run', 'Walk'],
+  // No trot or run clip: a slowed gallop (a bounding canter) before an overspeed walk.
+  trot: ['Trot', 'Run', 'Gallop', 'Walk'],
   gallop: ['Gallop', 'Run', 'Trot', 'Walk'],
 };
 
@@ -129,11 +134,17 @@ function mean4(values: ArrayLike<number>, n: number, k: number): number {
 }
 
 /** Clip seconds per shown second, so the stride cycle matches ground speed. */
-export function strideRate(clip: THREE.AnimationClip, cycles: number, speedMs: number, hipM: number): number {
+export function strideRate(clip: THREE.AnimationClip, cycles: number, speedMs: number, hipM: number, maxRate = MAX_RATE): number {
   const natural = cycles / clip.duration;
   const wanted = strideHz(speedMs, hipM);
   if (!(natural > 0) || !(wanted > 0)) return 1;
-  return Math.min(MAX_RATE, Math.max(MIN_RATE, wanted / natural));
+  return Math.min(maxRate, Math.max(MIN_RATE, wanted / natural));
+}
+
+/** The fastest a rig's stride clip may be played: an animal whose only stride is its walk (a
+ * crocodile lunging, an elephant hurrying) scurries it, rather than letting its feet slide. */
+export function strideCeiling(clipNames: readonly string[]): number {
+  return clipNames.some((n) => /^(trot|run|gallop)$/i.test(n)) ? MAX_RATE : 5;
 }
 
 /**

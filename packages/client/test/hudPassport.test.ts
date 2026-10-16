@@ -44,6 +44,15 @@ describe('compact observer passport', () => {
     expect(nodes.clock.innerHTML).not.toContain('1 am');
   });
 
+  it('introduces the species by its persona, escaped, at the top of the overview', () => {
+    const { nodes, hud } = setup();
+    hud.passport = { ...passport(), persona: { temperament: 'sociable', sketch: 'A russet pig <b>never</b> alone.' } };
+    hud.render('boar_01');
+    expect(nodes.passport.innerHTML).toContain('subject-persona');
+    expect(nodes.passport.innerHTML).toContain('Sociable');
+    expect(nodes.passport.innerHTML).toContain('A russet pig &#60;b&#62;never&#60;/b&#62; alone.');
+    expect(nodes.passport.innerHTML.indexOf('subject-persona')).toBeLessThan(nodes.passport.innerHTML.indexOf('vitals'));
+  });
   it('does not rebuild the tabbed inspector on unchanged one-second refreshes', () => {
     const { nodes, hud } = setup();
     let writes = 0, html = '';

@@ -199,7 +199,8 @@ export function restoreSnapshot(snapshot: Snapshot, options: WorldOptions): Worl
   for (const agent of [...snapshot.agents, ...snapshot.deceased]) {
     validateIllness(agent.illness, snapshot.worldTime);
     validateWound(agent.wound, snapshot.worldTime);
-    validateVerticalCheckpoint(gridForProfile(snapshot.terrainProfile ?? 'mainland'), agent, snapshot.patches[agent.patchId], climbers.has(agent.speciesId), flyers.has(agent.speciesId));
+    // A flier may be perched on a branch (mode climb at a tree anchor), as a climber may.
+    validateVerticalCheckpoint(gridForProfile(snapshot.terrainProfile ?? 'mainland'), agent, snapshot.patches[agent.patchId], climbers.has(agent.speciesId) || flyers.has(agent.speciesId), flyers.has(agent.speciesId));
     if (agent.lastMaternalWaterAt !== undefined
       && (!Number.isFinite(agent.lastMaternalWaterAt) || agent.lastMaternalWaterAt < agent.bornAt
         || agent.lastMaternalWaterAt > snapshot.worldTime || agent.speciesId !== 'boar'))

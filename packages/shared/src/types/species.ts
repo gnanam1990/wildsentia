@@ -11,6 +11,11 @@ export type TrophicRole =
 export interface SpeciesConfig {
   id: string;
   displayName: string;
+  /**
+   * For players, not the simulation: one temperament word and a two- or three-sentence sketch of
+   * the animal as it is seen in the forest (observable behaviour only). Omitted: none is shown.
+   */
+  persona?: { temperament: 'shy' | 'secretive' | 'wary' | 'bold' | 'sociable' | 'placid' | 'imperious'; sketch: string };
   archetype: Archetype;
   trophicRole: TrophicRole[];
   body: {
@@ -35,6 +40,9 @@ export interface SpeciesConfig {
      * giant squirrel, leopard). Omitted: a ground animal.
      */
     climbsTrees?: boolean;
+    /** How high up its tree it goes, metres, at most the tree's own height: a mangabey roosts in the
+     * limbs, a cat escapes part way up. Omitted: the tree's height. */
+    climbHeightM?: number;
     /**
      * Phase B: lives in the canopy (the agile mangabey). It rests and sleeps up its patch's tree
      * and comes down to forage and drink. Needs `climbsTrees`. Omitted: climbs only to escape.
@@ -44,6 +52,12 @@ export interface SpeciesConfig {
     flies?: boolean;
     /** Congo 1B: swims, and dives to escape, staying under for up to `diveSeconds`. Omitted: never swims. */
     swims?: { swimMs: number; diveSeconds: number };
+    /**
+     * How strongly it keeps to each habitat, 0-1 (1, or omitted, for any habitat it does not name
+     * when it names none): a wetland specialist chooses food and wanders by it, so a sitatunga
+     * stays in the swamp though dry forest holds more browse.
+     */
+    habitatPreference?: Partial<Record<string, number>>;
     /** Congo 1B: what crossing water or flooded forest costs while it is flooded, where not `terrainCost`. */
     floodedTerrainCost?: { water?: number; flooded_forest?: number };
   };
@@ -77,6 +91,11 @@ export interface SpeciesConfig {
      * Omitted: none.
      */
     offRosterShare?: number;
+    /**
+     * The share of its water an animal gets from its food (fruit, leaves, prey), 0-0.98: only the
+     * rest of a day's thirst sends it to drink. Omitted: it drinks all it needs.
+     */
+    preformedWaterShare?: number;
     /**
      * sim_0.37.0: the most food (kg as eaten) the gut can process in a day. Where some food is
      * worth less than a kilogram of need (foodValue), this is what stops an animal making up poor

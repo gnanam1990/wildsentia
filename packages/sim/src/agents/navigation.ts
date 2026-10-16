@@ -1,21 +1,142 @@
-import { fliesSpecies, terrainCostFor, initialPosition, patchAtPosition, patchCentre, positionInPatch, landWalkable,
+import { congoRiverAt, fliesSpecies, terrainCostFor, initialPosition, inCongoChannel, patchAtPosition, patchCentre, positionInPatch, landWalkable, spatialHash,
   type WorldGrid, type Agent, type Patch, type SpeciesConfig, type WorldPosition, type MovementTrace, type GoalId } from '@vana/shared';
 import { approachContact } from './movement.js';
 import { locateAgent } from './spatial.js';
 import { locomotionFactor } from './needs.js';
 
 type Piece = { target: WorldPosition; cost: number };
+
+/** The dry ground of a Congo river patch: points on a 10 m lattice outside the channel, found once a
+ * patch (warmDryGround finds them all when a world is made, so no hour pays for them). */
+const dryCache = new Map<string, Float64Array>();
+function dryGround(grid: WorldGrid, seed: number, patchId: number): Float64Array {
+  const key = `${seed}:${grid.cols}x${grid.rows}:${patchId}`;
+  let dry = dryCache.get(key);
+  if (!dry) {
+    const c = patchCentre(grid, patchId), half = grid.patchM / 2 - 1, points: number[] = [];
+    for (let x = c.x - half + 4; x <= c.x + half; x += 10) for (let z = c.z - half + 4; z <= c.z + half; z += 10)
+      if (!inCongoChannel(grid, seed, x, z)) points.push(x, z);
+    dryCache.set(key, dry = Float64Array.from(points));
+  }
+  return dry;
+}
+
+/** Whether a river patch is all channel: its centre lies deeper in the channel than its corner is
+ * from its centre (one river lookup, cached). */
+const channelCache = new Map<string, Uint8Array>();
+function allChannel(grid: WorldGrid, seed: number, patchId: number): boolean {
+  const key = `${seed}:${grid.cols}x${grid.rows}`;
+  let flags = channelCache.get(key);
+  if (!flags) channelCache.set(key, flags = new Uint8Array(grid.cols * grid.rows));
+  // 0 unknown, 1 has dry ground, 2 all channel.
+  if (flags[patchId] === 0) {
+    const c = patchCentre(grid, patchId), at = congoRiverAt(grid, seed, c.x, c.z);
+    flags[patchId] = at.distanceM + grid.patchM * Math.SQRT1_2 <= at.halfM ? 2 : 1;
+  }
+  return flags[patchId] === 2;
+}
+
+/** Finds every Congo river patch's dry ground once, when a world is made (about 2 s for seed 7). */
+export function warmDryGround(grid: WorldGrid, patches: readonly Pick<Patch, 'id' | 'habitat' | 'congoSeed'>[]): void {
+  for (const p of patches) if (p.habitat === 'water' && p.congoSeed !== undefined && !allChannel(grid, p.congoSeed, p.id)) dryGround(grid, p.congoSeed, p.id);
+}
+
+/** A land animal that does not swim and finds water hard going (crossing it costs 3 or more: the
+ * duikers, the cats, the buffalo, the mangabey) cannot cross a river patch that is all channel. */
+function crossesRivers(cfg: SpeciesConfig): boolean {
+  return cfg.locomotion.swims !== undefined || fliesSpecies(cfg) || (cfg.locomotion.terrainCost.water ?? Infinity) < 3;
+}
+
+/**
+ * Where an animal stands in a patch when no exact endpoint is asked for: its own fixed spot,
+ * moved to the nearest dry ground for a land animal where a Congo river's channel crosses the
+ * patch (blue duikers grazed standing in the river). A swimmer or a flier keeps its spot.
+ */
+export function standingPoint(grid: WorldGrid, id: string, patch: Pick<Patch, 'id' | 'congoSeed' | 'habitat'>, cfg: SpeciesConfig): WorldPosition {
+  const spot = initialPosition(grid, id, patch.id), seed = patch.congoSeed;
+  if (seed === undefined || patch.habitat !== 'water' || cfg.locomotion.swims || fliesSpecies(cfg) || !inCongoChannel(grid, seed, spot.x, spot.z)) return spot;
+  const dry = dryGround(grid, seed, patch.id);
+  let best = -1, bestD = Infinity;
+  for (let i = 0; i < dry.length; i += 2) {
+    const d = Math.hypot(dry[i]! - spot.x, dry[i + 1]! - spot.z);
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  return best < 0 ? spot : { x: dry[best]!, z: dry[best + 1]!, heading: 0 };
+}
+
+/** How strongly a species keeps to a habitat (locomotion.habitatPreference): 1 where unnamed. */
+export function habitatWeight(cfg: SpeciesConfig, habitat: string): number {
+  return cfg.locomotion.habitatPreference?.[habitat] ?? 1;
+}
+
+/** A flood-shy animal (crossing flooded forest costs it 3 or more: the duikers, the cats, the
+ * buffalo) does not feed or rest standing in a flood; waders (sitatunga, chevrotain, hogs,
+ * elephants) and swimmers do. */
+export function floodShy(cfg: SpeciesConfig): boolean {
+  return (cfg.locomotion.floodedTerrainCost?.flooded_forest ?? 0) >= 3;
+}
 const distance = (a: WorldPosition, b: WorldPosition): number => Math.hypot(a.x - b.x, a.z - b.z);
-const costOf = (p: Patch, cfg: SpeciesConfig): number => {
+const costOf = (grid: WorldGrid, p: Patch, cfg: SpeciesConfig): number => {
   if (!landWalkable(p)) return Infinity;
+  if (p.habitat === 'water' && p.congoSeed !== undefined && !crossesRivers(cfg) && allChannel(grid, p.congoSeed, p.id)) return Infinity;
   const value = terrainCostFor(cfg, p.habitat, p.flooded === true);
   return Number.isFinite(value) && value > 0 ? value : Infinity;
 };
 
+/**
+ * Each species' connected regions of a world's patches, built once: a patch counts as passable if
+ * it is passable flooded or dry, so a destination outside the start's region cannot be reached in
+ * any season. Without this a route search that could not arrive visited every patch it could reach
+ * first (about 15,000 for a duiker), and a few such searches were most of a Congo hour's routing.
+ * Terrain, surface and river channels are fixed when a world is made; only the flood changes.
+ * Null where a patch's neighbours are not mutual, when the search is left to answer alone.
+ */
+const regionCache = new WeakMap<Patch[], WeakMap<SpeciesConfig, Int32Array | null>>();
+
+function passableInAnySeason(grid: WorldGrid, p: Patch, cfg: SpeciesConfig): boolean {
+  if (!landWalkable(p)) return false;
+  if (p.habitat === 'water' && p.congoSeed !== undefined && !crossesRivers(cfg) && allChannel(grid, p.congoSeed, p.id)) return false;
+  return [false, true].some((flooded) => { const v = terrainCostFor(cfg, p.habitat, flooded); return Number.isFinite(v) && v > 0; });
+}
+
+function regionsOf(grid: WorldGrid, patches: Patch[], cfg: SpeciesConfig): Int32Array | null {
+  let bySpecies = regionCache.get(patches);
+  if (!bySpecies) regionCache.set(patches, bySpecies = new WeakMap());
+  if (bySpecies.has(cfg)) return bySpecies.get(cfg)!;
+  const regions = new Int32Array(patches.length).fill(-1), passable = patches.map((p) => passableInAnySeason(grid, p, cfg));
+  let mutual = true, region = 0;
+  for (let seed = 0; seed < patches.length && mutual; seed++) {
+    if (!passable[seed] || regions[seed]! >= 0) continue;
+    const stack = [seed]; regions[seed] = region;
+    while (stack.length) {
+      const id = stack.pop()!;
+      for (const next of patches[id]!.neighbours) {
+        if (!patches[next]!.neighbours.includes(id)) { mutual = false; break; }
+        if (passable[next] && regions[next]! < 0) { regions[next] = region; stack.push(next); }
+      }
+    }
+    region++;
+  }
+  const result = mutual ? regions : null;
+  bySpecies.set(cfg, result);
+  return result;
+}
+
+/** Whether no route can join two patches: the search expands from the start (passable or not)
+ * into its passable neighbours, so a start standing on impassable ground reaches their regions. */
+function beyondReach(grid: WorldGrid, patches: Patch[], cfg: SpeciesConfig, start: number, destination: number): boolean {
+  const regions = regionsOf(grid, patches, cfg);
+  if (!regions || regions[destination]! < 0) return false;
+  const to = regions[destination]!;
+  return regions[start]! >= 0 ? regions[start] !== to : !patches[start]!.neighbours.some((n) => regions[n] === to);
+}
+
 /** Split each cardinal edge at its real patch boundary, charging the terrain actually crossed. */
-function pieces(grid: WorldGrid, from: WorldPosition, fromId: number, toId: number, id: string, patches: Patch[], cfg: SpeciesConfig, endpoint?: WorldPosition): Piece[] {
-  const target = endpoint ?? initialPosition(grid, id, toId);
-  if (fromId === toId) return [{ target, cost: costOf(patches[toId]!, cfg) }];
+function pieces(grid: WorldGrid, from: WorldPosition, fromId: number, toId: number, id: string, patches: Patch[], cfg: SpeciesConfig, endpoint?: WorldPosition, final = false): Piece[] {
+  // Only where the animal ends up needs dry footing; the patches it passes through keep their
+  // fixed spots (finding a dry one for every patch a route search considers cost a second an hour).
+  const target = endpoint ?? (final ? standingPoint(grid, id, patches[toId]!, cfg) : initialPosition(grid, id, toId));
+  if (fromId === toId) return [{ target, cost: costOf(grid, patches[toId]!, cfg) }];
   const a = patchCentre(grid, fromId); const b = patchCentre(grid, toId);
   if (Math.abs(a.x - b.x) + Math.abs(a.z - b.z) !== grid.patchM) throw new Error('non-cardinal route edge');
   const axis = a.x === b.x ? 'z' : 'x';
@@ -23,7 +144,51 @@ function pieces(grid: WorldGrid, from: WorldPosition, fromId: number, toId: numb
   const fraction = (boundary - from[axis]) / (target[axis] - from[axis]);
   const edge = { x: from.x + (target.x - from.x) * fraction,
     z: from.z + (target.z - from.z) * fraction, heading: from.heading };
-  return [{ target: edge, cost: costOf(patches[fromId]!, cfg) }, { target, cost: costOf(patches[toId]!, cfg) }];
+  return [{ target: edge, cost: costOf(grid, patches[fromId]!, cfg) }, { target, cost: costOf(grid, patches[toId]!, cfg) }];
+}
+
+/**
+ * A binary min-heap of (cost, patch id), popping in exactly the order the route search used to
+ * sort its whole queue into on every step: on the 25,600-patch Congo forest that sort was a third
+ * of an hour's work.
+ */
+class RouteQueue {
+  readonly #ids: number[] = []; readonly #costs: number[] = [];
+  get size(): number { return this.#ids.length; }
+  #less(a: number, b: number): boolean { return this.#costs[a]! < this.#costs[b]! || (this.#costs[a] === this.#costs[b] && this.#ids[a]! < this.#ids[b]!); }
+  #swap(a: number, b: number): void {
+    [this.#ids[a], this.#ids[b]] = [this.#ids[b]!, this.#ids[a]!]; [this.#costs[a], this.#costs[b]] = [this.#costs[b]!, this.#costs[a]!];
+  }
+  push(id: number, cost: number): void {
+    this.#ids.push(id); this.#costs.push(cost);
+    for (let i = this.#ids.length - 1; i > 0;) { const up = (i - 1) >> 1; if (!this.#less(i, up)) break; this.#swap(i, up); i = up; }
+  }
+  pop(): { id: number; cost: number } {
+    const top = { id: this.#ids[0]!, cost: this.#costs[0]! }, last = this.#ids.length - 1;
+    this.#swap(0, last); this.#ids.pop(); this.#costs.pop();
+    for (let i = 0; ;) {
+      const l = 2 * i + 1, r = l + 1; let m = i;
+      if (l < this.#ids.length && this.#less(l, m)) m = l;
+      if (r < this.#ids.length && this.#less(r, m)) m = r;
+      if (m === i) break; this.#swap(i, m); i = m;
+    }
+    return top;
+  }
+}
+
+/** The cost of one route step: the same sum as walking `pieces`, without building them (the
+ * route search prices every neighbour it considers). */
+function stepCost(grid: WorldGrid, from: WorldPosition, fromId: number, toId: number, id: string, patches: Patch[], cfg: SpeciesConfig,
+  endpoint: WorldPosition | undefined, final: boolean): number {
+  const target = endpoint ?? (final ? standingPoint(grid, id, patches[toId]!, cfg) : initialPosition(grid, id, toId));
+  const toCost = costOf(grid, patches[toId]!, cfg);
+  if (fromId === toId) return distance(from, target) * toCost;
+  const a = patchCentre(grid, fromId), b = patchCentre(grid, toId);
+  if (Math.abs(a.x - b.x) + Math.abs(a.z - b.z) !== grid.patchM) throw new Error('non-cardinal route edge');
+  const alongX = a.x !== b.x, boundary = alongX ? (a.x + b.x) / 2 : (a.z + b.z) / 2;
+  const fraction = (boundary - (alongX ? from.x : from.z)) / ((alongX ? target.x : target.z) - (alongX ? from.x : from.z));
+  const ex = from.x + (target.x - from.x) * fraction, ez = from.z + (target.z - from.z) * fraction;
+  return Math.hypot(ex - from.x, ez - from.z) * costOf(grid, patches[fromId]!, cfg) + Math.hypot(target.x - ex, target.z - ez) * toCost;
 }
 
 /** Deterministic least-cost search over the static terrain graph. It knows terrain, not animals.
@@ -32,14 +197,14 @@ function pieces(grid: WorldGrid, from: WorldPosition, fromId: number, toId: numb
 export function planRoute(grid: WorldGrid, agent: Agent, destination: number, patches: Patch[], cfg: SpeciesConfig, endpoint?: WorldPosition): number[] | null {
   if (endpoint && !positionInPatch(grid, endpoint, destination)) throw new Error('route endpoint outside destination');
   const start = agent.patchId; const origin = locateAgent(grid, agent);
-  if (!patches[destination] || !Number.isFinite(costOf(patches[destination]!, cfg))) return null;
+  if (!patches[destination] || !Number.isFinite(costOf(grid, patches[destination]!, cfg))) return null;
   if (start === destination) return [destination];
+  if (beyondReach(grid, patches, cfg, start, destination)) return null;
   const costs = new Map<number, number>([[start, 0]]); const parents = new Map<number, number>();
-  const queue: Array<{ id: number; cost: number }> = [{ id: start, cost: 0 }];
-  // At most 400 cells. Stable tie-breaking makes replay independent of neighbour-array order.
-  while (queue.length) {
-    queue.sort((a, b) => a.cost - b.cost || a.id - b.id);
-    const current = queue.shift()!;
+  const queue = new RouteQueue(); queue.push(start, 0);
+  // Stable tie-breaking (cost, then patch id) makes replay independent of neighbour-array order.
+  while (queue.size) {
+    const current = queue.pop();
     if (current.cost !== costs.get(current.id)) continue;
     if (current.id === destination) {
       const route: number[] = []; let id = destination;
@@ -49,13 +214,9 @@ export function planRoute(grid: WorldGrid, agent: Agent, destination: number, pa
     const point = current.id === start ? origin : initialPosition(grid, agent.id, current.id);
     for (const next of [...patches[current.id]!.neighbours].sort((a, b) => a - b)) {
       if (!patches[next]) continue;
-      let length = 0; let last = point;
-      for (const piece of pieces(grid, point, current.id, next, agent.id, patches, cfg, next === destination ? endpoint : undefined)) {
-        length += distance(last, piece.target) * piece.cost; last = piece.target;
-      }
-      const value = current.cost + length;
+      const value = current.cost + stepCost(grid, point, current.id, next, agent.id, patches, cfg, next === destination ? endpoint : undefined, next === destination);
       if (!Number.isFinite(value) || value >= (costs.get(next) ?? Infinity)) continue;
-      costs.set(next, value); parents.set(next, current.id); queue.push({ id: next, cost: value });
+      costs.set(next, value); parents.set(next, current.id); queue.push(next, value);
     }
   }
   return null;
@@ -79,7 +240,8 @@ export function navigate(
   // A hunt/parent interaction can move the actor off a saved route. Replan only that invalid path.
   let last = agent.patchId;
   if (route && (route.length === 0 || route.at(-1) !== destination || route.some((next) => {
-    const valid = landWalkable(patches[next]) && (last === next || patches[last]?.neighbours.includes(next)); last = next; return !valid;
+    const valid = landWalkable(patches[next]) && Number.isFinite(costOf(grid, patches[next]!, cfg))
+      && (last === next || patches[last]?.neighbours.includes(next)); last = next; return !valid;
   }))) route = null;
   route ??= planRoute(grid, agent, destination, patches, cfg, endpoint);
   if (!route) { delete agent.journey; return { trace, distanceM: 0, seconds: 0, sprintSeconds: 0, unreachable: true }; }
@@ -89,7 +251,7 @@ export function navigate(
   while (route.length && seconds < secondsAvailable) {
     const next = route[0]!;
     let reached = true;
-    for (const piece of pieces(grid, position, patchAtPosition(grid, position), next, agent.id, patches, cfg, next === destination ? endpoint : undefined)) {
+    for (const piece of pieces(grid, position, patchAtPosition(grid, position), next, agent.id, patches, cfg, next === destination ? endpoint : undefined, next === destination)) {
       if (!Number.isFinite(piece.cost)) { reached = false; break; }
       // Sprint -> trot is a real speed transition, also recorded in the trace.
       while (distance(position, piece.target) > 1e-8 && seconds < secondsAvailable) {

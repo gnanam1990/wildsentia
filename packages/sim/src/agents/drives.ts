@@ -23,7 +23,8 @@ export function updateDrives(agent: Agent, species: SpeciesConfig, hours: number
 
   // Food from prey the world does not hold (offRosterShare) is eaten off-stage: only the rest is hunger.
   d.hunger = clamp01(d.hunger + HUNGER_PER_DAY * days * (1 - (species.diet.offRosterShare ?? 0)));
-  d.thirst = clamp01(d.thirst + THIRST_PER_DAY * days);
+  // Water from food (preformedWaterShare): fruit-eaters and the eagle need drink only for the rest.
+  d.thirst = clamp01(d.thirst + THIRST_PER_DAY * days * (1 - (species.diet.preformedWaterShare ?? 0)));
 
   const fatigueDelta =
     agent.state === 'resting' ? -0.10 * hours

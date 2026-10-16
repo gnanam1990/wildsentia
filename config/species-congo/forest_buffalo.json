@@ -1,6 +1,10 @@
 {
   "id": "forest_buffalo",
   "displayName": "Forest buffalo",
+  "persona": {
+    "temperament": "imperious",
+    "sketch": "A compact red-brown buffalo with swept-back horns. The herd lies up in the shade, then files out into the bai to graze; little in the forest moves it along."
+  },
   "archetype": "mega_herbivore",
   "trophicRole": [
     "grazer",

@@ -3,12 +3,13 @@ import { congoChannelHalfM, congoRivers, patchCentre, riverIndex, spatialHash } 
 import { worldGrid } from './worldGrid.js';
 import { CONGO_STEP_M, congoLattice, type PatchView } from './terrain.js';
 import { CONGO_DECIDUOUS_SHARE, congoSeasonalDryness } from './seasonalLeaves.js';
-import { CONGO_KINDS, congoCrownMaterials, congoLeafDepthMaterial, congoPlantMaterials, congoSeasonDry, congoPlantParts, planCongoPatch, type CongoKind, type PlacedPlant, type PlantParts } from './congoPlants.js';
+import { CONGO_KINDS, congoCrownMaterials, congoLeafDepthMaterial, congoPartMaterial, congoSeasonDry, congoPlantParts, planCongoPatch, type CongoKind, type PlacedPlant, type PlantParts } from './congoPlants.js';
 import { buildCongoWater, type LoadedGround } from './congoWater.js';
+import { congoTexture } from './congoTextures.js';
 
 /** How far from the camera's focus each kind of plant is drawn one by one (metres). */
 export const KIND_RADIUS_M: Record<CongoKind, number> = {
-  emergent: 420, canopy: 380, midstory: 320, raphia: 380, sapling: 200, marantaceae: 140, herb: 70, sedge: 220, log: 260, rock: 300,
+  emergent: 420, canopy: 380, midstory: 320, raphia: 380, sapling: 200, marantaceae: 140, herb: 70, groundcover: 45, sedge: 220, log: 260, rock: 300,
 };
 /** The focus moves this far before the near plants are planted again. */
 const REFILL_MOVE_M = 60;
@@ -135,11 +136,10 @@ export class CongoForest {
     }
     while (this.#plans.size > PLAN_CACHE_PATCHES) this.#plans.delete(this.#plans.keys().next().value!);
     const matrix = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0), tint = new THREE.Color();
-    const materials = congoPlantMaterials();
     for (const kind of CONGO_KINDS) {
       const plants = chosen.get(kind) ?? [], parts = congoPlantParts(kind);
       for (const part of Object.keys(parts) as Array<keyof PlantParts>) {
-        const material = part === 'leaves' && DECIDUOUS.has(kind) ? congoCrownMaterials().leaves : materials[part];
+        const material = part === 'leaves' && DECIDUOUS.has(kind) ? congoCrownMaterials().leaves : congoPartMaterial(kind, part);
         const mesh = this.#mesh(kind, part, parts[part]!, material, plants.length);
         plants.forEach((plant, i) => {
           p.set(plant.x, ground(plant.x, plant.z) - (TREES.has(kind) ? TREE_SINK_M : 0), plant.z);
@@ -183,15 +183,22 @@ export class CongoForest {
     const cols = Math.round((bounds.maxX - bounds.minX) / CONGO_STEP_M), rows = Math.round((bounds.maxZ - bounds.minZ) / CONGO_STEP_M);
     const near = riversNear(seed);
     // Open over the river's own channel, wherever it runs; a river patch's dry edge is flooded forest.
+    // The forest's edge at a bai or a swamp follows the 300 m grid; each lookup is nudged up to
+    // 35 m (fixed by place), so the edge runs ragged as a real forest edge does, not ruled. The
+    // river channel itself is never covered.
     const canopyAt = (x: number, z: number): number => {
       const at = near(x, z);
       if (at.distanceM <= congoChannelHalfM(at.river, grid) + 5) return 0;
+      const kx = Math.round(x / CONGO_STEP_M), kz = Math.round(z / CONGO_STEP_M);
+      x += ((spatialHash(`canopy-edge-x:${seed}:${kx}:${kz}`) / 0xffffffff) - 0.5) * 70;
+      z += ((spatialHash(`canopy-edge-z:${seed}:${kx}:${kz}`) / 0xffffffff) - 0.5) * 70;
       const col = Math.floor((x - origin) / grid.patchM), row = Math.floor((z - origin) / grid.patchM);
       const patch = col >= 0 && row >= 0 && col < grid.cols && row < grid.rows ? byId.get(row * grid.cols + col) : undefined;
       return patch ? CANOPY_HEIGHT_M[patch.habitat === 'water' ? 'flooded_forest' : patch.habitat] ?? 0 : 0;
     };
     const positions = new Float32Array((cols + 1) * (rows + 1) * 3), colours = new Float32Array((cols + 1) * (rows + 1) * 3), lifted = new Uint8Array((cols + 1) * (rows + 1));
-    const light = new THREE.Color(0x4f7a32), dark = new THREE.Color(0x24451c), c = new THREE.Color();
+    // The photographed canopy carries the crowns' colours; the vertices only vary its brightness.
+    const light = new THREE.Color(0xffffff), dark = new THREE.Color(0xb8c4b0), c = new THREE.Color();
     for (let row = 0; row <= rows; row++) for (let col = 0; col <= cols; col++) {
       const i = row * (cols + 1) + col, x = origin + (c0 + col) * CONGO_STEP_M, z = origin + (r0 + row) * CONGO_STEP_M;
       // The lowest canopy among the four cells around the vertex: the surface drops to the ground at an opening.
@@ -224,9 +231,13 @@ export class CongoForest {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geometry.setAttribute('color', new THREE.BufferAttribute(colours, 3));
+    // The canopy image is laid by world position (the shader samples it there), so it needs a uv
+    // attribute only to be bound.
+    geometry.setAttribute('uv', new THREE.BufferAttribute(new Float32Array((cols + 1) * (rows + 1) * 2), 2));
     geometry.setIndex(index);
     geometry.computeVertexNormals();
-    const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide });
+    const canopy = congoTexture('canopy_aerial');
+    const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide, ...(canopy ? { map: canopy } : {}) });
     const hole = this.#hole;
     material.onBeforeCompile = (shader) => {
       shader.uniforms.holeCentre = hole.centre; shader.uniforms.holeRadius = hole.radius; shader.uniforms.uSeasonDry = congoSeasonDry;
@@ -250,23 +261,24 @@ vec2 shellCrowns(vec2 p) {
 ` + shader.fragmentShader.replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
         // Cut away where the plants themselves stand, with a dithered edge.
         float holeEdge = (distance(vShellWorld.xz, holeCentre) - holeRadius) / 60.0;
-        if (holeRadius > 0.0 && holeEdge < shellHash(floor(vShellWorld.xz))) discard;`).replace('#include <color_fragment>', `#include <color_fragment>
-        // Treetops: canopy crowns about 16 m across and emergents about 34 m, each domed (lit top,
-        // shaded rim, dark gaps between) and each its own green: deep, olive, yellow, a few reddish
-        // flushes of new leaves.
-        vec2 crown = shellCrowns(vShellWorld.xz / 16.0), big = shellCrowns(vShellWorld.xz / 34.0 + 5.0);
-        float dome = 1.0 - smoothstep(0.15, 0.75, crown.x), giant = (1.0 - smoothstep(0.1, 0.55, big.x)) * step(0.8, big.y);
-        vec3 tone = mix(vec3(0.62, 0.9, 0.5), vec3(1.05, 1.1, 0.62), crown.y);
-        tone = mix(tone, vec3(1.15, 0.85, 0.55), step(0.94, crown.y));
-        float leafy = shellNoise(vShellWorld.xz / 2.2) * 0.35 + 0.65;
-        // In a drier spell the deciduous share of crowns turns yellow-brown and opens to its branches.
+        if (holeRadius > 0.0 && holeEdge < shellHash(floor(vShellWorld.xz))) discard;`).replace('#include <map_fragment>', `
+        #ifdef USE_MAP
+        // The photographed canopy (about 170 m a tile), crossed with a turned, larger copy of itself
+        // where a slow noise says, so its repeat does not show from above.
+        vec2 shellAt = vShellWorld.xz;
+        vec4 canopyA = texture2D(map, shellAt / 170.0);
+        vec4 canopyB = texture2D(map, mat2(0.8, -0.6, 0.6, 0.8) * shellAt / 241.0 + 0.37);
+        diffuseColor *= mix(canopyA, canopyB, smoothstep(0.3, 0.7, shellNoise(shellAt / 420.0)));
+        #endif`).replace('#include <color_fragment>', `#include <color_fragment>
+        // In a drier spell the deciduous share of crowns (about 16 m across) turns yellow-brown and
+        // opens to its branches.
+        vec2 crown = shellCrowns(vShellWorld.xz / 16.0);
         float deciduous = step(fract(crown.y * 7.13), ${CONGO_DECIDUOUS_SHARE.toFixed(3)}) * uSeasonDry;
-        leafy *= 1.0 - deciduous * 0.3 * (1.0 - shellNoise(vShellWorld.xz / 0.9));
-        diffuseColor.rgb *= tone * mix(0.32, 1.2, max(dome, giant)) * leafy;
+        diffuseColor.rgb *= 1.0 - deciduous * 0.3 * (1.0 - shellNoise(vShellWorld.xz / 0.9));
         vec3 dryCrown = vec3(dot(diffuseColor.rgb, vec3(0.42, 0.42, 0.16))) * vec3(1.55, 1.1, 0.45);
         diffuseColor.rgb = mix(diffuseColor.rgb, dryCrown, deciduous * 0.85);`);
     };
-    material.customProgramCacheKey = () => 'congo-canopy-shell-v3';
+    material.customProgramCacheKey = () => 'congo-canopy-shell-v4';
     const mesh = new THREE.Mesh(geometry, material);
     mesh.name = 'canopy-shell'; mesh.receiveShadow = false; mesh.castShadow = false;
     return mesh;

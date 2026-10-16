@@ -13,6 +13,11 @@ export interface SpeciesVisual {
    * is drawn static. `yaw` turns a model that was not authored facing +z to face it.
    */
   model: { file: string; tint?: number; yaw?: number; referenceHeightM?: number } | null;
+  /**
+   * The hip joint's height as a share of heightM, which sets the stride the legs are played at
+   * (gait.ts hipHeightM); 0.85 when not given.
+   */
+  hipFraction?: number;
   /** The stand-in's colour, and the colour on the map. */
   colour: number;
 }
@@ -53,7 +58,9 @@ export const SPECIES_VISUALS: Record<string, SpeciesVisual> = {
   african_golden_cat: { heightM: 0.42, model: { file: '/assets/animals/AfricanGoldenCat.glb' }, colour: 0xb7783a },
   // Phase B (docs/2026-10-14-congo-phase-b-research.md). Heights are the models' whole height:
   // the elephant's back, the mangabey's raised tail, the standing eagle, the crocodile's high walk.
-  forest_elephant:    { heightM: 2.3,  model: { file: '/assets/animals/ForestElephant.glb' }, colour: 0x5d5a56 },
+  // Its hip joint stands at 0.56 of its height (tools/art/forest_elephant_clips.py sizes the walk
+  // to that stride).
+  forest_elephant:    { heightM: 2.3,  model: { file: '/assets/animals/ForestElephant.glb' }, hipFraction: 0.56, colour: 0x5d5a56 },
   agile_mangabey:     { heightM: 0.48, model: { file: '/assets/animals/AgileMangabey.glb' }, colour: 0x8a7d62 },
   crowned_eagle:      { heightM: 0.62, model: { file: '/assets/animals/CrownedEagle.glb' }, colour: 0x3a3632 },
   dwarf_crocodile:    { heightM: 0.4,  model: { file: '/assets/animals/DwarfCrocodile.glb' }, colour: 0x2e2a22 },

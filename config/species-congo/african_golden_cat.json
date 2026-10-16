@@ -1,6 +1,10 @@
 {
   "id": "african_golden_cat",
   "displayName": "African golden cat",
+  "persona": {
+    "temperament": "secretive",
+    "sketch": "A low, heavy-pawed cat, russet or slate-grey, rarely seen except on camera traps. It slips along game trails at dawn and dusk, and goes up a trunk if a leopard is near."
+  },
   "archetype": "apex_predator",
   "trophicRole": [
     "mesopredator"
@@ -19,6 +23,7 @@
     "sprintMs": 12.0,
     "sprintStaminaS": 8,
     "climbsTrees": true,
+    "climbHeightM": 6,
     "terrainCost": {
       "shola": 1.0,
       "grassland": 1.1,
@@ -56,7 +61,7 @@
       }
     ],
     "dailyIntakeKg": 0.6,
-    "offRosterShare": 0.6,
+    "offRosterShare": 0.72,
     "gutCapacityBodyFraction": 0.14,
     "waterNeedLPerDay": 0.4,
     "canScavenge": true,
@@ -76,7 +81,7 @@
     "baseSuccess": 0.45,
     "staminaCostPerChase": 0.3,
     "huntFromHunger": 0.3,
-    "maxPreyKg": 8,
+    "maxPreyKg": 5,
     "preferredPreyKg": [
       1,
       6

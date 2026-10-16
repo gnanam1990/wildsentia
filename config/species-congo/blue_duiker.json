@@ -1,6 +1,10 @@
 {
   "id": "blue_duiker",
   "displayName": "Blue duiker",
+  "persona": {
+    "temperament": "shy",
+    "sketch": "A small grey-blue antelope, always in twos, picking fallen fruit off the forest floor. It flicks its white tail as it walks. At a sound it goes still, then bolts into the thicket."
+  },
   "archetype": "herd_grazer",
   "trophicRole": [
     "browser"
@@ -60,6 +64,7 @@
     "dailyIntakeKg": 0.45,
     "maxDailyIntakeKg": 0.7,
     "waterNeedLPerDay": 0.2,
+    "preformedWaterShare": 0.8,
     "canScavenge": false,
     "carrionTolerance": 0.0
   },
@@ -70,7 +75,10 @@
       2
     ],
     "alarmSharing": true,
-    "pairBond": true
+    "pairBond": true,
+    "heedsAlarmOf": [
+      "agile_mangabey"
+    ]
   },
   "activity": {
     "hourly": [
