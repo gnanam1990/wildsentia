@@ -1,5 +1,5 @@
 import { worldGrid } from './worldGrid.js';
-import { waterAccessPosition, type WaterGround } from '@vana/shared';
+import { congoChannelHalfM, congoRivers, riverIndex, waterAccessPosition, type WaterGround } from '@vana/shared';
 import type { PatchView } from './terrain.js';
 
 /**
@@ -13,6 +13,33 @@ export function islandPool(patch: PatchView, ground?: WaterGround): Pool | null 
   if (!Number.isFinite(patch.water) || patch.water <= 0) return null;
   const { x, z } = waterAccessPosition(worldGrid(), patch.id, ground);
   return { x, z, radius: Math.max(2, Math.min(40, Math.sqrt(patch.water / 1000 / Math.PI))), seed: patch.id };
+}
+
+/**
+ * A Congo patch's forest pool: a spring or stream pool at its water access point, where its
+ * animals drink (every forest patch holds some water). Small: 2 m across up to 12 m for the
+ * largest stocks. None where the access point lies in a river's channel, which the river ribbon
+ * already draws, and none on a dry patch.
+ */
+export function congoPool(patch: PatchView, ground?: WaterGround): Pool | null {
+  if (patch.congoSeed === undefined || (patch.surface !== undefined && patch.surface !== 'land')) return null;
+  if (!Number.isFinite(patch.water) || patch.water <= 0) return null;
+  const grid = worldGrid(), { x, z } = waterAccessPosition(grid, patch.id, ground);
+  const at = riversOf(patch.congoSeed, grid)(x, z);
+  if (at.distanceM <= congoChannelHalfM(at.river, grid)) return null;
+  return { x, z, radius: Math.max(2, Math.min(12, Math.sqrt(patch.water / 1000 / Math.PI))), seed: patch.id };
+}
+
+/** The pool drawn where a patch's animals drink: the island's waterhole or the Congo's forest pool. */
+export function drinkingPool(patch: PatchView, ground?: WaterGround): Pool | null {
+  return islandPool(patch, ground) ?? congoPool(patch, ground);
+}
+
+let riverCache: { key: string; near: ReturnType<typeof riverIndex> } | null = null;
+function riversOf(seed: number, grid: ReturnType<typeof worldGrid>): ReturnType<typeof riverIndex> {
+  const key = `${seed}:${grid.cols}x${grid.rows}`;
+  if (riverCache?.key !== key) riverCache = { key, near: riverIndex(congoRivers(seed, grid)) };
+  return riverCache.near;
 }
 
 /** The patches indexed by id, as waterAccessPosition reads them. */

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { CONGO_GRID, ISLAND_GRID, congoChannelHalfM, congoRivers, patchCentre, riverIndex, treeAnchorForPatch } from '@vana/shared';
 import { setWorldGrid } from '../src/worldGrid.js';
-import { CONGO_KINDS, congoPartMaterial, congoPlantGeometry, congoPlantParts, planCongoPatch, type CongoKind } from '../src/congoPlants.js';
+import { CONGO_KINDS, buttressFin, congoPartMaterial, congoPlantGeometry, congoPlantParts, planCongoPatch, type CongoKind } from '../src/congoPlants.js';
 import type { PatchView } from '../src/terrain.js';
 
 afterEach(() => setWorldGrid(ISLAND_GRID));
@@ -92,6 +92,26 @@ describe('Congo plants', () => {
     expect(box('raphia').max.x - box('raphia').min.x).toBeGreaterThan(12);
     expect(box('marantaceae').max.y).toBeLessThan(3.5);
     for (const k of CONGO_KINDS) expect(congoPlantGeometry(k).getAttribute('color')).toBeDefined();
+  });
+  it('stand the big trees on curved plank buttresses in their own bark, not flat triangles', () => {
+    // One fin running out along +x: its top edge sweeps down in a concave curve, it thins toward
+    // its tip, it reaches a little into the ground, and its bark is the trunk's, tiled the same.
+    const fin = buttressFin(5, 3.4, 0.95, 0xb7a990, () => 0.5), p = fin.getAttribute('position'), uv = fin.getAttribute('uv');
+    const top = (x0: number, x1: number) => { let y = -Infinity; for (let i = 0; i < p.count; i++) if (p.getX(i) >= x0 && p.getX(i) <= x1) y = Math.max(y, p.getY(i)); return y; };
+    const width = (x0: number, x1: number) => { let lo = Infinity, hi = -Infinity; for (let i = 0; i < p.count; i++) if (p.getX(i) >= x0 && p.getX(i) <= x1) { lo = Math.min(lo, p.getZ(i)); hi = Math.max(hi, p.getZ(i)); } return hi - lo; };
+    const reach = new THREE.Box3().setFromBufferAttribute(p as THREE.BufferAttribute).max.x;
+    expect(reach).toBeGreaterThan(3); expect(reach).toBeLessThan(4.5);
+    expect(top(0, 1)).toBeGreaterThan(4);
+    // Concave: at half its reach the top is well under half the height (a straight edge is at half).
+    expect(top(reach * 0.45, reach * 0.55)).toBeLessThan(5 * 0.35);
+    expect(width(0, 1)).toBeGreaterThan(0.25);
+    expect(width(reach * 0.85, reach)).toBeLessThan(0.12);
+    expect(new THREE.Box3().setFromBufferAttribute(p as THREE.BufferAttribute).min.y).toBeLessThan(0);
+    let uvSpan = 0;
+    for (let i = 0; i < uv.count; i++) uvSpan = Math.max(uvSpan, uv.getY(i));
+    expect(uvSpan).toBeGreaterThan(1.5); // about 5 m of bark at a 2.2 m tile, as on the trunk
+    const c = fin.getAttribute('color'), trunkTint = new THREE.Color(0xb7a990).lerp(new THREE.Color(0xffffff), 0.6);
+    expect(Math.abs(c.getX(0) - trunkTint.r)).toBeLessThan(0.12);
   });
   it('lay each crown card on one photographed spray of the leaf atlas', () => {
     const uv = congoPlantParts('canopy').leaves!.getAttribute('uv');
