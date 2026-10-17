@@ -834,8 +834,10 @@ const drawingSize = new THREE.Vector2();
 let observerSubjects: ObserverSubject[] = [];
 function observerSubject(speciesId: string, position: { x: number; z: number; altitudeM?: number }, size = 1): ObserverSubject {
   const height = visualFor(speciesId).heightM * size;
+  // Up in a crown a small animal sits among leaf sprays far bigger than itself: open a wider window.
+  const aloft = (position.altitudeM ?? 0) > 2;
   return { x: position.x, y: renderBaseY(position, animals.groundHeightAt) + height * 0.5,
-    z: position.z, radius: Math.max(0.35, height * 1.25) };
+    z: position.z, radius: Math.max(aloft ? 2.5 : 0.35, height * 1.25) };
 }
 /** The live scene's animals for the ambient audio this frame; none during a replay. */
 let audioSubjects: ReadonlyMap<string, AnimalState> | null = null;
