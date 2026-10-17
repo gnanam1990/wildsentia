@@ -4,6 +4,7 @@ import { CONGO_GRID, ISLAND_GRID, congoChannelHalfM, congoRivers, patchCentre, r
 import { setWorldGrid } from '../src/worldGrid.js';
 import { congoLattice, type PatchView } from '../src/terrain.js';
 import { CANOPY_HEIGHT_M, CongoForest, KIND_RADIUS_M } from '../src/congoForest.js';
+import { congoPool, insidePool } from '../src/pools.js';
 
 afterEach(() => setWorldGrid(ISLAND_GRID));
 const region = (rc: number, rr: number, habitatOf: (id: number) => string = () => 'terra_firme'): PatchView[] => {
@@ -46,6 +47,22 @@ describe('the Congo forest layer', () => {
     }
     expect(forest.update(focus.clone().add(new THREE.Vector3(30, 0, 0)))).toBe(false);
     expect(forest.update(focus.clone().add(new THREE.Vector3(90, 0, 0)))).toBe(true);
+  });
+  it('keeps every plant out of the forest pools where the animals drink', () => {
+    setWorldGrid(CONGO_GRID);
+    const forest = new CongoForest(), patches = region(1, 1);
+    forest.setScene(patches, 7, false);
+    const c = patchCentre(CONGO_GRID, 30 * 160 + 30);
+    forest.update(new THREE.Vector3(c.x, 0, c.z));
+    const pools = patches.flatMap((p) => { const pool = congoPool(p); return pool ? [pool] : []; });
+    expect(pools.length).toBe(patches.length);
+    let near = 0;
+    for (const [kind, list] of instances(forest)) for (const v of list) for (const pool of pools) {
+      if (Math.hypot(v.x - pool.x, v.z - pool.z) > 20) continue;
+      near++;
+      expect(insidePool(pool, v.x, v.z, 0.4), `${kind} at ${v.x.toFixed(1)},${v.z.toFixed(1)}`).toBe(false);
+    }
+    expect(near).toBeGreaterThan(50);
   });
   it('turns the tall deciduous crowns and the canopy surface in a drier spell, never the understory', () => {
     setWorldGrid(CONGO_GRID);

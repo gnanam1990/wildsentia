@@ -6,6 +6,7 @@ import { CONGO_DECIDUOUS_SHARE, congoSeasonalDryness } from './seasonalLeaves.js
 import { CONGO_KINDS, congoCrownMaterials, congoLeafDepthMaterial, congoPartMaterial, congoSeasonDry, congoPlantParts, planCongoPatch, type CongoKind, type PlacedPlant, type PlantParts } from './congoPlants.js';
 import { buildCongoWater, buildDistantRivers, type LoadedGround } from './congoWater.js';
 import { congoTexture } from './congoTextures.js';
+import { BANK_CLEAR_M, congoPool, insidePool, waterGround, type Pool } from './pools.js';
 
 /** How far from the camera's focus each kind of plant is drawn one by one (metres). */
 export const KIND_RADIUS_M: Record<CongoKind, number> = {
@@ -43,6 +44,8 @@ export class CongoForest {
   /** Where the canopy surface is cut away for the near plants. */
   canopyHole = { x: 0, z: 0, radius: KIND_RADIUS_M.canopy - 40 };
   #patches: readonly PatchView[] = [];
+  /** Each loaded patch's forest pool (where its animals drink): no plant stands in one. */
+  #pools = new Map<number, Pool>();
   #seed = 0;
   /** Each patch's plants, by kind, planned when first needed; least recently used dropped first. */
   #plans = new Map<number, Map<CongoKind, PlacedPlant[]>>();
@@ -69,6 +72,8 @@ export class CongoForest {
   /** A new region set or season: new canopy surface and water; the near plants are planted again on the next update. */
   setScene(patches: readonly PatchView[], seed: number, flooded: boolean): void {
     this.#patches = patches; this.#seed = seed; this.#focus = null;
+    const shores = waterGround(patches);
+    this.#pools = new Map(patches.flatMap((p) => { const pool = congoPool(p, shores); return pool ? [[p.id, pool] as const] : []; }));
     const ids = new Set(patches.map((p) => p.id));
     for (const id of [...this.#plans.keys()]) if (!ids.has(id)) this.#plans.delete(id);
     const ground = loadedGround(patches);
@@ -136,8 +141,10 @@ export class CongoForest {
         for (const k of missing) byKind.set(k, []);
         for (const plant of planned) byKind.get(plant.kind)!.push(plant);
       }
+      const pool = this.#pools.get(patch.id);
       for (const kind of kinds) for (const plant of byKind.get(kind)!) {
         if (Math.hypot(plant.x - focus.x, plant.z - focus.z) > KIND_RADIUS_M[kind]) continue;
+        if (pool && insidePool(pool, plant.x, plant.z, BANK_CLEAR_M(pool) + (TREES.has(kind) ? 1 : 0))) continue;
         const list = chosen.get(kind) ?? [];
         list.push(plant); chosen.set(kind, list);
       }

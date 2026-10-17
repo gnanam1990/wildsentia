@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { ISLAND_SEGMENTS, treeAnchorForPatch, treeAnchorRemnantForPatch } from '@vana/shared';
 import { islandHeightField } from './islandHeightField.js';
 import { groundTint } from './groundTint.js';
-import { BANK_CLEAR_M, insidePool, islandPool, waterGround, type Pool } from './pools.js';
+import { BANK_CLEAR_M, congoPool, insidePool, islandPool, waterGround, type Pool } from './pools.js';
 import { buildPools, poolPlane } from './poolScene.js';
 import { patchCentre } from './space.js';
 
@@ -400,9 +400,14 @@ float litterNoise(vec2 p) { vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 
       float litterShare = texture2D(groundLayers, (vGroundWorld.xz + ${(worldGrid().patchM / 2).toFixed(1)}) / ${span.toFixed(1)}).r;
       vec4 baiTex = texture2D(baiMap, vMapUv * 0.5) * 0.85;
       diffuseColor *= mix(baiTex, litterTex, smoothstep(0.05, 0.35, litterShare));
+      // Past the drawn undergrowth (herbs to 70 m, Marantaceae to 140 m) the floor reads as the
+      // seedlings and low leaves that cover it, not bare litter: the far trunks stand in green.
+      float floorFar = smoothstep(45.0, 170.0, distance(vGroundWorld.xyz, cameraPosition)) * smoothstep(0.05, 0.35, litterShare);
+      vec3 understorey = vec3(0.13, 0.21, 0.07) * (0.75 + 0.5 * litterNoise(vGroundWorld.xz * 0.045 + 1.7));
+      diffuseColor.rgb = mix(diffuseColor.rgb, understorey, floorFar * 0.75);
       #endif`);
   };
-  material.customProgramCacheKey = () => `${key.call(material)}:congo-litter-v6`;
+  material.customProgramCacheKey = () => `${key.call(material)}:congo-litter-v7`;
 }
 
 function buildGroundMesh(patches: readonly PatchView[]): THREE.Mesh {
@@ -622,6 +627,10 @@ export function buildTerrain(patches: readonly PatchView[], layers?: ReadonlySet
   for (const mesh of [flow.river, flow.waterfall]) if (mesh) group.add(mesh);
   if (island && wanted('water')) {
     group.add(buildPools(waterPatches.flatMap((p) => { const pool = islandPool(p, shores); return pool ? [pool as Pool] : []; }), groundAt));
+  }
+  // The Congo's forest pools, where its animals drink (its rivers and flood are the forest layer's).
+  if (congo && wanted('water')) {
+    group.add(buildPools(patches.flatMap((p) => { const pool = congoPool(p, shores); return pool ? [pool] : []; }), groundAt));
   }
   // Kept so the far-field can be hidden near the camera and restored exactly (hideFarFieldNear).
   for (const mesh of [grass, rock, trunk, canopy]) {

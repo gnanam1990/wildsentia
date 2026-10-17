@@ -117,16 +117,43 @@ function trunk(height: number, r0: number, r1: number, bark: number, random: () 
   return finish(g, (_y, i) => base.clone().lerp(streak, shade[i % shade.length]! * 0.6));
 }
 
-/** Plank buttresses: thin fins running out from the trunk's foot, as Congo canopy trees stand on. */
-function buttresses(count: number, height: number, reach: number, colour: number, random: () => number): THREE.BufferGeometry[] {
+/** Plank buttresses: fins running out from the trunk's foot all round, as Congo canopy trees stand on. */
+function buttresses(count: number, height: number, reach: number, trunkR: number, colour: number, random: () => number): THREE.BufferGeometry[] {
   const fins: THREE.BufferGeometry[] = [];
-  for (let i = 0; i < count; i++) {
-    const shape = new THREE.Shape([new THREE.Vector2(0, 0), new THREE.Vector2(reach * (0.8 + random() * 0.4), 0), new THREE.Vector2(0, height * (0.8 + random() * 0.4))]);
-    const fin = new THREE.ExtrudeGeometry(shape, { depth: 0.18, bevelEnabled: false }).translate(0, 0, -0.09)
-      .rotateY((i / count) * Math.PI * 2 + random() * 0.4);
-    fins.push(finish(fin, () => new THREE.Color(colour).lerp(new THREE.Color(0xffffff), 0.55)));
-  }
+  for (let i = 0; i < count; i++) fins.push(buttressFin(height, reach, trunkR, colour, random).rotateY((i / count) * Math.PI * 2 + random() * 0.4));
   return fins;
+}
+
+/**
+ * One plank buttress running out along +x from a trunk of radius `trunkR`. Its top edge sweeps
+ * down from high on the trunk to the ground in a concave curve (a straight slope read as a flat
+ * triangle), it thins from the trunk to its tip and wanders a little sideways, and it reaches
+ * 0.3 m into the ground so it meets the floor on a slope. Its bark is the trunk's, tiled the same.
+ */
+export function buttressFin(height: number, reach: number, trunkR: number, colour: number, random: () => number): THREE.BufferGeometry {
+  const steps = 10, h = height * (0.8 + random() * 0.4), r = reach * (0.8 + random() * 0.4), wander = (random() - 0.5) * 0.6, x0 = trunkR * 0.6;
+  const positions: number[] = [], uvs: number[] = [], index: number[] = [];
+  for (let k = 0; k <= steps; k++) {
+    const t = k / steps, x = x0 + (r - x0) * t, top = h * Math.pow(1 - t, 2.4) + 0.05, half = 0.2 * (1 - t) + 0.025, z = wander * t * t;
+    // Four edges a station: the two faces' feet and their tops.
+    for (const [y, side] of [[-0.3, -1], [top, -1], [top, 1], [-0.3, 1]] as const) {
+      positions.push(x, y, z + side * half);
+      uvs.push(x / BARK_TILE_M, (y + 0.3) / BARK_TILE_M);
+    }
+    if (k === 0) continue;
+    const a = (k - 1) * 4, b = k * 4;
+    // The near face, the top and the far face, wound outward.
+    index.push(a, b, a + 1, b, b + 1, a + 1, a + 1, b + 1, a + 2, b + 1, b + 2, a + 2, a + 2, b + 2, a + 3, b + 2, b + 3, a + 3);
+  }
+  const tip = steps * 4;
+  index.push(tip, tip + 3, tip + 1, tip + 3, tip + 2, tip + 1);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  g.setIndex(index);
+  g.computeVertexNormals();
+  const base = new THREE.Color(colour).lerp(new THREE.Color(0xffffff), 0.6);
+  return finish(g, () => base);
 }
 
 /** Branches from the upper trunk out under the crown. */
@@ -194,10 +221,10 @@ function plantParts(kind: CongoKind): PlantParts {
   const merge = (list: THREE.BufferGeometry[]) => mergeGeometries(list)!;
   switch (kind) {
     case 'emergent':
-      return { wood: merge([trunk(44, 0.95, 0.5, 0xb7a990, random), ...buttresses(5, 5, 3.4, 0xa89a80, random), ...limbs(5, 37, 9, 0.35, 0x9a8c72, random)]),
+      return { wood: merge([trunk(44, 0.95, 0.5, 0xb7a990, random), ...buttresses(5, 5, 3.4, 0.95, 0xb7a990, random), ...limbs(5, 37, 9, 0.35, 0x9a8c72, random)]),
         leaves: crown(220, 4.5, 46, 12, 3.6, random) };
     case 'canopy':
-      return { wood: merge([trunk(28, 0.6, 0.32, 0x8c7c64, random), ...buttresses(3, 2.6, 1.8, 0x7e6f58, random), ...limbs(4, 23, 6, 0.22, 0x7a6a52, random), ...lianas(3, 25, 5, random)]),
+      return { wood: merge([trunk(28, 0.6, 0.32, 0x8c7c64, random), ...buttresses(3, 2.6, 1.8, 0.6, 0x8c7c64, random), ...limbs(4, 23, 6, 0.22, 0x7a6a52, random), ...lianas(3, 25, 5, random)]),
         leaves: crown(190, 4.2, 29.5, 8.5, 4.2, random) };
     case 'midstory':
       return { wood: trunk(14, 0.26, 0.14, 0x6e604c, random), leaves: crown(70, 2.8, 14, 4.2, 3, random) };

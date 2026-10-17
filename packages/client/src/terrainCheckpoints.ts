@@ -12,10 +12,11 @@ export function terrainKeys(patches: readonly PatchView[]): Record<TerrainLayer 
   const land = (p: PatchView) => p.surface === undefined || p.surface === 'land';
   const grass = patches.filter((p) => land(p) && p.grass > 100 && p.habitat !== 'water' && p.water <= 20_000);
   // The same patches terrain.ts draws water for: every positive stock on the island is a pool.
-  // Congo: the rivers, and the flooded forest while it is flooded (terrain.ts draws the same).
-  const water = patches.filter((p) => land(p) && (seed !== undefined
-    ? Number.isFinite(p.water) && p.water > 0
-    : p.congoSeed !== undefined ? p.habitat === 'water' || p.flooded === true : p.habitat === 'water' || p.water > 20_000));
+  // Congo: its forest pools (every patch with water), and the flooded forest while it is flooded.
+  const congo = patches[0]?.congoSeed !== undefined;
+  const water = patches.filter((p) => land(p) && (seed !== undefined || congo
+    ? (Number.isFinite(p.water) && p.water > 0) || (congo && p.flooded === true)
+    : p.habitat === 'water' || p.water > 20_000));
   const trees = JSON.stringify([height, patches.filter((p) => land(p) && ((p.canopyCover ?? 0) >= .3
     || treeAnchorRemnantForPatch(worldGrid(), p) !== null)).map((p) => [p.id, treeAnchorRemnantForPatch(worldGrid(), p) ? 'remnant' : 'live'])]);
   return {
@@ -23,7 +24,8 @@ export function terrainKeys(patches: readonly PatchView[]): Record<TerrainLayer 
     ground: JSON.stringify([height, patches.map((p) => [p.id, p.habitat])]),
     grass: JSON.stringify([height, grass.map((p) => [p.id, Math.min(1, p.grass / 6000)])]),
     water: JSON.stringify([seed === undefined ? 'mainland' : height, water.map((p) => [p.id,
-      seed === undefined ? patchHeight(p) : Math.max(2, Math.min(40, Math.sqrt(p.water / 1000 / Math.PI)))]),
+      seed === undefined && !congo ? patchHeight(p) : Math.max(2, Math.min(congo ? 12 : 40, Math.sqrt(p.water / 1000 / Math.PI))),
+      ...(congo ? [p.flooded === true] : [])]),
       patches.filter((p) => p.drainage !== undefined).map((p) => [p.id, p.drainage?.downstreamPatchId,
         p.drainage?.outflowL, p.drainage?.inflowL])]),
     rock: JSON.stringify([height, patches.filter((p) => land(p) && p.habitat === 'rock').map((p) => p.id)]),

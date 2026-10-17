@@ -32,7 +32,7 @@ import { characterScale, markerSize } from './appearance.js';
 import { LiveEncounterPlayer, recordedClimbPhase, withRecordedVisualIdentity } from './liveEncounters.js';
 import { ObserverVisibility, type ObserverSubject } from './observerVisibility.js';
 import { refreshSpeciesOptions } from './speciesPicker.js';
-import { islandPool, waterGround } from './pools.js';
+import { drinkingPool, waterGround } from './pools.js';
 import { stackLabels } from './labelLayout.js';
 import { restoreFollowOnOpen } from './followSubscription.js';
 import { LIVE_BUSY_CLOSE_CODE, ReconnectBackoff } from './reconnect.js';
@@ -574,7 +574,7 @@ const sceneUpdates = new SceneUpdates<{
         document.querySelector<HTMLButtonElement>('#open-community')!.hidden = !update.environment.community;
       }
       const ground = waterGround(update.environment.patches);
-      animals.pools = update.environment.patches.flatMap((patch) => { const pool = islandPool(patch, ground); return pool ? [pool] : []; });
+      animals.pools = update.environment.patches.flatMap((patch) => { const pool = drinkingPool(patch, ground); return pool ? [pool] : []; });
       microEcology.sync(update.environment.microEcology, update.environment.patches, prepared.terrain.height);
       communityLayer.sync(update.environment.community, prepared.terrain.height);
       communityLayer.setReplay(replay !== null);
