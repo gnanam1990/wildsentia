@@ -39,11 +39,10 @@ function allChannel(grid: WorldGrid, seed: number, patchId: number): boolean {
 /** Whether a river's channel can reach into a patch: its centre is within the channel's half-width
  * and the patch's half-diagonal of the river's line (one lookup a patch, cached). A channel cut
  * through flooded-forest patches too, not only those classed as river. */
-const touchCache = new Map<string, Uint8Array>();
+const touchCache = { seed: NaN, grid: null as WorldGrid | null, flags: new Uint8Array(0) };
 function touchesChannel(grid: WorldGrid, seed: number, patchId: number): boolean {
-  const key = `${seed}:${grid.cols}x${grid.rows}`;
-  let flags = touchCache.get(key);
-  if (!flags) touchCache.set(key, flags = new Uint8Array(grid.cols * grid.rows));
+  if (touchCache.seed !== seed || touchCache.grid !== grid) Object.assign(touchCache, { seed, grid, flags: new Uint8Array(grid.cols * grid.rows) });
+  const flags = touchCache.flags;
   if (flags[patchId] === 0) {
     const c = patchCentre(grid, patchId), at = congoRiverAt(grid, seed, c.x, c.z);
     flags[patchId] = at.distanceM <= at.halfM + grid.patchM * Math.SQRT1_2 ? 2 : 1;
@@ -51,19 +50,30 @@ function touchesChannel(grid: WorldGrid, seed: number, patchId: number): boolean
   return flags[patchId] === 2;
 }
 
-/** A patch's dry waypoint on a route: the dry point nearest its centre (cached), for an animal that
- * does not cross rivers passing through a patch a channel touches; elsewhere its own fixed spot. */
-const passCache = new Map<string, WorldPosition | null>();
+/** A patch's waypoint on a route for an animal that does not cross rivers, the same for every animal
+ * near a river (so whether a step crosses a channel is the patches' own, cached): in a patch a channel
+ * touches, its dry point nearest the centre; in a patch beside one, its centre (dry, as the channel
+ * does not reach it); elsewhere the animal's own fixed spot. */
+const passCache = { seed: NaN, grid: null as WorldGrid | null, points: new Map<number, WorldPosition | null>() };
 function passPoint(grid: WorldGrid, id: string, patch: Pick<Patch, 'id' | 'congoSeed' | 'habitat'>, cfg: SpeciesConfig): WorldPosition {
   const seed = patch.congoSeed;
-  if (seed === undefined || crossesRivers(cfg) || !touchesChannel(grid, seed, patch.id)) return initialPosition(grid, id, patch.id);
-  const key = `${seed}:${grid.cols}:${patch.id}`;
-  let point = passCache.get(key);
+  if (seed === undefined || crossesRivers(cfg)) return initialPosition(grid, id, patch.id);
+  if (!touchesChannel(grid, seed, patch.id)) {
+    const col = patch.id % grid.cols, row = Math.floor(patch.id / grid.cols);
+    let beside = false;
+    for (let dr = -1; dr <= 1 && !beside; dr++) for (let dc = -1; dc <= 1 && !beside; dc++) {
+      const c = col + dc, r = row + dr;
+      if ((dc || dr) && c >= 0 && r >= 0 && c < grid.cols && r < grid.rows) beside = touchesChannel(grid, seed, r * grid.cols + c);
+    }
+    return beside ? { ...patchCentre(grid, patch.id), heading: 0 } : initialPosition(grid, id, patch.id);
+  }
+  if (passCache.seed !== seed || passCache.grid !== grid) Object.assign(passCache, { seed, grid, points: new Map() });
+  let point = passCache.points.get(patch.id);
   if (point === undefined) {
     const c = patchCentre(grid, patch.id), dry = dryGround(grid, seed, patch.id);
     let best = -1, bestD = Infinity;
     for (let i = 0; i < dry.length; i += 2) { const d = Math.hypot(dry[i]! - c.x, dry[i + 1]! - c.z); if (d < bestD) { bestD = d; best = i; } }
-    passCache.set(key, point = best < 0 ? null : { x: dry[best]!, z: dry[best + 1]!, heading: 0 });
+    passCache.points.set(patch.id, point = best < 0 ? null : { x: dry[best]!, z: dry[best + 1]!, heading: 0 });
   }
   return point ?? initialPosition(grid, id, patch.id);
 }
@@ -86,6 +96,9 @@ function stepCrossesChannel(grid: WorldGrid, seed: number, a: WorldPosition, b: 
 /** How far a straight line from `origin` along `heading` runs before it enters a river's channel
  * (4 m steps, up to 400 m): where a chase stops for an animal that does not swim. */
 export function channelRayDistance(grid: WorldGrid, seed: number, origin: WorldPosition, heading: number): number {
+  // No river within the ray's reach: one lookup, not a hundred.
+  const near = congoRiverAt(grid, seed, origin.x, origin.z);
+  if (near.distanceM - near.halfM - 3 > 400) return Infinity;
   const vx = Math.sin(heading), vz = Math.cos(heading);
   for (let d = 4; d <= 400; d += 4) if (inCongoChannel(grid, seed, origin.x + vx * d, origin.z + vz * d)) return Math.max(0, d - 4);
   return Infinity;
@@ -217,6 +230,22 @@ function pieces(grid: WorldGrid, from: WorldPosition, fromId: number, toId: numb
   return [{ target: edge, cost: blocked ? Infinity : costOf(grid, patches[fromId]!, cfg) }, { target, cost: costOf(grid, patches[toId]!, cfg) }];
 }
 
+/** Whether the step between two patches' route waypoints crosses a channel, for an animal that does
+ * not cross rivers: fixed for a world, found once a pair (the route search prices every neighbour). */
+const pairCache = { seed: NaN, grid: null as WorldGrid | null, pairs: new Map<number, boolean>() };
+function wadesBetween(grid: WorldGrid, fromId: number, toId: number, id: string, patches: Patch[], cfg: SpeciesConfig): boolean {
+  const seed = patches[toId]!.congoSeed;
+  if (seed === undefined || crossesRivers(cfg) || !touchesChannel(grid, seed, fromId) && !touchesChannel(grid, seed, toId)) return false;
+  if (pairCache.seed !== seed || pairCache.grid !== grid) Object.assign(pairCache, { seed, grid, pairs: new Map() });
+  const key = fromId * grid.cols * grid.rows + toId;
+  let crosses = pairCache.pairs.get(key);
+  if (crosses === undefined) {
+    crosses = stepCrossesChannel(grid, seed, passPoint(grid, id, patches[fromId]!, cfg), passPoint(grid, id, patches[toId]!, cfg));
+    pairCache.pairs.set(key, crosses);
+  }
+  return crosses;
+}
+
 /** Whether a step from `from` to `target` would take an animal that does not cross rivers through a channel. */
 function wades(grid: WorldGrid, from: WorldPosition, target: WorldPosition, fromId: number, toId: number, patches: Patch[], cfg: SpeciesConfig): boolean {
   const seed = patches[toId]!.congoSeed;
@@ -256,9 +285,10 @@ class RouteQueue {
 /** The cost of one route step: the same sum as walking `pieces`, without building them (the
  * route search prices every neighbour it considers). */
 function stepCost(grid: WorldGrid, from: WorldPosition, fromId: number, toId: number, id: string, patches: Patch[], cfg: SpeciesConfig,
-  endpoint: WorldPosition | undefined, final: boolean): number {
+  endpoint: WorldPosition | undefined, final: boolean, fromWaypoint = false): number {
   const target = endpoint ?? (final ? standingPoint(grid, id, patches[toId]!, cfg) : passPoint(grid, id, patches[toId]!, cfg));
-  if (!endpoint && wades(grid, from, target, fromId, toId, patches, cfg)) return Infinity;
+  // Between two waypoints the answer is the pair's (cached); from the animal itself or to its own spot, asked.
+  if (!endpoint && (fromWaypoint && !final ? wadesBetween(grid, fromId, toId, id, patches, cfg) : wades(grid, from, target, fromId, toId, patches, cfg))) return Infinity;
   const toCost = costOf(grid, patches[toId]!, cfg);
   if (fromId === toId) return distance(from, target) * toCost;
   const a = patchCentre(grid, fromId), b = patchCentre(grid, toId);
@@ -292,7 +322,7 @@ export function planRoute(grid: WorldGrid, agent: Agent, destination: number, pa
     const point = current.id === start ? origin : passPoint(grid, agent.id, patches[current.id]!, cfg);
     for (const next of [...patches[current.id]!.neighbours].sort((a, b) => a - b)) {
       if (!patches[next] || next !== destination && throughOnly(patches[next]!, cfg)) continue;
-      const value = current.cost + stepCost(grid, point, current.id, next, agent.id, patches, cfg, next === destination ? endpoint : undefined, next === destination);
+      const value = current.cost + stepCost(grid, point, current.id, next, agent.id, patches, cfg, next === destination ? endpoint : undefined, next === destination, current.id !== start);
       if (!Number.isFinite(value) || value >= (costs.get(next) ?? Infinity)) continue;
       costs.set(next, value); parents.set(next, current.id); queue.push(next, value);
     }

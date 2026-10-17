@@ -37,6 +37,16 @@ export function inCongoChannel(grid: WorldGrid, seed: number, x: number, z: numb
   return at.distanceM <= at.halfM + 3;
 }
 
+/** Whether a patch's tree anchor stands in a river's channel: fixed for a world, so found once a patch
+ * (it was a fifth of a Congo hour, asked for every neighbour of every monkey up a tree). */
+const anchorChannel = { seed: NaN, grid: null as WorldGrid | null, flags: new Uint8Array(0) };
+function anchorInChannel(grid: WorldGrid, seed: number, patchId: number, at: { x: number; z: number }): boolean {
+  if (anchorChannel.seed !== seed || anchorChannel.grid !== grid) Object.assign(anchorChannel, { seed, grid, flags: new Uint8Array(grid.cols * grid.rows) });
+  // 0 unknown, 1 dry, 2 in the channel.
+  if (anchorChannel.flags[patchId] === 0) anchorChannel.flags[patchId] = inCongoChannel(grid, seed, at.x, at.z) ? 2 : 1;
+  return anchorChannel.flags[patchId] === 2;
+}
+
 /** The nearest Congo river to a point: how far its centre line is, and its channel's half-width. */
 export function congoRiverAt(grid: WorldGrid, seed: number, x: number, z: number): { distanceM: number; halfM: number } {
   const key = `${seed}:${grid.cols}x${grid.rows}:${grid.patchM}`;
@@ -86,7 +96,7 @@ export function treeAnchorForPatch(grid: WorldGrid, patch: TreeAnchorPatch): Tre
       && patch.canopyCover >= 0.3 && patch.canopyCover <= 1)
     || !treedHabitat(patch.habitat)
     // A Congo river may cross a forest patch: no tree stands in its channel.
-    || (patch.congoSeed !== undefined && inCongoChannel(grid, patch.congoSeed, geometry.x, geometry.z))) return null;
+    || (patch.congoSeed !== undefined && anchorInChannel(grid, patch.congoSeed, patch.id, geometry))) return null;
   return {
     ...geometry,
     visualKind: habitatAnalogue(patch.habitat) === 'shola' ? 'CommonTree_1' : 'TwistedTree_1',

@@ -122,13 +122,22 @@ export function canopyLinked(grid: WorldGrid, from: TreeAnchorPatch, to: TreeAnc
   if (!a || !b) return false;
   const seed = to.congoSeed ?? from.congoSeed;
   if (seed === undefined) return true;
-  const length = Math.hypot(b.x - a.x, b.z - a.z), steps = Math.max(1, Math.ceil(length / CANOPY_SAMPLE_M));
-  for (let k = 1; k < steps; k++) {
-    const t = k / steps;
-    if (inCongoChannel(grid, seed, a.x + (b.x - a.x) * t, a.z + (b.z - a.z) * t)) return false;
+  // Whether a river runs between two neighbouring trunks is fixed for a world: found once a pair.
+  if (overRiver.seed !== seed || overRiver.grid !== grid) Object.assign(overRiver, { seed, grid, pairs: new Map<number, boolean>() });
+  const key = Math.min(from.id, to.id) * grid.cols * grid.rows + Math.max(from.id, to.id);
+  let blocked = overRiver.pairs.get(key);
+  if (blocked === undefined) {
+    const length = Math.hypot(b.x - a.x, b.z - a.z), steps = Math.max(1, Math.ceil(length / CANOPY_SAMPLE_M));
+    blocked = false;
+    for (let k = 1; k < steps && !blocked; k++) {
+      const t = k / steps;
+      blocked = inCongoChannel(grid, seed, a.x + (b.x - a.x) * t, a.z + (b.z - a.z) * t);
+    }
+    overRiver.pairs.set(key, blocked);
   }
-  return true;
+  return !blocked;
 }
+const overRiver = { seed: NaN, grid: null as WorldGrid | null, pairs: new Map<number, boolean>() };
 
 /**
  * A canopy dweller crosses aloft from its tree to a neighbouring patch's, branch to branch at
