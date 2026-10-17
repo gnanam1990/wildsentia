@@ -52,7 +52,10 @@ The agile mangabey now lives in the canopy:
 - **Time aloft:** in a six-day run an independent mangabey spends about 87% of its hours aloft.
   Field studies give 78-88%.
 - **On screen:** a crossing is drawn walking along the branches, body level, at canopy height. Its
-  life story reads "Moved through the canopy to the next tree".
+  life story reads "Moved through the canopy to the next tree". A mangabey resting up a tree is
+  drawn sitting out on a limb from the trunk, never inside the trunk. The limb stays drawn when
+  the view clears the leaves round a followed animal. An animal chosen from the list is framed
+  close up when it loads.
 
 ## Still open
 

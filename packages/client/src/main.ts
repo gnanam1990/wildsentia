@@ -24,7 +24,8 @@ import { CommunityLayer } from './communityLayer.js';
 import { loadLifeHistory, loadSelectedClimb, loadSelectedEncounter } from './lifeHistory.js';
 import { encounterAt, isRecordedEncounter, ReplayClock, type RecordedEncounter } from './encounterReplay.js';
 import { huntMoment, huntReplaySeconds } from './huntActs.js';
-import { visualFor } from './species.js';
+import { SPECIES_VISUALS, visualFor } from './species.js';
+import { speciesName } from './animalBrowserModel.js';
 import { Atmosphere, atmosphereAt, observerExposure } from './environment.js';
 import { groundTint } from './groundTint.js';
 import { wind } from './wind.js';
@@ -447,7 +448,9 @@ function watch(id: string | null): void {
   // A far animal is not loaded yet: its id names its species (`blue_duiker_00ab`).
   const named = id?.slice(0, Math.max(0, id.lastIndexOf('_'))) ?? '';
   speciesPicker.value = subject?.speciesId ?? ([...speciesPicker.options].some((o) => o.value === named) ? named : '');
-  if (subject) follow.flyToDistance(followDistanceFor(subject.speciesId, visualFor(subject.speciesId).heightM));
+  // A far one is framed by its named species, so it is seen close up when its regions load.
+  const framed = subject?.speciesId ?? (named in SPECIES_VISUALS ? named : null);
+  if (framed !== null) follow.flyToDistance(followDistanceFor(framed, visualFor(framed).heightM));
   hud.cancelRecap();
   recapPending = id;
   lastFollowed.set(id);
@@ -878,7 +881,7 @@ function renderFrame(dt: number, now: number): void {
   communityMotionNotice.hidden = !communityText;
   // Following an animal up a tree, the camera is among its leaves: clear them further out.
   const aloft = followedId !== null && (animals.positionOf(followedId, now)?.altitudeM ?? 0) > 4;
-  observerVisibility.setLensReach(aloft ? 8 : 0);
+  observerVisibility.setLensReach(aloft ? 5 : 0);
   observerVisibility.update(camera, renderer.getDrawingBufferSize(drawingSize), revealAnimal.checked ? observerSubjects : []);
   prepareShadows(performance.now());
   renderer.render(scene, camera);
@@ -1090,7 +1093,7 @@ function frame(): void {
     const p = new THREE.Vector3(pose.position.x,
       renderBaseY(pose.position, animals.groundHeightAt) + bubbleHeight(pose.animal), pose.position.z).project(camera);
     label.hidden = p.z < -1 || p.z > 1 || Math.abs(p.x) > 1 || Math.abs(p.y) > 1;
-    const species = SPECIES_LABEL[pose.animal.speciesId] ?? pose.animal.speciesId.replace(/^./, (c) => c.toUpperCase());
+    const species = SPECIES_LABEL[pose.animal.speciesId] ?? speciesName(pose.animal.speciesId);
     const avatar = liveAgents.avatarForAnimal(pose.animal.id);
     const text = avatar ? `${avatar.name} · ${species} · ${activityOf(avatar)}` : `${species} · ${ACTIVITY_LABEL[pose.animal.state] ?? pose.animal.state}`;
     if (label.textContent !== text) label.textContent = text;
@@ -1182,7 +1185,7 @@ function renderAgentsChip(): void {
       Object.assign(button.dataset, data);
       r.append(span, button); rows.push(r);
     };
-    for (const a of avatars.slice(0, 200)) row(a.name, `${SPECIES_LABEL[a.speciesId] ?? a.speciesId.replace(/^./, (c) => c.toUpperCase())} · ${rosterActivity(a)}`, 'Follow', { followAnimal: a.animalId });
+    for (const a of avatars.slice(0, 200)) row(a.name, `${SPECIES_LABEL[a.speciesId] ?? speciesName(a.speciesId)} · ${rosterActivity(a)}`, 'Follow', { followAnimal: a.animalId });
     for (const d of drops) row(`${usdc(d.amountMicro)} USDC drop`, d.spotted ? 'spotted: race to open it' : 'somewhere in the gold circle', 'Look', { lookDrop: d.id }, 'drop-row');
     agentsList.replaceChildren(...rows);
   }

@@ -29,12 +29,17 @@ describe('spreading a troop through its tree', () => {
     expect(spreadInCrowns([a, b, c]).get(a.id)).toEqual(first);
   });
 
-  it('leaves alone a lone climber, one climbing the trunk, and animals in different trees', () => {
-    const lone = spreadInCrowns([at('m1')]);
-    expect(lone.get('m1')).toBeUndefined();
+  it('puts a lone climber out on a limb, not inside the trunk, and names the trunk', () => {
+    const lone = spreadInCrowns([at('m1')]).get('m1')!;
+    expect(Math.hypot(lone.x - 100, lone.z - 200)).toBeGreaterThan(1);
+    expect(lone).toMatchObject({ trunkX: 100, trunkZ: 200 });
+  });
+
+  it('leaves alone one climbing the trunk, and keeps animals in different trees in their own', () => {
     const climbing = spreadInCrowns([at('m1', 100, 200, 12, true), at('m2', 100, 200, 20)]);
     expect(climbing.get('m1')).toBeUndefined();
     const apart = spreadInCrowns([at('m1', 100, 200), at('m2', 400, 200)]);
-    expect(apart.size).toBe(0);
+    expect(apart.get('m1')).toMatchObject({ trunkX: 100, trunkZ: 200 });
+    expect(apart.get('m2')).toMatchObject({ trunkX: 400, trunkZ: 200 });
   });
 });
