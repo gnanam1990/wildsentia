@@ -8,6 +8,7 @@ import { chooseVisible } from './lod.js';
 import { RENDER_BUDGETS, type RenderTier } from './renderQuality.js';
 import { visualFor, visualForAnimal } from './species.js';
 import { onShore, type Pool } from './pools.js';
+import { spreadInCrowns, type PerchSubject } from './crownPerch.js';
 import { characterScale, coatMultiplier } from './appearance.js';
 import { separateBodies, type Body, type Obstacle, type ObstacleField } from './obstacles.js';
 import type { LivePose } from './liveEncounters.js';
@@ -312,6 +313,15 @@ export class AnimalLayer {
       this.tracker.update(animal.id, animal.patchId, nowMs, animal.position, animal.altitudeM);
       positions.set(animal.id, this.tracker.positionAt(animal.id, nowMs));
     }
+    // A troop resting up one tree is recorded at the tree's one point: spread it through the crown.
+    const aloft: PerchSubject[] = [];
+    for (const [id, p] of positions) {
+      const animal = animals.get(id)!;
+      if ((p.altitudeM ?? 0) > 0 && arboreal(animal.speciesId) && !flies(animal.speciesId) && !recorded.has(id)) {
+        aloft.push({ id, x: p.x, z: p.z, altitudeM: p.altitudeM!, moving: p.moving });
+      }
+    }
+    for (const [id, place] of spreadInCrowns(aloft)) positions.set(id, { ...positions.get(id)!, ...place });
     const budget = RENDER_BUDGETS[this.quality];
     const visible = chooseVisible(positions, focus, followedId, { max: budget.animalModels, radiusM: budget.animalRadius });
     const partner = followedId === null ? undefined : recorded.get(followedId)?.partnerId;

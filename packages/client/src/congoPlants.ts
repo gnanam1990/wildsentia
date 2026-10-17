@@ -72,9 +72,10 @@ export function planCongoPatch(patch: Pick<PatchView, 'id' | 'habitat'> & Partia
       if (!inChannel(x, z)) out.push({ kind, x, z, scale, rotY });
     }
   }
-  // Where a leopard or golden cat climbs (shared/treeAnchor.ts, 6 m up), a real canopy tree stands.
+  // Where an animal climbs or a bird perches (shared/treeAnchor.ts), a real canopy tree stands, at
+  // the size the heights there are measured on: limbs 23-30 m, crown to 34 m.
   const anchor = !kinds || kinds.has('canopy') ? treeAnchorForPatch(grid, patch) : null;
-  if (anchor && !inChannel(anchor.x, anchor.z)) out.push({ kind: 'canopy', x: anchor.x, z: anchor.z, scale: 0.85, rotY: spatialHash(`congo-climb-tree:${patch.id}`) / 0x1_0000_0000 * Math.PI * 2 });
+  if (anchor && !inChannel(anchor.x, anchor.z)) out.push({ kind: 'canopy', x: anchor.x, z: anchor.z, scale: 1, rotY: spatialHash(`congo-climb-tree:${patch.id}`) / 0x1_0000_0000 * Math.PI * 2 });
   if (patch.habitat !== 'bai' && (!kinds || kinds.has('rock')) && fromRiver <= widestHalf + ROCK_BANK_M) {
     const random = rng(spatialHash(`congo-plants:${seed}:${patch.id}:rock`));
     for (let i = 0; i < ROCK_TRIES; i++) {

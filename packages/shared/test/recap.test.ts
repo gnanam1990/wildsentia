@@ -41,6 +41,11 @@ describe('recapLine', () => {
       .toBe('Dropped from the tree to cover');
     expect(recapLine({ ...roost, outcome: 'interrupted', effects: { verticalDistanceM: 3 } }, 'mangabey_1')?.text)
       .toBe('Partly climbed a tree');
+    // Across aloft to the next tree, at the same height: a crossing, not a failed climb.
+    const hop = { ...roost, conditions: { direction: 'traverse', reason: 'canopy_travel' }, effects: { verticalDistanceM: 0 } };
+    expect(recapLine(hop, 'mangabey_1')?.text).toBe('Moved through the canopy to the next tree');
+    expect(recapLine({ ...hop, conditions: { direction: 'traverse', reason: 'canopy_forage' } }, 'mangabey_1')?.text)
+      .toBe('Crossed the canopy to feed in the next tree');
   });
   it('tells each side of a birth from its own point of view', () => {
     const born = ev({ id: 'born_1', type: 'born', actors: ['chital_0a', 'chital_01', 'chital_02'] });

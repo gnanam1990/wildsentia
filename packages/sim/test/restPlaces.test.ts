@@ -17,18 +17,19 @@ describe('resting places', () => {
     Object.assign(eagle, { patchId: patch.id, position: { x: c.x + 40, z: c.z + 30, heading: 0 }, dependentOn: null, pregnantSince: null,
       offspringIds: [], drives: { hunger: 0, thirst: 0, fatigue: 0.95, fear: 0 } });
     world.step(1);
-    expect(eagle.altitudeM).toBe(anchor.climbHeightM);
+    expect(eagle.altitudeM).toBe(anchor.perchHeightM); // on top of the crown
     expect(eagle.locomotionMode).toBe('climb');
     expect(eagle.treeAnchorId).toBe(anchor.id);
     expect(eagle.position!.x).toBeCloseTo(anchor.x, 6); expect(eagle.position!.z).toBeCloseTo(anchor.z, 6);
     const perch = world.log.all().find((e) => e.actors[0] === eagle.id && e.conditions.reason === 'perch')!;
-    expect(perch.movement!.samples.at(-1)!.altitudeM).toBe(anchor.climbHeightM);
+    expect(perch.movement!.samples.at(-1)!.altitudeM).toBe(anchor.perchHeightM);
     // A perched eagle is a valid checkpoint.
     expect(() => restoreSnapshot(takeSnapshot(world), { ...options, initialAgents: {} })).not.toThrow();
-    // It roosts through the night (a diurnal hunter) and leaves the branch to hunt by day.
+    // It roosts through the night (a diurnal hunter) and leaves its tree to hunt by day, searching
+    // from perch to perch (a crowned eagle hunts from perches) when it finds no prey.
     eagle.drives.hunger = 0.95; eagle.drives.fatigue = 0;
     let left = false;
-    for (let h = 0; h < 14 && !left; h++) { world.step(1); left = eagle.locomotionMode !== 'climb'; }
+    for (let h = 0; h < 14 && !left; h++) { world.step(1); left = eagle.treeAnchorId !== anchor.id; }
     expect(left).toBe(true);
   }, 120_000);
 

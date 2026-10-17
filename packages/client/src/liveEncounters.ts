@@ -21,7 +21,9 @@ export function recordedFlightPhase(trace: MovementTrace, seconds: number): Flig
     if (a.altitudeM === undefined || b.altitudeM === undefined) return null;
     if (b.altitudeM > a.altitudeM) return 'ascending';
     if (b.altitudeM < a.altitudeM) return 'descending';
-    return a.altitudeM > 0 ? 'gliding' : null;
+    // Level and moving across is a glide; level and still (a bird sitting on its perch) is not.
+    const across = Math.hypot(b.position.x - a.position.x, b.position.z - a.position.z) > 1e-6;
+    return a.altitudeM > 0 && across ? 'gliding' : null;
   }
   return null;
 }
@@ -34,6 +36,9 @@ export function recordedClimbPhase(trace: MovementTrace, seconds: number): Climb
   for (let i = 0; i < trace.samples.length - 1; i++) {
     const a = trace.samples[i]!, b = trace.samples[i + 1]!;
     if (seconds < a.seconds || seconds >= b.seconds) continue;
+    // Aloft at both ends and moving across: a canopy dweller crossing to the next tree.
+    if ((a.altitudeM ?? 0) > 0 && (b.altitudeM ?? 0) > 0
+      && Math.hypot(b.position.x - a.position.x, b.position.z - a.position.z) > 1e-6) return 'crossing';
     if (a.altitudeM === undefined || b.altitudeM === undefined
       || a.altitudeM < 0 || b.altitudeM < 0
       || a.altitudeM > anchor.climbHeightM || b.altitudeM > anchor.climbHeightM
@@ -253,6 +258,7 @@ export class LiveEncounterPlayer {
         ...(hurried && !drinking ? { hurried: true } : {}), partnerId: '',
         eventId: drinking ? activity!.eventId : m.eventId,
         phase: drinking ? 'recorded drinking window' : activity && seconds >= activity.endSeconds ? 'recorded drinking completed'
+          : climbVisualPhase === 'crossing' ? 'recorded canopy crossing'
           : climbVisualPhase ? `recorded tree ${climbVisualPhase === 'ascending' ? 'ascent' : 'descent'}`
           : position.moving ? 'recorded route' : m.trace.completed ? 'route endpoint' : 'partial route endpoint',
         ...(flightVisualPhase === null ? {} : { flightVisualPhase }),

@@ -24,7 +24,7 @@
     "sprintMs": 6.0,
     "sprintStaminaS": 40,
     "climbsTrees": true,
-    "climbHeightM": 20,
+    "climbHeightM": 26,
     "canopyDweller": true,
     "terrainCost": {
       "shola": 1.0,

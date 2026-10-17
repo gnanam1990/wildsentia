@@ -23,12 +23,35 @@ export interface Life {
 
 export interface RecordedClimb {
   eventId: string; outcome: 'success' | 'interrupted'; trace: MovementTrace;
-  direction: 'ascend' | 'descend'; reason: string; treeAnchorId: string; verticalDistanceM: number;
+  /** Up or down one trunk, or (a canopy dweller) across aloft from tree `from` to the trace's destination's. */
+  direction: 'ascend' | 'descend' | 'traverse'; reason: string; treeAnchorId: string; verticalDistanceM: number; from?: number;
 }
 const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
 
+/**
+ * A canopy crossing as the server's live index admits one: neighbouring trees, trunk to trunk in a
+ * straight line, above the ground the whole way.
+ */
+function isRecordedCrossing(value: Record<string, unknown>): boolean {
+  const grid = worldGrid(), trace = value.trace as MovementTrace, from = value.from, to = trace.destinationPatchId;
+  if (typeof from !== 'number' || !Number.isInteger(from) || from === to || !trace.completed || value.outcome !== 'success'
+    || Math.abs((from % grid.cols) - (to % grid.cols)) > 1 || Math.abs(Math.floor(from / grid.cols) - Math.floor(to / grid.cols)) > 1) return false;
+  const a = treeAnchorGeometry(grid, from), b = treeAnchorGeometry(grid, to);
+  if (!a || !b || value.treeAnchorId !== b.id || trace.goal !== treeClimbGoal('traverse', value.reason)) return false;
+  const top = Math.max(a.climbHeightM, b.climbHeightM), dx = b.x - a.x, dz = b.z - a.z, length = Math.hypot(dx, dz);
+  for (const sample of trace.samples) {
+    const altitude = sample.altitudeM ?? 0, rx = sample.position.x - a.x, rz = sample.position.z - a.z;
+    if (!(altitude > 0) || altitude > top || Math.abs(rx * dz - rz * dx) / Math.max(length, 1e-9) > 1e-3) return false;
+  }
+  const first = trace.samples[0]!, last = trace.samples.at(-1)!;
+  return Math.hypot(first.position.x - a.x, first.position.z - a.z) <= 1e-6 && Math.hypot(last.position.x - b.x, last.position.z - b.z) <= 1e-6
+    && typeof value.verticalDistanceM === 'number' && Math.abs(value.verticalDistanceM - Math.abs((last.altitudeM ?? 0) - (first.altitudeM ?? 0))) <= 1e-6;
+}
+
 /** A ground approach with zero vertical motion is a valid failed attempt, not a climb pose. */
 export function isRecordedClimb(value: unknown): value is RecordedClimb {
+  if (record(value) && value.direction === 'traverse' && typeof value.eventId === 'string' && value.eventId
+    && isMovementTrace(worldGrid(), value.trace) && treeClimbGoal(value.direction, value.reason) !== null) return isRecordedCrossing(value);
   if (!record(value) || typeof value.eventId !== 'string' || !value.eventId
     || !isMovementTrace(worldGrid(), value.trace) || (value.direction !== 'ascend' && value.direction !== 'descend')
     || treeClimbGoal(value.direction, value.reason) === null
@@ -52,6 +75,7 @@ export function isRecordedClimb(value: unknown): value is RecordedClimb {
 export function climbMoment(recording: RecordedClimb, seconds: number): string {
   const vertical = recording.verticalDistanceM > 0;
   const atEnd = seconds >= recording.trace.samples.at(-1)!.seconds;
+  if (recording.direction === 'traverse') return atEnd ? `Recorded crossing through the canopy · ${recording.outcome}` : 'Recorded crossing through the canopy';
   if (!vertical) return recording.direction === 'ascend'
     ? atEnd ? 'Recorded approach ended; no vertical climb occurred' : 'Recorded approach to tree'
     : atEnd ? 'Recorded descent attempt ended; no vertical movement occurred' : 'Recorded descent attempt';

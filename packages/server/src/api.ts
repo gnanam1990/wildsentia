@@ -125,7 +125,7 @@ export function buildApi({ host, pool, narrator, insights: insightDeps, live, re
     return view ? { worldTime: view.worldTime, nextSequence: view.nextSequence } : null;
   } });
 
-  const observationRoutes = new Set(['/world', '/animals', '/animals/:id', '/patches', '/hydrology', '/micro-ecology', '/carcasses', '/event-map', '/animals/:id/passport', '/animals/:id/life', '/animals/:id/encounters/:eventId', '/animals/:id/movements/:eventId', '/animals/:id/recap', '/animals/:id/events', '/events']);
+  const observationRoutes = new Set(['/world', '/animals', '/animals/list', '/animals/:id', '/patches', '/hydrology', '/micro-ecology', '/carcasses', '/event-map', '/animals/:id/passport', '/animals/:id/life', '/animals/:id/encounters/:eventId', '/animals/:id/movements/:eventId', '/animals/:id/recap', '/animals/:id/events', '/events']);
   const observations = new WeakMap<FastifyRequest, CheckpointObservation>();
   observationRoutes.add('/community');
   observationRoutes.add('/regions');
@@ -241,6 +241,30 @@ export function buildApi({ host, pool, narrator, insights: insightDeps, live, re
     animals: observed(request).livingAnimals().map(animalView),
   }));
 
+  /**
+   * The living animals to choose one to watch: by species, a page at a time, in id order, with a
+   * search by any part of the id. Small rows (no position or drives), so a viewer can browse every
+   * animal in a 41,000-animal world without fetching them all.
+   */
+  app.get<{ Querystring: { species?: string; q?: string; limit?: string; offset?: string } }>('/animals/list', async (request, reply) => {
+    const { species = '', q = '', limit = '50', offset = '0' } = request.query;
+    const take = Number(limit), skip = Number(offset);
+    if (species.length > 64 || q.length > 64 || !Number.isInteger(take) || take < 1 || take > 500 || !Number.isInteger(skip) || skip < 0) {
+      return reply.code(400).send({ error: 'bad_query' });
+    }
+    const view = observed(request), needle = q.toLowerCase();
+    const matches = view.livingAnimals()
+      .filter((a) => (!species || a.speciesId === species) && (!needle || a.id.toLowerCase().includes(needle)))
+      .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    return {
+      worldTime: view.worldTime, total: matches.length,
+      animals: matches.slice(skip, skip + take).map((a) => ({
+        id: a.id, speciesId: a.speciesId, sex: a.sex, stage: a.lifeStage, state: a.state,
+        ageDays: Math.floor(a.ageDays),
+      })),
+    };
+  });
+
   app.get<{ Params: { id: string } }>('/animals/:id', async (request, reply) => {
     const agent = observed(request).animal(request.params.id);
     if (!agent) return reply.code(404).send({ error: 'not_found' });
@@ -347,7 +371,8 @@ export function buildApi({ host, pool, narrator, insights: insightDeps, live, re
       id, speciesId: agent.speciesId, alive: agent.alive, bornAt: agent.bornAt, departedAt: agent.departedAt ?? null,
       movement: { eventId: event.id, outcome: event.outcome, trace: event.movement,
         direction: event.conditions.direction, reason: event.conditions.reason,
-        treeAnchorId: event.conditions.treeAnchorId, verticalDistanceM: event.effects.verticalDistanceM } };
+        treeAnchorId: event.conditions.treeAnchorId, verticalDistanceM: event.effects.verticalDistanceM,
+        ...(event.conditions.direction === 'traverse' ? { from: event.conditions.from } : {}) } };
   });
 
   /**

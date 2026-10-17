@@ -1,5 +1,5 @@
 import { validSubmerged } from './aquatic.js';
-import { type WorldGrid, isMovementTrace, positionInPatch, treeAnchorForPatch, treeAnchorGeometry, treeAnchorRemnantForPatch,
+import { type WorldGrid, inCongoChannel, isMovementTrace, positionInPatch, treeAnchorForPatch, treeAnchorGeometry, treeAnchorRemnantForPatch,
   type Agent, type GoalId, type MovementTrace, type TreeAnchorPatch } from '@vana/shared';
 
 /** Explicit, uncalibrated simulation policy; not a species-specific observed climb speed. */
@@ -30,7 +30,7 @@ export function validateVerticalCheckpoint(grid: WorldGrid, agent: Agent, patch:
   if (mode === 'climb') {
     const geometry = treeAnchorGeometry(grid, agent.patchId);
     if (!geometry || !climbs
-      || altitude === undefined || altitude <= 0 || altitude > geometry.climbHeightM
+      || altitude === undefined || altitude <= 0 || altitude > (flies ? Math.max(geometry.climbHeightM, geometry.perchHeightM) : geometry.climbHeightM)
       || anchorId !== geometry.id || !patch || patch.id !== agent.patchId
       || (!treeAnchorForPatch(grid, patch) && !treeAnchorRemnantForPatch(grid, patch))
       || !positionInPatch(grid, agent.position, agent.patchId)
@@ -105,4 +105,61 @@ export function advanceTreeVertical(grid: WorldGrid, agent: Agent, patch: TreeAn
   }
   agent.state = 'travelling';
   return { trace, seconds, distanceM, unreachable: false };
+}
+
+/** A canopy crossing: samples every this many metres along the way from trunk to trunk. */
+const CANOPY_SAMPLE_M = 30;
+
+/**
+ * Whether a canopy dweller up `from`'s tree can cross aloft to `to`'s: neighbouring patches, both
+ * with a climbable tree, and no river channel under the way (the canopy does not meet over it).
+ */
+export function canopyLinked(grid: WorldGrid, from: TreeAnchorPatch, to: TreeAnchorPatch): boolean {
+  if (from.id === to.id) return false;
+  const dc = Math.abs((from.id % grid.cols) - (to.id % grid.cols)), dr = Math.abs(Math.floor(from.id / grid.cols) - Math.floor(to.id / grid.cols));
+  if (dc > 1 || dr > 1) return false;
+  const a = treeAnchorForPatch(grid, from), b = treeAnchorForPatch(grid, to);
+  if (!a || !b) return false;
+  const seed = to.congoSeed ?? from.congoSeed;
+  if (seed === undefined) return true;
+  const length = Math.hypot(b.x - a.x, b.z - a.z), steps = Math.max(1, Math.ceil(length / CANOPY_SAMPLE_M));
+  for (let k = 1; k < steps; k++) {
+    const t = k / steps;
+    if (inCongoChannel(grid, seed, a.x + (b.x - a.x) * t, a.z + (b.z - a.z) * t)) return false;
+  }
+  return true;
+}
+
+/**
+ * A canopy dweller crosses aloft from its tree to a neighbouring patch's, branch to branch at
+ * `speedMps`, ending up that tree at its own climbing height. The whole way is above the ground,
+ * so nothing on the ground can reach it there. Only a crossing it can finish this hour is made.
+ */
+export function advanceCanopyTraverse(grid: WorldGrid, agent: Agent, from: TreeAnchorPatch, to: TreeAnchorPatch,
+  goal: GoalId, startWorldTime: number, secondsAvailable: number, speedMps: number, heightM?: number): { trace: MovementTrace; seconds: number; distanceM: number } | null {
+  const a = treeAnchorGeometry(grid, from.id), b = treeAnchorForPatch(grid, to);
+  const current = agent.altitudeM ?? 0;
+  if (!a || !b || !agent.alive || !agent.position || current <= 0 || agent.locomotionMode !== 'climb'
+    || agent.treeAnchorId !== a.id || agent.patchId !== from.id || !canopyLinked(grid, from, to)
+    || Math.hypot(agent.position.x - a.x, agent.position.z - a.z) > CONTACT_EPSILON_M) return null;
+  const target = Math.min(b.climbHeightM, heightM ?? b.climbHeightM);
+  const horizontal = Math.hypot(b.x - a.x, b.z - a.z), distanceM = Math.hypot(horizontal, target - current);
+  const seconds = distanceM / speedMps;
+  if (!(speedMps > 0) || seconds > secondsAvailable || secondsAvailable > 3600) return null;
+  const heading = Math.atan2(b.x - a.x, b.z - a.z), steps = Math.max(1, Math.ceil(horizontal / CANOPY_SAMPLE_M));
+  const trace: MovementTrace = { version: 1, actorId: agent.id, startWorldTime, destinationPatchId: to.id, goal,
+    samples: [{ seconds: 0, position: { x: a.x, z: a.z, heading }, altitudeM: current }], completed: true };
+  for (let k = 1; k <= steps; k++) {
+    const t = k / steps;
+    trace.samples.push({ seconds: seconds * t, position: { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t, heading },
+      altitudeM: current + (target - current) * t });
+  }
+  // The last sample is the far trunk exactly.
+  trace.samples[trace.samples.length - 1] = { seconds, position: { x: b.x, z: b.z, heading }, altitudeM: target };
+  if (!isMovementTrace(grid, trace)) throw new Error('invalid canopy travel trace');
+  agent.position = { x: b.x, z: b.z, heading };
+  if (to.id !== agent.patchId) { agent.previousPatchId = agent.patchId; agent.patchId = to.id; }
+  agent.altitudeM = target; agent.locomotionMode = 'climb'; agent.treeAnchorId = b.id;
+  agent.state = 'travelling';
+  return { trace, seconds, distanceM };
 }

@@ -57,7 +57,8 @@ export function elephantTrunkReach(source: THREE.AnimationClip): THREE.Animation
 
 /** Visual slope of a saved flight trace, never a client-authored movement outcome. */
 export type FlightVisualPhase = 'ascending' | 'gliding' | 'descending';
-export type ClimbVisualPhase = 'ascending' | 'descending';
+/** Up or down a trunk, or (a canopy dweller) crossing aloft along the branches to the next tree. */
+export type ClimbVisualPhase = 'ascending' | 'descending' | 'crossing';
 
 /** The local vulture has Flap and Glide, but no separate takeoff or landing clips. */
 export function clipForFlightPhase(phase: FlightVisualPhase, availableClips: readonly string[]): string | null {
@@ -70,7 +71,8 @@ export function clipForFlightPhase(phase: FlightVisualPhase, availableClips: rea
  * body turned upright against the trunk (see climbPose), stands in for hand-over-hand gripping.
  */
 export function clipForClimbPhase(phase: ClimbVisualPhase, availableClips: readonly string[]): string | null {
-  const choices = phase === 'ascending' ? ['ClimbUp', 'Climb_Up', 'Climb', 'Walk', 'Idle']
+  const choices = phase === 'crossing' ? ['Walk', 'Idle']
+    : phase === 'ascending' ? ['ClimbUp', 'Climb_Up', 'Climb', 'Walk', 'Idle']
     : ['ClimbDown', 'Climb_Down', 'Climb', 'Walk', 'Idle'];
   for (const wanted of choices) {
     const found = availableClips.find((clip) => clip.toLowerCase() === wanted.toLowerCase());
@@ -242,7 +244,8 @@ export const CLIMB_TRUNK_CLEARANCE_M = 0.32;
  */
 export function climbPose(speciesId: string, phase: ClimbVisualPhase | null, bodyLengthM: number):
   { pitch: number; back: number; lift: number } {
-  if (phase === null) return { pitch: 0, back: 0, lift: 0 };
+  // Along the branches the body stays level, walking as on the ground.
+  if (phase === null || phase === 'crossing') return { pitch: 0, back: 0, lift: 0 };
   const headFirstDown = phase === 'descending' && ['squirrel', 'leopard', 'african_leopard', 'african_golden_cat'].includes(speciesId);
   return headFirstDown
     // Head down turns the belly backwards, so the body is held out on the other side.

@@ -1,6 +1,6 @@
 import { isMovementTrace, isDrinkingActivity, positionInPatch, treeAnchorGeometry, treeClimbGoal, recordedWaterAccessPositions, WATER_CONTACT_RADIUS_M,
   MAX_LIVE_MOVEMENTS, MAX_LIVE_MOVEMENT_SAMPLES,
-  type Agent, type EncounterAppearance, type LiveEncounter, type LiveMovement, type WorldEvent, type WorldPosition, type WorldGrid } from '@vana/shared';
+  type Agent, type EncounterAppearance, type LiveEncounter, type LiveMovement, type MovementTrace, type WorldEvent, type WorldPosition, type WorldGrid } from '@vana/shared';
 
 export function encounterAppearance(agent: Agent, adultMassKg: number): EncounterAppearance {
   return { id: agent.id, speciesId: agent.speciesId, sizeRatio: agent.massKg / adultMassKg,
@@ -15,6 +15,7 @@ export function isRecordedTreeClimb(grid: WorldGrid, event: WorldEvent): boolean
     || event.actors.length !== 1 || event.actors[0] !== trace.actorId) return false;
   const anchor = treeAnchorGeometry(grid, trace.destinationPatchId);
   const direction = event.conditions.direction;
+  if (direction === 'traverse') return isRecordedCanopyCrossing(grid, event, trace);
   if (!anchor || event.conditions.treeAnchorId !== anchor.id
     || direction !== 'ascend' && direction !== 'descend'
     || treeClimbGoal(direction, event.conditions.reason) === null
@@ -32,6 +33,35 @@ export function isRecordedTreeClimb(grid: WorldGrid, event: WorldEvent): boolean
     recordedVertical += Math.abs(change); previous = altitude;
   }
   return Math.abs(recordedVertical - vertical) <= 1e-6;
+}
+
+/**
+ * A canopy dweller's crossing aloft from its tree to a neighbouring patch's: trunk to trunk in a
+ * straight line, above the ground the whole way, ending up the far tree that the event names.
+ */
+function isRecordedCanopyCrossing(grid: WorldGrid, event: WorldEvent, trace: MovementTrace): boolean {
+  const from = event.conditions.from, to = trace.destinationPatchId;
+  if (typeof from !== 'number' || !Number.isInteger(from) || from === to || event.conditions.destination !== to
+    || !trace.completed || event.outcome !== 'success') return false;
+  if (Math.abs((from % grid.cols) - (to % grid.cols)) > 1 || Math.abs(Math.floor(from / grid.cols) - Math.floor(to / grid.cols)) > 1) return false;
+  const a = treeAnchorGeometry(grid, from), b = treeAnchorGeometry(grid, to);
+  const goal = treeClimbGoal('traverse', event.conditions.reason);
+  if (!a || !b || event.conditions.treeAnchorId !== b.id || goal === null || event.goal !== goal || trace.goal !== goal) return false;
+  const top = Math.max(a.climbHeightM, b.climbHeightM), dx = b.x - a.x, dz = b.z - a.z, length = Math.hypot(dx, dz);
+  let along = -Infinity;
+  for (const sample of trace.samples) {
+    const altitude = sample.altitudeM ?? 0;
+    if (!(altitude > 0) || altitude > top) return false;
+    const rx = sample.position.x - a.x, rz = sample.position.z - a.z;
+    const t = length > 0 ? (rx * dx + rz * dz) / (length * length) : 0;
+    // On the straight way between the two trunks, never turning back.
+    if (t < -1e-9 || t > 1 + 1e-9 || t < along - 1e-9 || Math.abs(rx * dz - rz * dx) / Math.max(length, 1e-9) > 1e-3) return false;
+    along = t;
+  }
+  const first = trace.samples[0]!, last = trace.samples.at(-1)!;
+  if (Math.hypot(first.position.x - a.x, first.position.z - a.z) > 1e-6 || Math.hypot(last.position.x - b.x, last.position.z - b.z) > 1e-6) return false;
+  const vertical = event.effects.verticalDistanceM;
+  return typeof vertical === 'number' && Math.abs(vertical - Math.abs((last.altitudeM ?? 0) - (first.altitudeM ?? 0))) <= 1e-6;
 }
 
 /** Keep one detached eligible route per actor for this hour, not a growing event history.

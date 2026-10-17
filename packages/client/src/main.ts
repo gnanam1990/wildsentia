@@ -24,14 +24,15 @@ import { CommunityLayer } from './communityLayer.js';
 import { loadLifeHistory, loadSelectedClimb, loadSelectedEncounter } from './lifeHistory.js';
 import { encounterAt, isRecordedEncounter, ReplayClock, type RecordedEncounter } from './encounterReplay.js';
 import { huntMoment, huntReplaySeconds } from './huntActs.js';
-import { SPECIES_VISUALS, visualFor } from './species.js';
+import { visualFor } from './species.js';
 import { Atmosphere, atmosphereAt, observerExposure } from './environment.js';
 import { groundTint } from './groundTint.js';
 import { wind } from './wind.js';
 import { characterScale, markerSize } from './appearance.js';
 import { LiveEncounterPlayer, recordedClimbPhase, withRecordedVisualIdentity } from './liveEncounters.js';
 import { ObserverVisibility, type ObserverSubject } from './observerVisibility.js';
-import { refreshSpeciesOptions } from './speciesPicker.js';
+import { renderSpeciesPicker } from './speciesPicker.js';
+import { createAnimalBrowser } from './animalBrowser.js';
 import { drinkingPool, waterGround } from './pools.js';
 import { stackLabels } from './labelLayout.js';
 import { restoreFollowOnOpen } from './followSubscription.js';
@@ -416,6 +417,18 @@ let recapLoading = false;
 let recapRetryAt = 0;
 let followRevision = 0;
 
+/** Where a followed animal outside the loaded regions was last reported, until it is loaded. */
+let farFollow: { id: string; x: number; z: number } | null = null;
+async function locateFar(id: string, revision: number): Promise<void> {
+  try {
+    const response = await fetch(`/api/animals/${encodeURIComponent(id)}`);
+    if (!response.ok) return;
+    const animal = await response.json() as { position?: { x: number; z: number } };
+    if (followRevision !== revision || followedId !== id || !animal.position) return;
+    farFollow = { id, x: animal.position.x, z: animal.position.z };
+  } catch { /* the card says it is unavailable; nothing to fly to */ }
+}
+
 function watch(id: string | null): void {
   if (id !== null) observerChrome.showAnimal();
   eventVisit.clear();
@@ -427,7 +440,13 @@ function watch(id: string | null): void {
   followedId = id;
   rewards.watch(id);
   const subject = id === null ? undefined : store.animals.get(id) ?? liveEncounters.poses(performance.now()).get(id)?.animal;
-  speciesPicker.value = subject?.speciesId ?? '';
+  // An animal outside the regions around the view (chosen from the list, a picker or a link):
+  // ask where it is, and fly there; its regions load, and then it is followed as any other.
+  farFollow = null;
+  if (id !== null && !subject) void locateFar(id, followRevision);
+  // A far animal is not loaded yet: its id names its species (`blue_duiker_00ab`).
+  const named = id?.slice(0, Math.max(0, id.lastIndexOf('_'))) ?? '';
+  speciesPicker.value = subject?.speciesId ?? ([...speciesPicker.options].some((o) => o.value === named) ? named : '');
   if (subject) follow.flyToDistance(followDistanceFor(subject.speciesId, visualFor(subject.speciesId).heightM));
   hud.cancelRecap();
   recapPending = id;
@@ -691,15 +710,32 @@ document.querySelector('#freecam')!.addEventListener('click', () => {
   canvas.focus();
 });
 const speciesPicker = document.querySelector<HTMLSelectElement>('#species-picker')!;
-for (const id of Object.keys(SPECIES_VISUALS)) {
-  const option = document.createElement('option');
-  option.value = id;
-  option.textContent = id;
-  speciesPicker.append(option);
-}
 speciesPicker.addEventListener('change', () => {
-  const animal = [...store.animals.values()].find((a) => a.speciesId === speciesPicker.value);
-  if (animal) watch(animal.id); // watch() leaves any replay; the picker keeps focus.
+  const species = speciesPicker.value;
+  if (!species) return;
+  // The nearest of that species in the regions around the camera; else one from anywhere in the
+  // world (a regional world holds only the regions near the view), which the camera flies to.
+  let nearest: string | null = null, best = Infinity;
+  for (const a of store.animals.values()) {
+    if (a.speciesId !== species || !a.position) continue;
+    const d = Math.hypot(a.position.x - follow.target.x, a.position.z - follow.target.z);
+    if (d < best) { best = d; nearest = a.id; }
+  }
+  if (nearest) { watch(nearest); speciesPicker.value = species; return; } // watch() leaves any replay; the picker keeps focus.
+  void fetch(`/api/animals/list?species=${encodeURIComponent(species)}&limit=1`).then((r) => (r.ok ? r.json() : null))
+    .then((page: { animals?: Array<{ id: string }> } | null) => {
+      const id = page?.animals?.[0]?.id;
+      if (id && speciesPicker.value === species) { watch(id); speciesPicker.value = species; }
+    }).catch(() => { /* the picker stays as chosen; nothing to follow */ });
+});
+// Every animal, by species and number: from the animal count's list, or its own button there.
+const browseAnimals = createAnimalBrowser((id) => watch(id), () => store.world?.population);
+document.querySelector('#population')!.addEventListener('click', (event) => {
+  const button = (event.target as HTMLElement).closest<HTMLElement>('[data-browse-species]');
+  if (!button) return;
+  event.preventDefault();
+  button.closest('details')?.removeAttribute('open');
+  browseAnimals(button.dataset.browseSpecies ?? '');
 });
 
 // Family members and teachers in the passport are links: follow them.
@@ -738,7 +774,7 @@ setInterval(() => { void hud.refreshPassport(followedId).then(() => hud.render(f
 
 connect();
 store.onChange(() => {
-  refreshSpeciesOptions(speciesPicker.options, store.world?.population);
+  renderSpeciesPicker(speciesPicker, store.world?.population);
   const speed = store.world?.worldHoursPerRealHour;
   if (speed !== undefined) animals.tracker.setWorldSpeed(speed);
   hud.render(followedId);
@@ -838,6 +874,9 @@ function renderFrame(dt: number, now: number): void {
   const communityText = communityLayer.playbackNotice(now, reducedMotion.matches);
   if (communityMotionNotice.textContent !== communityText) communityMotionNotice.textContent = communityText;
   communityMotionNotice.hidden = !communityText;
+  // Following an animal up a tree, the camera is among its leaves: clear them further out.
+  const aloft = followedId !== null && (animals.positionOf(followedId, now)?.altitudeM ?? 0) > 4;
+  observerVisibility.setLensReach(aloft ? 8 : 0);
   observerVisibility.update(camera, renderer.getDrawingBufferSize(drawingSize), revealAnimal.checked ? observerSubjects : []);
   prepareShadows(performance.now());
   renderer.render(scene, camera);
@@ -1003,6 +1042,10 @@ function frame(): void {
           y: Math.max(renderBaseY(position, animals.groundHeightAt), renderBaseY(partner, animals.groundHeightAt)) }, dt);
       } else follow.follow({ ...position, y: renderBaseY(position, animals.groundHeightAt),
         focusHeight: visualFor(speciesId).heightM * characterScale(visibleAnimals.get(followedId) ?? {}) * 0.5 }, dt);
+    } else if (farFollow?.id === followedId) {
+      // Not loaded yet: fly toward where it was reported, so its regions are sent.
+      viewFocus = { x: farFollow.x, z: farFollow.z };
+      follow.follow({ x: farFollow.x, z: farFollow.z, heading: 0, moving: false, y: animals.groundHeightAt(farFollow.x, farFollow.z) }, dt);
     } else follow.hold(dt); // Not placed this frame: keep the last framing, but zoom and turns still work.
     // The bubble floats over the animal's head, projected into screen space.
     const head = position === null ? null
