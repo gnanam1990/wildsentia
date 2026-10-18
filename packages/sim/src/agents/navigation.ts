@@ -1,4 +1,4 @@
-import { congoRiverAt, fliesSpecies, terrainCostFor, initialPosition, inCongoChannel, patchAtPosition, patchCentre, positionInPatch, landWalkable, spatialHash,
+import { congoRiverAt, fliesSpecies, terrainCostFor, initialPosition, inCongoChannel, patchAtPosition, patchCentre, positionInPatch, landWalkable, spatialHash, waterAccessPosition,
   CONGO_GRID, type WorldGrid, type Agent, type Patch, type SpeciesConfig, type WorldPosition, type MovementTrace, type GoalId } from '@vana/shared';
 import { approachContact } from './movement.js';
 import { locateAgent } from './spatial.js';
@@ -78,15 +78,32 @@ function passPoint(grid: WorldGrid, id: string, patch: Pick<Patch, 'id' | 'congo
   return point ?? initialPosition(grid, id, patch.id);
 }
 
-/** Whether a straight step crosses a river's channel (sampled every 15 m; cached by its ends). */
+/** How far into a channel an animal can stand and still walk out (a river patch's drinking point
+ * lies up to about 27 m inside it). */
+const WADE_OUT_M = 30;
+
+/** Whether a straight step crosses a river's channel (sampled every 15 m; cached by its ends). An
+ * animal standing in the water walks out: until it reaches dry ground, water within its first 30 m
+ * is not a crossing, nor is water that grows shallower as it goes (heading for the bank, not along
+ * or across the river). Without this an animal that drank at a river could never leave it (133
+ * duikers and buffalo starved standing there in 40 days), and one already far out in a river when
+ * a world was saved stood there for good. */
 const crossingCache = new Map<string, boolean>();
+const inside = (grid: WorldGrid, seed: number, x: number, z: number) => { const at = congoRiverAt(grid, seed, x, z); return at.halfM + 3 - at.distanceM; };
 function stepCrossesChannel(grid: WorldGrid, seed: number, a: WorldPosition, b: WorldPosition): boolean {
   const key = `${seed}:${a.x.toFixed(2)},${a.z.toFixed(2)}>${b.x.toFixed(2)},${b.z.toFixed(2)}`;
   let crosses = crossingCache.get(key);
   if (crosses === undefined) {
     const length = Math.hypot(b.x - a.x, b.z - a.z), steps = Math.max(1, Math.ceil(length / 15));
+    let depth = inside(grid, seed, a.x, a.z), leaving = depth >= 0;
     crosses = false;
-    for (let k = 1; k < steps && !crosses; k++) crosses = inCongoChannel(grid, seed, a.x + (b.x - a.x) * k / steps, a.z + (b.z - a.z) * k / steps);
+    for (let k = 1; k < steps && !crosses; k++) {
+      const here = inside(grid, seed, a.x + (b.x - a.x) * k / steps, a.z + (b.z - a.z) * k / steps), wet = here >= 0;
+      // Walking out: each sample at least 0.3 m shallower for each metre walked (within some 70° of straight out).
+      if (leaving && (!wet || (length * k / steps > WADE_OUT_M && here > depth - 0.3 * length / steps))) leaving = false;
+      depth = here;
+      crosses = wet && !leaving;
+    }
     if (crossingCache.size > 500_000) crossingCache.clear();
     crossingCache.set(key, crosses);
   }
@@ -113,6 +130,25 @@ export function warmDryGround(grid: WorldGrid, patches: readonly Pick<Patch, 'id
  * duikers, the cats, the buffalo, the mangabey) cannot cross a river patch that is all channel. */
 function crossesRivers(cfg: SpeciesConfig): boolean {
   return cfg.locomotion.swims !== undefined || fliesSpecies(cfg) || (cfg.locomotion.terrainCost.water ?? Infinity) < 3;
+}
+
+/**
+ * Whether an animal can drink a patch's water without being stranded. A Congo patch's drinking
+ * point can lie far out in a river's channel (40-150 m in, measured), and an animal that does not
+ * cross rivers that walked out there to drink could not step back out: 133 duikers and buffalo
+ * starved standing in the river in 40 days. It drinks only where the point is within wading reach
+ * of the bank (fixed for a world, found once a patch).
+ */
+const drinkCache = { seed: NaN, grid: null as WorldGrid | null, flags: new Uint8Array(0) };
+export function waterInReach(grid: WorldGrid, p: Patch, patches: readonly Patch[], cfg: SpeciesConfig): boolean {
+  const seed = p.congoSeed;
+  if (seed === undefined || crossesRivers(cfg) || !touchesChannel(grid, seed, p.id)) return true;
+  if (drinkCache.seed !== seed || drinkCache.grid !== grid) Object.assign(drinkCache, { seed, grid, flags: new Uint8Array(grid.cols * grid.rows) });
+  if (drinkCache.flags[p.id] === 0) {
+    const at = waterAccessPosition(grid, p.id, patches), river = congoRiverAt(grid, seed, at.x, at.z);
+    drinkCache.flags[p.id] = river.halfM - river.distanceM > WADE_OUT_M ? 2 : 1;
+  }
+  return drinkCache.flags[p.id] === 1;
 }
 
 /** A Congo river patch is a place a land animal that does not cross rivers can go to (to drink at

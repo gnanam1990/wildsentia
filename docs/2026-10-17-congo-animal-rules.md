@@ -57,14 +57,57 @@ The agile mangabey now lives in the canopy:
   the view clears the leaves round a followed animal. An animal chosen from the list is framed
   close up when it loads.
 
+## Getting out of the water
+
+Keeping animals that do not cross rivers out of the channels at first trapped some in them. In a
+40-day run 195 animals starved, most of them duikers and buffalo standing in a river. They died
+for three reasons:
+- **Drinking points far out:** a river patch's drinking point can lie 40-150 m into the channel.
+  An animal that walked out there to drink could not step back out, because every step crossed
+  water.
+- **Food out of reach:** an animal whose way to better food was closed went without eating.
+- **Stuck in a saved world:** an animal already far out in a river when a world was saved stayed
+  there for good. In the running demo 25 blue duikers stood in rivers, one of them 167 m out, and
+  were still there three hours later.
+
+Fixes:
+- **Walking out:** an animal standing in a river can always walk out. Water within its first 30 m
+  is not a crossing, and neither is water that grows shallower with every step, so it heads for
+  the bank, never along or across the river. Once on dry ground, more water is a crossing again.
+- **Drinking where it can get back:** an animal that does not cross rivers drinks only at a river
+  point within 30 m of the bank. Otherwise it drinks at the forest pools.
+- **Eating what is here:** an animal that cannot reach better food eats what is where it stands.
+
+Results:
+- **Starvation:** starvation in the 40-day run fell from 195 to 81 with the 30 m wading rule and
+  the third fix, to 32 with the second fix, and to 16 once walking out by shallower water was
+  added. Only 3 of the 16 died in a river patch; before the fixes, most of the 195 did.
+- **Demo world:** after a restart, blue duikers in rivers fell from 25 to 5 in two hours, and
+  buffalo from 13 to none.
+
+## Seeing the water
+
+- **Rivers:** every river was drawn facing down. A one-sided surface like that shows only from
+  below, so from above the rivers could not be seen. An animal swimming at the surface then looked
+  to float in the air, about 3 m over the riverbed, and one wading looked sunk below the bank.
+  The rivers now face up. A test checks every river and flood triangle.
+- **Camera:** the camera keeps above a river or the flood, as it does above the ground. Before,
+  following an animal in a river took the view under the water.
+- **Swimmers:** a swimmer rides with its back just under the waterline and its head and neck
+  above. With its back at the waterline a sitatunga's head sat in the dark water and only its
+  horns showed. One that rests in deep water does it standing, head up, rather than lying down
+  out of sight.
+
 ## Still open
 
 - **Nests:** a crowned eagle's chick, a parent caring for it and a female about to lay stay where
   the family routine puts them, which can be the forest floor. An eagle's nest high in a tree is
   not built yet.
-- **Drinking at a river:** a river patch's drinking point can lie up to about 27 m inside the
-  channel, so an animal drinking there stands in the water. Moving the point to the bank changes
-  where older recordings say animals drank, so it waits for its own change.
+- **Drinking at a river:** a river patch's drinking point can lie 40-150 m inside the channel.
+  Animals that do not cross rivers no longer drink there, and swimmers (sitatunga, chevrotain,
+  crocodile) and river crossers (elephant, red river hog) do, standing or swimming in the river.
+  Moving the point to the bank changes where older recordings say animals drank, so it waits for
+  its own change.
 - **Animals between recorded routes:** the view glides an animal in a straight line from one
   hour's position to the next. Up to 2,048 recorded routes an hour are drawn as walked, which
   covers the animals in view, but one beyond that cap could still be drawn crossing a river.

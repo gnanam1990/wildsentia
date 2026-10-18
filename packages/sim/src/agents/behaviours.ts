@@ -13,7 +13,7 @@ import { activityAt, type GoalChoice } from './goals.js';
 import { HUNGER_DESPERATION, perceive, canHunt, canReachCarcass, heldByPredatorOf, threatens, type Percept, type WorldView } from './perception.js';
 import { locateAgent, locateCarcass } from './spatial.js';
 import { approachContact } from './movement.js';
-import { CONGO_FLIGHT_CLEARANCE_M, channelRayDistance, floodShy, habitatWeight, navigate } from './navigation.js';
+import { CONGO_FLIGHT_CLEARANCE_M, channelRayDistance, floodShy, habitatWeight, navigate, waterInReach } from './navigation.js';
 import { allowsDependentGoal, cannotYetWalk, canEatMaternalCarcass, canHuntIndependently, creditMeal, gutCapacityKg, locomotionFactor,
   mealRoom, needsOf, needsProvisioning } from './needs.js';
 import { exposeToCarrion } from './illness.js';
@@ -171,8 +171,12 @@ function feed(ctx: BehaviourContext, mayMove = true, canopy = false): void {
   const wet = floodShy(ctx.species) && patch.flooded === true;
   if (mayMove && (availableNeed < wanted || ctx.percept.dangerous.has(patch.id) || wet) && target !== null && target.patchId !== patch.id) {
     const travel = moveTo(ctx, target.patchId);
-    if (travel.trace.completed && travel.seconds < ctx.hours * 3600) feed(afterTravel(ctx, travel.seconds), false);
-    return;
+    // In the Congo, an animal that cannot get to better food eats what is here rather than nothing
+    // (duikers in a flood they could not leave starved beside the food).
+    if (!(travel.unreachable && patch.congoSeed !== undefined)) {
+      if (travel.trace.completed && travel.seconds < ctx.hours * 3600) feed(afterTravel(ctx, travel.seconds), false);
+      return;
+    }
   }
   delete ctx.agent.journey;
 
@@ -284,8 +288,10 @@ function waterShared(ctx: BehaviourContext, patchId: number): boolean {
 function drink(ctx: BehaviourContext, mayMove = true, causalParents: string[] = []): void {
   const patch = ctx.patches[ctx.agent.patchId]!;
   const target = ctx.percept.bestWater;
+  // Water it cannot reach without being stranded in a river (waterInReach) is not water to it.
+  const hereL = waterInReach(ctx.view.grid, patch, ctx.patches, ctx.species) ? patch.waterVolume : 0;
   // Hunter and hunted do not drink side by side: hold back this hour (no move, no drink).
-  if (mayMove && waterShared(ctx, target !== null && (patch.waterVolume <= 0 || ctx.percept.dangerous.has(patch.id)) ? target.patchId : patch.id)) {
+  if (mayMove && waterShared(ctx, target !== null && (hereL <= 0 || ctx.percept.dangerous.has(patch.id)) ? target.patchId : patch.id)) {
     delete ctx.agent.journey; ctx.agent.state = 'resting';
     return;
   }
@@ -301,12 +307,12 @@ function drink(ctx: BehaviourContext, mayMove = true, causalParents: string[] = 
   if (wanted <= 0) return;
 
   // Same rule as feeding: drink what is here unless there is not enough of it.
-  if (mayMove && (patch.waterVolume < wanted || ctx.percept.dangerous.has(patch.id)) && target !== null && target.patchId !== patch.id) {
+  if (mayMove && (hereL < wanted || ctx.percept.dangerous.has(patch.id)) && target !== null && target.patchId !== patch.id) {
     const travel = moveTo(ctx, target.patchId, false, waterContactPosition(ctx.view.grid, ctx.agent.id, target.patchId, ctx.patches));
     if (travel.trace.completed && travel.seconds < ctx.hours * 3600) drink(afterTravel(ctx, travel.seconds), false, [travel.eventId]);
     return;
   }
-  if (patch.waterVolume <= 0) { ctx.agent.state = 'travelling'; return; }
+  if (hereL <= 0) { ctx.agent.state = 'travelling'; return; }
   // sim_0.38.0: a lake's access point is on its shore (waterAccessPosition), so pass the ground.
   if (!atWaterAccess(ctx.view.grid, locateAgent(ctx.view.grid, ctx.agent), patch.id, ctx.patches)) {
     const travel = moveTo(ctx, patch.id, false, waterContactPosition(ctx.view.grid, ctx.agent.id, patch.id, ctx.patches));
