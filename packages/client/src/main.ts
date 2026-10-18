@@ -112,8 +112,9 @@ scene.add(liveAgents.root);
 
 const follow = new FollowCamera(camera, canvas);
 const EXPLORE_DISTANCE_M = 900;
-// The observer camera stays above sea level; animals still use the actual ground sampler.
-follow.groundHeightAt = (x, z) => Math.max(0, animals.groundHeightAt(x, z));
+// The observer camera stays above sea level, and above a Congo river or the flood: it follows a
+// swimmer from over the water, never from the riverbed. Animals still use the actual ground sampler.
+follow.groundHeightAt = (x, z) => Math.max(0, animals.groundHeightAt(x, z), animals.waterSurfaceAt?.(x, z) ?? -Infinity);
 // Dragging the ground explores the island: it lets go of the followed animal or person.
 // A replay keeps its own subject; the viewer stops it explicitly.
 follow.onExplore = () => {

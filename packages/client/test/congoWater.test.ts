@@ -67,6 +67,22 @@ describe('Congo rivers and flood', () => {
       if (t) { expect(t.renderOrder).toBeGreaterThan(flood.renderOrder); expect(main.renderOrder).toBeGreaterThan(t.renderOrder); }
     }
   });
+  it('faces every river and the flood up, so the water is seen from above (a single-sided sheet facing down was seen only from the riverbed)', () => {
+    setWorldGrid(CONGO_GRID);
+    const group = buildCongoWater(7, bounds(0, 0, 7, 7), true);
+    const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+    let meshes = 0;
+    group.traverse((o) => {
+      if (!(o instanceof THREE.Mesh)) return;
+      meshes++;
+      const p = o.geometry.attributes.position!, index = o.geometry.index!;
+      for (let k = 0; k < index.count; k += 3) {
+        a.fromBufferAttribute(p, index.getX(k)); b.fromBufferAttribute(p, index.getX(k + 1)); c.fromBufferAttribute(p, index.getX(k + 2));
+        expect(b.clone().sub(a).cross(c.clone().sub(a)).y, `${o.name} triangle ${k / 3}`).toBeGreaterThan(0);
+      }
+    });
+    expect(meshes).toBeGreaterThan(2);
+  });
   it('draws water only over loaded ground, not over the empty corner of an L of regions', () => {
     setWorldGrid(CONGO_GRID);
     const main = congoRivers(7, CONGO_GRID)[0]!, mid = main.points[Math.floor(main.points.length / 2)]!;

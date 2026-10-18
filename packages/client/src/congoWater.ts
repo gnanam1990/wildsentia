@@ -107,7 +107,8 @@ function riverRibbon(river: RiverPath, loaded: (x: number, z: number) => boolean
     const w = half + RIVER_TUCK_M, y = p.levelM - RIVER_BELOW_LEVEL_M - CONGO_BASE_M;
     const v = positions.length / 3;
     positions.push(p.x + nx * w, y, p.z + nz * w, p.x - nx * w, y, p.z - nz * w);
-    if (previousKept) index.push(v - 2, v - 1, v, v - 1, v + 1, v);
+    // Wound to face up (the left bank is at +n): the water is seen from above, and lit from above.
+    if (previousKept) index.push(v - 2, v, v - 1, v - 1, v, v + 1);
     previousKept = true;
   }
   if (index.length === 0) return null;
