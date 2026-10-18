@@ -13,7 +13,7 @@ import { activityAt, type GoalChoice } from './goals.js';
 import { HUNGER_DESPERATION, perceive, canHunt, canReachCarcass, heldByPredatorOf, threatens, type Percept, type WorldView } from './perception.js';
 import { locateAgent, locateCarcass } from './spatial.js';
 import { approachContact } from './movement.js';
-import { CONGO_FLIGHT_CLEARANCE_M, channelRayDistance, floodShy, habitatWeight, navigate, waterInReach } from './navigation.js';
+import { CONGO_FLIGHT_CLEARANCE_M, channelRayDistance, floodShy, habitatWeight, navigate, waterInReach, wayOutOfWater } from './navigation.js';
 import { allowsDependentGoal, cannotYetWalk, canEatMaternalCarcass, canHuntIndependently, creditMeal, gutCapacityKg, locomotionFactor,
   mealRoom, needsOf, needsProvisioning } from './needs.js';
 import { exposeToCarrion } from './illness.js';
@@ -1062,6 +1062,12 @@ export function executeGoal(ctx: BehaviourContext): void {
   if (ctx.agent.journey?.goal !== ctx.choice.goal) delete ctx.agent.journey;
   ctx.agent.alternativeGoal = ctx.choice.alternative;
   ctx.agent.goalScore = ctx.choice.score;
+
+  // Out in a river it cannot cross, an animal first walks out of the water, whatever it wants.
+  if (ctx.choice.goal !== 'flee') {
+    const out = wayOutOfWater(ctx.view.grid, ctx.agent, ctx.patches, ctx.species);
+    if (out !== null) { moveTo(ctx, out); return; }
+  }
 
   switch (ctx.choice.goal) {
     case 'find_food': return feed(ctx);

@@ -335,6 +335,26 @@ function stepCost(grid: WorldGrid, from: WorldPosition, fromId: number, toId: nu
   return Math.hypot(ex - from.x, ez - from.z) * costOf(grid, patches[fromId]!, cfg) + Math.hypot(target.x - ex, target.z - ez) * toCost;
 }
 
+/**
+ * Where an animal that does not cross rivers, standing out in a river's channel (past the
+ * shallows a drinking point lies in), goes first to get out of it: the nearest patch, its own or a
+ * neighbour, whose standing point is dry and that it can reach. Null when it is not out in the
+ * water, or no way out is found. Without it an animal stranded in a river by a saved world chose
+ * its food across the river, found no route there, and starved standing in the water.
+ */
+export function wayOutOfWater(grid: WorldGrid, agent: Agent, patches: Patch[], cfg: SpeciesConfig): number | null {
+  const patch = patches[agent.patchId]!, seed = patch.congoSeed;
+  if (seed === undefined || crossesRivers(cfg) || (agent.altitudeM ?? 0) > 0 || !touchesChannel(grid, seed, patch.id)) return null;
+  const at = locateAgent(grid, agent);
+  if (inside(grid, seed, at.x, at.z) < WADE_OUT_M) return null;
+  const ways = [patch.id, ...patch.neighbours].flatMap((id) => {
+    const spot = standingPoint(grid, agent.id, patches[id]!, cfg);
+    return inCongoChannel(grid, seed, spot.x, spot.z) ? [] : [{ id, d: Math.hypot(spot.x - at.x, spot.z - at.z) }];
+  }).sort((a, b) => a.d - b.d || a.id - b.id);
+  for (const way of ways) if (planRoute(grid, agent, way.id, patches, cfg) !== null) return way.id;
+  return null;
+}
+
 /** Deterministic least-cost search over the static terrain graph. It knows terrain, not animals.
  * Costs are metres weighted by species terrain cost; actual speeds are applied during travel.
  * No decorative tree/rock collision or shoreline topology is claimed. */
