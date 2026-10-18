@@ -107,6 +107,17 @@ export class AnimalLayer {
   /** The water surface where an animal stands (the Congo's rivers and flood), or null on dry ground. */
   waterSurfaceAt: ((x: number, z: number) => number | null) | null = null;
 
+  /** A far animal's dot stands on the water where there is water (on the riverbed it was hidden
+   * under the river); rebuilt only when the ground or the water changes, so the dots know to move. */
+  #dotSampler: { ground: unknown; water: unknown; at: (x: number, z: number) => number } | null = null;
+  #dotGround(): (x: number, z: number) => number {
+    const ground = this.groundHeightAt, water = this.waterSurfaceAt;
+    if (this.#dotSampler?.ground !== ground || this.#dotSampler.water !== water) {
+      this.#dotSampler = { ground, water, at: water ? (x, z) => Math.max(ground(x, z), water(x, z) ?? -Infinity) : ground };
+    }
+    return this.#dotSampler.at;
+  }
+
   readonly #templates = new Map<string, Promise<THREE.Group>>();
   readonly #rigs = new Map<string, Rig>();
   /** Seconds of drawn time, for each animal's own look-up rhythm while it feeds or drinks. */
@@ -374,7 +385,7 @@ export class AnimalLayer {
     this.#drawLimbs(visible, perched, positions);
 
     // Keep pending actors selectable as dots until their placed model is actually available.
-    this.#dotLayer.sync(animals, positions, new Set([...visible].filter((id) => this.#rigs.has(id))), this.groundHeightAt);
+    this.#dotLayer.sync(animals, positions, new Set([...visible].filter((id) => this.#rigs.has(id))), this.#dotGround());
 
     this.tracker.forgetAllExcept(new Set(animals.keys()));
     for (const [id, rig] of [...this.#rigs]) {

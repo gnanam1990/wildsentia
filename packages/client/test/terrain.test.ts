@@ -81,6 +81,12 @@ describe('buildTerrain', () => {
     const waterfall = terrain.getObjectByName('waterfall') as THREE.Mesh;
     expect(river).toBeDefined();
     expect(river.geometry.index!.count).toBe(6);
+    // Both triangles face up, so the stream is seen from above.
+    const p = river.geometry.attributes.position!, index = river.geometry.index!;
+    for (let k = 0; k < 6; k += 3) {
+      const [a, b, c] = [0, 1, 2].map((i) => new THREE.Vector3().fromBufferAttribute(p, index.getX(k + i)));
+      expect(b!.clone().sub(a!).cross(c!.clone().sub(a!)).y).toBeGreaterThan(0);
+    }
     expect(waterfall).toBeDefined();
     expect(waterfall.geometry.index!.count).toBe(6);
   });

@@ -205,7 +205,9 @@ function buildDrainageFlow(patches: readonly PatchView[], groundAt: HeightSample
     const rightB = [b.x - nx * width, by, b.z - nz * width];
     riverPositions.push(...leftA, ...rightA, ...leftB, ...rightB);
     riverUvs.push(0, 0, 1, 0, 0, 1, 1, 1);
-    riverIndices.push(riverVertex, riverVertex + 1, riverVertex + 2, riverVertex + 1, riverVertex + 3, riverVertex + 2);
+    // Wound to face up (the left bank is at +n), so the stream is seen from above: wound the other
+    // way it showed only from below, and no stream on the island was ever drawn.
+    riverIndices.push(riverVertex, riverVertex + 2, riverVertex + 1, riverVertex + 1, riverVertex + 2, riverVertex + 3);
     riverVertex += 4;
 
     const drop = ay - by;
@@ -544,7 +546,9 @@ export function buildTerrain(patches: readonly PatchView[], layers?: ReadonlySet
   // Everything stands on the drawn surface, not on its patch's average height: on a slope the
   // difference is metres, enough to float grass in the air or bury a tree to its crown.
   const groundAt = makeHeightSampler(patches);
-  const flow = wanted('water') ? buildDrainageFlow(patches, groundAt) : { river: null, waterfall: null };
+  // The Congo draws its rivers as their channels run (congoWater.ts); patch-to-patch streams there
+  // only poked blocky slabs out of the river's banks.
+  const flow = wanted('water') && !congo ? buildDrainageFlow(patches, groundAt) : { river: null, waterfall: null };
 
   let g = 0;
   for (const patch of grass ? grassPatches : []) {

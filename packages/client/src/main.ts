@@ -656,7 +656,7 @@ function pickedAnimal(event: MouseEvent | PointerEvent): string | null {
   const now = performance.now();
   for (const id of store.animals.keys()) {
     const p = animals.positionOf(id, now);
-    if (p !== null) positions.set(id, { x: p.x, y: renderBaseY(p, animals.groundHeightAt) + visualFor(store.animals.get(id)!.speciesId).heightM * 0.5, z: p.z });
+    if (p !== null) positions.set(id, { x: p.x, y: shownBaseY(p) + visualFor(store.animals.get(id)!.speciesId).heightM * 0.5, z: p.z });
   }
   return nearestOnScreen(positions, camera, event.clientX - rect.left, event.clientY - rect.top, rect.width, rect.height,
     event instanceof PointerEvent && event.pointerType === 'touch' ? 36 : 22);
@@ -735,6 +735,14 @@ speciesPicker.addEventListener('change', () => {
     }).catch(() => { /* the picker stays as chosen; nothing to follow */ });
 });
 // Every animal, by species and number: from the animal count's list, or its own button there.
+/** Where an animal is drawn standing: on the ground, up its tree, or (a swimmer) on the water.
+ * Its label, its framing and the camera's aim used the riverbed, metres under a swimmer. */
+function shownBaseY(p: { x: number; z: number; altitudeM?: number }): number {
+  const base = renderBaseY(p, animals.groundHeightAt);
+  if ((p.altitudeM ?? 0) !== 0) return base;
+  const water = animals.waterSurfaceAt?.(p.x, p.z) ?? null;
+  return water !== null && water > base ? water : base;
+}
 // Every living animal on a map, with lists of those on the screen now and those in the part of
 // the map shown: choosing one follows it; clicking the map where none is takes the camera there.
 let animalMap: AnimalMap | null = null;
@@ -747,9 +755,7 @@ function animalsOnScreen(): SeenAnimal[] {
     if (animal.state === 'dead') continue;
     const p = animals.positionOf(id, now) ?? animal.position;
     if (!p) continue;
-    // A swimmer is at the water's surface, not on the riverbed under it.
-    const base = renderBaseY(p, animals.groundHeightAt), water = ((p as { altitudeM?: number }).altitudeM ?? 0) === 0 ? animals.waterSurfaceAt?.(p.x, p.z) ?? null : null;
-    screenPoint.set(p.x, water !== null && water > base ? water : base + visualFor(animal.speciesId).heightM * 0.5, p.z);
+    screenPoint.set(p.x, shownBaseY(p) + visualFor(animal.speciesId).heightM * 0.5, p.z);
     if (screenFrustum.containsPoint(screenPoint)) seen.push({ id, speciesId: animal.speciesId, state: animal.state });
   }
   return seen;
@@ -874,7 +880,7 @@ function observerSubject(speciesId: string, position: { x: number; z: number; al
   const height = visualFor(speciesId).heightM * size;
   // Up in a crown a small animal sits among leaf sprays far bigger than itself: open a wider window.
   const aloft = (position.altitudeM ?? 0) > 2;
-  return { x: position.x, y: renderBaseY(position, animals.groundHeightAt) + height * 0.5,
+  return { x: position.x, y: shownBaseY(position) + height * 0.5,
     z: position.z, radius: Math.max(aloft ? 2.5 : 0.35, height * 1.25) };
 }
 /** The live scene's animals for the ambient audio this frame; none during a replay. */
@@ -890,7 +896,7 @@ function audibleAnimals(): AudioAnimal[] {
     const position = animals.positionOf(id, now);
     if (!position) continue;
     result.push({ id, speciesId: animal.speciesId, state: animal.state, x: position.x,
-      y: renderBaseY(position, animals.groundHeightAt) + visualFor(animal.speciesId).heightM * 0.5, z: position.z });
+      y: shownBaseY(position) + visualFor(animal.speciesId).heightM * 0.5, z: position.z });
   }
   return result;
 }
@@ -1003,7 +1009,7 @@ function frame(): void {
       // An upright climber's body rises above its hind feet: aim at the body, not the bark below it.
       const climbing = recordedClimbPhase(climb.trace, seconds) !== null;
       follow.follow({ ...position, moving: !playback.paused && position.moving,
-        y: renderBaseY(position, animals.groundHeightAt), ...(climbing ? { focusHeight: visualFor(life.speciesId).heightM * 1.4 } : {}) },
+        y: shownBaseY(position), ...(climbing ? { focusHeight: visualFor(life.speciesId).heightM * 1.4 } : {}) },
         playback.paused || reducedMotion.matches ? 1 : dt);
       const moment = climbMoment(climb, seconds);
       replayMoment.textContent = moment;
@@ -1016,7 +1022,7 @@ function frame(): void {
       // otherwise spin the walk and graze cycles thousands of times faster than life.
       animals.syncReplay({ id: life.id, speciesId: life.speciesId, patchId: 0, state: point.state, currentGoal: '', drives: point.drives }, point, playback.elapsedMs / 1000);
       observerSubjects = [observerSubject(life.speciesId, point)];
-      follow.follow({ ...point, moving: !playback.paused && point.moving, y: renderBaseY(point, animals.groundHeightAt) }, playback.paused || reducedMotion.matches ? 1 : dt);
+      follow.follow({ ...point, moving: !playback.paused && point.moving, y: shownBaseY(point) }, playback.paused || reducedMotion.matches ? 1 : dt);
       replayMoment.textContent = momentAt(life.moments, playhead)?.text ?? '';
       replayWhen.textContent = `${life.id} · ${dayOf(playhead)}`;
       replaySeek.setAttribute('aria-valuetext', dayOf(playhead));
@@ -1079,8 +1085,8 @@ function frame(): void {
         follow.distance += (desired - follow.distance) * Math.min(1, dt * 3);
         const x = (position.x + partner.x) / 2, z = (position.z + partner.z) / 2;
         follow.follow({ x, z, heading: position.heading, moving: false,
-          y: Math.max(renderBaseY(position, animals.groundHeightAt), renderBaseY(partner, animals.groundHeightAt)) }, dt);
-      } else follow.follow({ ...position, y: renderBaseY(position, animals.groundHeightAt),
+          y: Math.max(shownBaseY(position), shownBaseY(partner)) }, dt);
+      } else follow.follow({ ...position, y: shownBaseY(position),
         focusHeight: visualFor(speciesId).heightM * characterScale(visibleAnimals.get(followedId) ?? {}) * 0.5 }, dt);
     } else if (farFollow?.id === followedId) {
       // Not loaded yet: fly toward where it was reported, so its regions are sent.
@@ -1091,7 +1097,7 @@ function frame(): void {
     const head = position === null ? null
       : new THREE.Vector3(
         position.x,
-        renderBaseY(position, animals.groundHeightAt) + bubbleHeight(visibleAnimals.get(followedId)),
+        shownBaseY(position) + bubbleHeight(visibleAnimals.get(followedId)),
         position.z,
       ).project(camera);
     bubble.show(
@@ -1126,7 +1132,7 @@ function frame(): void {
     const pose = followedEncounter && id ? poses.get(id) : undefined;
     if (!pose) { label.hidden = true; return; }
     const p = new THREE.Vector3(pose.position.x,
-      renderBaseY(pose.position, animals.groundHeightAt) + bubbleHeight(pose.animal), pose.position.z).project(camera);
+      shownBaseY(pose.position) + bubbleHeight(pose.animal), pose.position.z).project(camera);
     label.hidden = p.z < -1 || p.z > 1 || Math.abs(p.x) > 1 || Math.abs(p.y) > 1;
     const species = SPECIES_LABEL[pose.animal.speciesId] ?? speciesName(pose.animal.speciesId);
     const avatar = liveAgents.avatarForAnimal(pose.animal.id);
