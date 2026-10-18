@@ -110,11 +110,13 @@ animal that said it was travelling but had not moved for 48 hours. It found:
 | Elephants and red river hogs in rivers | 71 and 124 checks | Both wade across rivers, but the rule was written for swimmers only. | The rule now applies to animals that do not cross rivers. |
 | Duikers and mangabeys grazing in a channel's shallows | 29 checks | Founded in the shallows of a flooded-forest patch, they ate where they stood. | An animal that does not cross rivers, in a channel anywhere but at its drinking point, first walks out to the nearest dry ground it can reach. One that is fleeing flees. A thirsty one goes to its patch's drinking point and drinks, then walks out the next hour. |
 | Duikers standing on a river's bank for two days, "travelling" | 16 | In the rains the forest round them was flooded, which a duiker avoids. The only food it knew of was across the river. It chose that food every hour, found no way there, and stood still. | In the Congo, an animal with nothing to eat where it stands, and no food it knows of or only food it cannot reach, goes looking. |
-| A leopard scavenging in a river patch | 1 check | It walked to a carcass in the shallows. | Left: a carcass is an endpoint a hunter may step to. |
+| A leopard scavenging in a river patch | 1 check | It walked to a carcass in the shallows. | Left as it is: a hunter may step to a carcass. Not seen again in the later runs. |
 
 After the fixes, six days of the whole forest gave:
-- **Rule breaks:** 2 checks in 13,243 for leopards, the same leopard. Stalking prey in a river,
-  it followed it in, and it walked out within the hour. Every other rule held for every species.
+- **Rule breaks:** first 2 checks in 13,243 for leopards, both the same leopard. Stalking prey
+  that stood in a river, it followed it in. A chase stopped at the bank, but the slow stalk
+  before it did not. Now a stalk stops a metre short of a river the hunter does not cross
+  (`stalkBoundaryM`), and six more days broke no rule for any species.
 - **Stuck animals:** none.
 - **Hour time:** median 1.0 s and 95th percentile 1.5 s over three days; the slowest hour, 2.4 s,
   was the first.
@@ -141,9 +143,6 @@ The view was checked as well:
   crocodile) and river crossers (elephant, red river hog) do, standing or swimming in the river.
   Moving the point to the bank changes where older recordings say animals drank, so it waits for
   its own change.
-- **Leopards stalking into a river:** a chase stops at the bank, but the slow approach before it
-  can follow prey a short way into the water. This was seen twice in six days, by one leopard,
-  which walked out within the hour.
 - **Animals between recorded routes:** the view glides an animal in a straight line from one
   hour's position to the next. Up to 2,048 recorded routes an hour are drawn as walked, which
   covers the animals in view, but one beyond that cap could still be drawn crossing a river.

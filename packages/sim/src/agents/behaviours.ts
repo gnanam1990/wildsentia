@@ -584,6 +584,9 @@ function hunt(ctx: BehaviourContext): void {
         const land = landRayDistance(ctx.view.grid, ctx.patches, p, heading), seed = ctx.percept.patch.congoSeed;
         return seed === undefined || ctx.species.locomotion.swims ? land : Math.min(land, channelRayDistance(ctx.view.grid, seed, p, heading));
       } }),
+    ...(ctx.percept.patch.congoSeed === undefined || ctx.species.locomotion.swims || fliesSpecies(ctx.species)
+      || (ctx.species.locomotion.terrainCost.water ?? Infinity) < 3 ? {}
+      : { stalkBoundaryM: (p: WorldPosition, heading: number) => channelRayDistance(ctx.view.grid, ctx.percept.patch.congoSeed!, p, heading) }),
     predatorId: ctx.agent.id, preyId: victim.id, patchId: ctx.agent.patchId, worldTime: ctx.worldTime,
     predator: locateAgent(ctx.view.grid, ctx.agent), prey: locateAgent(ctx.view.grid, victim),
     predatorWalkMs: stalkSpeedMs(ctx.species, predatorScale, predatorTerrainCost),

@@ -24,6 +24,13 @@ describe('authoritative spatial hunt', () => {
     expect(Math.hypot(last.predator.x - last.prey.x, last.predator.z - last.prey.z)).toBeCloseTo(1);
     expect(result.distanceAtCommitM).toBeCloseTo(10);
   });
+  it('stops a stalk on the bank of a river the hunter does not cross, and does not commit from there', () => {
+    // A river begins 5 m along the stalk: the prey stands 20 m off, in it.
+    const result = run({ stalkBoundaryM: (p) => Math.max(0, 5 - p.x) });
+    expect(result.killed).toBe(false); expect(result.stage).toBe('approaching');
+    const last = result.trace.samples.at(-1)!;
+    expect(last.predator.x).toBeCloseTo(4); expect(last.seconds).toBeCloseTo(4);
+  });
   it('cannot kill prey it has not had enough time to approach', () => {
     const result = run({ secondsAvailable: 2 });
     expect(result.stage).toBe('approaching'); expect(result.killed).toBe(false);
