@@ -16,7 +16,7 @@ break.
 | `bird-perch` | A bird resting off the ground sits on top of a crown (34 m), not inside its leaves. |
 | `bird-flight` | A bird in flight is above the canopy, at 55 m or more over the 44 m emergents. Checked along every flight's route in `canopyHeights.test.ts`. |
 | `bird-off-floor` | A grown bird is on the forest floor only at a kill, to feed or to drink: it rests and lands in the trees. |
-| `dry-feet` | An animal that does not swim keeps out of a river's channel, except to drink at its patch's drinking point and rest there after. |
+| `dry-feet` | An animal that does not cross rivers keeps out of a river's channel, except to drink at its patch's drinking point and rest there after. Swimmers and the waders that cross rivers (elephant, red river hog) may go in. |
 | `diver-in-water` | An animal under water is a diver, in a river channel or a flooded patch. |
 | `drinks-at-water` | An animal drinking stands at water: its patch's pool or a river. |
 | `canopy-feeding` | Only a canopy dweller feeds up in a tree. |
@@ -98,6 +98,39 @@ Results:
   horns showed. One that rests in deep water does it standing, head up, rather than lying down
   out of sight.
 
+## A full-forest audit (18 October)
+
+The rules test runs 40 animals of each species, 520 in all. The owner asked for a full check for
+faults like the river ones, so the same rules were run on the whole forest of 41,700 animals,
+every hour for four to six days (`packages/sim/test/congoAudit.ts`). The audit also flagged any
+animal that said it was travelling but had not moved for 48 hours. It found:
+
+| Found | Over 4 days | Cause | Fix |
+|---|---|---|---|
+| Elephants and red river hogs in rivers | 71 and 124 checks | Both wade across rivers, but the rule was written for swimmers only. | The rule now applies to animals that do not cross rivers. |
+| Duikers and mangabeys grazing in a channel's shallows | 29 checks | Founded in the shallows of a flooded-forest patch, they ate where they stood. | An animal that does not cross rivers, in a channel anywhere but at its drinking point, first walks out to the nearest dry ground it can reach. One that is fleeing flees. A thirsty one goes to its patch's drinking point and drinks, then walks out the next hour. |
+| Duikers standing on a river's bank for two days, "travelling" | 16 | In the rains the forest round them was flooded, which a duiker avoids. The only food it knew of was across the river. It chose that food every hour, found no way there, and stood still. | In the Congo, an animal with nothing to eat where it stands, and no food it knows of or only food it cannot reach, goes looking. |
+| A leopard scavenging in a river patch | 1 check | It walked to a carcass in the shallows. | Left: a carcass is an endpoint a hunter may step to. |
+
+After the fixes, six days of the whole forest gave:
+- **Rule breaks:** 2 checks in 13,243 for leopards, the same leopard. Stalking prey in a river,
+  it followed it in, and it walked out within the hour. Every other rule held for every species.
+- **Stuck animals:** none.
+- **Hour time:** median 1.0 s and 95th percentile 1.5 s over three days; the slowest hour, 2.4 s,
+  was the first.
+
+The view was checked as well:
+- **A second river facing down:** the island's stored-flow streams (`terrain.ts`) were wound
+  facing down too, so no island stream was ever drawn. They now face up. In the Congo they are
+  no longer drawn: there they ran patch centre to patch centre and poked blocky slabs out of the
+  real river's banks.
+- **Far dots under the water:** an animal too far to draw in full is drawn as a dot. A swimmer's
+  dot stood on the riverbed, under the water. It now stands on the water.
+- **Labels and camera aim:** a swimmer's label, its framing and the camera's aim used the
+  riverbed, metres under the animal. They now use the water's surface.
+- **Ground:** animals on the ground stand on the drawn ground, at eight places sampled across the
+  forest. Monkeys up a tree sit within 1.5 m of the recorded height, spread through the crown.
+
 ## Still open
 
 - **Nests:** a crowned eagle's chick, a parent caring for it and a female about to lay stay where
@@ -108,6 +141,9 @@ Results:
   crocodile) and river crossers (elephant, red river hog) do, standing or swimming in the river.
   Moving the point to the bank changes where older recordings say animals drank, so it waits for
   its own change.
+- **Leopards stalking into a river:** a chase stops at the bank, but the slow approach before it
+  can follow prey a short way into the water. This was seen twice in six days, by one leopard,
+  which walked out within the hour.
 - **Animals between recorded routes:** the view glides an animal in a straight line from one
   hour's position to the next. Up to 2,048 recorded routes an hour are drawn as walked, which
   covers the animals in view, but one beyond that cap could still be drawn crossing a river.

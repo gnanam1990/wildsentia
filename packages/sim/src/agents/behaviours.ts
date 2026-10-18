@@ -169,8 +169,10 @@ function feed(ctx: BehaviourContext, mayMove = true, canopy = false): void {
   // Move only if this patch cannot feed the animal now, a predator that hunts it stands here
   // (sim_0.34.0), or it is flood-shy and standing in a flood. Otherwise eat where it stands.
   const wet = floodShy(ctx.species) && patch.flooded === true;
+  let blocked = false;
   if (mayMove && (availableNeed < wanted || ctx.percept.dangerous.has(patch.id) || wet) && target !== null && target.patchId !== patch.id) {
     const travel = moveTo(ctx, target.patchId);
+    blocked = travel.unreachable;
     // In the Congo, an animal that cannot get to better food eats what is here rather than nothing
     // (duikers in a flood they could not leave starved beside the food).
     if (!(travel.unreachable && patch.congoSeed !== undefined)) {
@@ -181,7 +183,13 @@ function feed(ctx: BehaviourContext, mayMove = true, canopy = false): void {
   delete ctx.agent.journey;
 
   const wantedNeed = Math.min(wanted, availableNeed);
-  if (wantedNeed <= 0) { ctx.agent.state = 'travelling'; return; }
+  if (wantedNeed <= 0) {
+    // In the Congo, one with nothing here and no food it knows of, or only food it cannot reach,
+    // goes looking: duikers on a river's bank in the rains, the forest round them flooded and their
+    // food across the river, stood two days saying they were travelling.
+    if (mayMove && (target === null || blocked) && patch.congoSeed !== undefined) { wander(ctx); return; }
+    ctx.agent.state = 'travelling'; return;
+  }
   // Appetite is gut fill: it bounds the kilograms swallowed, however poor the food, so a pig
   // living on fibrous grass fills up on less energy than on roots and mast (van Wieren 2000). A
   // daily gut limit (diet.maxDailyIntakeKg) stops it making that up by feeding all day.
@@ -1063,8 +1071,9 @@ export function executeGoal(ctx: BehaviourContext): void {
   ctx.agent.alternativeGoal = ctx.choice.alternative;
   ctx.agent.goalScore = ctx.choice.score;
 
-  // Out in a river it cannot cross, an animal first walks out of the water, whatever it wants.
-  if (ctx.choice.goal !== 'flee') {
+  // Out in a river it cannot cross, an animal first walks out of the water, whatever it wants but
+  // to flee or to drink (it goes to its patch's drinking point, then walks out the next hour).
+  if (ctx.choice.goal !== 'flee' && ctx.choice.goal !== 'find_water') {
     const out = wayOutOfWater(ctx.view.grid, ctx.agent, ctx.patches, ctx.species);
     if (out !== null) { moveTo(ctx, out); return; }
   }

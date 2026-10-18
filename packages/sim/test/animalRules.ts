@@ -14,6 +14,8 @@ export const FLIGHT_CLEARANCE_M = 55;
 const altitude = (a: Agent) => a.altitudeM ?? 0;
 const climbs = (cfg: SpeciesConfig) => cfg.locomotion.climbsTrees === true;
 const swims = (cfg: SpeciesConfig) => cfg.locomotion.swims !== undefined;
+/** Crosses a river's channel: swims, or wades it as an elephant or a red river hog does (water costs it under 3). */
+const crossesRivers = (cfg: SpeciesConfig) => swims(cfg) || (cfg.locomotion.terrainCost.water ?? Infinity) < 3;
 const atTrunk = (a: Agent, w: RuleWorld) => {
   const tree = treeAnchorGeometry(w.grid, a.patchId);
   return tree !== null && a.treeAnchorId === tree.id && Math.hypot(a.position!.x - tree.x, a.position!.z - tree.z) <= 1e-6;
@@ -38,8 +40,8 @@ export const RULES: readonly Rule[] = [
     applies: (a, c, w) => fliesSpecies(c) && a.dependentOn === null && a.pregnantSince === null && !w.parents.has(a.id)
       && !['hunt', 'care_for_young', 'find_water', 'find_food', 'scavenge'].includes(a.currentGoal) && a.state !== 'feeding' && a.state !== 'drinking',
     holds: (a) => altitude(a) > 0 },
-  { id: 'dry-feet', text: 'An animal that does not swim keeps out of a river\'s channel, except to drink at its patch\'s drinking point and rest there after.',
-    applies: (a, c) => !swims(c) && altitude(a) === 0 && a.state !== 'dead',
+  { id: 'dry-feet', text: 'An animal that does not cross rivers keeps out of a river\'s channel, except to drink at its patch\'s drinking point and rest there after.',
+    applies: (a, c) => !crossesRivers(c) && altitude(a) === 0 && a.state !== 'dead',
     holds: (a, _c, w) => !inChannel(a, w) || atWaterAccess(w.grid, a.position!, a.patchId, w.patches) },
   { id: 'diver-in-water', text: 'An animal under water is a diver, in a river channel or a flooded patch.',
     applies: (a) => a.locomotionMode === 'submerged',

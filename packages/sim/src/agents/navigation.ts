@@ -1,4 +1,4 @@
-import { congoRiverAt, fliesSpecies, terrainCostFor, initialPosition, inCongoChannel, patchAtPosition, patchCentre, positionInPatch, landWalkable, spatialHash, waterAccessPosition,
+import { atWaterAccess, congoRiverAt, fliesSpecies, terrainCostFor, initialPosition, inCongoChannel, patchAtPosition, patchCentre, positionInPatch, landWalkable, spatialHash, waterAccessPosition,
   CONGO_GRID, type WorldGrid, type Agent, type Patch, type SpeciesConfig, type WorldPosition, type MovementTrace, type GoalId } from '@vana/shared';
 import { approachContact } from './movement.js';
 import { locateAgent } from './spatial.js';
@@ -336,8 +336,8 @@ function stepCost(grid: WorldGrid, from: WorldPosition, fromId: number, toId: nu
 }
 
 /**
- * Where an animal that does not cross rivers, standing out in a river's channel (past the
- * shallows a drinking point lies in), goes first to get out of it: the nearest patch, its own or a
+ * Where an animal that does not cross rivers, standing in a river's channel anywhere but at its
+ * patch's drinking point, goes first to get out of it: the nearest patch, its own or a
  * neighbour, whose standing point is dry and that it can reach. Null when it is not out in the
  * water, or no way out is found. Without it an animal stranded in a river by a saved world chose
  * its food across the river, found no route there, and starved standing in the water.
@@ -346,7 +346,8 @@ export function wayOutOfWater(grid: WorldGrid, agent: Agent, patches: Patch[], c
   const patch = patches[agent.patchId]!, seed = patch.congoSeed;
   if (seed === undefined || crossesRivers(cfg) || (agent.altitudeM ?? 0) > 0 || !touchesChannel(grid, seed, patch.id)) return null;
   const at = locateAgent(grid, agent);
-  if (inside(grid, seed, at.x, at.z) < WADE_OUT_M) return null;
+  // At its patch's drinking point it may stand in the shallows (to drink, and rest after).
+  if (inside(grid, seed, at.x, at.z) < 0 || atWaterAccess(grid, at, patch.id, patches)) return null;
   const ways = [patch.id, ...patch.neighbours].flatMap((id) => {
     const spot = standingPoint(grid, agent.id, patches[id]!, cfg);
     return inCongoChannel(grid, seed, spot.x, spot.z) ? [] : [{ id, d: Math.hypot(spot.x - at.x, spot.z - at.z) }];
