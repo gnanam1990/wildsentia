@@ -249,9 +249,8 @@ export class AnimalMap {
     const rows: Array<{ id: string; speciesId: string; detail: string }> = this.#tab === 'seen'
       ? sortForList(this.seen().filter((a) => seenAll || shown.has(a.speciesId))).map((a) => ({ id: a.id, speciesId: a.speciesId, detail: a.state.replaceAll('_', ' ') }))
       : animalsInArea(this.#animals, viewArea(this.#view, this.#canvas.clientWidth, this.#canvas.clientHeight), shown).map((a) => ({ id: a.id, speciesId: a.speciesId, detail: '' }));
-    this.#listTitle.textContent = this.#tab === 'seen'
-      ? `${rows.length.toLocaleString('en-US')} animals on your screen now`
-      : `${rows.length.toLocaleString('en-US')} animals in this part of the map`;
+    const counted = `${rows.length.toLocaleString('en-US')} ${rows.length === 1 ? 'animal' : 'animals'}`;
+    this.#listTitle.textContent = this.#tab === 'seen' ? `${counted} on your screen now` : `${counted} in this part of the map`;
     this.#list.replaceChildren(...rows.slice(0, this.#shownRows).map((row) => {
       const item = document.createElement('li');
       const choose = document.createElement('button'); choose.type = 'button'; choose.className = 'animal-browser-row animal-map-row';
