@@ -224,9 +224,12 @@ export const CLIMBERS: ReadonlySet<string> = new Set(['langur', 'squirrel', 'leo
   // The Congo forest's climbers: its cats climb to escape and the mangabey to flee a cat.
   'african_leopard', 'african_golden_cat', 'agile_mangabey']);
 export const climbs = (speciesId: string): boolean => CLIMBERS.has(speciesId);
-/** In water deeper than it stands, a swimmer with a swim clip of its own (the crocodile) plays it. */
+/** In water deeper than it stands, a swimmer with a swim clip of its own (the crocodile) plays it.
+ * One without keeps its head up at rest: a lying-down rest clip sank a resting sitatunga out of sight. */
 export function swimmingClip(swimming: boolean, state: string, clipNames: readonly string[]): string | null {
-  return swimming && state !== 'dead' && clipNames.includes('Swim') ? 'Swim' : null;
+  if (!swimming || state === 'dead') return null;
+  if (clipNames.includes('Swim')) return 'Swim';
+  return state === 'resting' ? clipNames.find((clip) => clip === 'Idle' || clip === 'Idle_2') ?? null : null;
 }
 
 /** Species that travel by air in the simulation: the island's vulture, the Congo's crowned eagle. */
