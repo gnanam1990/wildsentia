@@ -39,6 +39,7 @@ import { stackLabels } from './labelLayout.js';
 import { restoreFollowOnOpen } from './followSubscription.js';
 import { LIVE_BUSY_CLOSE_CODE, ReconnectBackoff } from './reconnect.js';
 import type { EventMap } from './eventMap.js';
+import type { AnimalMap, SeenAnimal } from './animalMap.js';
 import { EventVisit } from './eventVisit.js';
 import { RewardObserver } from './rewards.js';
 import { SceneUpdates } from './sceneUpdates.js';
@@ -604,6 +605,7 @@ const sceneUpdates = new SceneUpdates<{
       mapPatches = update.environment.patches;
       if (store.world) groundTint.update(update.environment.patches, store.world.season);
       eventMap?.setPatches(mapPatches);
+      animalMap?.setPatches(mapPatches);
       carcasses.clear();
       for (const c of update.environment.carcasses) carcasses.set(c.id, c);
     }
@@ -733,6 +735,38 @@ speciesPicker.addEventListener('change', () => {
     }).catch(() => { /* the picker stays as chosen; nothing to follow */ });
 });
 // Every animal, by species and number: from the animal count's list, or its own button there.
+// Every living animal on a map, with lists of those on the screen now and those in the part of
+// the map shown: choosing one follows it; clicking the map where none is takes the camera there.
+let animalMap: AnimalMap | null = null;
+const screenFrustum = new THREE.Frustum(), screenMatrix = new THREE.Matrix4(), screenPoint = new THREE.Vector3();
+function animalsOnScreen(): SeenAnimal[] {
+  camera.updateMatrixWorld();
+  screenFrustum.setFromProjectionMatrix(screenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+  const now = performance.now(), seen: SeenAnimal[] = [];
+  for (const [id, animal] of store.animals) {
+    if (animal.state === 'dead') continue;
+    const p = animals.positionOf(id, now) ?? animal.position;
+    if (!p) continue;
+    // A swimmer is at the water's surface, not on the riverbed under it.
+    const base = renderBaseY(p, animals.groundHeightAt), water = ((p as { altitudeM?: number }).altitudeM ?? 0) === 0 ? animals.waterSurfaceAt?.(p.x, p.z) ?? null : null;
+    screenPoint.set(p.x, water !== null && water > base ? water : base + visualFor(animal.speciesId).heightM * 0.5, p.z);
+    if (screenFrustum.containsPoint(screenPoint)) seen.push({ id, speciesId: animal.speciesId, state: animal.state });
+  }
+  return seen;
+}
+const animalMapDialog = new LazyDialog<[]>('animal map', observerUiStatus, async () => {
+  const { AnimalMap } = await import('./animalMap.js');
+  const map = new AnimalMap((id) => watch(id), (x, z) => {
+    watch(null);
+    follow.target.set(x, animals.groundHeightAt(x, z), z);
+    follow.distance = 220;
+    canvas.focus();
+  }, animalsOnScreen, () => ({ x: follow.target.x, z: follow.target.z, followedId }));
+  map.setPatches(mapPatches);
+  animalMap = map;
+  return () => map.open();
+});
+document.querySelector('#open-animal-map')!.addEventListener('click', () => { void animalMapDialog.open(); });
 const browseAnimals = createAnimalBrowser((id) => watch(id), () => store.world?.population);
 document.querySelector('#population')!.addEventListener('click', (event) => {
   const button = (event.target as HTMLElement).closest<HTMLElement>('[data-browse-species]');

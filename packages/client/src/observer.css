@@ -75,6 +75,32 @@
 .observer-app .animal-browser-row strong { font-size: 13px; font-weight: 600; }
 .observer-app .animal-browser-row span { color: var(--ink-3); font-size: 11px; }
 @media (max-width: 520px) { .observer-app .animal-browser-filters { grid-template-columns: 1fr; } }
+.observer-app .forest-dialog.animal-map { width: min(1180px, calc(100vw - 32px)); height: min(820px, calc(100dvh - 48px)); max-height: none; padding: 20px; display: none; }
+.observer-app .forest-dialog.animal-map[open] { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 320px); grid-template-rows: auto auto minmax(0, 1fr); gap: 8px 18px; }
+.observer-app .animal-map > .dialog-header { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; }
+.observer-app .animal-map h2 { margin: 0; font: 550 20px/1.25 'Manrope Variable', sans-serif; letter-spacing: -.03em; }
+.observer-app .animal-map > .dialog-status { grid-column: 1 / -1; margin: 0; color: var(--ink-3); font-size: 11px; }
+.observer-app .animal-map-canvas { position: relative; min-height: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.observer-app .animal-map-canvas canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+.observer-app .animal-map-canvas canvas:active { cursor: grabbing; }
+.observer-app .animal-map-tools { position: absolute; top: 10px; left: 10px; display: flex; gap: 6px; }
+.observer-app .animal-map-tools button { min-width: 36px; min-height: 36px; padding: 0 10px; border-radius: 9px; font: 600 13px 'Manrope Variable', sans-serif; }
+.observer-app .animal-map-side { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.observer-app .animal-map-legend { display: grid; grid-template-columns: 1fr 1fr; gap: 0 8px; font-size: 11px; line-height: 1.3; }
+.observer-app .animal-map-key { display: flex; align-items: center; gap: 6px; min-height: 26px; cursor: pointer; }
+.observer-app .animal-map-key input { width: 14px; height: 14px; }
+.observer-app .animal-map-key input { margin: 0; }
+.observer-app .animal-map-swatch { flex: none; width: 10px; height: 10px; border-radius: 3px; }
+.observer-app .animal-map-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.observer-app .animal-map-tabs button { min-height: 36px; border-radius: 9px; font: 600 12px 'Manrope Variable', sans-serif; }
+.observer-app .animal-map-tabs button[aria-selected="true"] { background: var(--accent, #3d6b4c); color: #fff; }
+.observer-app .animal-map-count { margin: 0; color: var(--ink-3); font-size: 11px; }
+.observer-app .animal-map-list { flex: 1; min-height: 0; }
+.observer-app .animal-map-row { flex-direction: row; align-items: center; justify-content: flex-start; gap: 8px; min-height: 40px; }
+.observer-app .animal-map-row span:last-child:not(.animal-map-swatch) { margin-left: auto; }
+@media (max-width: 760px) {
+  .observer-app .forest-dialog.animal-map[open] { grid-template-columns: 1fr; grid-template-rows: auto auto minmax(260px, 1fr) minmax(0, 1fr); }
+}
 .observer-app .species-picker { position: relative; flex: 0 1 auto; order: initial; align-items: center; }
 .observer-app .species-picker select { max-width: 100%; width: 180px; padding: 0 14px; min-height: 44px; color: var(--ink); border: 1px solid var(--glass-edge); border-radius: 10px; background: var(--glass-reflection), var(--panel); font: 550 12px 'Manrope Variable', sans-serif; backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); box-shadow: var(--shadow); }
 .observer-app .bar > .text-button { width: 64px; border: 1px solid var(--glass-edge); border-radius: 12px; background: var(--button-glass), var(--panel); color: var(--ink); box-shadow: var(--button-edge); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); font-size: 11px; }

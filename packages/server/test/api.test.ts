@@ -64,6 +64,21 @@ maybe('read API', () => {
     expect((await api.inject({ method: 'GET', url: '/animals/list?species=' + 'x'.repeat(80) })).statusCode).toBe(400);
   });
 
+  it('maps every living animal, packed by species, each at its position to the metre', async () => {
+    const all = (await api.inject({ method: 'GET', url: '/animals' })).json().animals as Array<{ id: string; speciesId: string; position: { x: number; z: number } }>;
+    const map = (await api.inject({ method: 'GET', url: '/animals/map' })).json() as { species: Array<{ id: string; ids: string; xz: number[] }> };
+    const unpacked = map.species.flatMap((s) => s.ids.split(',').map((tail, i) => ({
+      id: tail.startsWith('=') ? tail.slice(1) : `${s.id}_${tail}`, speciesId: s.id, x: s.xz[i * 2]!, z: s.xz[i * 2 + 1]! })));
+    expect(unpacked).toHaveLength(all.length);
+    const byId = new Map(unpacked.map((a) => [a.id, a]));
+    for (const a of all) {
+      const m = byId.get(a.id)!;
+      expect(m.speciesId).toBe(a.speciesId);
+      expect(Math.abs(m.x - a.position.x)).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(m.z - a.position.z)).toBeLessThanOrEqual(0.5);
+    }
+  });
+
   it('reports health', async () => {
     const res = await api.inject({ method: 'GET', url: '/health' });
     expect(res.statusCode).toBe(200);

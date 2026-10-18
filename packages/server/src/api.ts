@@ -125,7 +125,7 @@ export function buildApi({ host, pool, narrator, insights: insightDeps, live, re
     return view ? { worldTime: view.worldTime, nextSequence: view.nextSequence } : null;
   } });
 
-  const observationRoutes = new Set(['/world', '/animals', '/animals/list', '/animals/:id', '/patches', '/hydrology', '/micro-ecology', '/carcasses', '/event-map', '/animals/:id/passport', '/animals/:id/life', '/animals/:id/encounters/:eventId', '/animals/:id/movements/:eventId', '/animals/:id/recap', '/animals/:id/events', '/events']);
+  const observationRoutes = new Set(['/world', '/animals', '/animals/list', '/animals/map', '/animals/:id', '/patches', '/hydrology', '/micro-ecology', '/carcasses', '/event-map', '/animals/:id/passport', '/animals/:id/life', '/animals/:id/encounters/:eventId', '/animals/:id/movements/:eventId', '/animals/:id/recap', '/animals/:id/events', '/events']);
   const observations = new WeakMap<FastifyRequest, CheckpointObservation>();
   observationRoutes.add('/community');
   observationRoutes.add('/regions');
@@ -262,6 +262,29 @@ export function buildApi({ host, pool, narrator, insights: insightDeps, live, re
         id: a.id, speciesId: a.speciesId, sex: a.sex, stage: a.lifeStage, state: a.state,
         ageDays: Math.floor(a.ageDays),
       })),
+    };
+  });
+
+  /**
+   * Where every living animal is, for the map: by species, each animal's number and its position
+   * to the metre. Packed small (an id's species prefix dropped, positions as one flat list), so a
+   * 41,000-animal world is some 0.7 MB where `/animals` is 16 MB.
+   */
+  app.get('/animals/map', async (request) => {
+    const view = observed(request), bySpecies = new Map<string, { ids: string[]; xz: number[] }>();
+    const living = view.livingAnimals().filter((a) => a.position !== undefined)
+      .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    for (const a of living) {
+      let entry = bySpecies.get(a.speciesId);
+      if (!entry) { entry = { ids: [], xz: [] }; bySpecies.set(a.speciesId, entry); }
+      const prefix = `${a.speciesId}_`;
+      // An id that does not start with its species is sent whole, marked '='.
+      entry.ids.push(a.id.startsWith(prefix) ? a.id.slice(prefix.length) : `=${a.id}`);
+      entry.xz.push(Math.round(a.position!.x), Math.round(a.position!.z));
+    }
+    return {
+      worldTime: view.worldTime,
+      species: [...bySpecies].sort(([a], [b]) => (a < b ? -1 : 1)).map(([id, e]) => ({ id, ids: e.ids.join(','), xz: e.xz })),
     };
   });
 
