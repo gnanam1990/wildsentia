@@ -25,11 +25,13 @@ export interface RenderPosition {
 /** One elevation contract for rigs, camera, cutaways, dots and screen-space attachments. */
 /**
  * Water deeper than an animal stands at the hip is swum, not walked: its body rides with the back
- * at the waterline and the head above. Shallower water is waded on its feet.
+ * just under the waterline (its hip a fifth of its height above the feet out of the water) and its
+ * head and neck above. With the back at the waterline a sitatunga's head sat in the dark water and
+ * only its horns showed. Shallower water is waded on its feet.
  */
 export function swimBaseY(groundY: number, surfaceY: number | null, hipM: number): { y: number; swimming: boolean } {
   if (surfaceY === null || surfaceY - groundY <= hipM * 0.9) return { y: groundY, swimming: false };
-  return { y: Math.round((surfaceY - hipM) * 1000) / 1000, swimming: true };
+  return { y: Math.round((surfaceY - hipM * 0.8) * 1000) / 1000, swimming: true };
 }
 
 export function renderBaseY(position: { x: number; z: number; altitudeM?: number }, groundAt: (x: number, z: number) => number): number {
@@ -120,13 +122,15 @@ export class PositionTracker {
     return output;
   }
 
-  /** Visual slope only for a server-reported, same-x/z vertical checkpoint change. */
-  verticalPhaseAt(id: string, nowMs: number): 'ascending' | 'descending' | null {
+  /** Visual slope only for a server-reported, same-x/z vertical checkpoint change; a move between
+   * two places both aloft is a canopy dweller crossing to another tree. */
+  verticalPhaseAt(id: string, nowMs: number): 'ascending' | 'descending' | 'crossing' | null {
     const track = this.#tracks.get(id);
-    if (!track || track.fromX !== track.toX || track.fromZ !== track.toZ) return null;
+    if (!track) return null;
     const progress = (nowMs - track.startedAt) / this.#hopMs;
     if (progress <= 0 || progress >= 1) return null;
     const from = track.fromAltitude ?? 0, to = track.toAltitude ?? 0;
+    if (track.fromX !== track.toX || track.fromZ !== track.toZ) return from > 0 && to > 0 ? 'crossing' : null;
     return to > from ? 'ascending' : to < from ? 'descending' : null;
   }
 }

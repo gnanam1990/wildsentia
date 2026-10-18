@@ -8,6 +8,8 @@ import { chooseVisible } from './lod.js';
 import { RENDER_BUDGETS, type RenderTier } from './renderQuality.js';
 import { visualFor, visualForAnimal } from './species.js';
 import { onShore, type Pool } from './pools.js';
+import { spreadInCrowns, type CrownPlace, type PerchSubject } from './crownPerch.js';
+import { CrownLimbs } from './crownLimbs.js';
 import { characterScale, coatMultiplier } from './appearance.js';
 import { separateBodies, type Body, type Obstacle, type ObstacleField } from './obstacles.js';
 import type { LivePose } from './liveEncounters.js';
@@ -105,6 +107,17 @@ export class AnimalLayer {
   /** The water surface where an animal stands (the Congo's rivers and flood), or null on dry ground. */
   waterSurfaceAt: ((x: number, z: number) => number | null) | null = null;
 
+  /** A far animal's dot stands on the water where there is water (on the riverbed it was hidden
+   * under the river); rebuilt only when the ground or the water changes, so the dots know to move. */
+  #dotSampler: { ground: unknown; water: unknown; at: (x: number, z: number) => number } | null = null;
+  #dotGround(): (x: number, z: number) => number {
+    const ground = this.groundHeightAt, water = this.waterSurfaceAt;
+    if (this.#dotSampler?.ground !== ground || this.#dotSampler.water !== water) {
+      this.#dotSampler = { ground, water, at: water ? (x, z) => Math.max(ground(x, z), water(x, z) ?? -Infinity) : ground };
+    }
+    return this.#dotSampler.at;
+  }
+
   readonly #templates = new Map<string, Promise<THREE.Group>>();
   readonly #rigs = new Map<string, Rig>();
   /** Seconds of drawn time, for each animal's own look-up rhythm while it feeds or drinks. */
@@ -132,6 +145,7 @@ export class AnimalLayer {
   readonly #dots: THREE.Points;
   readonly #dotLayer: AnimalDots;
   static readonly MAX_DOTS = 8000;
+  readonly #limbs = new CrownLimbs();
 
   /** The animal behind a dot a click landed on. */
   dotIdAt(index: number): string | undefined {
@@ -144,7 +158,7 @@ export class AnimalLayer {
 
   constructor() {
     this.#dotLayer = new AnimalDots(AnimalLayer.MAX_DOTS); this.#dots = this.#dotLayer.mesh;
-    this.root.add(this.#dots);
+    this.root.add(this.#dots, this.#limbs.mesh);
   }
 
   async #template(animal: AnimalState): Promise<THREE.Group> {
@@ -312,6 +326,16 @@ export class AnimalLayer {
       this.tracker.update(animal.id, animal.patchId, nowMs, animal.position, animal.altitudeM);
       positions.set(animal.id, this.tracker.positionAt(animal.id, nowMs));
     }
+    // A troop resting up one tree is recorded at the tree's one point: spread it through the crown.
+    const aloft: PerchSubject[] = [];
+    for (const [id, p] of positions) {
+      const animal = animals.get(id)!;
+      if ((p.altitudeM ?? 0) > 0 && arboreal(animal.speciesId) && !flies(animal.speciesId) && !recorded.has(id)) {
+        aloft.push({ id, x: p.x, z: p.z, altitudeM: p.altitudeM!, moving: p.moving });
+      }
+    }
+    const perched = spreadInCrowns(aloft);
+    for (const [id, place] of perched) positions.set(id, { ...positions.get(id)!, x: place.x, z: place.z, altitudeM: place.altitudeM });
     const budget = RENDER_BUDGETS[this.quality];
     const visible = chooseVisible(positions, focus, followedId, { max: budget.animalModels, radiusM: budget.animalRadius });
     const partner = followedId === null ? undefined : recorded.get(followedId)?.partnerId;
@@ -358,8 +382,10 @@ export class AnimalLayer {
       }
     }
 
+    this.#drawLimbs(visible, perched, positions);
+
     // Keep pending actors selectable as dots until their placed model is actually available.
-    this.#dotLayer.sync(animals, positions, new Set([...visible].filter((id) => this.#rigs.has(id))), this.groundHeightAt);
+    this.#dotLayer.sync(animals, positions, new Set([...visible].filter((id) => this.#rigs.has(id))), this.#dotGround());
 
     this.tracker.forgetAllExcept(new Set(animals.keys()));
     for (const [id, rig] of [...this.#rigs]) {
@@ -380,6 +406,7 @@ export class AnimalLayer {
   syncReplayGroup(subjects: Array<{ animal: AnimalState; position: RenderPosition; climbPhase?: ClimbVisualPhase | null;
     act?: number; actWeight?: number }>, seconds = 0): void {
     this.#dotLayer.hide();
+    this.#limbs.begin(); this.#limbs.end();
     const ids = new Set(subjects.map(({ animal }) => animal.id));
     this.#wanted = ids;
     this.#wantedVariants = new Map(subjects.map(({ animal }) => [animal.id, variantKey(animal)]));
@@ -508,6 +535,16 @@ export class AnimalLayer {
     rig.visual.rotation.x = rig.climbRest.rotationX + pitch;
     rig.visual.position.z = rig.climbRest.z + back;
     rig.visual.position.y = rig.climbRest.y + lift;
+  }
+
+  /** The limb each drawn climber resting up a crown sits on. */
+  #drawLimbs(visible: ReadonlySet<string>, perched: ReadonlyMap<string, CrownPlace>, positions: ReadonlyMap<string, RenderPosition>): void {
+    this.#limbs.begin();
+    for (const [id, place] of perched) {
+      if (!visible.has(id) || !this.#rigs.has(id)) continue;
+      this.#limbs.add(place.trunkX, place.trunkZ, place.x, renderBaseY(positions.get(id)!, this.groundHeightAt), place.z);
+    }
+    this.#limbs.end();
   }
 
   #place(rig: Rig, position: RenderPosition): void {

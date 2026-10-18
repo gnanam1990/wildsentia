@@ -104,6 +104,9 @@ export function recapLine(event: WorldEvent, subjectId: string): RecapLine | nul
       return subjectId === first ? line('Ran from danger') : null;
     case 'tree_climbed': {
       if (subjectId !== first) return null;
+      // A canopy dweller crossing aloft to the next tree, for food there or with its troop.
+      if (event.conditions.direction === 'traverse')
+        return line(event.conditions.reason === 'canopy_forage' ? 'Crossed the canopy to feed in the next tree' : 'Moved through the canopy to the next tree');
       const ascent = event.conditions.direction === 'ascend';
       const distance = event.effects.verticalDistanceM;
       if (typeof distance !== 'number' || !Number.isFinite(distance) || distance <= 0)

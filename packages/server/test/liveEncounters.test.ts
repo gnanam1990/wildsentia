@@ -6,7 +6,7 @@ import { createWorld } from '../../sim/src/world.js';
 import { makeAgent } from '../../sim/test/helpers.js';
 import { isLiveEncounterFrame, LiveEncounterPlayer } from '../../client/src/liveEncounters.js';
 import { displaySecondAt, paceMovement } from '@vana/shared';
-import { ISLAND_GRID } from '@vana/shared';
+import { CONGO_GRID, ISLAND_GRID } from '@vana/shared';
 
 const p = (x: number) => ({ x, z: 0, heading: 0 });
 const actors = new Map<string, EncounterAppearance>([
@@ -105,6 +105,28 @@ describe('bounded live encounter collection', () => {
     const down = climb('descend'); down.conditions.reason = 'roost';
     expect(isRecordedTreeClimb(ISLAND_GRID, down)).toBe(false);
   });
+  it('admits a canopy dweller crossing aloft from its tree to a neighbouring tree, and nothing that leaves the canopy', () => {
+    const world = createWorld({ seed: 7, speciesDir: fileURLToPath(new URL('../../../config/species-congo', import.meta.url)),
+      terrainProfile: 'congo_v1', initialAgents: { agile_mangabey: 40 }, minPopulation: {}, retainEvents: 'all' });
+    let hop: WorldEvent | undefined;
+    for (let h = 0; h < 48 && !hop; h++) {
+      world.step(1);
+      hop = world.log.all().find((e) => e.type === 'tree_climbed' && e.conditions.direction === 'traverse');
+    }
+    expect(hop).toBeDefined();
+    expect(isRecordedTreeClimb(CONGO_GRID, hop!)).toBe(true);
+    const copy = () => structuredClone(hop!);
+    const middle = Math.floor(hop!.movement!.samples.length / 2);
+    for (const edit of [(e: WorldEvent) => { e.movement!.samples[middle]!.altitudeM = 0; },
+      (e: WorldEvent) => { e.movement!.samples[middle]!.position.x += 20; },
+      (e: WorldEvent) => { e.conditions.treeAnchorId = 'wrong'; },
+      (e: WorldEvent) => { e.conditions.from = (e.conditions.from as number) + 5; },
+      (e: WorldEvent) => { e.conditions.reason = 'roost'; },
+      (e: WorldEvent) => { e.goal = 'rest'; },
+      (e: WorldEvent) => { e.effects.verticalDistanceM = 7; }]) {
+      const invalid = copy(); edit(invalid); expect(isRecordedTreeClimb(CONGO_GRID, invalid)).toBe(false);
+    }
+  }, 120_000);
   // Water contact is recorded around the patch's access point, which sim_0.30.0 moved off the centre.
   const source = waterAccessPosition(ISLAND_GRID, 0);
   const w = (dx: number) => ({ x: source.x + dx, z: source.z, heading: Math.PI / 2 });

@@ -126,6 +126,18 @@ describe('observer-only occlusion reveal', () => {
     material.onBeforeCompile(shader as never, {} as THREE.WebGLRenderer);
     expect(shader.vertexShader).toContain('vObserverLens = gl_Position.w');
     expect(shader.fragmentShader).toContain('observerNoise >= observerLensKeep');
+    // Up in a tree the camera sits among the leaves: the open reach widens while the subject is aloft.
+    const visibility = new ObserverVisibility(), wide = new THREE.MeshStandardMaterial();
+    visibility.patch(wide);
+    const wideShader = { uniforms: {} as Record<string, { value: unknown }>,
+      vertexShader: '#include <project_vertex>\n#include <fog_vertex>', fragmentShader: '#include <alphatest_fragment>' };
+    wide.onBeforeCompile(wideShader as never, {} as THREE.WebGLRenderer);
+    expect((wideShader.uniforms.observerLens!.value as THREE.Vector2).toArray()).toEqual([0.8, 3.2]);
+    visibility.setLensReach(8);
+    expect((wideShader.uniforms.observerLens!.value as THREE.Vector2).toArray()).toEqual([2, 8]);
+    expect(lensKeep(5, 8)).toBeLessThan(1);
+    expect(lensKeep(9, 8)).toBe(1);
+    wide.dispose();
     // A shader that projects its own way and has no fog step (a far-tree card) keeps every pixel.
     const card = compile(material);
     expect(card.vertexShader).not.toContain('vObserverLens');

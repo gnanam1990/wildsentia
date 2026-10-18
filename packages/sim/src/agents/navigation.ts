@@ -1,5 +1,5 @@
-import { congoRiverAt, fliesSpecies, terrainCostFor, initialPosition, inCongoChannel, patchAtPosition, patchCentre, positionInPatch, landWalkable, spatialHash,
-  type WorldGrid, type Agent, type Patch, type SpeciesConfig, type WorldPosition, type MovementTrace, type GoalId } from '@vana/shared';
+import { atWaterAccess, congoRiverAt, fliesSpecies, terrainCostFor, initialPosition, inCongoChannel, patchAtPosition, patchCentre, positionInPatch, landWalkable, spatialHash, waterAccessPosition,
+  CONGO_GRID, type WorldGrid, type Agent, type Patch, type SpeciesConfig, type WorldPosition, type MovementTrace, type GoalId } from '@vana/shared';
 import { approachContact } from './movement.js';
 import { locateAgent } from './spatial.js';
 import { locomotionFactor } from './needs.js';
@@ -36,6 +36,91 @@ function allChannel(grid: WorldGrid, seed: number, patchId: number): boolean {
   return flags[patchId] === 2;
 }
 
+/** Whether a river's channel can reach into a patch: its centre is within the channel's half-width
+ * and the patch's half-diagonal of the river's line (one lookup a patch, cached). A channel cut
+ * through flooded-forest patches too, not only those classed as river. */
+const touchCache = { seed: NaN, grid: null as WorldGrid | null, flags: new Uint8Array(0) };
+function touchesChannel(grid: WorldGrid, seed: number, patchId: number): boolean {
+  if (touchCache.seed !== seed || touchCache.grid !== grid) Object.assign(touchCache, { seed, grid, flags: new Uint8Array(grid.cols * grid.rows) });
+  const flags = touchCache.flags;
+  if (flags[patchId] === 0) {
+    const c = patchCentre(grid, patchId), at = congoRiverAt(grid, seed, c.x, c.z);
+    flags[patchId] = at.distanceM <= at.halfM + grid.patchM * Math.SQRT1_2 ? 2 : 1;
+  }
+  return flags[patchId] === 2;
+}
+
+/** A patch's waypoint on a route for an animal that does not cross rivers, the same for every animal
+ * near a river (so whether a step crosses a channel is the patches' own, cached): in a patch a channel
+ * touches, its dry point nearest the centre; in a patch beside one, its centre (dry, as the channel
+ * does not reach it); elsewhere the animal's own fixed spot. */
+const passCache = { seed: NaN, grid: null as WorldGrid | null, points: new Map<number, WorldPosition | null>() };
+function passPoint(grid: WorldGrid, id: string, patch: Pick<Patch, 'id' | 'congoSeed' | 'habitat'>, cfg: SpeciesConfig): WorldPosition {
+  const seed = patch.congoSeed;
+  if (seed === undefined || crossesRivers(cfg)) return initialPosition(grid, id, patch.id);
+  if (!touchesChannel(grid, seed, patch.id)) {
+    const col = patch.id % grid.cols, row = Math.floor(patch.id / grid.cols);
+    let beside = false;
+    for (let dr = -1; dr <= 1 && !beside; dr++) for (let dc = -1; dc <= 1 && !beside; dc++) {
+      const c = col + dc, r = row + dr;
+      if ((dc || dr) && c >= 0 && r >= 0 && c < grid.cols && r < grid.rows) beside = touchesChannel(grid, seed, r * grid.cols + c);
+    }
+    return beside ? { ...patchCentre(grid, patch.id), heading: 0 } : initialPosition(grid, id, patch.id);
+  }
+  if (passCache.seed !== seed || passCache.grid !== grid) Object.assign(passCache, { seed, grid, points: new Map() });
+  let point = passCache.points.get(patch.id);
+  if (point === undefined) {
+    const c = patchCentre(grid, patch.id), dry = dryGround(grid, seed, patch.id);
+    let best = -1, bestD = Infinity;
+    for (let i = 0; i < dry.length; i += 2) { const d = Math.hypot(dry[i]! - c.x, dry[i + 1]! - c.z); if (d < bestD) { bestD = d; best = i; } }
+    passCache.points.set(patch.id, point = best < 0 ? null : { x: dry[best]!, z: dry[best + 1]!, heading: 0 });
+  }
+  return point ?? initialPosition(grid, id, patch.id);
+}
+
+/** How far into a channel an animal can stand and still walk out (a river patch's drinking point
+ * lies up to about 27 m inside it). */
+const WADE_OUT_M = 30;
+
+/** Whether a straight step crosses a river's channel (sampled every 15 m; cached by its ends). An
+ * animal standing in the water walks out: until it reaches dry ground, water within its first 30 m
+ * is not a crossing, nor is water that grows shallower as it goes (heading for the bank, not along
+ * or across the river). Without this an animal that drank at a river could never leave it (133
+ * duikers and buffalo starved standing there in 40 days), and one already far out in a river when
+ * a world was saved stood there for good. */
+const crossingCache = new Map<string, boolean>();
+const inside = (grid: WorldGrid, seed: number, x: number, z: number) => { const at = congoRiverAt(grid, seed, x, z); return at.halfM + 3 - at.distanceM; };
+function stepCrossesChannel(grid: WorldGrid, seed: number, a: WorldPosition, b: WorldPosition): boolean {
+  const key = `${seed}:${a.x.toFixed(2)},${a.z.toFixed(2)}>${b.x.toFixed(2)},${b.z.toFixed(2)}`;
+  let crosses = crossingCache.get(key);
+  if (crosses === undefined) {
+    const length = Math.hypot(b.x - a.x, b.z - a.z), steps = Math.max(1, Math.ceil(length / 15));
+    let depth = inside(grid, seed, a.x, a.z), leaving = depth >= 0;
+    crosses = false;
+    for (let k = 1; k < steps && !crosses; k++) {
+      const here = inside(grid, seed, a.x + (b.x - a.x) * k / steps, a.z + (b.z - a.z) * k / steps), wet = here >= 0;
+      // Walking out: each sample at least 0.3 m shallower for each metre walked (within some 70° of straight out).
+      if (leaving && (!wet || (length * k / steps > WADE_OUT_M && here > depth - 0.3 * length / steps))) leaving = false;
+      depth = here;
+      crosses = wet && !leaving;
+    }
+    if (crossingCache.size > 500_000) crossingCache.clear();
+    crossingCache.set(key, crosses);
+  }
+  return crosses;
+}
+
+/** How far a straight line from `origin` along `heading` runs before it enters a river's channel
+ * (4 m steps, up to 400 m): where a chase stops for an animal that does not swim. */
+export function channelRayDistance(grid: WorldGrid, seed: number, origin: WorldPosition, heading: number): number {
+  // No river within the ray's reach: one lookup, not a hundred.
+  const near = congoRiverAt(grid, seed, origin.x, origin.z);
+  if (near.distanceM - near.halfM - 3 > 400) return Infinity;
+  const vx = Math.sin(heading), vz = Math.cos(heading);
+  for (let d = 4; d <= 400; d += 4) if (inCongoChannel(grid, seed, origin.x + vx * d, origin.z + vz * d)) return Math.max(0, d - 4);
+  return Infinity;
+}
+
 /** Finds every Congo river patch's dry ground once, when a world is made (about 2 s for seed 7). */
 export function warmDryGround(grid: WorldGrid, patches: readonly Pick<Patch, 'id' | 'habitat' | 'congoSeed'>[]): void {
   for (const p of patches) if (p.habitat === 'water' && p.congoSeed !== undefined && !allChannel(grid, p.congoSeed, p.id)) dryGround(grid, p.congoSeed, p.id);
@@ -48,13 +133,40 @@ function crossesRivers(cfg: SpeciesConfig): boolean {
 }
 
 /**
+ * Whether an animal can drink a patch's water without being stranded. A Congo patch's drinking
+ * point can lie far out in a river's channel (40-150 m in, measured), and an animal that does not
+ * cross rivers that walked out there to drink could not step back out: 133 duikers and buffalo
+ * starved standing in the river in 40 days. It drinks only where the point is within wading reach
+ * of the bank (fixed for a world, found once a patch).
+ */
+const drinkCache = { seed: NaN, grid: null as WorldGrid | null, flags: new Uint8Array(0) };
+export function waterInReach(grid: WorldGrid, p: Patch, patches: readonly Patch[], cfg: SpeciesConfig): boolean {
+  const seed = p.congoSeed;
+  if (seed === undefined || crossesRivers(cfg) || !touchesChannel(grid, seed, p.id)) return true;
+  if (drinkCache.seed !== seed || drinkCache.grid !== grid) Object.assign(drinkCache, { seed, grid, flags: new Uint8Array(grid.cols * grid.rows) });
+  if (drinkCache.flags[p.id] === 0) {
+    const at = waterAccessPosition(grid, p.id, patches), river = congoRiverAt(grid, seed, at.x, at.z);
+    drinkCache.flags[p.id] = river.halfM - river.distanceM > WADE_OUT_M ? 2 : 1;
+  }
+  return drinkCache.flags[p.id] === 1;
+}
+
+/** A Congo river patch is a place a land animal that does not cross rivers can go to (to drink at
+ * its bank, or stand on its dry ground) but never through: its fixed spot on the way may lie in the
+ * channel, and a duiker or a golden cat walked out into the middle of a 450 m river. */
+function throughOnly(p: Pick<Patch, 'habitat' | 'congoSeed'>, cfg: SpeciesConfig): boolean {
+  return p.habitat === 'water' && p.congoSeed !== undefined && !crossesRivers(cfg);
+}
+
+/**
  * Where an animal stands in a patch when no exact endpoint is asked for: its own fixed spot,
  * moved to the nearest dry ground for a land animal where a Congo river's channel crosses the
  * patch (blue duikers grazed standing in the river). A swimmer or a flier keeps its spot.
  */
 export function standingPoint(grid: WorldGrid, id: string, patch: Pick<Patch, 'id' | 'congoSeed' | 'habitat'>, cfg: SpeciesConfig): WorldPosition {
   const spot = initialPosition(grid, id, patch.id), seed = patch.congoSeed;
-  if (seed === undefined || patch.habitat !== 'water' || cfg.locomotion.swims || fliesSpecies(cfg) || !inCongoChannel(grid, seed, spot.x, spot.z)) return spot;
+  // A bird lands on dry ground too (one came down in the middle of a river and rested on it).
+  if (seed === undefined || cfg.locomotion.swims || !touchesChannel(grid, seed, patch.id) || !inCongoChannel(grid, seed, spot.x, spot.z)) return spot;
   const dry = dryGround(grid, seed, patch.id);
   let best = -1, bestD = Infinity;
   for (let i = 0; i < dry.length; i += 2) {
@@ -94,7 +206,7 @@ const costOf = (grid: WorldGrid, p: Patch, cfg: SpeciesConfig): number => {
 const regionCache = new WeakMap<Patch[], WeakMap<SpeciesConfig, Int32Array | null>>();
 
 function passableInAnySeason(grid: WorldGrid, p: Patch, cfg: SpeciesConfig): boolean {
-  if (!landWalkable(p)) return false;
+  if (!landWalkable(p) || throughOnly(p, cfg)) return false;
   if (p.habitat === 'water' && p.congoSeed !== undefined && !crossesRivers(cfg) && allChannel(grid, p.congoSeed, p.id)) return false;
   return [false, true].some((flooded) => { const v = terrainCostFor(cfg, p.habitat, flooded); return Number.isFinite(v) && v > 0; });
 }
@@ -126,17 +238,24 @@ function regionsOf(grid: WorldGrid, patches: Patch[], cfg: SpeciesConfig): Int32
  * into its passable neighbours, so a start standing on impassable ground reaches their regions. */
 function beyondReach(grid: WorldGrid, patches: Patch[], cfg: SpeciesConfig, start: number, destination: number): boolean {
   const regions = regionsOf(grid, patches, cfg);
-  if (!regions || regions[destination]! < 0) return false;
-  const to = regions[destination]!;
-  return regions[start]! >= 0 ? regions[start] !== to : !patches[start]!.neighbours.some((n) => regions[n] === to);
+  if (!regions) return false;
+  // A river patch it goes to but not through is reached from any neighbour in its regions.
+  const targets = regions[destination]! >= 0 ? [regions[destination]!]
+    : throughOnly(patches[destination]!, cfg) ? patches[destination]!.neighbours.map((n) => regions[n]!).filter((r) => r >= 0) : null;
+  if (targets === null) return false;
+  const from = regions[start]! >= 0 ? [regions[start]!] : patches[start]!.neighbours.map((n) => regions[n]!).filter((r) => r >= 0);
+  return !from.some((r) => targets.includes(r));
 }
 
 /** Split each cardinal edge at its real patch boundary, charging the terrain actually crossed. */
 function pieces(grid: WorldGrid, from: WorldPosition, fromId: number, toId: number, id: string, patches: Patch[], cfg: SpeciesConfig, endpoint?: WorldPosition, final = false): Piece[] {
   // Only where the animal ends up needs dry footing; the patches it passes through keep their
   // fixed spots (finding a dry one for every patch a route search considers cost a second an hour).
-  const target = endpoint ?? (final ? standingPoint(grid, id, patches[toId]!, cfg) : initialPosition(grid, id, toId));
-  if (fromId === toId) return [{ target, cost: costOf(grid, patches[toId]!, cfg) }];
+  const target = endpoint ?? (final ? standingPoint(grid, id, patches[toId]!, cfg) : passPoint(grid, id, patches[toId]!, cfg));
+  // A step that would cross a channel is closed to an animal that does not cross rivers (an
+  // explicit endpoint, at the water's edge or a kill, may step in).
+  const blocked = !endpoint && wades(grid, from, target, fromId, toId, patches, cfg);
+  if (fromId === toId) return [{ target, cost: blocked ? Infinity : costOf(grid, patches[toId]!, cfg) }];
   const a = patchCentre(grid, fromId); const b = patchCentre(grid, toId);
   if (Math.abs(a.x - b.x) + Math.abs(a.z - b.z) !== grid.patchM) throw new Error('non-cardinal route edge');
   const axis = a.x === b.x ? 'z' : 'x';
@@ -144,7 +263,30 @@ function pieces(grid: WorldGrid, from: WorldPosition, fromId: number, toId: numb
   const fraction = (boundary - from[axis]) / (target[axis] - from[axis]);
   const edge = { x: from.x + (target.x - from.x) * fraction,
     z: from.z + (target.z - from.z) * fraction, heading: from.heading };
-  return [{ target: edge, cost: costOf(grid, patches[fromId]!, cfg) }, { target, cost: costOf(grid, patches[toId]!, cfg) }];
+  return [{ target: edge, cost: blocked ? Infinity : costOf(grid, patches[fromId]!, cfg) }, { target, cost: costOf(grid, patches[toId]!, cfg) }];
+}
+
+/** Whether the step between two patches' route waypoints crosses a channel, for an animal that does
+ * not cross rivers: fixed for a world, found once a pair (the route search prices every neighbour). */
+const pairCache = { seed: NaN, grid: null as WorldGrid | null, pairs: new Map<number, boolean>() };
+function wadesBetween(grid: WorldGrid, fromId: number, toId: number, id: string, patches: Patch[], cfg: SpeciesConfig): boolean {
+  const seed = patches[toId]!.congoSeed;
+  if (seed === undefined || crossesRivers(cfg) || !touchesChannel(grid, seed, fromId) && !touchesChannel(grid, seed, toId)) return false;
+  if (pairCache.seed !== seed || pairCache.grid !== grid) Object.assign(pairCache, { seed, grid, pairs: new Map() });
+  const key = fromId * grid.cols * grid.rows + toId;
+  let crosses = pairCache.pairs.get(key);
+  if (crosses === undefined) {
+    crosses = stepCrossesChannel(grid, seed, passPoint(grid, id, patches[fromId]!, cfg), passPoint(grid, id, patches[toId]!, cfg));
+    pairCache.pairs.set(key, crosses);
+  }
+  return crosses;
+}
+
+/** Whether a step from `from` to `target` would take an animal that does not cross rivers through a channel. */
+function wades(grid: WorldGrid, from: WorldPosition, target: WorldPosition, fromId: number, toId: number, patches: Patch[], cfg: SpeciesConfig): boolean {
+  const seed = patches[toId]!.congoSeed;
+  if (seed === undefined || crossesRivers(cfg) || !touchesChannel(grid, seed, fromId) && !touchesChannel(grid, seed, toId)) return false;
+  return stepCrossesChannel(grid, seed, from, target);
 }
 
 /**
@@ -179,8 +321,10 @@ class RouteQueue {
 /** The cost of one route step: the same sum as walking `pieces`, without building them (the
  * route search prices every neighbour it considers). */
 function stepCost(grid: WorldGrid, from: WorldPosition, fromId: number, toId: number, id: string, patches: Patch[], cfg: SpeciesConfig,
-  endpoint: WorldPosition | undefined, final: boolean): number {
-  const target = endpoint ?? (final ? standingPoint(grid, id, patches[toId]!, cfg) : initialPosition(grid, id, toId));
+  endpoint: WorldPosition | undefined, final: boolean, fromWaypoint = false): number {
+  const target = endpoint ?? (final ? standingPoint(grid, id, patches[toId]!, cfg) : passPoint(grid, id, patches[toId]!, cfg));
+  // Between two waypoints the answer is the pair's (cached); from the animal itself or to its own spot, asked.
+  if (!endpoint && (fromWaypoint && !final ? wadesBetween(grid, fromId, toId, id, patches, cfg) : wades(grid, from, target, fromId, toId, patches, cfg))) return Infinity;
   const toCost = costOf(grid, patches[toId]!, cfg);
   if (fromId === toId) return distance(from, target) * toCost;
   const a = patchCentre(grid, fromId), b = patchCentre(grid, toId);
@@ -189,6 +333,27 @@ function stepCost(grid: WorldGrid, from: WorldPosition, fromId: number, toId: nu
   const fraction = (boundary - (alongX ? from.x : from.z)) / ((alongX ? target.x : target.z) - (alongX ? from.x : from.z));
   const ex = from.x + (target.x - from.x) * fraction, ez = from.z + (target.z - from.z) * fraction;
   return Math.hypot(ex - from.x, ez - from.z) * costOf(grid, patches[fromId]!, cfg) + Math.hypot(target.x - ex, target.z - ez) * toCost;
+}
+
+/**
+ * Where an animal that does not cross rivers, standing in a river's channel anywhere but at its
+ * patch's drinking point, goes first to get out of it: the nearest patch, its own or a
+ * neighbour, whose standing point is dry and that it can reach. Null when it is not out in the
+ * water, or no way out is found. Without it an animal stranded in a river by a saved world chose
+ * its food across the river, found no route there, and starved standing in the water.
+ */
+export function wayOutOfWater(grid: WorldGrid, agent: Agent, patches: Patch[], cfg: SpeciesConfig): number | null {
+  const patch = patches[agent.patchId]!, seed = patch.congoSeed;
+  if (seed === undefined || crossesRivers(cfg) || (agent.altitudeM ?? 0) > 0 || !touchesChannel(grid, seed, patch.id)) return null;
+  const at = locateAgent(grid, agent);
+  // At its patch's drinking point it may stand in the shallows (to drink, and rest after).
+  if (inside(grid, seed, at.x, at.z) < 0 || atWaterAccess(grid, at, patch.id, patches)) return null;
+  const ways = [patch.id, ...patch.neighbours].flatMap((id) => {
+    const spot = standingPoint(grid, agent.id, patches[id]!, cfg);
+    return inCongoChannel(grid, seed, spot.x, spot.z) ? [] : [{ id, d: Math.hypot(spot.x - at.x, spot.z - at.z) }];
+  }).sort((a, b) => a.d - b.d || a.id - b.id);
+  for (const way of ways) if (planRoute(grid, agent, way.id, patches, cfg) !== null) return way.id;
+  return null;
 }
 
 /** Deterministic least-cost search over the static terrain graph. It knows terrain, not animals.
@@ -211,10 +376,10 @@ export function planRoute(grid: WorldGrid, agent: Agent, destination: number, pa
       while (id !== start) { route.push(id); id = parents.get(id)!; }
       return route.reverse();
     }
-    const point = current.id === start ? origin : initialPosition(grid, agent.id, current.id);
+    const point = current.id === start ? origin : passPoint(grid, agent.id, patches[current.id]!, cfg);
     for (const next of [...patches[current.id]!.neighbours].sort((a, b) => a - b)) {
-      if (!patches[next]) continue;
-      const value = current.cost + stepCost(grid, point, current.id, next, agent.id, patches, cfg, next === destination ? endpoint : undefined, next === destination);
+      if (!patches[next] || next !== destination && throughOnly(patches[next]!, cfg)) continue;
+      const value = current.cost + stepCost(grid, point, current.id, next, agent.id, patches, cfg, next === destination ? endpoint : undefined, next === destination, current.id !== start);
       if (!Number.isFinite(value) || value >= (costs.get(next) ?? Infinity)) continue;
       costs.set(next, value); parents.set(next, current.id); queue.push(next, value);
     }
@@ -279,6 +444,9 @@ export function navigate(
   return { trace, distanceM, seconds, sprintSeconds: Math.min(seconds, sprintBudget), unreachable: false };
 }
 
+/** The least height a bird flies at over the Congo's forest, above its 44 m emergents (metres). */
+export const CONGO_FLIGHT_CLEARANCE_M = 55;
+
 /** Vultures travel above the terrain graph, with an explicit climb/cruise/landing trace. */
 function navigateFlight(
   grid: WorldGrid, agent: Agent, cfg: SpeciesConfig, patches: Patch[], destination: number, goal: GoalId,
@@ -289,7 +457,14 @@ function navigateFlight(
       goal, samples: [{ seconds: 0, position: { ...locateAgent(grid, agent) } }], completed: false },
     distanceM: 0, seconds: 0, sprintSeconds: 0, unreachable: true };
   }
-  const from = { ...locateAgent(grid, agent) }, target = endpoint ?? initialPosition(grid, agent.id, destination);
+  const from = { ...locateAgent(grid, agent) }, target = endpoint ?? standingPoint(grid, agent.id, patches[destination]!, cfg);
+  // A bird does not land on a river: a patch that is all channel has nowhere to come down.
+  const seed = patches[destination]!.congoSeed;
+  if (!endpoint && seed !== undefined && inCongoChannel(grid, seed, target.x, target.z)) {
+    return { trace: { version: 1, actorId: agent.id, startWorldTime, destinationPatchId: destination,
+      goal, samples: [{ seconds: 0, position: from, ...(agent.altitudeM === undefined ? {} : { altitudeM: agent.altitudeM }) }], completed: false },
+    distanceM: 0, seconds: 0, sprintSeconds: 0, unreachable: true };
+  }
   const gap = distance(from, target);
   if (gap <= 1e-8) {
     delete agent.altitudeM; delete agent.locomotionMode; delete agent.journey;
@@ -306,7 +481,10 @@ function navigateFlight(
     z: from.z + (target.z - from.z) * fraction,
     heading: Math.atan2(target.x - from.x, target.z - from.z),
   };
-  const cruise = Math.max(20, Math.min(120, cfg.escape.flightInitiationM * 1.5));
+  // Over the Congo's forest a bird flies above the canopy (29 m) and its emergents (44 m), not
+  // through them; it comes down through the leaves only to land.
+  const clearance = grid.cols === CONGO_GRID.cols && grid.rows === CONGO_GRID.rows ? CONGO_FLIGHT_CLEARANCE_M : 0;
+  const cruise = Math.max(20, clearance, Math.min(120, cfg.escape.flightInitiationM * 1.5));
   const completed = fraction >= 1 - 1e-9;
   // sim_0.38.0: the climb starts from where the bird is. One already aloft that resumes with only
   // seconds to fly stayed on a climb from the ground and sank mid-air.
@@ -327,7 +505,7 @@ function navigateFlight(
   const riseEnd = completed ? Math.min(rampSeconds, travelSeconds / 2) : rampSeconds;
   const fallStart = completed ? Math.max(riseEnd, travelSeconds - rampSeconds) : travelSeconds;
   // Short local hops use a low triangular profile, not a full-height cruise in milliseconds.
-  const peak = completed ? Math.max(agent.altitudeM ?? 0, cruise * Math.min(1, travelSeconds / (2 * rampSeconds))) : cruise;
+  const peak = completed ? Math.max(agent.altitudeM ?? 0, clearance, cruise * Math.min(1, travelSeconds / (2 * rampSeconds))) : cruise;
   for (const seconds of new Set([riseEnd, fallStart])) {
     if (seconds <= 0 || seconds >= travelSeconds) continue;
     const t = seconds * speed / gap;

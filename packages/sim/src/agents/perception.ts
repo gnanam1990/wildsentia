@@ -1,6 +1,6 @@
 import { edibleMass, landWalkable, patchCentre, patchIdAt, positionInPatch, type WorldGrid, type Agent, type Carcass, type Patch, type SpeciesConfig, type Season } from '@vana/shared';
 import { confidenceOf } from './learning.js';
-import { floodShy, habitatWeight } from './navigation.js';
+import { floodShy, habitatWeight, waterInReach } from './navigation.js';
 import { canEatMaternalCarcass, canFollowParent, needsOf, needsProvisioning } from './needs.js';
 
 /** What the behaviour layer is allowed to ask the world. Agents never read global state. */
@@ -244,7 +244,8 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
     // A wetland specialist weighs food by how much it keeps to that habitat (habitatWeight).
     if (kg > 0 && (starving || !dangerous.has(p.id) && !(shy && p.flooded === true))
       && (bestFood === null || kg * habitatWeight(species, p.habitat) > bestFoodScore)) { bestFood = { patchId: p.id, kg }; bestFoodScore = kg * habitatWeight(species, p.habitat); }
-    if (p.waterVolume > 0 && (thirsty || !dangerous.has(p.id)) && (bestWater === null || p.waterVolume > bestWater.litres)) {
+    if (p.waterVolume > 0 && (thirsty || !dangerous.has(p.id)) && (bestWater === null || p.waterVolume > bestWater.litres)
+      && waterInReach(view.grid, p, view.patches, species)) {
       bestWater = { patchId: p.id, litres: p.waterVolume };
     }
 
@@ -317,7 +318,7 @@ export function perceive(agent: Agent, species: SpeciesConfig, view: WorldView):
           bestFood = { patchId: p.id, kg }; bestFoodScore = kg * habitatWeight(species, p.habitat);
         }
       }
-      if (needWater && steps <= waterReach && p.waterVolume > (bestWater?.litres ?? 0)) {
+      if (needWater && steps <= waterReach && p.waterVolume > (bestWater?.litres ?? 0) && waterInReach(view.grid, p, view.patches, species)) {
         bestWater = { patchId: p.id, litres: p.waterVolume };
       }
     }

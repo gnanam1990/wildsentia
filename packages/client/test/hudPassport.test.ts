@@ -74,7 +74,10 @@ describe('compact observer passport', () => {
     hud.render(null);
     expect(states).toEqual([
       { total: null, listHtml: '' },
-      { total: 5, listHtml: '<span>wild boar <b>3</b></span><span>&#60;species&#62; <b>2</b></span>' },
+      // Each species opens the list of its animals; the names (and the attribute) are escaped.
+      { total: 5, listHtml: '<button type="button" class="pop-species" data-browse-species="boar">Wild boar <b>3</b></button>'
+        + '<button type="button" class="pop-species" data-browse-species="&#60;species&#62;">&#60;species&#62; <b>2</b></button>'
+        + '<button type="button" class="pop-browse" data-browse-species="">Browse every animal</button>' },
       { total: null, listHtml: '' },
     ]);
   });

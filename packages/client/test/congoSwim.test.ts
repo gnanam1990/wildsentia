@@ -14,7 +14,7 @@ describe('swimming in the Congo forest', () => {
   it('wades shallow water on its feet and swims deep water at the surface', () => {
     expect(swimBaseY(10, null, 0.4)).toEqual({ y: 10, swimming: false });
     expect(swimBaseY(10, 10.2, 0.4)).toEqual({ y: 10, swimming: false });
-    expect(swimBaseY(10, 11.5, 0.4)).toEqual({ y: 11.1, swimming: true });
+    expect(swimBaseY(10, 11.5, 0.4)).toEqual({ y: 11.18, swimming: true });
   });
   it('finds the river surface over a channel, the flood only in a flooding season, and nothing on dry ground', () => {
     setWorldGrid(CONGO_GRID);
@@ -45,5 +45,8 @@ describe('swimming in the Congo forest', () => {
     expect(swimmingClip(true, 'dead', croc)).toBeNull();
     // An animal with no swim clip paddles its walk (slowed, in animals.ts).
     expect(swimmingClip(true, 'travelling', ['Idle', 'Walk'])).toBeNull();
+    // Resting in deep water, it treads water head up rather than lying down under it.
+    expect(swimmingClip(true, 'resting', ['Resting', 'Idle', 'Walk'])).toBe('Idle');
+    expect(swimmingClip(false, 'resting', ['Resting', 'Idle', 'Walk'])).toBeNull();
   });
 });

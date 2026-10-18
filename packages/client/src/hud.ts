@@ -132,7 +132,11 @@ export function feedSentence(event: Record<string, unknown>): string {
       case 'dispersed': return `${an(first)} left to find a range of its own`;
       case 'parent_lost': return `A young ${first} lost its mother`;
       case 'skill_taught': return `${an(first)} taught a skill`;
-      case 'tree_climbed': return `${an(first)} climbed a tree`;
+      case 'tree_climbed': {
+        const direction = (event.conditions as Record<string, unknown> | undefined)?.direction;
+        return direction === 'traverse' ? `${an(first)} moved through the canopy to the next tree`
+          : direction === 'descend' ? `${an(first)} came down from a tree` : `${an(first)} climbed a tree`;
+      }
       case 'illness_started': return `${an(first)} fell ill`;
       case 'illness_ended': return `${an(first)} recovered`;
       case 'human_task_finished': return 'A villager finished a task';
@@ -316,7 +320,9 @@ export class Hud {
         .filter((entry): entry is [string, number] => typeof entry[1] === 'number' && Number.isFinite(entry[1]))
         .sort((a, b) => b[1] - a[1]);
       const total = counts.reduce((sum, [, n]) => sum + n, 0);
-      const listHtml = counts.map(([species, n]) => `<span>${escape(SPECIES_NAME[species] ?? species)} <b>${count(n)}</b></span>`).join('');
+      // Each species opens the list of its animals, to choose one to watch.
+      const listHtml = counts.map(([species, n]) => `<button type="button" class="pop-species" data-browse-species="${escape(species)}">${escape(readable(SPECIES_NAME[species] ?? species))} <b>${count(n)}</b></button>`).join('')
+        + '<button type="button" class="pop-browse" data-browse-species="">Browse every animal</button>';
       // Rebuilding the list would close it under the viewer's pointer; update only on change.
       const html = `<summary>${count(total)} animals</summary><div class="pop-list">${listHtml}</div>`;
       if (this.elements.renderPopulation) this.elements.renderPopulation(total, listHtml);

@@ -1,5 +1,5 @@
 import {
-  NUTRIENT_PER_KG_BIOMASS, fliesSpecies, terrainCostFor, edibleMass, takeEdibleMass, patchAtPosition, patchCentre, positionInPatch, atWaterAccess, waterAccessPosition, waterContactPosition, WATER_CONTACT_RADIUS_M, landRayDistance, landWalkable, treeAnchorForPatch, treeAnchorGeometry,
+  NUTRIENT_PER_KG_BIOMASS, fliesSpecies, inCongoChannel, terrainCostFor, edibleMass, takeEdibleMass, patchAtPosition, patchCentre, positionInPatch, atWaterAccess, waterAccessPosition, waterContactPosition, WATER_CONTACT_RADIUS_M, landRayDistance, landWalkable, treeAnchorForPatch, treeAnchorGeometry,
   type Agent, type Carcass, type DeathCause, type Patch, type Rng, type SkillId, type WorldGrid,
   type SpeciesConfig, type WorldTime, type WorldPosition, type MovementTrace,
 } from '@vana/shared';
@@ -13,13 +13,13 @@ import { activityAt, type GoalChoice } from './goals.js';
 import { HUNGER_DESPERATION, perceive, canHunt, canReachCarcass, heldByPredatorOf, threatens, type Percept, type WorldView } from './perception.js';
 import { locateAgent, locateCarcass } from './spatial.js';
 import { approachContact } from './movement.js';
-import { floodShy, habitatWeight, navigate } from './navigation.js';
+import { CONGO_FLIGHT_CLEARANCE_M, channelRayDistance, floodShy, habitatWeight, navigate, waterInReach, wayOutOfWater } from './navigation.js';
 import { allowsDependentGoal, cannotYetWalk, canEatMaternalCarcass, canHuntIndependently, creditMeal, gutCapacityKg, locomotionFactor,
   mealRoom, needsOf, needsProvisioning } from './needs.js';
 import { exposeToCarrion } from './illness.js';
 import { exposeToContactWound } from './wound.js';
 import { waterRefuge } from './aquatic.js';
-import { advanceTreeVertical } from './arboreal.js';
+import { advanceCanopyTraverse, advanceTreeVertical } from './arboreal.js';
 
 /** The only writes a behaviour may make outside its own agent and patch. */
 export interface WorldServices {
@@ -138,7 +138,7 @@ function afterTravel(ctx: BehaviourContext, seconds: number): BehaviourContext {
     decisionWorldTime: ctx.decisionWorldTime ?? ctx.worldTime, endWorldTime: ctx.endWorldTime ?? ctx.worldTime + ctx.hours * 3600 };
 }
 
-function feed(ctx: BehaviourContext, mayMove = true): void {
+function feed(ctx: BehaviourContext, mayMove = true, canopy = false): void {
   const patch = ctx.patches[ctx.agent.patchId]!;
   const target = ctx.percept.bestFood;
 
@@ -150,32 +150,46 @@ function feed(ctx: BehaviourContext, mayMove = true): void {
   // A practised forager crops more in the same hour than a clumsy one.
   const wanted = appetite(ration, ctx.agent.drives.hunger, ctx.agent.massKg, ctx.hours)
     * skillFactor(confidenceOf(ctx.agent, ctx.species, 'forage_efficiency'), 0.7, 1.3);
-  const available = patch.plant.grass + patch.plant.browse
+  // Up a tree (a canopy dweller), only the canopy's fruit and leaves are in reach: no grass, no roots.
+  const grass = canopy ? 0 : patch.plant.grass;
+  const available = grass + patch.plant.browse
     + (patch.floweringGuild?.vegetativeKg ?? 0);
   // sim_0.37.0: a rooting forager (wild boar) digs the patch's finite rooting and mast food first
   // and meets the rest of its need from green forage, a kilogram of which meets only part of a
   // kilogram of its need (diet foodValue; 1 for every other species, whose feeding is unchanged).
   const eats = ctx.species.diet.eats;
   const valueOf = (t: 'grass' | 'browse'): number => eats.find(e => e.target === t)?.foodValue ?? 1;
-  const roots = eats.some(e => e.target === 'roots') ? patch.rooting?.kg ?? 0 : 0;
+  const roots = !canopy && eats.some(e => e.target === 'roots') ? patch.rooting?.kg ?? 0 : 0;
   const greenBrowse = patch.plant.browse + (patch.floweringGuild?.vegetativeKg ?? 0);
   const plantValue = available > 0 && (valueOf('grass') < 1 || valueOf('browse') < 1)
-    ? (patch.plant.grass * valueOf('grass') + greenBrowse * valueOf('browse')) / available : 1;
+    ? (grass * valueOf('grass') + greenBrowse * valueOf('browse')) / available : 1;
   // What an hour here can actually give it, once gut fill bounds the green forage.
   const availableNeed = roots + Math.min(available, Math.max(0, wanted - roots)) * plantValue;
 
   // Move only if this patch cannot feed the animal now, a predator that hunts it stands here
   // (sim_0.34.0), or it is flood-shy and standing in a flood. Otherwise eat where it stands.
   const wet = floodShy(ctx.species) && patch.flooded === true;
+  let blocked = false;
   if (mayMove && (availableNeed < wanted || ctx.percept.dangerous.has(patch.id) || wet) && target !== null && target.patchId !== patch.id) {
     const travel = moveTo(ctx, target.patchId);
-    if (travel.trace.completed && travel.seconds < ctx.hours * 3600) feed(afterTravel(ctx, travel.seconds), false);
-    return;
+    blocked = travel.unreachable;
+    // In the Congo, an animal that cannot get to better food eats what is here rather than nothing
+    // (duikers in a flood they could not leave starved beside the food).
+    if (!(travel.unreachable && patch.congoSeed !== undefined)) {
+      if (travel.trace.completed && travel.seconds < ctx.hours * 3600) feed(afterTravel(ctx, travel.seconds), false);
+      return;
+    }
   }
   delete ctx.agent.journey;
 
   const wantedNeed = Math.min(wanted, availableNeed);
-  if (wantedNeed <= 0) { ctx.agent.state = 'travelling'; return; }
+  if (wantedNeed <= 0) {
+    // In the Congo, one with nothing here and no food it knows of, or only food it cannot reach,
+    // goes looking: duikers on a river's bank in the rains, the forest round them flooded and their
+    // food across the river, stood two days saying they were travelling.
+    if (mayMove && (target === null || blocked) && patch.congoSeed !== undefined) { wander(ctx); return; }
+    ctx.agent.state = 'travelling'; return;
+  }
   // Appetite is gut fill: it bounds the kilograms swallowed, however poor the food, so a pig
   // living on fibrous grass fills up on less energy than on roots and mast (van Wieren 2000). A
   // daily gut limit (diet.maxDailyIntakeKg) stops it making that up by feeding all day.
@@ -190,8 +204,8 @@ function feed(ctx: BehaviourContext, mayMove = true): void {
   // Take from each pool no more than it holds, and count only what was actually taken.
   // Splitting by `eaten * share` could overshoot a pool by one unit in the last place when an
   // animal ate a patch bare, leaving -2e-16 kg of grass — which is still negative biomass.
-  const grassShare = available > 0 ? patch.plant.grass / available : 0;
-  const fromGrass = Math.min(patch.plant.grass, wantedHere * grassShare);
+  const grassShare = available > 0 ? grass / available : 0;
+  const fromGrass = Math.min(grass, wantedHere * grassShare);
   const browseWanted = wantedHere - fromGrass;
   const guildStock = patch.floweringGuild?.vegetativeKg ?? 0;
   const fromGuild = Math.min(guildStock, browseWanted * (guildStock
@@ -220,7 +234,36 @@ function feed(ctx: BehaviourContext, mayMove = true): void {
   ctx.agent.state = 'grazing';
   if (eaten > 0) ctx.services.practised(ctx.agent, 'forage_efficiency', true);
   emit(ctx, 'fed', patch.id, [ctx.agent.id],
-    { hunger: ctx.agent.drives.hunger, available }, 'success', { kg: eaten, ...(fromRoots > 0 ? { rootsKg: fromRoots } : {}) });
+    { hunger: ctx.agent.drives.hunger, available, ...(canopy ? { where: 'canopy' } : {}) }, 'success', { kg: eaten, ...(fromRoots > 0 ? { rootsKg: fromRoots } : {}) });
+}
+
+/** A canopy dweller up its tree eats the fruit and leaves there, where it sits. */
+export function feedInCanopy(ctx: BehaviourContext): void { feed(ctx, false, true); }
+
+/** The fruit and leaves a canopy dweller can reach in a patch's canopy (kg). */
+export function canopyFoodKg(patch: Patch): number { return patch.plant.browse + (patch.floweringGuild?.vegetativeKg ?? 0); }
+
+/**
+ * A canopy dweller crosses aloft to a neighbouring patch's tree (arboreal.ts advanceCanopyTraverse),
+ * for the fruit and leaves there or travelling with its troop. Returns whether it went.
+ */
+export function travelThroughCanopy(ctx: BehaviourContext, to: Patch, reason: 'canopy_forage' | 'canopy_travel'): boolean {
+  const agent = ctx.agent, from = ctx.patches[agent.patchId]!, goal = reason === 'canopy_forage' ? 'find_food' : 'wander';
+  const crossing = advanceCanopyTraverse(ctx.view.grid, agent, from, to, goal, ctx.worldTime, ctx.hours * 3600,
+    ctx.species.locomotion.walkMs, ctx.species.locomotion.climbHeightM);
+  if (!crossing) return false;
+  agent.currentGoal = goal; agent.alternativeGoal = ctx.choice.alternative; agent.goalScore = ctx.choice.score;
+  agent.drives.fatigue = clamp01(agent.drives.fatigue + 0.12 * crossing.seconds / 3600);
+  const start = crossing.trace.samples[0]!, end = crossing.trace.samples.at(-1)!;
+  const horizontalDistanceM = Math.hypot(end.position.x - start.position.x, end.position.z - start.position.z);
+  const verticalDistanceM = Math.abs((end.altitudeM ?? 0) - (start.altitudeM ?? 0));
+  ctx.log.append({ type: 'tree_climbed', worldTime: Math.floor(ctx.worldTime + crossing.seconds), simVersion: '',
+    patchId: agent.patchId, position: { ...locateAgent(ctx.view.grid, agent) }, actors: [agent.id], goal,
+    conditions: { direction: 'traverse', treeAnchorId: agent.treeAnchorId!, reason, from: from.id, destination: to.id },
+    outcome: 'success',
+    effects: { distanceM: crossing.distanceM, horizontalDistanceM, verticalDistanceM, durationSeconds: crossing.seconds, sprintSeconds: 0 },
+    causalParents: [], confidence: 'authoritative', movement: crossing.trace });
+  return true;
 }
 
 /** Hunter and hunted keep this far apart at the water. */
@@ -253,8 +296,10 @@ function waterShared(ctx: BehaviourContext, patchId: number): boolean {
 function drink(ctx: BehaviourContext, mayMove = true, causalParents: string[] = []): void {
   const patch = ctx.patches[ctx.agent.patchId]!;
   const target = ctx.percept.bestWater;
+  // Water it cannot reach without being stranded in a river (waterInReach) is not water to it.
+  const hereL = waterInReach(ctx.view.grid, patch, ctx.patches, ctx.species) ? patch.waterVolume : 0;
   // Hunter and hunted do not drink side by side: hold back this hour (no move, no drink).
-  if (mayMove && waterShared(ctx, target !== null && (patch.waterVolume <= 0 || ctx.percept.dangerous.has(patch.id)) ? target.patchId : patch.id)) {
+  if (mayMove && waterShared(ctx, target !== null && (hereL <= 0 || ctx.percept.dangerous.has(patch.id)) ? target.patchId : patch.id)) {
     delete ctx.agent.journey; ctx.agent.state = 'resting';
     return;
   }
@@ -270,12 +315,12 @@ function drink(ctx: BehaviourContext, mayMove = true, causalParents: string[] = 
   if (wanted <= 0) return;
 
   // Same rule as feeding: drink what is here unless there is not enough of it.
-  if (mayMove && (patch.waterVolume < wanted || ctx.percept.dangerous.has(patch.id)) && target !== null && target.patchId !== patch.id) {
+  if (mayMove && (hereL < wanted || ctx.percept.dangerous.has(patch.id)) && target !== null && target.patchId !== patch.id) {
     const travel = moveTo(ctx, target.patchId, false, waterContactPosition(ctx.view.grid, ctx.agent.id, target.patchId, ctx.patches));
     if (travel.trace.completed && travel.seconds < ctx.hours * 3600) drink(afterTravel(ctx, travel.seconds), false, [travel.eventId]);
     return;
   }
-  if (patch.waterVolume <= 0) { ctx.agent.state = 'travelling'; return; }
+  if (hereL <= 0) { ctx.agent.state = 'travelling'; return; }
   // sim_0.38.0: a lake's access point is on its shore (waterAccessPosition), so pass the ground.
   if (!atWaterAccess(ctx.view.grid, locateAgent(ctx.view.grid, ctx.agent), patch.id, ctx.patches)) {
     const travel = moveTo(ctx, patch.id, false, waterContactPosition(ctx.view.grid, ctx.agent.id, patch.id, ctx.patches));
@@ -306,6 +351,12 @@ function rest(ctx: BehaviourContext): void {
     const anchor = treeAnchorForPatch(ctx.view.grid, ctx.percept.patch);
     const perched = ctx.agent.locomotionMode === 'climb' && ctx.agent.treeAnchorId === anchor?.id;
     if (anchor && !perched && mayClimb(ctx)) { perchFlight(ctx, anchor); return; }
+    // No tree to land in here (swamp forest, a bai, a river): it flies to the nearest one rather
+    // than resting on the forest floor.
+    if (!anchor && ctx.percept.patch.congoSeed !== undefined && ctx.agent.locomotionMode !== 'climb' && mayClimb(ctx)) {
+      const near = nearestPerch(ctx);
+      if (near) { perchFlight(ctx, near); return; }
+    }
   }
   // A long diver (the dwarf crocodile, a dive of ten minutes or more) lies up in the water through
   // its inactive hours (the day), where it is out of sight; it rests on land when active.
@@ -352,7 +403,8 @@ function wander(ctx: BehaviourContext): void {
   // A wetland specialist wanders within the habitats it keeps to (habitatWeight 0.5 or more), if it can.
   const liked = unpicky.filter(id => habitatWeight(ctx.species, ctx.patches[id]!.habitat) >= 0.5);
   const options = liked.length ? liked : unpicky;
-  if (options.length === 0) { ctx.agent.state = 'resting'; return; }
+  // A bird with nowhere to wander perches rather than standing on the forest floor.
+  if (options.length === 0) { if (fliesSpecies(ctx.species) && ctx.percept.patch.congoSeed !== undefined) { rest(ctx); return; } ctx.agent.state = 'resting'; return; }
 
   const structure = ctx.species.social.structure;
   // Congo 1B: a bonded pair (pairBond) keeps together as a herd does, two strong.
@@ -380,7 +432,7 @@ function wander(ctx: BehaviourContext): void {
         }
         if (count > bestCount) { bestCount = count; bestPatch = patchId; }
       }
-      if (bestPatch !== null) { moveTo(ctx, bestPatch); return; }
+      if (bestPatch !== null) { wanderTo(ctx, bestPatch); return; }
 
       // A gradient only helps if there is one. Scattered across four hundred patches there is
       // not, so a separated animal heads for where its group actually is. Without this, herd
@@ -388,7 +440,7 @@ function wander(ctx: BehaviourContext): void {
       const groupId = ctx.agent.groupId;
       if (groupId != null) {
         const home = ctx.view.groupPatch(groupId);
-        if (home !== null && home !== ctx.agent.patchId) { moveTo(ctx, home); return; }
+        if (home !== null && home !== ctx.agent.patchId) { wanderTo(ctx, home); return; }
       }
     }
   }
@@ -398,7 +450,20 @@ function wander(ctx: BehaviourContext): void {
   // that finds prey and one that starves in a world full of it.
   const forward = options.filter((id) => id !== ctx.agent.previousPatchId);
   const pool = forward.length > 0 ? forward : options;
-  moveTo(ctx, pool[ctx.rng.int(pool.length)]!);
+  wanderTo(ctx, pool[ctx.rng.int(pool.length)]!);
+}
+
+/**
+ * A wandering animal's move. In the Congo a bird lands in its destination's tree, not on the
+ * forest floor; where that patch has none, or it cannot land there (a patch all river), it perches
+ * in the nearest tree instead.
+ */
+function wanderTo(ctx: BehaviourContext, patchId: number): void {
+  if (!fliesSpecies(ctx.species) || ctx.percept.patch.congoSeed === undefined) { moveTo(ctx, patchId); return; }
+  const tree = treeAnchorForPatch(ctx.view.grid, ctx.patches[patchId]!);
+  if (tree && mayClimb(ctx)) { perchFlight(ctx, tree, 'wander'); return; }
+  const travel = moveTo(ctx, patchId);
+  if (travel.unreachable || (ctx.agent.altitudeM ?? 0) === 0) rest(afterTravel(ctx, travel.seconds));
 }
 
 /**
@@ -511,9 +576,17 @@ function hunt(ctx: BehaviourContext): void {
   const preyCondition = Math.max(0.15, 1 - victim.drives.fatigue * 0.5) * preyScale;
   const outcome = resolveSpatialHunt({
     grid: ctx.view.grid,
-    // A chase ends at the sea on an island, and (Congo 1B) at the great river's deep middle.
+    // A chase ends at the sea on an island, and (Congo 1B) at the great river's deep middle; for a
+    // hunter that does not swim, at a river's bank (a chevrotain dived, and the leopard stood 40 m
+    // out in the river).
     ...(ctx.percept.patch.islandSeed === undefined && ctx.percept.patch.congoSeed === undefined ? {}
-      : { landBoundaryM: (p: WorldPosition, heading: number) => landRayDistance(ctx.view.grid, ctx.patches, p, heading) }),
+      : { landBoundaryM: (p: WorldPosition, heading: number) => {
+        const land = landRayDistance(ctx.view.grid, ctx.patches, p, heading), seed = ctx.percept.patch.congoSeed;
+        return seed === undefined || ctx.species.locomotion.swims ? land : Math.min(land, channelRayDistance(ctx.view.grid, seed, p, heading));
+      } }),
+    ...(ctx.percept.patch.congoSeed === undefined || ctx.species.locomotion.swims || fliesSpecies(ctx.species)
+      || (ctx.species.locomotion.terrainCost.water ?? Infinity) < 3 ? {}
+      : { stalkBoundaryM: (p: WorldPosition, heading: number) => channelRayDistance(ctx.view.grid, ctx.percept.patch.congoSeed!, p, heading) }),
     predatorId: ctx.agent.id, preyId: victim.id, patchId: ctx.agent.patchId, worldTime: ctx.worldTime,
     predator: locateAgent(ctx.view.grid, ctx.agent), prey: locateAgent(ctx.view.grid, victim),
     predatorWalkMs: stalkSpeedMs(ctx.species, predatorScale, predatorTerrainCost),
@@ -557,6 +630,13 @@ function hunt(ctx: BehaviourContext): void {
     if (patch !== animal.patchId) { animal.previousPatchId = animal.patchId; animal.patchId = patch; }
   }
   ctx.agent.stamina = clamp01((ctx.agent.stamina ?? 1) - outcome.staminaSpent);
+  // A bird whose chase ended over a river does not sit on the water: it is still in the air, above
+  // the canopy (the chase is solved on the ground's plane).
+  const seed = ctx.percept.patch.congoSeed;
+  if (!outcome.killed && fliesSpecies(ctx.species) && seed !== undefined && (ctx.agent.altitudeM ?? 0) === 0
+    && inCongoChannel(ctx.view.grid, seed, ctx.agent.position.x, ctx.agent.position.z)) {
+    ctx.agent.altitudeM = CONGO_FLIGHT_CLEARANCE_M; ctx.agent.locomotionMode = 'flight';
+  }
   const committed = outcome.trace.samples.some((s) => s.phase === 'chase' || s.phase === 'escape');
   if (committed) {
     let flightDistance = 0;
@@ -814,25 +894,46 @@ function diveToEscape(ctx: BehaviourContext, refuge: { patchId: number; position
  * A flier settles on its patch's tree: it flies to the trunk's planar point and lands on a branch
  * at the anchor's height (the flight's last sample ends there), perched until it acts again.
  */
-function perchFlight(ctx: BehaviourContext, anchor: NonNullable<ReturnType<typeof treeAnchorForPatch>>): void {
+function perchFlight(ctx: BehaviourContext, anchor: NonNullable<ReturnType<typeof treeAnchorForPatch>>, goal: 'rest' | 'wander' = 'rest'): void {
   const agent = ctx.agent, budget = ctx.hours * 3600, startPatchId = agent.patchId;
-  const travel = navigate(ctx.view.grid, agent, ctx.species, ctx.patches, anchor.patchId, 'rest', ctx.worldTime, budget, false,
+  const travel = navigate(ctx.view.grid, agent, ctx.species, ctx.patches, anchor.patchId, goal, ctx.worldTime, budget, false,
     { x: anchor.x, z: anchor.z, heading: agent.position?.heading ?? 0 });
   const trace = travel.trace, landed = trace.completed && !travel.unreachable;
   if (landed) {
     const last = trace.samples.at(-1)!;
-    if (trace.samples.length === 1) trace.samples.push({ seconds: Math.min(8, budget), position: { ...last.position }, altitudeM: anchor.climbHeightM });
-    else last.altitudeM = anchor.climbHeightM;
-    agent.altitudeM = anchor.climbHeightM; agent.locomotionMode = 'climb'; agent.treeAnchorId = anchor.id;
+    // On top of the crown, not inside its leaves.
+    if (trace.samples.length === 1) trace.samples.push({ seconds: Math.min(8, budget), position: { ...last.position }, altitudeM: anchor.perchHeightM });
+    else last.altitudeM = anchor.perchHeightM;
+    agent.altitudeM = anchor.perchHeightM; agent.locomotionMode = 'climb'; agent.treeAnchorId = anchor.id;
   }
   agent.state = landed ? 'resting' : 'travelling';
   const seconds = trace.samples.at(-1)!.seconds;
   ctx.log.append({ type: 'moved', worldTime: Math.floor(ctx.worldTime + seconds), simVersion: '', patchId: agent.patchId,
-    position: { ...locateAgent(ctx.view.grid, agent) }, actors: [agent.id], goal: 'rest',
+    position: { ...locateAgent(ctx.view.grid, agent) }, actors: [agent.id], goal,
     conditions: { reason: 'perch', from: startPatchId, destination: anchor.patchId, treeAnchorId: anchor.id },
     outcome: landed ? 'success' : 'interrupted',
     effects: { distanceM: travel.distanceM, durationSeconds: seconds, sprintSeconds: 0 },
     causalParents: [], confidence: 'authoritative', movement: trace });
+}
+
+/** How many rings of patches out a bird looks for a tree to perch in (eight: some 2.4 km). */
+const PERCH_SEARCH_RINGS = 8;
+
+/** The nearest patch with a tree a bird can perch in, ring by ring outward, the lowest id first in a ring. */
+function nearestPerch(ctx: BehaviourContext): NonNullable<ReturnType<typeof treeAnchorForPatch>> | null {
+  const seen = new Set([ctx.agent.patchId]);
+  let ring = [ctx.agent.patchId];
+  for (let r = 0; r < PERCH_SEARCH_RINGS && ring.length; r++) {
+    const next: number[] = [];
+    for (const id of ring) for (const n of ctx.patches[id]!.neighbours) if (!seen.has(n)) { seen.add(n); next.push(n); }
+    next.sort((a, b) => a - b);
+    for (const id of next) {
+      const anchor = treeAnchorForPatch(ctx.view.grid, ctx.patches[id]!);
+      if (anchor && !ctx.percept.dangerous.has(id)) return anchor;
+    }
+    ring = next;
+  }
+  return null;
 }
 
 /** A long diver walks or swims to its water and lies under it for the rest of the hour. */
@@ -972,6 +1073,13 @@ export function executeGoal(ctx: BehaviourContext): void {
   if (ctx.agent.journey?.goal !== ctx.choice.goal) delete ctx.agent.journey;
   ctx.agent.alternativeGoal = ctx.choice.alternative;
   ctx.agent.goalScore = ctx.choice.score;
+
+  // Out in a river it cannot cross, an animal first walks out of the water, whatever it wants but
+  // to flee or to drink (it goes to its patch's drinking point, then walks out the next hour).
+  if (ctx.choice.goal !== 'flee' && ctx.choice.goal !== 'find_water') {
+    const out = wayOutOfWater(ctx.view.grid, ctx.agent, ctx.patches, ctx.species);
+    if (out !== null) { moveTo(ctx, out); return; }
+  }
 
   switch (ctx.choice.goal) {
     case 'find_food': return feed(ctx);

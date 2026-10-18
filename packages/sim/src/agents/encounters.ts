@@ -24,6 +24,9 @@ export interface SpatialHuntInput {
   contest: Omit<HuntInput, 'distanceAtCommitM'>;
   /** Optional authoritative land-mask boundary; not a client collision approximation. */
   landBoundaryM?: (position: WorldPosition, heading: number) => number;
+  /** Congo: how far a stalk can walk from a point along a heading before a river it does not cross (a
+   * leopard stalking prey that stood in a river followed it in). Unset: the stalk goes straight. */
+  stalkBoundaryM?: (position: WorldPosition, heading: number) => number;
 }
 export interface SpatialHuntResult {
   killed: boolean;
@@ -73,9 +76,12 @@ export function resolveSpatialHunt(input: SpatialHuntInput, rng: Rng): SpatialHu
   if (approachSeconds > 0) {
     const heading = Math.atan2(prey.x - predator.x, prey.z - predator.z);
     predator.heading = heading;
-    predator.x += Math.sin(heading) * input.predatorWalkMs * approachSeconds;
-    predator.z += Math.cos(heading) * input.predatorWalkMs * approachSeconds;
-    elapsed += approachSeconds; spent += approachSeconds / 3600 * 0.05;
+    // A stalk stops a metre short of a river the hunter does not cross; the hunt then waits on the bank.
+    const walked = Math.min(input.predatorWalkMs * approachSeconds, Math.max(0, (input.stalkBoundaryM?.(predator, heading) ?? Infinity) - 1));
+    predator.x += Math.sin(heading) * walked;
+    predator.z += Math.cos(heading) * walked;
+    const stalkSeconds = walked / input.predatorWalkMs;
+    elapsed += stalkSeconds; spent += stalkSeconds / 3600 * 0.05;
     sample('stalk');
   }
   commitDistance = distance(predator, prey);

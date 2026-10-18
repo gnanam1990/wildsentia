@@ -36,6 +36,49 @@ beforeAll(async () => {
 afterAll(async () => { await api?.close(); await host?.abort(); await pool?.end(); });
 
 maybe('read API', () => {
+  it('lists the living animals to watch, by species, a page at a time, with a search by id', async () => {
+    const all = (await api.inject({ method: 'GET', url: '/animals' })).json().animals as Array<{ id: string; speciesId: string }>;
+    const sambar = all.filter((a) => a.speciesId === 'sambar');
+    const page = (await api.inject({ method: 'GET', url: '/animals/list?species=sambar&limit=5' })).json();
+    expect(page.total).toBe(sambar.length);
+    expect(page.animals).toHaveLength(Math.min(5, sambar.length));
+    const first = page.animals[0];
+    expect(Object.keys(first).sort()).toEqual(['ageDays', 'id', 'sex', 'speciesId', 'stage', 'state']);
+    expect(first.speciesId).toBe('sambar');
+    // The age the passport shows (a founder is founded at an age, not newborn).
+    expect(first.ageDays).toBe(Math.floor(host.world.agents.find((a) => a.id === first.id)!.ageDays));
+    // Pages follow on without repeats, in a fixed order.
+    const next = (await api.inject({ method: 'GET', url: '/animals/list?species=sambar&limit=5&offset=5' })).json();
+    expect(next.animals.map((a: { id: string }) => a.id)).not.toContain(first.id);
+    const everyId = [...page.animals, ...next.animals].map((a: { id: string }) => a.id);
+    expect(everyId).toEqual([...everyId].sort());
+    // A search by any part of the id.
+    const tail = first.id.slice(-3);
+    const found = (await api.inject({ method: 'GET', url: `/animals/list?q=${tail}` })).json();
+    expect(found.animals.every((a: { id: string }) => a.id.includes(tail))).toBe(true);
+    expect(found.animals.map((a: { id: string }) => a.id)).toContain(first.id);
+    // Every species when none is named; nonsense refused.
+    expect((await api.inject({ method: 'GET', url: '/animals/list' })).json().total).toBe(all.length);
+    expect((await api.inject({ method: 'GET', url: '/animals/list?limit=0' })).statusCode).toBe(400);
+    expect((await api.inject({ method: 'GET', url: '/animals/list?limit=5000' })).statusCode).toBe(400);
+    expect((await api.inject({ method: 'GET', url: '/animals/list?species=' + 'x'.repeat(80) })).statusCode).toBe(400);
+  });
+
+  it('maps every living animal, packed by species, each at its position to the metre', async () => {
+    const all = (await api.inject({ method: 'GET', url: '/animals' })).json().animals as Array<{ id: string; speciesId: string; position: { x: number; z: number } }>;
+    const map = (await api.inject({ method: 'GET', url: '/animals/map' })).json() as { species: Array<{ id: string; ids: string; xz: number[] }> };
+    const unpacked = map.species.flatMap((s) => s.ids.split(',').map((tail, i) => ({
+      id: tail.startsWith('=') ? tail.slice(1) : `${s.id}_${tail}`, speciesId: s.id, x: s.xz[i * 2]!, z: s.xz[i * 2 + 1]! })));
+    expect(unpacked).toHaveLength(all.length);
+    const byId = new Map(unpacked.map((a) => [a.id, a]));
+    for (const a of all) {
+      const m = byId.get(a.id)!;
+      expect(m.speciesId).toBe(a.speciesId);
+      expect(Math.abs(m.x - a.position.x)).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(m.z - a.position.z)).toBeLessThanOrEqual(0.5);
+    }
+  });
+
   it('reports health', async () => {
     const res = await api.inject({ method: 'GET', url: '/health' });
     expect(res.statusCode).toBe(200);

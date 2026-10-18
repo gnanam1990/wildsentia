@@ -2,7 +2,7 @@ import { warmDryGround } from './agents/navigation.js';
 import {
   NUTRIENT_PER_KG_BIOMASS, gridForProfile, patchCentre, patchCount, type WorldGrid, WORLD_SECONDS_PER_DAY, WORLD_SECONDS_PER_HOUR,
   createRng, fliesSpecies, isClosedProfile, isCongoProfile, isFlooded, isIslandProfile, seasonAt, carcassMass, edibleMass, landWalkable, spatialHash, treeAnchorForPatch, patchAtPosition, positionInPatch, isWorldPosition, type TerrainProfile,
-  type WorldPosition, type MovementTrace,
+  type WorldPosition, type MovementTrace, type GoalId,
   type Agent, type Carcass, type DeathCause, type Patch, type Rng, type SkillId,
   type RngState, type SpeciesConfig, type WorldTime, type WaterBudget, type MicroEcologyState, type CommunityState, type CommunityProfile,
 } from '@vana/shared';
@@ -20,7 +20,8 @@ import { foundCommunity, stepCommunity } from './community.js';
 import { updateDrives } from './agents/drives.js';
 import { HUNGER_DESPERATION, canHunt, perceive, perceptionRadius, type WorldView } from './agents/perception.js';
 import { activityAt, selectGoal } from './agents/goals.js';
-import { controlledAction, controlledFeed, descendPerchedAnimal, executeGoal, type ControlledAction, type WorldServices } from './agents/behaviours.js';
+import { canopyFoodKg, controlledAction, controlledFeed, descendPerchedAnimal, executeGoal, feedInCanopy, travelThroughCanopy, type ControlledAction, type WorldServices } from './agents/behaviours.js';
+import { canopyLinked } from './agents/arboreal.js';
 import { foundingTraits } from './agents/genetics.js';
 import { Pedigree } from './agents/pedigree.js';
 import { adultMassFor, mortalityFor, stageFor, targetMass } from './agents/lifecycle.js';
@@ -51,6 +52,10 @@ const DEPENDENT_URGENT_THIRST = 0.5;
 const DEPENDENT_URGENT_HUNGER = 0.65;
 /** Phase B: a canopy dweller perched in its tree comes down to forage or drink at this hunger or thirst. */
 const CANOPY_FORAGE_DRIVE = 0.5;
+/** Of a canopy dweller's hungry hours, the share it forages on the ground (roots, fallen seeds). */
+const CANOPY_GROUND_FORAGE_SHARE = 0.15;
+/** Of a canopy troop's calm active hours, the share it moves on to a neighbouring tree. */
+const CANOPY_TRAVEL_SHARE = 0.3;
 
 export interface WorldOptions {
   /** Isolated experiments only; ordinary worlds keep the exact existing rainfall policy. */
@@ -343,6 +348,33 @@ export class World {
    * sim_0.37.0: how hungry the young a cat mother feeds at her kills are: the hungriest of her
    * living dependants old enough to eat meat (lifecycle.meatFromDays) that cannot yet hunt.
    */
+  /**
+   * A canopy dweller up its tree, calm and with no urgent need: whether it acted up there this hour.
+   * Thirsty, it comes down (false). Hungry, it eats the canopy's fruit and leaves here, or crosses
+   * to the neighbouring tree with the most, or now and then comes down to dig for roots (false).
+   * Otherwise, in its active hours, its troop moves on through the canopy: the whole tree's
+   * troop together, to one neighbouring tree, about a third of the hours (some 1-1.5 km a day).
+   */
+  #canopyLife(agent: Agent, cfg: SpeciesConfig, patch: Patch, view: WorldView, services: WorldServices, hours: number): boolean {
+    if (agent.drives.thirst >= CANOPY_FORAGE_DRIVE) return false;
+    const linked = patch.neighbours.map((id) => this.patches[id]!).filter((n) => canopyLinked(this.grid, patch, n));
+    const hourIndex = Math.floor(this.#time / 3600);
+    const roll = (salt: string) => spatialHash(`canopy-${salt}:${patch.id}:${hourIndex}`) / 0x1_0000_0000;
+    const ctx = (goal: GoalId) => ({ agent, species: cfg, patches: this.patches, view, percept: perceive(agent, cfg, view),
+      choice: { goal, score: 1, alternative: null }, hours, worldTime: this.#time, log: this.log, rng: this.#rng, services });
+    if (agent.drives.hunger >= CANOPY_FORAGE_DRIVE) {
+      // Some days the troop forages on the ground for roots and fallen seeds (12-22% of its time there).
+      if (roll('ground') < CANOPY_GROUND_FORAGE_SHARE) return false;
+      const need = needsOf(agent, cfg).foodKg / 6;
+      if (canopyFoodKg(patch) >= need) { feedInCanopy(ctx('find_food')); return true; }
+      const richest = linked.filter((n) => canopyFoodKg(n) >= need).sort((a, b) => canopyFoodKg(b) - canopyFoodKg(a) || a.id - b.id)[0];
+      return richest !== undefined && travelThroughCanopy(ctx('find_food'), richest, 'canopy_forage');
+    }
+    if (activityAt(cfg, this.#time) < 0.5 || agent.drives.fatigue >= 0.6 || linked.length === 0 || roll('travel') >= CANOPY_TRAVEL_SHARE) return false;
+    const next = linked[Math.floor(roll('way') * linked.length)]!;
+    return travelThroughCanopy(ctx('wander'), next, 'canopy_travel');
+  }
+
   #litterHunger(mother: Agent, cfg: SpeciesConfig, children: readonly Agent[]): number {
     const meatFrom = cfg.lifecycle.meatFromDays;
     if (meatFrom === undefined || !cfg.hunting || mother.sex !== 'female') return 0;
@@ -1535,6 +1567,12 @@ export class World {
         // A canopy dweller lives up there: it comes down to forage or drink, not because it is safe.
         const dweller = cfg.locomotion.canopyDweller === true;
         const forage = agent.drives.hunger >= CANOPY_FORAGE_DRIVE || agent.drives.thirst >= CANOPY_FORAGE_DRIVE;
+        // A canopy dweller lives up there (the owner: it holds the trees and travels through them):
+        // it eats the canopy's fruit and leaves where it sits or crosses to a neighbouring tree for
+        // them, and moves with its troop tree to tree, coming down for water, roots and the odd day
+        // when the canopy here holds nothing for it.
+        if (dweller && !canopyLost && !urgentNeed && !takeCover && !threatened
+          && this.#canopyLife(agent, cfg, patch, view, services, hours)) continue;
         if (canopyLost || urgentNeed || takeCover || !threatened && (!dweller || forage)) {
           descendPerchedAnimal(this.grid, agent, patch, this.#time, hours,
             canopyLost ? 'canopy_lost' : takeCover ? 'take_cover' : threatened ? 'urgent_need' : dweller ? 'forage' : 'threat_gone',

@@ -6,9 +6,11 @@ const KEEP = 0.08;
 /** Decoration nearer the lens than the first distance (metres) is open, beyond the second whole. */
 const LENS_OPEN_M = 0.8, LENS_WHOLE_M = 3.2;
 
-/** Same as the shader: how much of a decorative surface this far in front of the lens is drawn. */
-export function lensKeep(distance: number): number {
-  const t = Math.max(0, Math.min(1, (distance - LENS_OPEN_M) / (LENS_WHOLE_M - LENS_OPEN_M)));
+/** Same as the shader: how much of a decorative surface this far in front of the lens is drawn
+ * (`whole`: the reach beyond which it is whole; the open reach is a quarter of it). */
+export function lensKeep(distance: number, whole = LENS_WHOLE_M): number {
+  const open = whole === LENS_WHOLE_M ? LENS_OPEN_M : whole / 4;
+  const t = Math.max(0, Math.min(1, (distance - open) / (whole - open)));
   return t * t * (3 - 2 * t);
 }
 
@@ -92,6 +94,14 @@ export class ObserverVisibility {
   readonly #attached = new WeakSet<THREE.Material>();
   readonly #subjects = { value: [new THREE.Vector4(), new THREE.Vector4()] };
   readonly #count = { value: 0 };
+  /** The lens fade's open and whole reach (metres). */
+  readonly #lens = { value: new THREE.Vector2(LENS_OPEN_M, LENS_WHOLE_M) };
+
+  /** Widens the lens fade (a camera among a tree's leaves, following an animal up there); 3.2 m by default. */
+  setLensReach(wholeM: number): void {
+    const whole = Math.max(LENS_WHOLE_M, wholeM);
+    this.#lens.value.set(whole === LENS_WHOLE_M ? LENS_OPEN_M : whole / 4, whole);
+  }
 
   update(camera: THREE.PerspectiveCamera, size: { x: number; y: number }, subjects: readonly ObserverSubject[]): void {
     const projected = projectObserverSubjects(camera, size, subjects);
@@ -116,6 +126,7 @@ export class ObserverVisibility {
       previous(shader, renderer);
       shader.uniforms.observerSubjects = this.#subjects;
       shader.uniforms.observerSubjectCount = this.#count;
+      shader.uniforms.observerLens = this.#lens;
       // A leaf pressed against the lens (the camera following an animal through the understory)
       // opens rather than filling the view.
       // Read from the projected position after every other hook (a far-tree card projects itself);
@@ -123,7 +134,7 @@ export class ObserverVisibility {
       const lens = shader.vertexShader.includes('#include <fog_vertex>');
       if (lens) shader.vertexShader = 'varying float vObserverLens;\n' + shader.vertexShader.replace('#include <fog_vertex>',
         '#include <fog_vertex>\nvObserverLens = gl_Position.w;');
-      shader.fragmentShader = `uniform vec4 observerSubjects[2]; uniform int observerSubjectCount;${lens ? ' varying float vObserverLens;' : ''}\n` + shader.fragmentShader;
+      shader.fragmentShader = `uniform vec4 observerSubjects[2]; uniform int observerSubjectCount;${lens ? ' uniform vec2 observerLens; varying float vObserverLens;' : ''}\n` + shader.fragmentShader;
       shader.fragmentShader = shader.fragmentShader.replace('#include <alphatest_fragment>', `
         #include <alphatest_fragment>
         float observerKeep = 1.0;
@@ -139,11 +150,11 @@ export class ObserverVisibility {
         // overlapping branches. No animated noise, transparent sorting or extra draw pass.
         float observerNoise = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
         if (observerNoise >= observerKeep) discard;
-        ${lens ? `float observerLensKeep = smoothstep(${LENS_OPEN_M.toFixed(2)}, ${LENS_WHOLE_M.toFixed(2)}, vObserverLens);
+        ${lens ? `float observerLensKeep = smoothstep(observerLens.x, observerLens.y, vObserverLens);
         if (observerNoise >= observerLensKeep) discard;` : ''}
       `);
     };
-    material.customProgramCacheKey = () => `${key}:observer-cutaway-v2`;
+    material.customProgramCacheKey = () => `${key}:observer-cutaway-v3`;
     material.needsUpdate = true;
   }
 }

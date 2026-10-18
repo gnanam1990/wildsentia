@@ -25,18 +25,21 @@ import { loadLifeHistory, loadSelectedClimb, loadSelectedEncounter } from './lif
 import { encounterAt, isRecordedEncounter, ReplayClock, type RecordedEncounter } from './encounterReplay.js';
 import { huntMoment, huntReplaySeconds } from './huntActs.js';
 import { SPECIES_VISUALS, visualFor } from './species.js';
+import { speciesName } from './animalBrowserModel.js';
 import { Atmosphere, atmosphereAt, observerExposure } from './environment.js';
 import { groundTint } from './groundTint.js';
 import { wind } from './wind.js';
 import { characterScale, markerSize } from './appearance.js';
 import { LiveEncounterPlayer, recordedClimbPhase, withRecordedVisualIdentity } from './liveEncounters.js';
 import { ObserverVisibility, type ObserverSubject } from './observerVisibility.js';
-import { refreshSpeciesOptions } from './speciesPicker.js';
+import { renderSpeciesPicker } from './speciesPicker.js';
+import { createAnimalBrowser } from './animalBrowser.js';
 import { drinkingPool, waterGround } from './pools.js';
 import { stackLabels } from './labelLayout.js';
 import { restoreFollowOnOpen } from './followSubscription.js';
 import { LIVE_BUSY_CLOSE_CODE, ReconnectBackoff } from './reconnect.js';
 import type { EventMap } from './eventMap.js';
+import type { AnimalMap, SeenAnimal } from './animalMap.js';
 import { EventVisit } from './eventVisit.js';
 import { RewardObserver } from './rewards.js';
 import { SceneUpdates } from './sceneUpdates.js';
@@ -110,8 +113,9 @@ scene.add(liveAgents.root);
 
 const follow = new FollowCamera(camera, canvas);
 const EXPLORE_DISTANCE_M = 900;
-// The observer camera stays above sea level; animals still use the actual ground sampler.
-follow.groundHeightAt = (x, z) => Math.max(0, animals.groundHeightAt(x, z));
+// The observer camera stays above sea level, and above a Congo river or the flood: it follows a
+// swimmer from over the water, never from the riverbed. Animals still use the actual ground sampler.
+follow.groundHeightAt = (x, z) => Math.max(0, animals.groundHeightAt(x, z), animals.waterSurfaceAt?.(x, z) ?? -Infinity);
 // Dragging the ground explores the island: it lets go of the followed animal or person.
 // A replay keeps its own subject; the viewer stops it explicitly.
 follow.onExplore = () => {
@@ -416,6 +420,18 @@ let recapLoading = false;
 let recapRetryAt = 0;
 let followRevision = 0;
 
+/** Where a followed animal outside the loaded regions was last reported, until it is loaded. */
+let farFollow: { id: string; x: number; z: number } | null = null;
+async function locateFar(id: string, revision: number): Promise<void> {
+  try {
+    const response = await fetch(`/api/animals/${encodeURIComponent(id)}`);
+    if (!response.ok) return;
+    const animal = await response.json() as { position?: { x: number; z: number } };
+    if (followRevision !== revision || followedId !== id || !animal.position) return;
+    farFollow = { id, x: animal.position.x, z: animal.position.z };
+  } catch { /* the card says it is unavailable; nothing to fly to */ }
+}
+
 function watch(id: string | null): void {
   if (id !== null) observerChrome.showAnimal();
   eventVisit.clear();
@@ -427,8 +443,16 @@ function watch(id: string | null): void {
   followedId = id;
   rewards.watch(id);
   const subject = id === null ? undefined : store.animals.get(id) ?? liveEncounters.poses(performance.now()).get(id)?.animal;
-  speciesPicker.value = subject?.speciesId ?? '';
-  if (subject) follow.flyToDistance(followDistanceFor(subject.speciesId, visualFor(subject.speciesId).heightM));
+  // An animal outside the regions around the view (chosen from the list, a picker or a link):
+  // ask where it is, and fly there; its regions load, and then it is followed as any other.
+  farFollow = null;
+  if (id !== null && !subject) void locateFar(id, followRevision);
+  // A far animal is not loaded yet: its id names its species (`blue_duiker_00ab`).
+  const named = id?.slice(0, Math.max(0, id.lastIndexOf('_'))) ?? '';
+  speciesPicker.value = subject?.speciesId ?? ([...speciesPicker.options].some((o) => o.value === named) ? named : '');
+  // A far one is framed by its named species, so it is seen close up when its regions load.
+  const framed = subject?.speciesId ?? (named in SPECIES_VISUALS ? named : null);
+  if (framed !== null) follow.flyToDistance(followDistanceFor(framed, visualFor(framed).heightM));
   hud.cancelRecap();
   recapPending = id;
   lastFollowed.set(id);
@@ -581,6 +605,7 @@ const sceneUpdates = new SceneUpdates<{
       mapPatches = update.environment.patches;
       if (store.world) groundTint.update(update.environment.patches, store.world.season);
       eventMap?.setPatches(mapPatches);
+      animalMap?.setPatches(mapPatches);
       carcasses.clear();
       for (const c of update.environment.carcasses) carcasses.set(c.id, c);
     }
@@ -631,7 +656,7 @@ function pickedAnimal(event: MouseEvent | PointerEvent): string | null {
   const now = performance.now();
   for (const id of store.animals.keys()) {
     const p = animals.positionOf(id, now);
-    if (p !== null) positions.set(id, { x: p.x, y: renderBaseY(p, animals.groundHeightAt) + visualFor(store.animals.get(id)!.speciesId).heightM * 0.5, z: p.z });
+    if (p !== null) positions.set(id, { x: p.x, y: shownBaseY(p) + visualFor(store.animals.get(id)!.speciesId).heightM * 0.5, z: p.z });
   }
   return nearestOnScreen(positions, camera, event.clientX - rect.left, event.clientY - rect.top, rect.width, rect.height,
     event instanceof PointerEvent && event.pointerType === 'touch' ? 36 : 22);
@@ -691,15 +716,70 @@ document.querySelector('#freecam')!.addEventListener('click', () => {
   canvas.focus();
 });
 const speciesPicker = document.querySelector<HTMLSelectElement>('#species-picker')!;
-for (const id of Object.keys(SPECIES_VISUALS)) {
-  const option = document.createElement('option');
-  option.value = id;
-  option.textContent = id;
-  speciesPicker.append(option);
-}
 speciesPicker.addEventListener('change', () => {
-  const animal = [...store.animals.values()].find((a) => a.speciesId === speciesPicker.value);
-  if (animal) watch(animal.id); // watch() leaves any replay; the picker keeps focus.
+  const species = speciesPicker.value;
+  if (!species) return;
+  // The nearest of that species in the regions around the camera; else one from anywhere in the
+  // world (a regional world holds only the regions near the view), which the camera flies to.
+  let nearest: string | null = null, best = Infinity;
+  for (const a of store.animals.values()) {
+    if (a.speciesId !== species || !a.position) continue;
+    const d = Math.hypot(a.position.x - follow.target.x, a.position.z - follow.target.z);
+    if (d < best) { best = d; nearest = a.id; }
+  }
+  if (nearest) { watch(nearest); speciesPicker.value = species; return; } // watch() leaves any replay; the picker keeps focus.
+  void fetch(`/api/animals/list?species=${encodeURIComponent(species)}&limit=1`).then((r) => (r.ok ? r.json() : null))
+    .then((page: { animals?: Array<{ id: string }> } | null) => {
+      const id = page?.animals?.[0]?.id;
+      if (id && speciesPicker.value === species) { watch(id); speciesPicker.value = species; }
+    }).catch(() => { /* the picker stays as chosen; nothing to follow */ });
+});
+// Every animal, by species and number: from the animal count's list, or its own button there.
+/** Where an animal is drawn standing: on the ground, up its tree, or (a swimmer) on the water.
+ * Its label, its framing and the camera's aim used the riverbed, metres under a swimmer. */
+function shownBaseY(p: { x: number; z: number; altitudeM?: number }): number {
+  const base = renderBaseY(p, animals.groundHeightAt);
+  if ((p.altitudeM ?? 0) !== 0) return base;
+  const water = animals.waterSurfaceAt?.(p.x, p.z) ?? null;
+  return water !== null && water > base ? water : base;
+}
+// Every living animal on a map, with lists of those on the screen now and those in the part of
+// the map shown: choosing one follows it; clicking the map where none is takes the camera there.
+let animalMap: AnimalMap | null = null;
+const screenFrustum = new THREE.Frustum(), screenMatrix = new THREE.Matrix4(), screenPoint = new THREE.Vector3();
+function animalsOnScreen(): SeenAnimal[] {
+  camera.updateMatrixWorld();
+  screenFrustum.setFromProjectionMatrix(screenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+  const now = performance.now(), seen: SeenAnimal[] = [];
+  for (const [id, animal] of store.animals) {
+    if (animal.state === 'dead') continue;
+    const p = animals.positionOf(id, now) ?? animal.position;
+    if (!p) continue;
+    screenPoint.set(p.x, shownBaseY(p) + visualFor(animal.speciesId).heightM * 0.5, p.z);
+    if (screenFrustum.containsPoint(screenPoint)) seen.push({ id, speciesId: animal.speciesId, state: animal.state });
+  }
+  return seen;
+}
+const animalMapDialog = new LazyDialog<[]>('animal map', observerUiStatus, async () => {
+  const { AnimalMap } = await import('./animalMap.js');
+  const map = new AnimalMap((id) => watch(id), (x, z) => {
+    watch(null);
+    follow.target.set(x, animals.groundHeightAt(x, z), z);
+    follow.distance = 220;
+    canvas.focus();
+  }, animalsOnScreen, () => ({ x: follow.target.x, z: follow.target.z, followedId }));
+  map.setPatches(mapPatches);
+  animalMap = map;
+  return () => map.open();
+});
+document.querySelector('#open-animal-map')!.addEventListener('click', () => { void animalMapDialog.open(); });
+const browseAnimals = createAnimalBrowser((id) => watch(id), () => store.world?.population);
+document.querySelector('#population')!.addEventListener('click', (event) => {
+  const button = (event.target as HTMLElement).closest<HTMLElement>('[data-browse-species]');
+  if (!button) return;
+  event.preventDefault();
+  button.closest('details')?.removeAttribute('open');
+  browseAnimals(button.dataset.browseSpecies ?? '');
 });
 
 // Family members and teachers in the passport are links: follow them.
@@ -738,7 +818,7 @@ setInterval(() => { void hud.refreshPassport(followedId).then(() => hud.render(f
 
 connect();
 store.onChange(() => {
-  refreshSpeciesOptions(speciesPicker.options, store.world?.population);
+  renderSpeciesPicker(speciesPicker, store.world?.population);
   const speed = store.world?.worldHoursPerRealHour;
   if (speed !== undefined) animals.tracker.setWorldSpeed(speed);
   hud.render(followedId);
@@ -798,8 +878,10 @@ const drawingSize = new THREE.Vector2();
 let observerSubjects: ObserverSubject[] = [];
 function observerSubject(speciesId: string, position: { x: number; z: number; altitudeM?: number }, size = 1): ObserverSubject {
   const height = visualFor(speciesId).heightM * size;
-  return { x: position.x, y: renderBaseY(position, animals.groundHeightAt) + height * 0.5,
-    z: position.z, radius: Math.max(0.35, height * 1.25) };
+  // Up in a crown a small animal sits among leaf sprays far bigger than itself: open a wider window.
+  const aloft = (position.altitudeM ?? 0) > 2;
+  return { x: position.x, y: shownBaseY(position) + height * 0.5,
+    z: position.z, radius: Math.max(aloft ? 2.5 : 0.35, height * 1.25) };
 }
 /** The live scene's animals for the ambient audio this frame; none during a replay. */
 let audioSubjects: ReadonlyMap<string, AnimalState> | null = null;
@@ -814,7 +896,7 @@ function audibleAnimals(): AudioAnimal[] {
     const position = animals.positionOf(id, now);
     if (!position) continue;
     result.push({ id, speciesId: animal.speciesId, state: animal.state, x: position.x,
-      y: renderBaseY(position, animals.groundHeightAt) + visualFor(animal.speciesId).heightM * 0.5, z: position.z });
+      y: shownBaseY(position) + visualFor(animal.speciesId).heightM * 0.5, z: position.z });
   }
   return result;
 }
@@ -838,6 +920,9 @@ function renderFrame(dt: number, now: number): void {
   const communityText = communityLayer.playbackNotice(now, reducedMotion.matches);
   if (communityMotionNotice.textContent !== communityText) communityMotionNotice.textContent = communityText;
   communityMotionNotice.hidden = !communityText;
+  // Following an animal up a tree, the camera is among its leaves: clear them further out.
+  const aloft = followedId !== null && (animals.positionOf(followedId, now)?.altitudeM ?? 0) > 4;
+  observerVisibility.setLensReach(aloft ? 5 : 0);
   observerVisibility.update(camera, renderer.getDrawingBufferSize(drawingSize), revealAnimal.checked ? observerSubjects : []);
   prepareShadows(performance.now());
   renderer.render(scene, camera);
@@ -924,7 +1009,7 @@ function frame(): void {
       // An upright climber's body rises above its hind feet: aim at the body, not the bark below it.
       const climbing = recordedClimbPhase(climb.trace, seconds) !== null;
       follow.follow({ ...position, moving: !playback.paused && position.moving,
-        y: renderBaseY(position, animals.groundHeightAt), ...(climbing ? { focusHeight: visualFor(life.speciesId).heightM * 1.4 } : {}) },
+        y: shownBaseY(position), ...(climbing ? { focusHeight: visualFor(life.speciesId).heightM * 1.4 } : {}) },
         playback.paused || reducedMotion.matches ? 1 : dt);
       const moment = climbMoment(climb, seconds);
       replayMoment.textContent = moment;
@@ -937,7 +1022,7 @@ function frame(): void {
       // otherwise spin the walk and graze cycles thousands of times faster than life.
       animals.syncReplay({ id: life.id, speciesId: life.speciesId, patchId: 0, state: point.state, currentGoal: '', drives: point.drives }, point, playback.elapsedMs / 1000);
       observerSubjects = [observerSubject(life.speciesId, point)];
-      follow.follow({ ...point, moving: !playback.paused && point.moving, y: renderBaseY(point, animals.groundHeightAt) }, playback.paused || reducedMotion.matches ? 1 : dt);
+      follow.follow({ ...point, moving: !playback.paused && point.moving, y: shownBaseY(point) }, playback.paused || reducedMotion.matches ? 1 : dt);
       replayMoment.textContent = momentAt(life.moments, playhead)?.text ?? '';
       replayWhen.textContent = `${life.id} · ${dayOf(playhead)}`;
       replaySeek.setAttribute('aria-valuetext', dayOf(playhead));
@@ -1000,15 +1085,19 @@ function frame(): void {
         follow.distance += (desired - follow.distance) * Math.min(1, dt * 3);
         const x = (position.x + partner.x) / 2, z = (position.z + partner.z) / 2;
         follow.follow({ x, z, heading: position.heading, moving: false,
-          y: Math.max(renderBaseY(position, animals.groundHeightAt), renderBaseY(partner, animals.groundHeightAt)) }, dt);
-      } else follow.follow({ ...position, y: renderBaseY(position, animals.groundHeightAt),
+          y: Math.max(shownBaseY(position), shownBaseY(partner)) }, dt);
+      } else follow.follow({ ...position, y: shownBaseY(position),
         focusHeight: visualFor(speciesId).heightM * characterScale(visibleAnimals.get(followedId) ?? {}) * 0.5 }, dt);
+    } else if (farFollow?.id === followedId) {
+      // Not loaded yet: fly toward where it was reported, so its regions are sent.
+      viewFocus = { x: farFollow.x, z: farFollow.z };
+      follow.follow({ x: farFollow.x, z: farFollow.z, heading: 0, moving: false, y: animals.groundHeightAt(farFollow.x, farFollow.z) }, dt);
     } else follow.hold(dt); // Not placed this frame: keep the last framing, but zoom and turns still work.
     // The bubble floats over the animal's head, projected into screen space.
     const head = position === null ? null
       : new THREE.Vector3(
         position.x,
-        renderBaseY(position, animals.groundHeightAt) + bubbleHeight(visibleAnimals.get(followedId)),
+        shownBaseY(position) + bubbleHeight(visibleAnimals.get(followedId)),
         position.z,
       ).project(camera);
     bubble.show(
@@ -1043,9 +1132,9 @@ function frame(): void {
     const pose = followedEncounter && id ? poses.get(id) : undefined;
     if (!pose) { label.hidden = true; return; }
     const p = new THREE.Vector3(pose.position.x,
-      renderBaseY(pose.position, animals.groundHeightAt) + bubbleHeight(pose.animal), pose.position.z).project(camera);
+      shownBaseY(pose.position) + bubbleHeight(pose.animal), pose.position.z).project(camera);
     label.hidden = p.z < -1 || p.z > 1 || Math.abs(p.x) > 1 || Math.abs(p.y) > 1;
-    const species = SPECIES_LABEL[pose.animal.speciesId] ?? pose.animal.speciesId.replace(/^./, (c) => c.toUpperCase());
+    const species = SPECIES_LABEL[pose.animal.speciesId] ?? speciesName(pose.animal.speciesId);
     const avatar = liveAgents.avatarForAnimal(pose.animal.id);
     const text = avatar ? `${avatar.name} · ${species} · ${activityOf(avatar)}` : `${species} · ${ACTIVITY_LABEL[pose.animal.state] ?? pose.animal.state}`;
     if (label.textContent !== text) label.textContent = text;
@@ -1137,7 +1226,7 @@ function renderAgentsChip(): void {
       Object.assign(button.dataset, data);
       r.append(span, button); rows.push(r);
     };
-    for (const a of avatars.slice(0, 200)) row(a.name, `${SPECIES_LABEL[a.speciesId] ?? a.speciesId.replace(/^./, (c) => c.toUpperCase())} · ${rosterActivity(a)}`, 'Follow', { followAnimal: a.animalId });
+    for (const a of avatars.slice(0, 200)) row(a.name, `${SPECIES_LABEL[a.speciesId] ?? speciesName(a.speciesId)} · ${rosterActivity(a)}`, 'Follow', { followAnimal: a.animalId });
     for (const d of drops) row(`${usdc(d.amountMicro)} USDC drop`, d.spotted ? 'spotted: race to open it' : 'somewhere in the gold circle', 'Look', { lookDrop: d.id }, 'drop-row');
     agentsList.replaceChildren(...rows);
   }
