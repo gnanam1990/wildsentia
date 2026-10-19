@@ -22,3 +22,12 @@
 /* Secondary actions (sell, revoke, cancel) read as secondary. */
 .congo-page button.quiet { background: transparent; color: var(--ink); border: 1px solid var(--line); }
 .congo-page button.quiet:hover { background: var(--line); color: var(--ink); }
+
+/* Arc bounties panel (arc-admin.html). */
+.congo-page .arc-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px 20px; margin: 0; }
+.congo-page .arc-facts div { min-width: 0; }
+.congo-page .arc-facts dt { font-size: 12px; opacity: .72; }
+.congo-page .arc-facts dd { margin: 2px 0 0; font-weight: 600; overflow-wrap: anywhere; }
+.congo-page .congo-inline .arc-check { display: flex; align-items: center; justify-content: flex-start; gap: 10px; font-weight: 500; }
+.congo-page .congo-inline .arc-check input { flex: none; width: 18px; height: 18px; min-height: 0; padding: 0; margin: 0; }
+.congo-page .congo-inline select { min-height: 44px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line); background: transparent; color: inherit; font: inherit; flex: 1 1 14rem; min-width: 0; }

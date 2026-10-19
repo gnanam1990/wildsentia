@@ -44,7 +44,8 @@ export function publicArcBounty(b: ArcBounty, worldTime: number, engine: ArcBoun
  * - Public: `GET /congo/arc-bounties` (the pool, live and recent bounties), `GET /congo/arc-bounties/:id`
  *   and, once decided, `GET /congo/arc-bounties/:id/record` (the record its hash was taken over).
  * - Admin (Bearer token): `POST /congo/admin/arc-bounties/random` puts a bounty on a prey animal
- *   picked at random; `GET /congo/admin/arc-bounties/candidates` lists who it could go on.
+ *   picked at random; `GET /congo/admin/arc-bounties/candidates` lists who it could go on;
+ *   `GET /congo/admin/arc-bounties` lists recent bounties with their targets and wallets.
  */
 export function installArcBountyRoutes(scope: FastifyInstance, deps: ArcBountyDeps): void {
   const { store, engine, chain } = deps;
@@ -75,6 +76,17 @@ export function installArcBountyRoutes(scope: FastifyInstance, deps: ArcBountyDe
     reply.code(401).send({ error: 'admin_only' });
     return false;
   };
+
+  /** Every recent bounty with its target and the agents' wallets, for the operator's panel. */
+  scope.get('/congo/admin/arc-bounties', async (req, reply) => {
+    if (!admin(req, reply)) return reply;
+    const [pool, limits, recent] = await Promise.all([chain.pool().catch(() => null), chain.limits().catch(() => null), store.recent(100)]);
+    return { network: chain.chainId, contract: chain.contract, evaluator: chain.evaluator, poolAtomic: pool?.toString() ?? null,
+      limits: limits ? { minAtomic: limits.min.toString(), maxAtomic: limits.max.toString() } : null, decimals: 6,
+      bounties: recent.map((b) => ({ ...publicArcBounty(b, deps.now(), engine), targetAnimalId: b.targetAnimalId, targetAgentId: b.targetAgentId,
+        targetWallet: b.targetWallet, winnerAgentId: b.winnerAgentId, winnerAnimalId: b.winnerAnimalId, payeeWallet: b.payeeWallet,
+        windowWorldSeconds: b.windowWorldSeconds, error: b.error })) };
+  });
 
   scope.get('/congo/admin/arc-bounties/candidates', async (req, reply) => {
     if (!admin(req, reply)) return reply;

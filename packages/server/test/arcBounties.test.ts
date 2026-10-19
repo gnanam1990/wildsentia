@@ -8,6 +8,8 @@ import { SimHost } from '../src/simHost.js';
 import { ArcBountyStore } from '../src/arcBounties/store.js';
 import { ArcBountyEngine, canonicalJsonOf } from '../src/arcBounties/engine.js';
 import { targetCommit, viemBountyChain, type BountyChain } from '../src/arcBounties/chain.js';
+import Fastify from 'fastify';
+import { installArcBountyRoutes } from '../src/arcBounties/routes.js';
 import { testDatabaseUrl } from './testDatabase.js';
 import { ANVIL_KEYS, CHAIN_ID, anvilAvailable, startLocalChain, usdcBalance, type LocalChain } from './anvil.js';
 
@@ -177,6 +179,22 @@ maybe('Congo bounties paid on Arc', () => {
     expect(await usdcBalance(chain, PREY_WALLET) - before).toBe(5_000_000n);
     await engine.processPending();
     expect(await usdcBalance(chain, PREY_WALLET) - before).toBe(5_000_000n);
+  }, 60_000);
+
+  it('gives the operator\'s panel every bounty with its target, behind the admin token, and the public never the live target', async () => {
+    const b = await publish();
+    const app = Fastify();
+    installArcBountyRoutes(app, { store, engine, chain: bountyChain, adminToken: 'admin-test-token', now: () => host.world.now() });
+    await app.ready();
+    expect((await app.inject({ method: 'GET', url: '/congo/admin/arc-bounties' })).statusCode).toBe(401);
+    const view = (await app.inject({ method: 'GET', url: '/congo/admin/arc-bounties', headers: { authorization: 'Bearer admin-test-token' } })).json();
+    expect(view.poolAtomic).toBe((await bountyChain.pool()).toString());
+    expect(view.limits).toEqual({ minAtomic: '1000000', maxAtomic: '100000000' });
+    expect(view.bounties[0]).toMatchObject({ bountyId: b.bountyId, targetAnimalId: duiker, targetAgentId: 'prey', status: 'active' });
+    const pub = (await app.inject({ method: 'GET', url: `/congo/arc-bounties/${b.bountyId}` })).json();
+    expect(pub.targetAnimalId).toBeUndefined();
+    expect(JSON.stringify(pub)).not.toContain(duiker);
+    await app.close();
   }, 60_000);
 
   it('refuses a bounty the pool cannot cover, or outside the contract limits', async () => {
