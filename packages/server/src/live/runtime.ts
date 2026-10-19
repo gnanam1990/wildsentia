@@ -20,6 +20,11 @@ import { BountyEngine, DevSettlementAdapter } from '../bounties/engine.js';
 import { BountyDiscovery, targetState } from '../bounties/discovery.js';
 import type { BountyDeps } from '../bounties/routes.js';
 import { EventStore } from '../db/eventStore.js';
+import { ArcBountyStore } from '../arcBounties/store.js';
+import { ArcBountyEngine } from '../arcBounties/engine.js';
+import { viemBountyChain } from '../arcBounties/chain.js';
+import type { ArcBountyDeps } from '../arcBounties/routes.js';
+import type { Hex } from 'viem';
 
 /**
  * Starts and stops the live layer beside the SimHost (docs/2026-09-26-live-agents-design.md).
@@ -60,7 +65,7 @@ export function holdingGate(env: NodeJS.ProcessEnv): HoldingGate | undefined {
 
 export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | undefined, env: NodeJS.ProcessEnv): LiveRuntime | null {
   if (env.VANA_LIVE_AGENTS !== '1') return null;
-  const store = new AgentStore(pool);
+  const store = new AgentStore(pool), agentStore = store;
   // Live changes to the world are checkpointed between hours: a hunt within a minute (so the
   // kill reaches the feed), anything else at most every quarter hour.
   let huntPending = false, changedAt = 0, checkpointedAt = Date.now();
@@ -87,24 +92,48 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
         block: (id) => host.world.possessionBlock(id, { owner: true, ignoreController: true }), exclusive: (work) => host.exclusive(work) }) };
   })() : null;
   // Congo 1D: bounties on owned animals, found by perception, settled in the SIMULATED ledger.
+  // A bounty's record: the recorded events of its animals between two world times.
+  const events = new EventStore(pool, host.world.grid);
+  const eventsOf = async (ids: string[], from: number, to: number) => {
+    const seen = new Map<string, { id: string; worldTime: number }>();
+    for (const id of ids) for (const e of await events.byActorSince(id, from - 1, 500)) if (e.worldTime <= to) seen.set(e.id, e);
+    for (const e of host.world.log.all()) if (e.worldTime >= from && e.worldTime <= to && e.actors.some((a) => ids.includes(a))) seen.set(e.id, e);
+    return [...seen.values()].sort((a, b) => a.worldTime - b.worldTime || a.id.localeCompare(b.id));
+  };
+  // The hour being played (what viewers and live hunters see) trails the world's clock by up to an hour.
+  const played = () => { const f = host.liveEncounterFrame(); return f ? f.startWorldTime + f.elapsedWorldSeconds : host.world.now(); };
   const bounties: BountyDeps | null = owned ? (() => {
-    const store = new BountyStore(pool, host.worldId ?? 'unknown'), events = new EventStore(pool, host.world.grid);
-    const eventsOf = async (ids: string[], from: number, to: number) => {
-      const seen = new Map<string, { id: string; worldTime: number }>();
-      for (const id of ids) for (const e of await events.byActorSince(id, from - 1, 500)) if (e.worldTime <= to) seen.set(e.id, e);
-      for (const e of host.world.log.all()) if (e.worldTime >= from && e.worldTime <= to && e.actors.some((a) => ids.includes(a))) seen.set(e.id, e);
-      return [...seen.values()].sort((a, b) => a.worldTime - b.worldTime || a.id.localeCompare(b.id));
-    };
-    // The hour being played (what viewers and live hunters see) trails the world's clock by up to an hour.
-    const played = () => { const f = host.liveEncounterFrame(); return f ? f.startWorldTime + f.elapsedWorldSeconds : host.world.now(); };
+    const store = new BountyStore(pool, host.worldId ?? 'unknown');
     const engine = new BountyEngine(store, owned.store, host, new DevSettlementAdapter(store), () => host.worldHoursPerRealHour, eventsOf, played);
     owned.bountyActive = async (lifeId) => (await store.activeOnLife(lifeId)) !== null;
     owned.lastBounty = (assetId) => store.lastDecidedOnAsset(assetId);
     return { store, engine, discovery: new BountyDiscovery(store, () => host.worldId ?? 'unknown'), adminToken: env.VANA_BOUNTY_ADMIN_TOKEN?.trim() || null,
       now: played };
   })() : null;
+  // Congo free play: agents steer wild animals (VANA_CONGO_OPEN_PLAY=1), as on the island.
+  const openPlay = !!owned && env.VANA_CONGO_OPEN_PLAY === '1';
+  // Congo bounties paid in USDC on Arc (docs/2026-10-19-congo-arc-bounties-design.md).
+  const arcBounties: ArcBountyDeps | null = owned && env.VANA_ARC_BOUNTIES === '1' ? (() => {
+    const required = (name: string) => { const v = env[name]?.trim(); if (!v) throw new Error(`${name} is required with VANA_ARC_BOUNTIES=1`); return v; };
+    const chainId = Number(required('VANA_ARC_BOUNTIES_CHAIN_ID'));
+    // Arc Testnet only, until mainnet use is approved after the legal review.
+    if (chainId !== 5042002 && env.VANA_ARC_BOUNTIES_MAINNET_APPROVED !== 'true') throw new Error('VANA_ARC_BOUNTIES_CHAIN_ID must be Arc Testnet (5042002)');
+    const chain = viemBountyChain({ rpcUrl: required('VANA_ARC_BOUNTIES_RPC_URL'), chainId, contract: required('VANA_ARC_BOUNTIES_CONTRACT') as Hex,
+      evaluatorKey: required('VANA_ARC_BOUNTIES_EVALUATOR_KEY') as Hex });
+    const store = new ArcBountyStore(pool, host.worldId ?? 'unknown');
+    const engine = new ArcBountyEngine(store, chain, {
+      world: () => host.world, played, rate: () => host.worldHoursPerRealHour,
+      steered: () => [...live.avatars.values()].map((a) => ({ agentId: a.agentId, animalId: a.animalId, speciesId: a.speciesId })),
+      steererOf: (id) => live.avatars.byAnimal(id)?.agentId ?? null,
+      wallet: async (agentId) => { const a = await agentStore.byId(agentId); return a?.wallet && a.walletProven ? a.wallet : null; },
+      notify: (agentId, text) => live.notify(agentId, text), eventsOf,
+      explorer: env.VANA_ARC_BOUNTIES_EXPLORER_URL?.trim() || null,
+    });
+    return { store, engine, chain, adminToken: env.VANA_ARC_BOUNTIES_ADMIN_TOKEN?.trim() || null, now: played };
+  })() : null;
   live.onHunt = (hunt) => {
     if (bounties && hunt.killed) void bounties.engine.adjudicate().catch((e) => console.error('[bounty] adjudicate failed', e));
+    if (arcBounties && hunt.killed) void arcBounties.engine.onHunt(hunt).catch((e) => console.error('[arc-bounty] kill failed', e));
   };
   live.onEnded = (life) => {
     void store.recordLife(life).catch((e) => console.error('[live] life record failed', e));
@@ -119,6 +148,7 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
   const holding = holdingGate(env);
   const routes: LiveRouteDeps = {
     live, world: port, store, ledger, ...(holding ? { holding } : {}), ...(owned ? { owned } : {}), ...(bounties ? { bounties } : {}),
+    ...(arcBounties ? { arcBounties } : {}), ...(openPlay ? { openPlay } : {}),
     limits: { slots: positiveSetting(env, 'VANA_AGENT_SLOTS', 500), perNetworkPerDay: positiveSetting(env, 'VANA_AGENT_REGISTRATIONS_PER_NETWORK', 5) },
     networkSecret: env.VANA_LIVE_SECRET?.trim() || rewards?.adminToken || randomBytes(32).toString('hex'),
     clientScriptPath: fileURLToPath(new URL('../../agent-client/client.mjs', import.meta.url)),
@@ -137,8 +167,8 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
       await host.exclusive(async () => {
         if (id) for (const saved of await store.loadPossessions(id)) {
           const isOwned = host.world.animal(saved.animalId)?.assetId !== undefined;
-          // On Congo only owned animals are steered, and only by their lease's holder.
-          if (owned && (!isOwned || leased.get(saved.animalId) !== saved.agentId)) continue;
+          // On Congo only owned animals are steered, and only by their lease's holder (unless play is free).
+          if (owned && !openPlay && (!isOwned || leased.get(saved.animalId) !== saved.agentId)) continue;
           if (live.restore(saved, isOwned)) restored.add(saved.animalId);
         }
         // An animal still marked as steered, with no saved possession, goes back to the wild.
@@ -186,6 +216,13 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
         timers.push(setInterval(() => {
           void bounties.discovery.refresh(bounties.now()).then(() => bounties.discovery.sample(doing, bounties.now())).catch(() => undefined);
         }, 2000));
+      }
+      if (arcBounties) {
+        // What a stop left unconfirmed is checked against the chain; then deaths and deadlines every 10 s.
+        await arcBounties.engine.processPending().catch((e) => console.error('[arc-bounty] pending failed', e));
+        timers.push(setInterval(() => { void arcBounties.engine.adjudicate().catch((e) => console.error('[arc-bounty] adjudicate failed', e)); }, 10_000));
+        timers.push(setInterval(() => { void arcBounties.engine.processPending().catch((e) => console.error('[arc-bounty] pending failed', e)); }, 30_000));
+        console.log(`arc bounties: on (contract ${arcBounties.chain.contract}, evaluator ${arcBounties.chain.evaluator}, chain ${arcBounties.chain.chainId})`);
       }
       // Four times a second, filtered per viewer by the gateway; the roster every two seconds.
       timers.push(setInterval(() => broadcast.live(live.publicState(), Date.now()), 250));

@@ -16,6 +16,7 @@ import { sameOriginJson } from '../accounts/cookies.js';
 import { MIN_X_ACCOUNT_DAYS } from '../accounts/store.js';
 import { installOwnershipRoutes, type OwnedDeps } from '../ownership/routes.js';
 import { installBountyRoutes, publicBounty, type BountyDeps } from '../bounties/routes.js';
+import { installArcBountyRoutes, type ArcBountyDeps } from '../arcBounties/routes.js';
 import { motionOf } from '../bounties/discovery.js';
 
 /**
@@ -45,6 +46,10 @@ export interface LiveRouteDeps {
   owned?: OwnedDeps | undefined;
   /** Congo 1D: bounties, discovered only by perception. */
   bounties?: BountyDeps | undefined;
+  /** Congo bounties paid in USDC on Arc, on prey animals agents steer (docs/2026-10-19-congo-arc-bounties-design.md). */
+  arcBounties?: ArcBountyDeps | undefined;
+  /** Congo free play: agents steer wild animals, as on the island, instead of owned ones only. */
+  openPlay?: boolean | undefined;
   /** ERC-8004 identities, when configured: who owns one (spec §13, plan 4b). */
   identity?: { owner(agentId: bigint): Promise<`0x${string}` | null> } | undefined;
   /** The species configs the simulation runs on, for the field guide. */
@@ -259,7 +264,7 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
           try { if (!(await holds(ctx.agent.wallet))) return reply.code(403).send({ error: 'holding_below_minimum' }); }
           catch { return reply.code(503).send({ error: 'holding_check_unavailable' }); }
         }
-        if (deps.owned) {
+        if (deps.owned && !deps.openPlay) {
           // Congo 1C: only owned animals are steered, by their owner or an agent they authorised.
           if (!animalId) return reply.code(409).send({ error: 'owned_only' });
           const taken = await deps.owned.control.take({ id: ctx.agent.id, kind: ctx.agent.kind, name: ctx.agent.name }, animalId);
@@ -276,7 +281,7 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
 
       scope.post(`${prefix}/release`, async (req, reply) => {
         const ctx = await resolve(req, reply, commands); if (!ctx) return reply;
-        const released = deps.owned ? await deps.owned.control.release(ctx.agent.id) : live.release(ctx.agent.id);
+        const released = deps.owned && !deps.openPlay ? await deps.owned.control.release(ctx.agent.id) : live.release(ctx.agent.id);
         return released ? { ok: true } : reply.code(409).send({ error: 'not_possessing' });
       });
 
@@ -435,6 +440,7 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
     if (deps.owned) ownedAgentRoutes(deps.owned);
     if (deps.humans) commandRoutes('/play', person(deps.humans));
     if (deps.bounties) installBountyRoutes(scope, deps.bounties);
+    if (deps.arcBounties) installArcBountyRoutes(scope, deps.arcBounties);
     if (deps.humans && deps.owned) {
       const asPerson = person(deps.humans);
       installOwnershipRoutes(scope, deps.owned, (req, reply) => asPerson(req, reply, commands));
