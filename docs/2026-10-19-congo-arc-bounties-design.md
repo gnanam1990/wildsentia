@@ -67,6 +67,19 @@ due time plus a margin, so an outage cannot strand the money.
   carries a bounty, and how long it must last. Hunters still learn of it only through
   perception and clues.
 
+**The operator's choice** (19 October, after the first demo). The owner asked to choose the prey
+by hand in the admin panel (`arc-admin.html`), from:
+- the animals agents steer;
+- a search by number and species;
+- a map of every living animal.
+
+`POST /congo/admin/arc-bounties/drop` accepts any living animal of a hunted, unprotected
+species that carries no bounty. Its rules record `selection: operator` or `random`.
+- **Wild target:** an animal no agent steers can carry one too. Only a hunter's agent can win
+  it; if it survives, the money goes back to the pool.
+- **Trust:** the operator choosing a target, possibly next to an agent of their own, is trusted
+  by design. The random button remains for bounties nobody chose.
+
 **Adjudication** keeps 1D's rules, with the agent as payee:
 - **Predator:** killed by predation before the deadline by an eligible predator that an agent
   with a proven wallet was steering at the kill, the agent not the prey's. That agent is paid.
