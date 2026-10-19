@@ -46,6 +46,11 @@ export interface ArcBountyPorts {
   /** The recorded events of these animals between two world times, for the bounty's record. */
   eventsOf: (animalIds: string[], from: number, to: number) => Promise<unknown[]>;
   explorer?: string | null;
+  /**
+   * Told when a bounty goes live on chain and when it is paid or returned, with what the public may
+   * know (never a live bounty's target): for alerts and the public board.
+   */
+  announce?: (event: { kind: 'published' | 'settled'; bounty: ArcBounty }) => void;
 }
 
 export type PublishResult = { ok: true; bounty: ArcBounty } | { ok: false; reason: string };
@@ -208,7 +213,7 @@ export class ArcBountyEngine {
     const call: BountyCall = { fn: 'publish', id: b.bountyId as Hex, amount: b.amountAtomic, expiresAt: BigInt(Math.floor(b.expiresAt.getTime() / 1000)),
       rulesHash: b.rulesHash as Hex, targetCommit: targetCommit(b.targetKey as Hex, b.salt as Hex) };
     const sent = await this.#send(b.bountyId, 'publish', call);
-    if (sent === 'success') { await this.store.published(b.bountyId); await this.#notifyPrey((await this.store.get(b.bountyId))!); }
+    if (sent === 'success') await this.#published(b.bountyId);
     else if (sent === 'reverted' && (await this.chain.status(b.bountyId as Hex)) === 'none') await this.store.failed(b.bountyId, 'publish reverted');
   }
 
@@ -231,6 +236,25 @@ export class ArcBountyEngine {
       console.error(`[arc-bounty] ${which} ${bountyId.slice(0, 10)} failed: ${message}`);
       return 'error';
     }
+  }
+
+  /** A publish confirmed on chain: live, its prey's agent told, and announced. */
+  async #published(bountyId: string): Promise<void> {
+    await this.store.published(bountyId);
+    const b = (await this.store.get(bountyId))!;
+    await this.#notifyPrey(b);
+    this.#announce('published', b);
+  }
+
+  /** A decision confirmed on chain (or found done there): settled, and announced. */
+  async #settled(bountyId: string, onChain: 'paid' | 'voided'): Promise<void> {
+    await this.store.settled(bountyId, onChain);
+    const b = await this.store.get(bountyId);
+    if (b) this.#announce('settled', b);
+  }
+
+  #announce(kind: 'published' | 'settled', bounty: ArcBounty): void {
+    try { this.ports.announce?.({ kind, bounty }); } catch (error) { console.error('[arc-bounty] announce failed', error); }
   }
 
   async #notifyPrey(b: ArcBounty): Promise<void> {
@@ -298,7 +322,7 @@ export class ArcBountyEngine {
     const call: BountyCall = b.outcome === 'void' ? { fn: 'voidBounty', ...base }
       : { fn: 'settle', ...base, outcome: b.outcome!, payee: getAddress(b.payeeWallet!) };
     const sent = await this.#send(b.bountyId, 'decide', call);
-    if (sent === 'success') await this.store.settled(b.bountyId, b.outcome === 'void' ? 'voided' : 'paid');
+    if (sent === 'success') await this.#settled(b.bountyId, b.outcome === 'void' ? 'voided' : 'paid');
   }
 
   /**
@@ -310,7 +334,7 @@ export class ArcBountyEngine {
       const due = (sentAt: Date | null) => !sentAt || Date.now() - sentAt.getTime() > RESEND_AFTER_MS;
       for (const b of await this.store.inStatus('publishing')) {
         const onChain = await this.chain.status(b.bountyId as Hex);
-        if (onChain !== 'none') { await this.store.published(b.bountyId); await this.#notifyPrey((await this.store.get(b.bountyId))!); continue; }
+        if (onChain !== 'none') { await this.#published(b.bountyId); continue; }
         if (b.expiresAt.getTime() <= Date.now() + 60_000) { await this.store.failed(b.bountyId, 'expired before it was published'); continue; }
         if (b.publishTx && (await this.chain.receipt(b.publishTx as Hex)) === 'reverted') { await this.store.failed(b.bountyId, 'publish reverted'); continue; }
         if (due(b.publishSentAt)) await this.#publish(b);
@@ -320,16 +344,21 @@ export class ArcBountyEngine {
         if ((await this.chain.status(b.bountyId as Hex)) === 'expired' && await this.store.decide(b.bountyId,
           { outcome: 'void', payeeWallet: null, winnerAgentId: null, winnerAnimalId: null, decidedWorldTime: this.ports.world().now(),
             record: { bountyId: b.bountyId, expired: true }, recordHash: keccak256(stringToHex(`expired:${b.bountyId}`)) })) {
-          await this.store.settled(b.bountyId, 'voided');
+          await this.#settled(b.bountyId, 'voided');
         } else await this.#notifyPrey(b);
       }
       for (const b of await this.store.inStatus('deciding')) {
         const onChain = await this.chain.status(b.bountyId as Hex);
-        if (onChain === 'paid') { await this.store.settled(b.bountyId, 'paid'); continue; }
-        if (onChain === 'voided' || onChain === 'expired') { await this.store.settled(b.bountyId, 'voided'); continue; }
+        if (onChain === 'paid') { await this.#settled(b.bountyId, 'paid'); continue; }
+        if (onChain === 'voided' || onChain === 'expired') { await this.#settled(b.bountyId, 'voided'); continue; }
         if (onChain === 'open' && due(b.decideSentAt)) await this.#sendDecision(b);
       }
     });
+  }
+
+  /** A link to an address on the explorer, if one is configured. */
+  addressUrl(address: string): string | null {
+    return this.ports.explorer ? `${this.ports.explorer.replace(/\/$/, '')}/address/${address}` : null;
   }
 
   /** A link to a transaction on the explorer, if one is configured. */
