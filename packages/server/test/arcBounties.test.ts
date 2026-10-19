@@ -227,6 +227,28 @@ maybe('Congo bounties paid on Arc', () => {
     expect(await usdcBalance(chain, HUNTER_WALLET) - before).toBe(1_000_000n);
   }, 60_000);
 
+  it('never pays a hunter for prey its own side steered at the kill: a wild target taken later, or one held without a proven wallet', async () => {
+    const wild = host.world.agents.find((a) => a.alive && a.speciesId === 'blue_duiker' && a.id !== duiker
+      && !steered.some((s) => s.animalId === a.id))!.id;
+    const r = await engine.publishOn({ animalId: wild, amountAtomic: 1_000_000n, windowWorldSeconds: 3600 });
+    if (!r.ok) throw new Error(r.reason);
+    // After publication, an agent from the hunter's own network takes the wild prey and walks it to the hunter.
+    networks.set('accomplice', 'net-a');
+    await engine.onHunt({ predatorId: leopard, preyId: wild, predatorAgentId: 'hunter', preyAgentId: 'accomplice', killed: true });
+    let after = (await store.get(r.bounty.bountyId))!;
+    expect(after.killPreyAgentId).toBe('accomplice');
+    expect(after.outcome).toBe('void');
+
+    // The hunter's own agent cannot be the prey's either, whatever its network.
+    const wild2 = host.world.agents.find((a) => a.alive && a.speciesId === 'blue_duiker' && ![duiker, wild].includes(a.id)
+      && !steered.some((s) => s.animalId === a.id))!.id;
+    const r2 = await engine.publishOn({ animalId: wild2, amountAtomic: 1_000_000n, windowWorldSeconds: 3600 });
+    if (!r2.ok) throw new Error(r2.reason);
+    await engine.onHunt({ predatorId: leopard, preyId: wild2, predatorAgentId: 'hunter', preyAgentId: 'hunter', killed: true });
+    after = (await store.get(r2.bounty.bountyId))!;
+    expect(after.outcome).toBe('void');
+  }, 60_000);
+
   it('refuses to drop a bounty on a protected, unhunted, dead or unknown animal', async () => {
     expect(await engine.inspect('blue_duiker_zzzz')).toEqual({ ok: false, reason: 'not_found' });
     expect(await engine.inspect(leopard)).toEqual({ ok: false, reason: 'not_hunted' });

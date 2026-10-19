@@ -100,6 +100,20 @@ export class ArcBountyEngine {
     return out;
   }
 
+  /**
+   * Whether a kill could be self-dealing: the hunter's agent, or its wallet, is the agent that held
+   * the prey at publication or at the kill (wild then, or steered without a proven wallet), or
+   * registered from the same network as either.
+   */
+  async #colluded(b: ArcBounty, killer: string, killerWallet: string): Promise<boolean> {
+    for (const holder of new Set([b.targetAgentId, b.killPreyAgentId].filter((a): a is string => !!a))) {
+      if (holder === killer || await this.#related(killer, holder)) return true;
+      const holderWallet = holder === b.targetAgentId ? b.targetWallet : await this.ports.wallet(holder);
+      if (holderWallet && holderWallet.toLowerCase() === killerWallet.toLowerCase()) return true;
+    }
+    return !!b.targetWallet && b.targetWallet.toLowerCase() === killerWallet.toLowerCase();
+  }
+
   /** Whether two agents registered from the same network (unless a testnet demo allows it). */
   async #related(a: string, b: string): Promise<boolean> {
     if (this.ports.sameNetworkOk) return false;
@@ -229,12 +243,13 @@ export class ArcBountyEngine {
   }
 
   /** A live hunt that killed a bounty's target: who killed it, at what world time. */
-  async onHunt(hunt: { predatorId: string; preyId: string; predatorAgentId: string | null; killed: boolean }): Promise<void> {
+  async onHunt(hunt: { predatorId: string; preyId: string; predatorAgentId: string | null; preyAgentId?: string | null; killed: boolean }): Promise<void> {
     if (!hunt.killed) return;
     for (const b of await this.store.inStatus('active')) {
       if (b.targetAnimalId !== hunt.preyId) continue;
       // Rounded up: a kill a fraction of a second after the deadline is after it, never on it.
-      await this.store.recordKill(b.bountyId, { agentId: hunt.predatorAgentId, animalId: hunt.predatorId, worldTime: Math.ceil(this.ports.played()) });
+      await this.store.recordKill(b.bountyId, { agentId: hunt.predatorAgentId, animalId: hunt.predatorId, worldTime: Math.ceil(this.ports.played()),
+        preyAgentId: hunt.preyAgentId ?? this.ports.steererOf(hunt.preyId) });
     }
     await this.adjudicate();
   }
@@ -265,8 +280,7 @@ export class ArcBountyEngine {
       const species = world.animal(b.killAnimalId)?.speciesId;
       const wallet = b.killAgentId && b.killAgentId !== b.targetAgentId && species && b.eligiblePredators.includes(species) && b.killWorldTime <= deadline
         ? await this.ports.wallet(b.killAgentId) : null;
-      if (wallet && wallet.toLowerCase() !== b.targetWallet && !(b.targetAgentId && await this.#related(b.killAgentId!, b.targetAgentId)))
-        return close('predator', wallet, b.killAgentId, b.killAnimalId, b.killWorldTime);
+      if (wallet && !(await this.#colluded(b, b.killAgentId!, wallet))) return close('predator', wallet, b.killAgentId, b.killAnimalId, b.killWorldTime);
       return close('void', null, null, null, b.killWorldTime);
     }
     // Dead another way (a wild predator, illness, hunger): nobody won it.

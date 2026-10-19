@@ -9,7 +9,7 @@ export interface ArcBounty {
   targetKey: string; salt: string; amountAtomic: bigint; windowWorldSeconds: number;
   publishedWorldTime: number; deadlineWorldTime: number; expiresAt: Date; eligiblePredators: string[];
   rules: Record<string, unknown>; rulesHash: string; notified: boolean;
-  killAgentId: string | null; killAnimalId: string | null; killWorldTime: number | null;
+  killAgentId: string | null; killAnimalId: string | null; killWorldTime: number | null; killPreyAgentId: string | null;
   outcome: ArcOutcome | null; payeeWallet: string | null; winnerAgentId: string | null; winnerAnimalId: string | null;
   decidedWorldTime: number | null; record: unknown; recordHash: string | null;
   publishTx: string | null; publishSentAt: Date | null; decideTx: string | null; decideSentAt: Date | null; error: string | null;
@@ -34,7 +34,7 @@ const row = (r: Record<string, unknown>): ArcBounty => ({
   publishedWorldTime: Number(r.published_world_time), deadlineWorldTime: Number(r.deadline_world_time), expiresAt: r.expires_at as Date,
   eligiblePredators: r.eligible_predators as string[], rules: r.rules as Record<string, unknown>, rulesHash: r.rules_hash as string,
   notified: r.notified as boolean, killAgentId: r.kill_agent_id as string | null, killAnimalId: r.kill_animal_id as string | null,
-  killWorldTime: n(r.kill_world_time), outcome: r.outcome as ArcOutcome | null, payeeWallet: r.payee_wallet as string | null,
+  killWorldTime: n(r.kill_world_time), killPreyAgentId: r.kill_prey_agent_id as string | null, outcome: r.outcome as ArcOutcome | null, payeeWallet: r.payee_wallet as string | null,
   winnerAgentId: r.winner_agent_id as string | null, winnerAnimalId: r.winner_animal_id as string | null, decidedWorldTime: n(r.decided_world_time),
   record: r.record, recordHash: r.record_hash as string | null, publishTx: r.publish_tx as string | null, publishSentAt: r.publish_sent_at as Date | null,
   decideTx: r.decide_tx as string | null, decideSentAt: r.decide_sent_at as Date | null, error: r.error as string | null,
@@ -96,9 +96,9 @@ export class ArcBountyStore {
   }
 
   /** A live kill of the target, recorded the moment it happens; the first one only. */
-  async recordKill(bountyId: string, kill: { agentId: string | null; animalId: string; worldTime: number }): Promise<boolean> {
-    const r = await this.pool.query(`update arc_bounties set kill_agent_id = $2, kill_animal_id = $3, kill_world_time = $4
-      where bounty_id = $1 and status = 'active' and kill_animal_id is null`, [bountyId, kill.agentId, kill.animalId, kill.worldTime]);
+  async recordKill(bountyId: string, kill: { agentId: string | null; animalId: string; worldTime: number; preyAgentId: string | null }): Promise<boolean> {
+    const r = await this.pool.query(`update arc_bounties set kill_agent_id = $2, kill_animal_id = $3, kill_world_time = $4, kill_prey_agent_id = $5
+      where bounty_id = $1 and status = 'active' and kill_animal_id is null`, [bountyId, kill.agentId, kill.animalId, kill.worldTime, kill.preyAgentId]);
     return r.rowCount === 1;
   }
 
