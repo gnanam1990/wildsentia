@@ -1,18 +1,42 @@
 #!/usr/bin/env node
-// An example Wildsentia Congo agent, verified end to end (spec §7): it talks to the local MCP
-// bridge (../mcp.mjs) exactly as an MCP client would, takes the leopard its owner authorised,
-// reads the bounty board, ranges until its leopard senses a bounty target (or reaches where one
-// was last seen), closes in and hunts it. Rewards are SIMULATED.
+// A ready-to-run Wildsentia hunter (Node 22, nothing to install): it takes an African leopard,
+// keeps it watered, looks for prey it can hunt among what it senses, and hunts again and again.
+// Arc bounties sit on prey animals the hunters are never shown: any duiker it kills may carry
+// one, and if it does, the USDC is paid to this agent's proven payout wallet.
 //
-//   VANA_URL=https://your-server/api VANA_PROFILE=hunter node congo-hunter.mjs
+//   curl -O <server>/agents/client.mjs && curl -O <server>/agents/examples/congo-hunter.mjs
+//   WILDSENTIA_URL=<server> node congo-hunter.mjs [species]       # default african_leopard
+//
+//   WILDSENTIA_URL      the server's agent API (default http://127.0.0.1:8090, the local demo)
+//   WILDSENTIA_WALLET_KEY  optional: a hex private key whose wallet is proven as the payout wallet.
+//                       A TESTNET-only throwaway key, never a real wallet's: it is read from the
+//                       environment, signs one message here and is never sent or printed.
+//   WILDSENTIA_NAME     the agent's name on its first run (later runs keep the registered one)
+//   WILDSENTIA_PROFILE  which saved key to use (default one per role and server, in ~/.vana-agent/)
+//
+// The agent's Ed25519 key is saved on first run, so a rerun is the same agent (registrations
+// are limited per network and day). With --mcp it instead runs the owned-animal walk-through
+// below over the MCP bridge (../mcp.mjs), as an MCP client would.
 import { spawn } from 'node:child_process';
+import { existsSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline';
-import { isMain } from '../mcp.mjs';
+
+/** A file beside this one (as downloaded), or one folder up (in the repository). */
+const beside = (name) => [`./${name}`, `../${name}`].map((p) => new URL(p, import.meta.url)).find((u) => existsSync(fileURLToPath(u))) ?? null;
+
+/** Whether this module is the program being run, however its path was spelled (spaces, symlinks). */
+export function isMain(moduleUrl, argv1) {
+  if (!argv1) return false;
+  const real = (p) => { try { return realpathSync(p); } catch { return p; } };
+  return real(fileURLToPath(moduleUrl)) === real(argv1);
+}
 
 /** A minimal MCP client over a child process's stdio. */
 export function mcpClient(env = process.env) {
-  const child = spawn(process.execPath, [fileURLToPath(new URL('../mcp.mjs', import.meta.url))], { env, stdio: ['pipe', 'pipe', 'inherit'] });
+  const bridge = beside('mcp.mjs');
+  if (!bridge) throw new Error('mcp.mjs not found beside this file or one folder up');
+  const child = spawn(process.execPath, [fileURLToPath(bridge)], { env, stdio: ['pipe', 'pipe', 'inherit'] });
   const pending = new Map();
   let next = 1, gone = null;
   createInterface({ input: child.stdout }).on('line', (line) => {
@@ -72,7 +96,7 @@ export function followClue(at, clues = []) {
 const CHARGE_M = 30;
 
 /**
- * One hunt: returns what happened. `log` receives a line per step; `tick` waits between steps
+ * The MCP walk-through (owned animals, spec §7): one hunt of a sensed bounty target, returning what happened. `log` receives a line per step; `tick` waits between steps
  * (the world moves in real time).
  */
 export async function hunt(mcp, { log = console.log, tick = () => wait(2000), maxSteps = 120, afterTakeControl = async () => undefined } = {}) {
@@ -122,10 +146,178 @@ export async function hunt(mcp, { log = console.log, tick = () => wait(2000), ma
   return { ok: false, reason: 'not_found' };
 }
 
+// The starter hunter: free play, through client.mjs.
+
+const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+/** How long a refused hunt keeps that animal off the list: out of sight a moment, wrong prey for good. */
+const SKIP_MS = { out_of_sight: 6_000, incompatible_prey: 10 * 60_000, not_its_prey: 60 * 60_000, no_such_animal: 60 * 60_000 };
+
+export function hunterMemory(species = 'african_leopard') { return { species, home: null, goal: null, leg: 0, skip: {}, seenAt: 0, said: '', kills: 0 }; }
+
+/** The notices not read yet, oldest first (the server keeps the last few). */
+export function freshNotices(o, mem) {
+  const fresh = (o.notices ?? []).filter((n) => n.at > mem.seenAt);
+  if (fresh.length) mem.seenAt = Math.max(...fresh.map((n) => n.at));
+  return fresh;
+}
+
+/** A point `metres` from `here`, straight away from `from`. */
+export function awayFrom(here, from, metres, turnDeg = 0) {
+  const t = turnDeg * Math.PI / 180, dx = here.x - from.x, dz = here.z - from.z, d = Math.hypot(dx, dz) || 1;
+  const ux = dx / d, uz = dz / d;
+  return { x: Math.round(here.x + (ux * Math.cos(t) - uz * Math.sin(t)) * metres), z: Math.round(here.z + (ux * Math.sin(t) + uz * Math.cos(t)) * metres) };
+}
+
+/**
+ * The hunter's next step from one observation: a pure function, so it can be read and tested.
+ * Escape anything hunting it, finish a hunt or a meal, drink when thirsty, then hunt the nearest
+ * eligible prey it senses (a sensed bounty target first, where the world shows one), creeping
+ * closer while it is out of sight; with nothing sensed, range in a widening spiral round home.
+ */
+export function decideHunter(o, mem, now = Date.now()) {
+  const a = o.animal;
+  if (!a) return { kind: 'possess', target: mem.species, why: `taking a ${mem.species}` };
+  const here = a.position, nearby = o.nearby ?? [], drives = a.drives ?? {};
+  mem.home ??= { x: here.x, z: here.z };
+  const wait = (why) => ({ kind: 'wait', why });
+  const chaser = nearby.find((n) => n.chasingYou) ?? nearby.find((n) => n.huntsYou && n.distance < 40);
+  if (chaser) {
+    // A climber's best escape is up its patch's tree.
+    if (a.tree && dist(a.tree, here) < 40) {
+      if (a.perched) return wait(`up a tree, away from a ${chaser.speciesId}`);
+      return dist(a.tree, here) > 3.5 ? { kind: 'move', points: [{ x: a.tree.x, z: a.tree.z }], gait: 'run', goal: 'tree', why: `running for a tree from a ${chaser.speciesId}` }
+        : { kind: 'climb', why: `climbing away from a ${chaser.speciesId}` };
+    }
+    return { kind: 'flee', points: [0, 50, -50].map((t) => awayFrom(here, chaser, 150, t)), gait: 'run', why: `running from a ${chaser.speciesId}` };
+  }
+  if (a.action === 'hunt') return wait(`on the hunt (${a.hunting})`);
+  if (a.carcassBeside && (drives.hunger ?? 0) > 0.1) return a.action === 'feed' ? wait('feeding') : { kind: 'act', action: 'feed', why: 'feeding on the kill' };
+  const water = o.water?.[0];
+  if (water && ((drives.thirst ?? 0) > 0.6 || (a.action === 'drink' && (drives.thirst ?? 0) > 0.1))) {
+    if (water.distance > 2) return a.moving && mem.goal?.kind === 'water' ? wait('walking to water') : { kind: 'goTo', to: { x: water.x, z: water.z }, gait: 'walk', goal: 'water', why: 'thirsty: going to water' };
+    return a.action === 'drink' ? wait('drinking') : { kind: 'act', action: 'drink', why: 'drinking' };
+  }
+  const prey = nearby.filter((n) => (o.huntable ?? []).includes(n.speciesId) && !n.predator && !((mem.skip[n.id] ?? 0) > now))
+    .sort((x, y) => Number(!!y.bounty) - Number(!!x.bounty) || x.distance - y.distance)[0];
+  if (prey) {
+    const sight = o.guide?.senses?.sightM ?? 40;
+    if (prey.distance <= sight) return { kind: 'hunt', id: prey.id, at: { x: prey.x, z: prey.z },
+      why: `hunting ${prey.id} at ${Math.round(prey.distance)} m${prey.bounty ? ' (a sensed bounty target)' : ' (any prey may carry a hidden bounty)'}` };
+    // Sensed but not yet in sight (smell, hearing): creep closer at a walk, re-aimed as it moves.
+    if (a.moving && mem.goal?.kind === 'prey' && dist(mem.goal, prey) < 10) return wait(`stalking ${prey.id}`);
+    return { kind: 'goTo', to: { x: prey.x, z: prey.z }, gait: 'walk', goal: 'prey', why: `stalking ${prey.id} (${prey.sense ?? 'sensed'}, ${Math.round(prey.distance)} m)` };
+  }
+  // Fresh tracks or a call, where the world gives clues: follow where they lead.
+  const clue = followClue(here, o.clues ?? []);
+  if (clue && !(a.moving && mem.goal?.kind === 'clue')) return { kind: 'goTo', to: { x: clue.x, z: clue.z }, gait: clue.gait, goal: 'clue', why: 'following a clue' };
+  if (a.moving) return wait('ranging');
+  // Range: a widening spiral round where it started, so its senses sweep new ground.
+  mem.leg++;
+  const angle = mem.leg * 0.9, r = 80 + (mem.leg % 24) * 25;
+  return { kind: 'goTo', to: { x: Math.round(mem.home.x + Math.cos(angle) * r), z: Math.round(mem.home.z + Math.sin(angle) * r) }, gait: 'walk', goal: 'range', why: 'ranging for prey' };
+}
+
+/** Carries out one step; a refusal is logged and remembered, never fatal. */
+async function performHunter(api, step, mem, log, now) {
+  const refused = (e) => e.body?.error ?? e.message;
+  switch (step.kind) {
+    case 'possess': {
+      try {
+        const p = await api.possess(step.target);
+        if (p.queued) log(`no ${step.target} is free: waiting in line (place ${p.queued})`);
+        else { log(`now steering ${p.animalId}`); mem.home = null; mem.goal = null; }
+      } catch (e) {
+        log(`could not take a ${step.target}: ${refused(e)}`);
+        // Only owned animals here: take one this agent's owners authorised.
+        if (e.body?.error === 'owned_only') {
+          const mine = (await api.myAnimals().catch(() => ({ animals: [] }))).animals.find((x) => x.speciesId === step.target && x.life?.status === 'alive');
+          if (mine) { await api.possess(mine.life.animalId).then((p) => log(`now steering ${p.animalId}`), (e2) => log(`could not take it: ${refused(e2)}`)); return; }
+        }
+        return 10_000;
+      }
+      return;
+    }
+    case 'hunt':
+      try { await api.hunt(step.id); mem.goal = null; }
+      catch (e) {
+        const why = refused(e);
+        mem.skip[step.id] = now + (SKIP_MS[why] ?? 6_000);
+        log(`hunt refused: ${why}`);
+        if (why === 'out_of_sight') await api.goTo(step.at, 'walk').then(() => { mem.goal = { kind: 'prey', ...step.at }; }, () => undefined);
+      }
+      return;
+    case 'goTo':
+      try { await api.goTo(step.to, step.gait); mem.goal = { kind: step.goal, ...step.to }; }
+      catch (e) { log(`move refused: ${refused(e)}`); mem.goal = null; }
+      return;
+    case 'move':
+    case 'flee':
+      for (const p of step.points) {
+        try { await api.move([p], step.gait); mem.goal = { kind: step.goal ?? 'flee', ...p }; return 1000; } catch { /* try the next way */ }
+      }
+      return 1000;
+    case 'climb': await api.climb().catch((e) => log(`climb refused: ${refused(e)}`)); return 1000;
+    case 'act': await api.act(step.action).catch((e) => log(`${step.action} refused: ${refused(e)}`)); return;
+    default: return;
+  }
+}
+
+/**
+ * Plays until stopped (or for `steps` observations): observe, decide, act, every two seconds.
+ * Commands also keep the animal from being released as idle.
+ */
+export async function playHunter(api, { species = 'african_leopard', log = console.log, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), steps = Infinity, now = Date.now } = {}) {
+  const mem = hunterMemory(species);
+  let lastCommand = now();
+  for (let i = 0; i < steps; i++) {
+    let o;
+    try { o = await api.observe(); } catch (e) { log(`observe: ${e.body?.error ?? e.message}`); await sleep(3000); continue; }
+    for (const n of freshNotices(o, mem)) {
+      log(`· ${n.text}`);
+      if (/^You caught the /.test(n.text)) { mem.kills++; log('  a kill: if that animal carried a bounty, its USDC goes to this agent\'s proven wallet'); }
+    }
+    const step = decideHunter(o, mem, now());
+    if (step.why && step.why !== mem.said) { log(step.why); mem.said = step.why; }
+    let pause;
+    if (step.kind !== 'wait') { pause = await performHunter(api, step, mem, log, now()); lastCommand = now(); }
+    else if (o.animal && now() - lastCommand > 5 * 60_000) { await api.presence().catch(() => undefined); lastCommand = now(); }
+    if (i + 1 < steps) await sleep(pause ?? 2000);
+  }
+  return mem;
+}
+
+/** Loads client.mjs for this server, with one saved key per role and server. */
+export async function connect(role, env = process.env) {
+  const url = (env.WILDSENTIA_URL || env.VANA_URL || 'http://127.0.0.1:8090').replace(/\/+$/, '');
+  env.VANA_URL = url;
+  env.VANA_PROFILE = env.WILDSENTIA_PROFILE || `${role}-${url.replace(/^https?:\/\//, '')}`.replace(/[^A-Za-z0-9_-]+/g, '-');
+  const client = beside('client.mjs');
+  if (!client) throw new Error(`client.mjs not found: download it next to this file (curl -O ${url}/agents/client.mjs)`);
+  return { url, profile: env.VANA_PROFILE, client: await import(client.href) };
+}
+
 if (isMain(import.meta.url, process.argv[1])) {
-  const mcp = mcpClient();
-  await mcp.start();
-  // Whatever happens, the leopard goes back to the wild rather than waiting out an idle release.
-  try { console.log(JSON.stringify(await hunt(mcp))); }
-  finally { await mcp.call('release_control').catch(() => undefined); mcp.close(); }
+  if (process.argv.includes('--mcp')) {
+    const mcp = mcpClient();
+    await mcp.start();
+    // Whatever happens, the leopard goes back to the wild rather than waiting out an idle release.
+    try { console.log(JSON.stringify(await hunt(mcp))); }
+    finally { await mcp.call('release_control').catch(() => undefined); mcp.close(); }
+  } else {
+    // Read once and dropped from the environment, so nothing started from here inherits it.
+    const walletKey = process.env.WILDSENTIA_WALLET_KEY;
+    delete process.env.WILDSENTIA_WALLET_KEY;
+    const species = process.argv[2] ?? process.env.WILDSENTIA_SPECIES ?? 'african_leopard';
+    const { url, profile, client } = await connect('hunter');
+    const log = (line) => console.log(`[${new Date().toISOString().slice(11, 19)}] ${line}`);
+    try {
+      log(`Wildsentia hunter on ${url} (key: ~/.vana-agent/${profile}.json)`);
+      const me = await client.joinWorld({ name: process.env.WILDSENTIA_NAME || `Hunter ${client.agentId().slice(3, 7)}`,
+        bio: 'A starter hunter: it hunts whatever prey it senses.', walletKey, log });
+      if (!me.wallet) log('No payout wallet: a bounty this hunter wins cannot be paid. Set WILDSENTIA_WALLET_KEY to a TESTNET-only throwaway key to prove one.');
+      log('Bounty targets are hidden from hunters: every prey animal it kills might carry one. Ctrl+C stops; the animal stays yours for 15 minutes.');
+      process.on('SIGINT', () => { log('stopped'); process.exit(0); });
+      await playHunter(client.api, { species, log });
+    } catch (e) { console.error(`${e.message}${e.body ? ` ${JSON.stringify(e.body)}` : ''}`); process.exit(1); }
+  }
 }

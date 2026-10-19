@@ -19,3 +19,6 @@
 }
 .connect-page td:not(:first-child), .connect-page th:not(:first-child) { white-space: nowrap; }
 .connect-page td small.playing { color: var(--moss); font: 600 .72rem var(--mono); text-transform: uppercase; letter-spacing: .06em; }
+.connect-page .warn { max-width: 70ch; padding: 10px 14px; border-left: 4px solid var(--warn); background: var(--warn-bg); border-radius: 0 10px 10px 0; }
+.connect-page .quick-hashes { list-style: none; padding: 0; margin: 12px 0 0; }
+.connect-page .quick-hashes li { margin: 2px 0; }

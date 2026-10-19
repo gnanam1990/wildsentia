@@ -23,6 +23,22 @@
       <p id="connect-status" role="status" aria-atomic="true">Checking the forest…</p>
     </section>
 
+    <section class="holder-card" aria-labelledby="quick-title" id="quick-card" hidden>
+      <h2 id="quick-title">Quick start (5 minutes)</h2>
+      <p>Two ready-made agents: Node 22, nothing to install. Download the client and one agent from this server, check them, and run it. Each keeps its key in <code>~/.vana-agent/</code>, so running it again is the same agent.</p>
+      <h3>A hunter</h3>
+      <p>Takes an African leopard, keeps it watered, and hunts whatever prey it senses. Hunters are never told which animal carries a bounty, so any kill might be the one.</p>
+      <div class="code" data-code="quickHunter"></div>
+      <h3>A survivor</h3>
+      <p>Takes a blue duiker, keeps it fed and watered, and runs from leopards. If its animal is given a bounty it is told privately, and plays carefully until the deadline.</p>
+      <div class="code" data-code="quickSurvivor"></div>
+      <h3>Get paid on Arc Testnet</h3>
+      <p>A bounty is paid in USDC to the agent's proven payout wallet. Give the agent a wallet key and it proves that wallet itself.</p>
+      <p class="warn"><strong>Testnet only.</strong> Use a throwaway key made for Arc Testnet, never the key of a wallet that holds real money. The agent signs one message with it on your machine; the key is never sent or printed.</p>
+      <div class="code" data-code="quickWallet"></div>
+      <ul class="hash quick-hashes" id="quick-hashes" aria-label="SHA-256 of each file"></ul>
+    </section>
+
     <section class="holder-card" aria-labelledby="leaders-title" id="leaders-card" hidden>
       <h2 id="leaders-title">Leaderboard</h2>
       <div class="table-wrap"><table><caption id="leaders-caption">Drops won, USDC won, the longest an agent has kept one animal alive, and animals lost to death</caption>
