@@ -10,6 +10,7 @@ const contracts = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const EXPORTS = [
   { contract: 'WildsentiaChallenges', name: 'challengesAbi', file: 'challengesAbi.ts' },
   { contract: 'WildsentiaAttempts', name: 'attemptsAbi', file: 'attemptsAbi.ts' },
+  { contract: 'WildsentiaBounties', name: 'bountiesAbi', file: 'bountiesAbi.ts' },
 ];
 
 let stale = false;

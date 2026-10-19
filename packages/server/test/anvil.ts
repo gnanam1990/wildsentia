@@ -18,6 +18,8 @@ export const ANVIL_KEYS = {
   evaluator: '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d',
   creator: '0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a',
   player: '0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6',
+  /** Funds the bounty pool (anvil's fifth development key). */
+  treasury: '0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a',
 } as const satisfies Record<string, Hex>;
 export const CHAIN_ID = 31_337;
 
@@ -44,6 +46,8 @@ const artifact = (path: string): { abi: unknown[]; bytecode: Hex } => {
 export interface LocalChain {
   /** WildsentiaAttempts, with the evaluator as its recorder. */
   url: string; usdc: Hex; contract: Hex; attempts: Hex;
+  /** WildsentiaBounties (1 to 100 USDC), its pool funded with 500 USDC by the treasury. */
+  bounties: Hex;
   /** LOCAL TEST STAND-INS for the ERC-8004 identity and reputation registries. */
   identity: Hex; reputation: Hex;
   addresses: { owner: Hex; evaluator: Hex; creator: Hex; player: Hex };
@@ -76,9 +80,17 @@ export async function startLocalChain(): Promise<LocalChain> {
   const usdcAbi = artifact('TestUSDC.sol/TestUSDC.json').abi;
   const mint = await wallet('owner').writeContract({ address: usdc, abi: usdcAbi, functionName: 'mint', args: [acct.creator.address, 1_000_000_000n], chain: null });
   await client.waitForTransactionReceipt({ hash: mint });
+  const bounties = await deploy('WildsentiaBounties.sol/WildsentiaBounties.json',
+    [usdc, acct.owner.address, acct.evaluator.address, 1_000_000n, 100_000_000n]);
+  const bountiesAbiJson = artifact('WildsentiaBounties.sol/WildsentiaBounties.json').abi;
+  for (const [who, address, abi, functionName, args] of [['owner', usdc, usdcAbi, 'mint', [acct.treasury.address, 500_000_000n]],
+    ['treasury', usdc, usdcAbi, 'approve', [bounties, 500_000_000n]], ['treasury', bounties, bountiesAbiJson, 'fund', [500_000_000n]]] as const) {
+    const hash = await wallet(who).writeContract({ address, abi, functionName, args: args as unknown[], chain: null });
+    await client.waitForTransactionReceipt({ hash });
+  }
   void challengesAbi;
   return {
-    url, usdc, contract, attempts, identity, reputation,
+    url, usdc, contract, attempts, bounties, identity, reputation,
     addresses: { owner: acct.owner.address, evaluator: acct.evaluator.address, creator: acct.creator.address, player: acct.player.address },
     stop: () => { proc.kill('SIGKILL'); },
     async mine(seconds) {
