@@ -51,6 +51,11 @@ export class AgentStore {
     return row ? record(row) : null;
   }
 
+  /** The keyed hash of the network an agent registered from (never the address itself). */
+  async networkOf(id: string): Promise<string | null> {
+    return (await this.pool.query<{ network_hash: string | null }>('select network_hash from live_agents where id=$1', [id])).rows[0]?.network_hash ?? null;
+  }
+
   /** One agent per key and name; at most `slots` agents; a few new ones per network a day. */
   /** Registers a key. `wallet`, when given, is already proven (the holding gate) and becomes its payout wallet. */
   async register(p: { publicKey: string; name: string; bio: string; networkHash: string; wallet?: string }, limits: RegistrationLimits):

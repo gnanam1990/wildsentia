@@ -81,6 +81,18 @@ due time plus a margin, so an outage cannot strand the money.
   view of the bounty, so a restart never sends one twice.
 - With Arc on, the "funded" check reads the contract's unreserved pool, not the simulated ledger.
 
+**Self-dealing.** One person running both a hunter and a prey agent could feed their own prey
+to their own predator. So:
+- the hunter's wallet must differ from the prey's;
+- a hunter whose agent registered from the prey agent's network (the keyed hash of the
+  registration address) is never paid, and the bounty returns to the pool;
+- a random bounty goes only where a hunter from another network is near.
+
+This is a weak check, since a second network is cheap. Before mainnet it needs real identity
+limits: an X account's age, ERC-8004 identities, or a cap on what one owner can win.
+`VANA_ARC_BOUNTIES_SAME_NETWORK_OK=1` lifts it for a testnet demo run from one machine. It is
+refused on any chain but Arc Testnet.
+
 ## The demo
 
 `tools/arc/bountyDemo.ts`, against a running Congo demo server:

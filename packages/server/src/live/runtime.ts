@@ -126,6 +126,9 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
       steered: () => [...live.avatars.values()].map((a) => ({ agentId: a.agentId, animalId: a.animalId, speciesId: a.speciesId })),
       steererOf: (id) => live.avatars.byAnimal(id)?.agentId ?? null,
       wallet: async (agentId) => { const a = await agentStore.byId(agentId); return a?.wallet && a.walletProven ? a.wallet : null; },
+      network: (agentId) => agentStore.networkOf(agentId),
+      // Testnet only: refused with a mainnet chain.
+      sameNetworkOk: env.VANA_ARC_BOUNTIES_SAME_NETWORK_OK === '1' && chainId === 5042002,
       notify: (agentId, text) => live.notify(agentId, text), eventsOf,
       explorer: env.VANA_ARC_BOUNTIES_EXPLORER_URL?.trim() || null,
     });

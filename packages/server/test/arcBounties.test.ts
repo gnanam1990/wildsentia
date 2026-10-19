@@ -38,6 +38,7 @@ afterAll(async () => { chain?.stop(); await host?.abort(); await pool?.end(); })
 maybe('Congo bounties paid on Arc', () => {
   let store: ArcBountyStore, engine: ArcBountyEngine;
   let steered: Array<{ agentId: string; animalId: string; speciesId: string }>, wallets: Map<string, string>, notes: Array<[string, string]>;
+  let networks: Map<string, string>;
   let nowShift = 0;
   let leopard: string, duiker: string;
   beforeEach(async () => {
@@ -50,6 +51,7 @@ maybe('Congo bounties paid on Arc', () => {
       .sort((a, b) => Math.hypot(a.position!.x - at.x, a.position!.z - at.z) - Math.hypot(b.position!.x - at.x, b.position!.z - at.z))[0]!.id;
     steered = [{ agentId: 'hunter', animalId: leopard, speciesId: 'african_leopard' }, { agentId: 'prey', animalId: duiker, speciesId: 'blue_duiker' }];
     wallets = new Map([['hunter', HUNTER_WALLET], ['prey', PREY_WALLET]]);
+    networks = new Map([['hunter', 'net-a'], ['prey', 'net-b']]);
     notes = []; nowShift = 0;
     store = new ArcBountyStore(pool!, 'world-test');
     // The world, as the engine sees it, can be moved on past a deadline without stepping it.
@@ -59,7 +61,8 @@ maybe('Congo bounties paid on Arc', () => {
     engine = new ArcBountyEngine(store, bountyChain, {
       world: () => shifted, played: () => host.world.now() + nowShift, rate: () => 12,
       steered: () => steered, steererOf: (id) => steered.find((s) => s.animalId === id)?.agentId ?? null,
-      wallet: async (agentId) => wallets.get(agentId) ?? null, notify: (agentId, text) => { notes.push([agentId, text]); },
+      wallet: async (agentId) => wallets.get(agentId) ?? null, network: async (agentId) => networks.get(agentId) ?? null,
+      notify: (agentId, text) => { notes.push([agentId, text]); },
       eventsOf: async () => [{ id: 'e1', worldTime: 1 }], explorer: 'https://explorer.example',
     });
   }, 60_000);
@@ -137,6 +140,17 @@ maybe('Congo bounties paid on Arc', () => {
     b = r.bounty;
     await engine.onHunt({ predatorId: leopard, preyId: duiker, predatorAgentId: 'hunter', killed: true });
     after = (await store.get(b.bountyId))!;
+    expect(after.outcome).toBe('void');
+    expect(after.status).toBe('voided');
+  }, 60_000);
+
+  it('never pays a hunter from the prey agent\'s own network, nor puts a bounty where only such a hunter is near', async () => {
+    networks.set('hunter', 'net-b');
+    expect(await engine.publishRandom({ amountAtomic: 5_000_000n, windowWorldSeconds: 3600 })).toEqual({ ok: false, reason: 'no_candidate' });
+    const r = await engine.publishRandom({ amountAtomic: 5_000_000n, windowWorldSeconds: 3600, requireHunter: false });
+    if (!r.ok) throw new Error(r.reason);
+    await engine.onHunt({ predatorId: leopard, preyId: duiker, predatorAgentId: 'hunter', killed: true });
+    const after = (await store.get(r.bounty.bountyId))!;
     expect(after.outcome).toBe('void');
     expect(after.status).toBe('voided');
   }, 60_000);

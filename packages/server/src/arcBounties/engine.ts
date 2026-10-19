@@ -33,6 +33,15 @@ export interface ArcBountyPorts {
   steererOf: (animalId: string) => string | null;
   /** An agent's wallet, if it proved it owns it. */
   wallet: (agentId: string) => Promise<string | null>;
+  /**
+   * The keyed hash of the network an agent registered from. A hunter from the prey's own network
+   * never wins its bounty, and a bounty needs a hunter from another: one person running both agents
+   * would otherwise feed their own prey to their own predator. A weak check (a second network is
+   * cheap), the first of the identity limits the design names.
+   */
+  network: (agentId: string) => Promise<string | null>;
+  /** Testnet demos only: both demo agents run from one machine (VANA_ARC_BOUNTIES_SAME_NETWORK_OK=1). */
+  sameNetworkOk?: boolean;
   notify: (agentId: string, text: string) => void;
   /** The recorded events of these animals between two world times, for the bounty's record. */
   eventsOf: (animalIds: string[], from: number, to: number) => Promise<unknown[]>;
@@ -73,15 +82,29 @@ export class ArcBountyEngine {
       if (!animal?.alive || !animal.position || taken.has(s.animalId) || PROTECTED_SPECIES.has(s.speciesId)) continue;
       const eligible = this.eligiblePredators(s.speciesId);
       if (eligible.length === 0) continue;
-      if (requireHunter && !steered.some((h) => h.agentId !== s.agentId && eligible.includes(h.speciesId) && (() => {
-        const p = world.animal(h.animalId)?.position;
-        return !!p && Math.hypot(p.x - animal.position!.x, p.z - animal.position!.z) <= PREDATOR_WITHIN_M;
-      })())) continue;
+      if (requireHunter) {
+        let hunter = false;
+        for (const h of steered) {
+          if (h.agentId === s.agentId || !eligible.includes(h.speciesId)) continue;
+          const p = world.animal(h.animalId)?.position;
+          if (!p || Math.hypot(p.x - animal.position.x, p.z - animal.position.z) > PREDATOR_WITHIN_M) continue;
+          if (await this.#related(h.agentId, s.agentId)) continue;
+          hunter = true; break;
+        }
+        if (!hunter) continue;
+      }
       const wallet = await this.ports.wallet(s.agentId);
       if (!wallet) continue;
       out.push({ ...s, wallet, eligible });
     }
     return out;
+  }
+
+  /** Whether two agents registered from the same network (unless a testnet demo allows it). */
+  async #related(a: string, b: string): Promise<boolean> {
+    if (this.ports.sameNetworkOk) return false;
+    const [na, nb] = await Promise.all([this.ports.network(a), this.ports.network(b)]);
+    return na !== null && na === nb;
   }
 
   /** Puts a bounty on a prey animal picked at random, and publishes it on chain. */
@@ -186,7 +209,8 @@ export class ArcBountyEngine {
       const species = world.animal(b.killAnimalId)?.speciesId;
       const wallet = b.killAgentId && b.killAgentId !== b.targetAgentId && species && b.eligiblePredators.includes(species) && b.killWorldTime <= deadline
         ? await this.ports.wallet(b.killAgentId) : null;
-      if (wallet && wallet.toLowerCase() !== b.targetWallet) return close('predator', wallet, b.killAgentId, b.killAnimalId, b.killWorldTime);
+      if (wallet && wallet.toLowerCase() !== b.targetWallet && !(await this.#related(b.killAgentId!, b.targetAgentId)))
+        return close('predator', wallet, b.killAgentId, b.killAnimalId, b.killWorldTime);
       return close('void', null, null, null, b.killWorldTime);
     }
     // Dead another way (a wild predator, illness, hunger): nobody won it.
