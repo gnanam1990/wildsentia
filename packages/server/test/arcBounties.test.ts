@@ -59,7 +59,8 @@ maybe('Congo bounties paid on Arc', () => {
       : (Reflect.get(host.world, key) as unknown as { bind?: unknown }) instanceof Function ? (Reflect.get(host.world, key) as (...a: unknown[]) => unknown).bind(host.world)
         : Reflect.get(host.world, key) });
     engine = new ArcBountyEngine(store, bountyChain, {
-      world: () => shifted, played: () => host.world.now() + nowShift, rate: () => 12,
+      // The hour being played is mid-hour: a fractional world time, as live play gives.
+      world: () => shifted, played: () => host.world.now() + nowShift + 0.5, rate: () => 12,
       steered: () => steered, steererOf: (id) => steered.find((s) => s.animalId === id)?.agentId ?? null,
       wallet: async (agentId) => wallets.get(agentId) ?? null, network: async (agentId) => networks.get(agentId) ?? null,
       notify: (agentId, text) => { notes.push([agentId, text]); },

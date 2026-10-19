@@ -117,7 +117,8 @@ export class ArcBountyEngine {
       const candidates = await this.candidates(p.requireHunter ?? true);
       if (candidates.length === 0) return { ok: false, reason: 'no_candidate' };
       const pick = candidates[randomInt(candidates.length)]!, world = this.ports.world(), animal = world.animal(pick.animalId)!;
-      const now = this.ports.played(), realMs = p.windowWorldSeconds / Math.max(1e-9, this.ports.rate()) * 1000;
+      // The hour being played is mid-hour, fractional; world times are stored in whole seconds.
+      const now = Math.floor(this.ports.played()), realMs = p.windowWorldSeconds / Math.max(1e-9, this.ports.rate()) * 1000;
       const expiresAt = new Date(Date.now() + Math.min(MAX_OPEN_MS, realMs * EXPIRY_FACTOR + 3_600_000));
       const rules = { version: 'congo-arc-bounty@1', amountAtomic: p.amountAtomic.toString(), decimals: 6, windowWorldSeconds: p.windowWorldSeconds,
         speciesId: pick.speciesId, eligiblePredators: pick.eligible, predator: 'an agent-steered eligible predator kills it before the deadline (world time)',
@@ -178,7 +179,7 @@ export class ArcBountyEngine {
     if (!hunt.killed) return;
     for (const b of await this.store.inStatus('active')) {
       if (b.targetAnimalId !== hunt.preyId) continue;
-      await this.store.recordKill(b.bountyId, { agentId: hunt.predatorAgentId, animalId: hunt.predatorId, worldTime: this.ports.played() });
+      await this.store.recordKill(b.bountyId, { agentId: hunt.predatorAgentId, animalId: hunt.predatorId, worldTime: Math.floor(this.ports.played()) });
     }
     await this.adjudicate();
   }
@@ -214,7 +215,7 @@ export class ArcBountyEngine {
       return close('void', null, null, null, b.killWorldTime);
     }
     // Dead another way (a wild predator, illness, hunger): nobody won it.
-    if (!animal?.alive) return close('void', null, null, null, Math.min(world.now(), deadline));
+    if (!animal?.alive) return close('void', null, null, null, Math.floor(Math.min(world.now(), deadline)));
     if (world.now() < deadline || this.ports.played() < deadline) return null;
     // Alive at the deadline: paid to the prey's agent if it still steers it, else back to the pool.
     return this.ports.steererOf(b.targetAnimalId) === b.targetAgentId

@@ -6,7 +6,7 @@
  * The wallets file holds ARC_{OWNER,EVALUATOR,TREASURY,HUNTER,PREY}_{ADDRESS,KEY} for Arc Testnet
  * wallets made for this demo; it is never printed. The treasury must hold testnet USDC from the
  * Circle faucet. The script:
- * 1. sends the owner and the evaluator 1 USDC each for gas (Arc's gas is USDC);
+ * 1. sends the owner 3 USDC (a deployment's gas, about 1.2 at Arc's estimate) and the evaluator 1 USDC (Arc's gas is USDC);
  * 2. deploys the contract from the owner with `forge script` (it refuses any chain but Arc Testnet);
  * 3. funds the pool from the treasury;
  * 4. writes ARC_BOUNTIES_CONTRACT back into the wallets file.
@@ -60,11 +60,12 @@ async function main(): Promise<void> {
   };
   await show('before');
   const treasury = account('TREASURY').address;
-  if ((await balance(treasury)) < poolUsdc * unit + 2n * unit) throw new Error(`the treasury ${treasury} needs at least ${poolUsdc + 2n} USDC from the faucet`);
+  if ((await balance(treasury)) < poolUsdc * unit + 3n * unit) throw new Error(`the treasury ${treasury} needs at least ${poolUsdc + 3n} USDC from the faucet`);
 
   // 1. Gas for the owner and the evaluator.
-  for (const role of ['OWNER', 'EVALUATOR']) {
-    if ((await balance(account(role).address)) < unit / 2n) await send('TREASURY', USDC, usdcAbi, 'transfer', [account(role).address, unit]);
+  for (const [role, want] of [['OWNER', 3n * unit], ['EVALUATOR', unit]] as const) {
+    const has = await balance(account(role).address);
+    if (has < want) await send('TREASURY', USDC, usdcAbi, 'transfer', [account(role).address, want - has]);
   }
 
   // 2. The contract, from the owner, through the deploy script's checks.
