@@ -454,3 +454,8 @@
   :root[data-theme="light"] .observer-app { --panel: #eef2ea; }
   :root[data-theme="light"] .observer-app :is(.forest-dialog, .thought, .chip.pop .pop-list, #passport .card-actions) { background: #eef2ea; }
 }
+
+/* News of watched animals (animalWatch.ts). */
+.observer-app .news-toast { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); z-index: 30; display: flex; flex-direction: column; gap: 6px; width: min(420px, calc(100vw - 32px)); }
+.observer-app .news-toast[hidden] { display: none; }
+.observer-app .news-line { text-align: left; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--glass-edge); background: var(--glass-reflection), var(--panel); color: var(--ink); font: 550 13px/1.4 'Manrope Variable', sans-serif; box-shadow: var(--shadow); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); cursor: pointer; }

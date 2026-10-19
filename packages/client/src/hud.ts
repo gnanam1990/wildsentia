@@ -283,6 +283,8 @@ export class Hud {
   /** The clock and activity follow the hour currently played on screen. */
   clockTime: () => number | null = () => this.store.world?.worldTime ?? null;
   liveActivity: (id: string) => { state: string; goal: string; agent?: string } | null = () => null;
+  /** Whether the viewer asked for news of this animal (animalWatch.ts). */
+  watched: (id: string) => boolean = () => false;
   #clockText: string | null = null;
 
   constructor(private readonly elements: HudElements, private readonly store: WorldStore) {
@@ -400,7 +402,13 @@ export class Hud {
       ${animal || p ? `<footer class="card-actions">
         <button type="button" data-replay="${escape(followedId)}" data-passport-focus="replay">Replay life</button>
         <button type="button" data-history="${escape(followedId)}" data-passport-focus="history" aria-haspopup="dialog">History</button>
-        ${this.shareButton(followedId)}</footer>` : ''}`);
+        ${this.shareButton(followedId)}${this.watchButton(followedId)}</footer>` : ''}`);
+  }
+
+  private watchButton(id: string): string {
+    const on = this.watched(id);
+    return `<button type="button" data-watch="${escape(id)}" data-passport-focus="watch" aria-pressed="${on}"
+      title="${on ? 'Stop news of this animal' : 'Tell me when it is hunted, escapes, dies or gives birth'}">${on ? 'Getting news' : 'Get news'}</button>`;
   }
 
   private shareButton(id: string): string {
