@@ -6,7 +6,7 @@ import { createPool } from '../src/db/pool.js';
 import { migrate } from '../src/db/migrate.js';
 import { SimHost } from '../src/simHost.js';
 import { ArcBountyStore } from '../src/arcBounties/store.js';
-import { ArcBountyEngine, canonicalJsonOf } from '../src/arcBounties/engine.js';
+import { ArcBountyEngine, canonicalJsonOf, duration } from '../src/arcBounties/engine.js';
 import { targetCommit, viemBountyChain, type BountyChain } from '../src/arcBounties/chain.js';
 import Fastify from 'fastify';
 import { installArcBountyRoutes } from '../src/arcBounties/routes.js';
@@ -91,6 +91,7 @@ maybe('Congo bounties paid on Arc', () => {
     expect(notes).toHaveLength(1);
     expect(notes[0]![0]).toBe('prey');
     expect(notes[0]![1]).toContain('5 USDC');
+    expect(notes[0]![1]).toContain('1 hour of world time (about 5 minutes real time)');
     // The same animal cannot carry two at once.
     const again = await engine.publishRandom({ amountAtomic: 5_000_000n, windowWorldSeconds: 3600 });
     expect(again).toEqual({ ok: false, reason: 'no_candidate' });
@@ -294,6 +295,15 @@ maybe('Congo bounties paid on Arc', () => {
     expect(await engine.inspect(leopard)).toEqual({ ok: false, reason: 'not_hunted' });
     expect(await engine.publishOn({ animalId: 'blue_duiker_zzzz', amountAtomic: 1_000_000n, windowWorldSeconds: 3600 })).toEqual({ ok: false, reason: 'not_found' });
   }, 60_000);
+
+  it('tells a span as people say it', () => {
+    expect(duration(1200)).toBe('20 minutes');
+    expect(duration(100)).toBe('2 minutes');
+    expect(duration(3600)).toBe('1 hour');
+    expect(duration(5400)).toBe('1.5 hours');
+    expect(duration(3 * 86_400)).toBe('3 days');
+    expect(duration(86_400 + 6 * 3600)).toBe('1 day 6 hours');
+  });
 
   it('refuses a bounty the pool cannot cover, or outside the contract limits', async () => {
     expect(await engine.publishRandom({ amountAtomic: 101_000_000n, windowWorldSeconds: 3600 })).toEqual({ ok: false, reason: 'amount_out_of_range' });

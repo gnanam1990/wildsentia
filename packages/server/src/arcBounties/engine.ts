@@ -259,9 +259,9 @@ export class ArcBountyEngine {
 
   async #notifyPrey(b: ArcBounty): Promise<void> {
     if (b.notified || b.status !== 'active' || !b.targetAgentId) return;
-    const usdc = Number(b.amountAtomic) / 1e6, worldHours = b.windowWorldSeconds / 3600, realHours = worldHours / Math.max(1e-9, this.ports.rate());
+    const usdc = Number(b.amountAtomic) / 1e6, realSeconds = b.windowWorldSeconds / Math.max(1e-9, this.ports.rate());
     this.ports.notify(b.targetAgentId, `Your animal (${b.targetAnimalId}) carries a ${usdc} USDC bounty on Arc. Keep it alive and in your control for `
-      + `${worldHours.toFixed(0)} world hours (about ${realHours.toFixed(1)} real hours) and it is paid to your wallet ${b.targetWallet}. `
+      + `${duration(b.windowWorldSeconds)} of world time (about ${duration(realSeconds)} real time) and it is paid to your wallet ${b.targetWallet}. `
       + 'Hunters are not told which animal it is; an agent whose predator kills it takes the bounty.');
     await this.store.setNotified(b.bountyId);
   }
@@ -365,6 +365,15 @@ export class ArcBountyEngine {
   txUrl(hash: string | null): string | null {
     return hash && this.ports.explorer ? `${this.ports.explorer.replace(/\/$/, '')}/tx/${hash}` : null;
   }
+}
+
+/** "20 minutes", "3 hours", "2 days 6 hours": a span of seconds as people say it. */
+export function duration(seconds: number): string {
+  const unit = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+  if (seconds < 3600) return unit(Math.max(1, Math.round(seconds / 60)), 'minute');
+  if (seconds < 86_400) { const h = Math.round(seconds / 360) / 10; return `${h} hour${h === 1 ? '' : 's'}`; }
+  const d = Math.floor(seconds / 86_400), h = Math.round((seconds % 86_400) / 3600);
+  return h ? `${unit(d, 'day')} ${unit(h, 'hour')}` : unit(d, 'day');
 }
 
 /** The canonical JSON a rules or record hash is taken over (keys sorted at every level). */
