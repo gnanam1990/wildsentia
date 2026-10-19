@@ -5,7 +5,7 @@ export type ArcBountyStatus = 'publishing' | 'active' | 'deciding' | 'paid' | 'v
 export type ArcOutcome = 'predator' | 'survived' | 'void';
 export interface ArcBounty {
   bountyId: string; worldId: string; status: ArcBountyStatus;
-  targetAnimalId: string; targetSpeciesId: string; targetRegion: string; targetAgentId: string; targetWallet: string;
+  targetAnimalId: string; targetSpeciesId: string; targetRegion: string; targetAgentId: string | null; targetWallet: string | null;
   targetKey: string; salt: string; amountAtomic: bigint; windowWorldSeconds: number;
   publishedWorldTime: number; deadlineWorldTime: number; expiresAt: Date; eligiblePredators: string[];
   rules: Record<string, unknown>; rulesHash: string; notified: boolean;
@@ -16,7 +16,7 @@ export interface ArcBounty {
   createdAt: Date; decidedAt: Date | null; settledAt: Date | null;
 }
 export interface NewArcBounty {
-  bountyId: string; targetAnimalId: string; targetSpeciesId: string; targetRegion: string; targetAgentId: string; targetWallet: string;
+  bountyId: string; targetAnimalId: string; targetSpeciesId: string; targetRegion: string; targetAgentId: string | null; targetWallet: string | null;
   targetKey: string; salt: string; amountAtomic: bigint; windowWorldSeconds: number; publishedWorldTime: number;
   deadlineWorldTime: number; expiresAt: Date; eligiblePredators: string[]; rules: Record<string, unknown>; rulesHash: string;
 }
@@ -29,7 +29,7 @@ const n = (v: unknown): number | null => v === null || v === undefined ? null : 
 const row = (r: Record<string, unknown>): ArcBounty => ({
   bountyId: r.bounty_id as string, worldId: r.world_id as string, status: r.status as ArcBountyStatus,
   targetAnimalId: r.target_animal_id as string, targetSpeciesId: r.target_species_id as string, targetRegion: r.target_region as string,
-  targetAgentId: r.target_agent_id as string, targetWallet: r.target_wallet as string, targetKey: r.target_key as string, salt: r.salt as string,
+  targetAgentId: r.target_agent_id as string | null, targetWallet: r.target_wallet as string | null, targetKey: r.target_key as string, salt: r.salt as string,
   amountAtomic: BigInt(r.amount_atomic as string), windowWorldSeconds: Number(r.window_world_seconds),
   publishedWorldTime: Number(r.published_world_time), deadlineWorldTime: Number(r.deadline_world_time), expiresAt: r.expires_at as Date,
   eligiblePredators: r.eligible_predators as string[], rules: r.rules as Record<string, unknown>, rulesHash: r.rules_hash as string,
@@ -51,7 +51,7 @@ export class ArcBountyStore {
         expires_at, eligible_predators, rules, rules_hash)
       values ($1, $2, 'publishing', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
       on conflict do nothing`,
-    [b.bountyId, this.worldId, b.targetAnimalId, b.targetSpeciesId, b.targetRegion, b.targetAgentId, b.targetWallet.toLowerCase(), b.targetKey,
+    [b.bountyId, this.worldId, b.targetAnimalId, b.targetSpeciesId, b.targetRegion, b.targetAgentId, b.targetWallet?.toLowerCase() ?? null, b.targetKey,
       b.salt, b.amountAtomic.toString(), b.windowWorldSeconds, b.publishedWorldTime, b.deadlineWorldTime, b.expiresAt, b.eligiblePredators,
       JSON.stringify(b.rules), b.rulesHash]);
     return r.rowCount === 1;

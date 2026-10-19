@@ -123,7 +123,7 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
     const store = new ArcBountyStore(pool, host.worldId ?? 'unknown');
     const engine = new ArcBountyEngine(store, chain, {
       world: () => host.world, played, rate: () => host.worldHoursPerRealHour,
-      steered: () => [...live.avatars.values()].map((a) => ({ agentId: a.agentId, animalId: a.animalId, speciesId: a.speciesId })),
+      steered: () => [...live.avatars.values()].map((a) => ({ agentId: a.agentId, animalId: a.animalId, speciesId: a.speciesId, agentName: a.agentName })),
       steererOf: (id) => live.avatars.byAnimal(id)?.agentId ?? null,
       wallet: async (agentId) => { const a = await agentStore.byId(agentId); return a?.wallet && a.walletProven ? a.wallet : null; },
       network: (agentId) => agentStore.networkOf(agentId),

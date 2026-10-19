@@ -13,6 +13,13 @@ export interface ArcBountyDeps {
 }
 
 const ID = /^0x[0-9a-f]{64}$/;
+/** A bounty's amount (USDC, default 1) and window (world seconds, default 3 world days) from a request. */
+const termsOf = (body: Record<string, unknown>): { amountAtomic: bigint; windowWorldSeconds: number } | { error: string } => {
+  const usdc = typeof body.amountUsdc === 'number' ? body.amountUsdc : 1;
+  const window = typeof body.windowWorldSeconds === 'number' ? body.windowWorldSeconds : 3 * 86_400;
+  if (!Number.isFinite(usdc) || usdc <= 0 || usdc > 1_000_000) return { error: 'bad_amount' };
+  return { amountAtomic: BigInt(Math.round(usdc * 1e6)), windowWorldSeconds: window };
+};
 const hash = (s: string) => createHash('sha256').update(s).digest();
 const bodyOf = (req: FastifyRequest): Record<string, unknown> => {
   const body = req.body as { json?: unknown } | undefined, json = body && 'json' in body ? body.json : body;
@@ -45,7 +52,9 @@ export function publicArcBounty(b: ArcBounty, worldTime: number, engine: ArcBoun
  *   and, once decided, `GET /congo/arc-bounties/:id/record` (the record its hash was taken over).
  * - Admin (Bearer token): `POST /congo/admin/arc-bounties/random` puts a bounty on a prey animal
  *   picked at random; `GET /congo/admin/arc-bounties/candidates` lists who it could go on;
- *   `GET /congo/admin/arc-bounties` lists recent bounties with their targets and wallets.
+ *   `GET /congo/admin/arc-bounties` lists recent bounties with their targets and wallets;
+ *   `POST /congo/admin/arc-bounties/drop` drops one on an animal the operator chose, with
+ *   `GET /congo/admin/arc-bounties/animal/:id` and `/steered` to choose it.
  */
 export function installArcBountyRoutes(scope: FastifyInstance, deps: ArcBountyDeps): void {
   const { store, engine, chain } = deps;
@@ -84,7 +93,7 @@ export function installArcBountyRoutes(scope: FastifyInstance, deps: ArcBountyDe
     return { network: chain.chainId, contract: chain.contract, evaluator: chain.evaluator, poolAtomic: pool?.toString() ?? null,
       limits: limits ? { minAtomic: limits.min.toString(), maxAtomic: limits.max.toString() } : null, decimals: 6,
       bounties: recent.map((b) => ({ ...publicArcBounty(b, deps.now(), engine), targetAnimalId: b.targetAnimalId, targetAgentId: b.targetAgentId,
-        targetWallet: b.targetWallet, winnerAgentId: b.winnerAgentId, winnerAnimalId: b.winnerAnimalId, payeeWallet: b.payeeWallet,
+        targetWallet: b.targetWallet, selection: (b.rules as { selection?: string }).selection ?? 'random', winnerAgentId: b.winnerAgentId, winnerAnimalId: b.winnerAnimalId, payeeWallet: b.payeeWallet,
         windowWorldSeconds: b.windowWorldSeconds, error: b.error })) };
   });
 
@@ -94,14 +103,36 @@ export function installArcBountyRoutes(scope: FastifyInstance, deps: ArcBountyDe
       eligiblePredators: c.eligible })), withHunter: (await engine.candidates(true)).length };
   });
 
+  /** The animals agents steer now, each with whether a bounty could be dropped on it. */
+  scope.get('/congo/admin/arc-bounties/steered', async (req, reply) => {
+    if (!admin(req, reply)) return reply;
+    return { animals: await engine.steeredAnimals() };
+  });
+
+  /** Whether a bounty could be dropped on this animal, and who could win it. */
+  scope.get<{ Params: { id: string } }>('/congo/admin/arc-bounties/animal/:id', async (req, reply) => {
+    if (!admin(req, reply)) return reply;
+    if (!/^[a-z_]{1,40}_[0-9a-z]{1,16}$/.test(req.params.id)) return reply.code(400).send({ error: 'bad_animal' });
+    return engine.inspect(req.params.id);
+  });
+
+  /** Drops a bounty on the animal the operator chose (any hunted, unprotected animal, wild or steered). */
+  scope.post('/congo/admin/arc-bounties/drop', async (req, reply) => {
+    if (!admin(req, reply)) return reply;
+    const body = bodyOf(req), terms = termsOf(body);
+    if ('error' in terms) return reply.code(400).send(terms);
+    if (typeof body.animalId !== 'string' || !/^[a-z_]{1,40}_[0-9a-z]{1,16}$/.test(body.animalId)) return reply.code(400).send({ error: 'bad_animal' });
+    const result = await engine.publishOn({ animalId: body.animalId, ...terms });
+    if (!result.ok) return reply.code(409).send({ error: result.reason });
+    return { ...publicArcBounty(result.bounty, deps.now(), engine), targetAnimalId: result.bounty.targetAnimalId, targetAgentId: result.bounty.targetAgentId,
+      error: result.bounty.error };
+  });
+
   scope.post('/congo/admin/arc-bounties/random', async (req, reply) => {
     if (!admin(req, reply)) return reply;
-    const body = bodyOf(req);
-    const usdc = typeof body.amountUsdc === 'number' ? body.amountUsdc : 1;
-    const window = typeof body.windowWorldSeconds === 'number' ? body.windowWorldSeconds : 3 * 86_400;
-    if (!Number.isFinite(usdc) || usdc <= 0 || usdc > 1_000_000) return reply.code(400).send({ error: 'bad_amount' });
-    const result = await engine.publishRandom({ amountAtomic: BigInt(Math.round(usdc * 1e6)), windowWorldSeconds: window,
-      requireHunter: body.requireHunter !== false });
+    const body = bodyOf(req), terms = termsOf(body);
+    if ('error' in terms) return reply.code(400).send(terms);
+    const result = await engine.publishRandom({ ...terms, requireHunter: body.requireHunter !== false });
     if (!result.ok) return reply.code(409).send({ error: result.reason });
     return { ...publicArcBounty(result.bounty, deps.now(), engine), targetAnimalId: result.bounty.targetAnimalId, targetAgentId: result.bounty.targetAgentId,
       error: result.bounty.error };

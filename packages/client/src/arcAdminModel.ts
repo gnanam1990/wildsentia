@@ -55,7 +55,18 @@ export function refusal(code: string): string {
     amount_out_of_range: 'The contract does not allow that amount.',
     bad_window: 'That window is not allowed.',
     bad_amount: 'Enter a plain amount, such as 1 or 0.5.',
-    target_taken: 'That animal already carries a bounty; try again.',
+    target_taken: 'That animal already carries a bounty.',
+    not_found: 'No such animal in this world.',
+    dead: 'That animal is dead.',
+    protected_species: 'That species is protected: no bounties on it.',
+    not_hunted: 'Nothing in this forest hunts it: bounties go on prey.',
+    bad_animal: 'That is not an animal id.',
     admin_only: 'That token was refused.',
   } as Record<string, string>)[code] ?? code;
+}
+
+/** Who could win a bounty on an animal: its agent if it survives, or only a hunter if it is wild. */
+export function whoCanWin(c: { agentId: string | null; wallet: string | null; agentName?: string | null }): string {
+  return c.agentId && c.wallet ? `A hunter's agent if it is killed; ${c.agentName ?? c.agentId} (wallet ${short(c.wallet)}) if it survives.`
+    : 'Wild: only a hunter\'s agent can win it; if it survives the money goes back to the pool.';
 }

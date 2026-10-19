@@ -197,6 +197,42 @@ maybe('Congo bounties paid on Arc', () => {
     await app.close();
   }, 60_000);
 
+  it('drops a bounty on any animal the operator chooses: a wild one pays only a hunter, else goes back to the pool', async () => {
+    // A wild blue duiker nobody steers.
+    const wild = host.world.agents.find((a) => a.alive && a.speciesId === 'blue_duiker' && a.id !== duiker)!.id;
+    expect(await engine.inspect(wild)).toMatchObject({ ok: true, agentId: null, wallet: null });
+    const r = await engine.publishOn({ animalId: wild, amountAtomic: 2_000_000n, windowWorldSeconds: 3600 });
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.bounty).toMatchObject({ status: 'active', targetAnimalId: wild, targetAgentId: null, targetWallet: null });
+    expect(r.bounty.rules).toMatchObject({ selection: 'operator' });
+    // Nobody was told: no agent steers it.
+    expect(notes).toHaveLength(0);
+    expect(await engine.inspect(wild)).toEqual({ ok: false, reason: 'target_taken' });
+    const poolBefore = await bountyChain.pool();
+    nowShift = 3600;
+    await engine.adjudicate();
+    const survived = (await store.get(r.bounty.bountyId))!;
+    expect(survived.outcome).toBe('void');
+    expect(await bountyChain.pool() - poolBefore).toBe(2_000_000n);
+
+    // The steered duiker, chosen by hand: its agent is told, and a hunter's kill pays the hunter.
+    nowShift = 0;
+    const d = await engine.publishOn({ animalId: duiker, amountAtomic: 1_000_000n, windowWorldSeconds: 3600 });
+    if (!d.ok) throw new Error(d.reason);
+    expect(d.bounty.targetAgentId).toBe('prey');
+    expect(notes.at(-1)![0]).toBe('prey');
+    const before = await usdcBalance(chain, HUNTER_WALLET);
+    await engine.onHunt({ predatorId: leopard, preyId: duiker, predatorAgentId: 'hunter', killed: true });
+    expect((await store.get(d.bounty.bountyId))!.outcome).toBe('predator');
+    expect(await usdcBalance(chain, HUNTER_WALLET) - before).toBe(1_000_000n);
+  }, 60_000);
+
+  it('refuses to drop a bounty on a protected, unhunted, dead or unknown animal', async () => {
+    expect(await engine.inspect('blue_duiker_zzzz')).toEqual({ ok: false, reason: 'not_found' });
+    expect(await engine.inspect(leopard)).toEqual({ ok: false, reason: 'not_hunted' });
+    expect(await engine.publishOn({ animalId: 'blue_duiker_zzzz', amountAtomic: 1_000_000n, windowWorldSeconds: 3600 })).toEqual({ ok: false, reason: 'not_found' });
+  }, 60_000);
+
   it('refuses a bounty the pool cannot cover, or outside the contract limits', async () => {
     expect(await engine.publishRandom({ amountAtomic: 101_000_000n, windowWorldSeconds: 3600 })).toEqual({ ok: false, reason: 'amount_out_of_range' });
     expect(await engine.publishRandom({ amountAtomic: 5_000_000n, windowWorldSeconds: 60 })).toEqual({ ok: false, reason: 'bad_window' });

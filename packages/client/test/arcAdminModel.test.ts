@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { atomicOf, outcomeText, realTime, refusal, short, usdc } from '../src/arcAdminModel.js';
+import { atomicOf, outcomeText, realTime, refusal, short, usdc, whoCanWin } from '../src/arcAdminModel.js';
 
 // The operator's panel for Congo bounties paid on Arc.
 describe('Arc bounty admin panel', () => {
@@ -29,5 +29,8 @@ describe('Arc bounty admin panel', () => {
     expect(short('0x0741af75301873120BeC5cEba3c18b78a1b89050')).toBe('0x0741…9050');
     expect(refusal('pool_too_small')).toContain('fund it');
     expect(refusal('something_else')).toBe('something_else');
+    expect(refusal('protected_species')).toContain('protected');
+    expect(whoCanWin({ agentId: null, wallet: null })).toContain('Wild');
+    expect(whoCanWin({ agentId: 'ag_1', wallet: '0xed147ead816b28dcacbe3bf4f3d327e596ba2d74', agentName: 'Demo prey' })).toContain('Demo prey (wallet 0xed14…2d74)');
   });
 });

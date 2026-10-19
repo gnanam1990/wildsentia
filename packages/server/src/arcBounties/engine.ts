@@ -29,7 +29,7 @@ export interface ArcBountyPorts {
   /** World hours per real hour. */
   rate: () => number;
   /** The animals agents steer now. */
-  steered: () => Iterable<{ agentId: string; animalId: string; speciesId: string }>;
+  steered: () => Iterable<{ agentId: string; animalId: string; speciesId: string; agentName?: string }>;
   steererOf: (animalId: string) => string | null;
   /** An agent's wallet, if it proved it owns it. */
   wallet: (agentId: string) => Promise<string | null>;
@@ -110,30 +110,84 @@ export class ArcBountyEngine {
   /** Puts a bounty on a prey animal picked at random, and publishes it on chain. */
   publishRandom(p: { amountAtomic: bigint; windowWorldSeconds: number; requireHunter?: boolean }): Promise<PublishResult> {
     return this.#serial(async () => {
-      if (!Number.isSafeInteger(p.windowWorldSeconds) || p.windowWorldSeconds < 600 || p.windowWorldSeconds > 14 * 86_400) return { ok: false, reason: 'bad_window' };
-      const limits = await this.chain.limits();
-      if (p.amountAtomic < limits.min || p.amountAtomic > limits.max) return { ok: false, reason: 'amount_out_of_range' };
-      if ((await this.chain.pool()) < p.amountAtomic) return { ok: false, reason: 'pool_too_small' };
+      const refused = await this.#terms(p);
+      if (refused) return { ok: false, reason: refused };
       const candidates = await this.candidates(p.requireHunter ?? true);
       if (candidates.length === 0) return { ok: false, reason: 'no_candidate' };
-      const pick = candidates[randomInt(candidates.length)]!, world = this.ports.world(), animal = world.animal(pick.animalId)!;
-      // The hour being played is mid-hour, fractional; world times are stored in whole seconds.
-      const now = Math.floor(this.ports.played()), realMs = p.windowWorldSeconds / Math.max(1e-9, this.ports.rate()) * 1000;
-      const expiresAt = new Date(Date.now() + Math.min(MAX_OPEN_MS, realMs * EXPIRY_FACTOR + 3_600_000));
-      const rules = { version: 'congo-arc-bounty@1', amountAtomic: p.amountAtomic.toString(), decimals: 6, windowWorldSeconds: p.windowWorldSeconds,
-        speciesId: pick.speciesId, eligiblePredators: pick.eligible, predator: 'an agent-steered eligible predator kills it before the deadline (world time)',
-        survived: 'alive at the deadline and still steered by the agent that held it at publication', otherwise: 'void: back to the pool' };
-      const bountyId = `0x${randomBytes(32).toString('hex')}`, salt = `0x${randomBytes(32).toString('hex')}`;
-      const targetKey = keccak256(stringToHex(pick.animalId));
-      const created = await this.store.create({ bountyId, targetAnimalId: pick.animalId, targetSpeciesId: pick.speciesId,
-        targetRegion: regionOfPatch(world.grid, animal.patchId), targetAgentId: pick.agentId, targetWallet: pick.wallet, targetKey, salt,
-        amountAtomic: p.amountAtomic, windowWorldSeconds: p.windowWorldSeconds, publishedWorldTime: now, deadlineWorldTime: now + p.windowWorldSeconds,
-        expiresAt, eligiblePredators: pick.eligible, rules, rulesHash: keccak256(stringToHex(canonicalJsonOf(rules))) });
-      if (!created) return { ok: false, reason: 'target_taken' };
-      const b = (await this.store.get(bountyId))!;
-      await this.#publish(b);
-      return { ok: true, bounty: (await this.store.get(bountyId))! };
+      const pick = candidates[randomInt(candidates.length)]!;
+      return this.#create({ animalId: pick.animalId, speciesId: pick.speciesId, agentId: pick.agentId, wallet: pick.wallet, eligible: pick.eligible }, p, 'random');
     });
+  }
+
+  /**
+   * Whether the operator may drop a bounty on this animal: alive, of a hunted species that is not
+   * protected, carrying none already. Who steers it, and whether that agent proved a wallet, says
+   * who can win the survival half: a wild animal's bounty goes only to a hunter, or back to the pool.
+   */
+  async inspect(animalId: string): Promise<{ ok: true; speciesId: string; eligible: string[]; agentId: string | null; wallet: string | null }
+    | { ok: false; reason: 'not_found' | 'dead' | 'protected_species' | 'not_hunted' | 'target_taken' }> {
+    const animal = this.ports.world().animal(animalId);
+    if (!animal) return { ok: false, reason: 'not_found' };
+    if (!animal.alive) return { ok: false, reason: 'dead' };
+    if (PROTECTED_SPECIES.has(animal.speciesId)) return { ok: false, reason: 'protected_species' };
+    const eligible = this.eligiblePredators(animal.speciesId);
+    if (eligible.length === 0) return { ok: false, reason: 'not_hunted' };
+    if ((await this.store.liveTargets()).has(animalId)) return { ok: false, reason: 'target_taken' };
+    const agentId = this.ports.steererOf(animalId), wallet = agentId ? await this.ports.wallet(agentId) : null;
+    return { ok: true, speciesId: animal.speciesId, eligible, agentId: wallet ? agentId : null, wallet };
+  }
+
+  /** Every animal agents steer now, and whether the operator could drop a bounty on it (and who would win its survival). */
+  async steeredAnimals(): Promise<Array<{ animalId: string; speciesId: string; agentId: string; agentName: string | null; wallet: string | null;
+    droppable: boolean; reason: string | null }>> {
+    const out = [];
+    for (const s of this.ports.steered()) {
+      const check = await this.inspect(s.animalId);
+      out.push({ animalId: s.animalId, speciesId: s.speciesId, agentId: s.agentId, agentName: s.agentName ?? null,
+        wallet: check.ok ? check.wallet : await this.ports.wallet(s.agentId), droppable: check.ok, reason: check.ok ? null : check.reason });
+    }
+    return out;
+  }
+
+  /** Drops a bounty on the animal the operator chose, and publishes it on chain. */
+  publishOn(p: { animalId: string; amountAtomic: bigint; windowWorldSeconds: number }): Promise<PublishResult> {
+    return this.#serial(async () => {
+      const refused = await this.#terms(p);
+      if (refused) return { ok: false, reason: refused };
+      const target = await this.inspect(p.animalId);
+      if (!target.ok) return target;
+      return this.#create({ animalId: p.animalId, speciesId: target.speciesId, agentId: target.agentId, wallet: target.wallet, eligible: target.eligible }, p, 'operator');
+    });
+  }
+
+  /** A bounty's amount and window, against the contract's limits and the pool: why not, or null. */
+  async #terms(p: { amountAtomic: bigint; windowWorldSeconds: number }): Promise<string | null> {
+    if (!Number.isSafeInteger(p.windowWorldSeconds) || p.windowWorldSeconds < 600 || p.windowWorldSeconds > 14 * 86_400) return 'bad_window';
+    const limits = await this.chain.limits();
+    if (p.amountAtomic < limits.min || p.amountAtomic > limits.max) return 'amount_out_of_range';
+    if ((await this.chain.pool()) < p.amountAtomic) return 'pool_too_small';
+    return null;
+  }
+
+  async #create(pick: { animalId: string; speciesId: string; agentId: string | null; wallet: string | null; eligible: string[] },
+    p: { amountAtomic: bigint; windowWorldSeconds: number }, selection: 'random' | 'operator'): Promise<PublishResult> {
+    const world = this.ports.world(), animal = world.animal(pick.animalId)!;
+    // The hour being played is mid-hour, fractional; world times are stored in whole seconds.
+    const now = Math.floor(this.ports.played()), realMs = p.windowWorldSeconds / Math.max(1e-9, this.ports.rate()) * 1000;
+    const expiresAt = new Date(Date.now() + Math.min(MAX_OPEN_MS, realMs * EXPIRY_FACTOR + 3_600_000));
+    const rules = { version: 'congo-arc-bounty@1', selection, amountAtomic: p.amountAtomic.toString(), decimals: 6, windowWorldSeconds: p.windowWorldSeconds,
+      speciesId: pick.speciesId, eligiblePredators: pick.eligible, predator: 'an agent-steered eligible predator kills it before the deadline (world time)',
+      survived: pick.agentId ? 'alive at the deadline and still steered by the agent that held it at publication' : 'no agent steered it at publication: nobody',
+      otherwise: 'void: back to the pool' };
+    const bountyId = `0x${randomBytes(32).toString('hex')}`, salt = `0x${randomBytes(32).toString('hex')}`;
+    const created = await this.store.create({ bountyId, targetAnimalId: pick.animalId, targetSpeciesId: pick.speciesId,
+      targetRegion: regionOfPatch(world.grid, animal.patchId), targetAgentId: pick.agentId, targetWallet: pick.wallet,
+      targetKey: keccak256(stringToHex(pick.animalId)), salt, amountAtomic: p.amountAtomic, windowWorldSeconds: p.windowWorldSeconds,
+      publishedWorldTime: now, deadlineWorldTime: now + p.windowWorldSeconds, expiresAt, eligiblePredators: pick.eligible, rules,
+      rulesHash: keccak256(stringToHex(canonicalJsonOf(rules))) });
+    if (!created) return { ok: false, reason: 'target_taken' };
+    await this.#publish((await this.store.get(bountyId))!);
+    return { ok: true, bounty: (await this.store.get(bountyId))! };
   }
 
   async #publish(b: ArcBounty): Promise<void> {
@@ -166,7 +220,7 @@ export class ArcBountyEngine {
   }
 
   async #notifyPrey(b: ArcBounty): Promise<void> {
-    if (b.notified || b.status !== 'active') return;
+    if (b.notified || b.status !== 'active' || !b.targetAgentId) return;
     const usdc = Number(b.amountAtomic) / 1e6, worldHours = b.windowWorldSeconds / 3600, realHours = worldHours / Math.max(1e-9, this.ports.rate());
     this.ports.notify(b.targetAgentId, `Your animal (${b.targetAnimalId}) carries a ${usdc} USDC bounty on Arc. Keep it alive and in your control for `
       + `${worldHours.toFixed(0)} world hours (about ${realHours.toFixed(1)} real hours) and it is paid to your wallet ${b.targetWallet}. `
@@ -211,7 +265,7 @@ export class ArcBountyEngine {
       const species = world.animal(b.killAnimalId)?.speciesId;
       const wallet = b.killAgentId && b.killAgentId !== b.targetAgentId && species && b.eligiblePredators.includes(species) && b.killWorldTime <= deadline
         ? await this.ports.wallet(b.killAgentId) : null;
-      if (wallet && wallet.toLowerCase() !== b.targetWallet && !(await this.#related(b.killAgentId!, b.targetAgentId)))
+      if (wallet && wallet.toLowerCase() !== b.targetWallet && !(b.targetAgentId && await this.#related(b.killAgentId!, b.targetAgentId)))
         return close('predator', wallet, b.killAgentId, b.killAnimalId, b.killWorldTime);
       return close('void', null, null, null, b.killWorldTime);
     }
@@ -219,7 +273,8 @@ export class ArcBountyEngine {
     if (!animal?.alive) return close('void', null, null, null, Math.floor(Math.min(world.now(), deadline)));
     if (world.now() < deadline || this.ports.played() < deadline) return null;
     // Alive at the deadline: paid to the prey's agent if it still steers it, else back to the pool.
-    return this.ports.steererOf(b.targetAnimalId) === b.targetAgentId
+    // A wild animal's bounty (no agent held it at publication) has no survival payee.
+    return b.targetAgentId && b.targetWallet && this.ports.steererOf(b.targetAnimalId) === b.targetAgentId
       ? close('survived', b.targetWallet, b.targetAgentId, b.targetAnimalId, deadline)
       : close('void', null, null, null, deadline);
   }
