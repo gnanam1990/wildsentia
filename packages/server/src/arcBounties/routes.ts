@@ -20,6 +20,14 @@ export interface ArcBountyDeps {
 }
 
 const ID = /^0x[0-9a-f]{64}$/;
+/** A read shared by every caller for `ttlMs`, one at a time; a failure is shared too until it expires. */
+export function cachedRead<T>(ttlMs: number, read: () => Promise<T>, now: () => number = Date.now): () => Promise<T> {
+  let last: { at: number; value: Promise<T> } | null = null;
+  return () => {
+    if (!last || now() - last.at >= ttlMs) last = { at: now(), value: read() };
+    return last.value;
+  };
+}
 /** A bounty's amount (USDC, default 1) and window (world seconds, default 3 world days) from a request. */
 const termsOf = (body: Record<string, unknown>): { amountAtomic: bigint; windowWorldSeconds: number } | { error: string } => {
   const usdc = typeof body.amountUsdc === 'number' ? body.amountUsdc : 1;
@@ -94,9 +102,22 @@ export function shareText(b: ArcBounty): { title: string; description: string } 
 export function installArcBountyRoutes(scope: FastifyInstance, deps: ArcBountyDeps): void {
   const { store, engine, chain } = deps;
 
+  // Public requests never drive the chain: the pool's reads are shared for 10 s, and its flows are
+  // scanned at most once a minute, one scan at a time, from where the last one ended.
+  const reads = cachedRead(10_000, async () => ({ pool: await chain.pool(), reserved: await chain.reserved() }));
+  const flows = { fundedAtomic: 0n, withdrawnAtomic: 0n, next: deps.fromBlock ?? null, read: false, at: 0, running: null as Promise<void> | null };
+  const scanFlows = (): Promise<void> | null => {
+    if (flows.next === null || flows.running || Date.now() - flows.at < 60_000) return flows.running;
+    flows.at = Date.now();
+    flows.running = chain.flows(flows.next).then((v) => {
+      flows.fundedAtomic += v.fundedAtomic; flows.withdrawnAtomic += v.withdrawnAtomic; flows.next = v.toBlock + 1n; flows.read = true;
+    }).catch(() => undefined).finally(() => { flows.running = null; });
+    return flows.running;
+  };
+
   scope.get('/congo/arc-bounties', async () => {
-    const [pool, recent] = await Promise.all([chain.pool().catch(() => null), store.recent(50)]);
-    return { network: chain.chainId, contract: chain.contract, poolAtomic: pool?.toString() ?? null, decimals: 6,
+    const [onChain, recent] = await Promise.all([reads().catch(() => null), store.recent(50)]);
+    return { network: chain.chainId, contract: chain.contract, poolAtomic: onChain?.pool.toString() ?? null, decimals: 6,
       bounties: recent.filter((b) => b.status !== 'failed').map((b) => publicArcBounty(b, deps.now(), engine)) };
   });
 
@@ -104,16 +125,17 @@ export function installArcBountyRoutes(scope: FastifyInstance, deps: ArcBountyDe
    * What the pool has taken in and paid out: funded and withdrawn read from the contract's own
    * events (anyone can check them on the explorer), paid and returned from the decided bounties.
    */
-  let flows: { at: number; value: { fundedAtomic: bigint; withdrawnAtomic: bigint } } | null = null;
   scope.get('/congo/arc-bounties/stats', async () => {
-    const [pool, reserved, totals] = await Promise.all([chain.pool().catch(() => null), chain.reserved().catch(() => null), store.totals()]);
-    if (deps.fromBlock != null && (!flows || Date.now() - flows.at > 60_000)) {
-      try { flows = { at: Date.now(), value: await chain.flows(deps.fromBlock) }; } catch { /* the last reading, or none */ }
-    }
+    const [onChain, totals] = await Promise.all([reads().catch(() => null), store.totals()]);
+    const pool = onChain?.pool ?? null, reserved = onChain?.reserved ?? null;
+    const scan = scanFlows();
+    // Only the very first scan is waited for; after that a request gets the last totals at once.
+    if (scan && !flows.read) await scan;
+    const flowTotals = flows.read ? flows : null;
     return { network: chain.chainId, contract: chain.contract, contractUrl: engine.addressUrl(chain.contract), decimals: 6,
       worldHoursPerRealHour: deps.rate?.() ?? 12,
       poolAtomic: pool?.toString() ?? null, reservedAtomic: reserved?.toString() ?? null,
-      fundedAtomic: flows?.value.fundedAtomic.toString() ?? null, withdrawnAtomic: flows?.value.withdrawnAtomic.toString() ?? null,
+      fundedAtomic: flowTotals?.fundedAtomic.toString() ?? null, withdrawnAtomic: flowTotals?.withdrawnAtomic.toString() ?? null,
       paidAtomic: totals.paid.amountAtomic.toString(), returnedAtomic: totals.voided.amountAtomic.toString(),
       bounties: { live: totals.active.count + totals.publishing.count + totals.deciding.count, paid: totals.paid.count, returned: totals.voided.count } };
   });

@@ -275,6 +275,20 @@ maybe('Congo bounties paid on Arc', () => {
     await app.close();
   }, 60_000);
 
+  it('never lets public requests drive the chain: one flow scan a minute, from where the last ended, and shared pool reads', async () => {
+    const calls: bigint[] = []; let poolReads = 0;
+    const counted: BountyChain = { ...bountyChain, flows: (from) => { calls.push(from); return bountyChain.flows(from); },
+      pool: () => { poolReads++; return bountyChain.pool(); } };
+    const app = Fastify();
+    installArcBountyRoutes(app, { store, engine, chain: counted, adminToken: null, now: () => host.world.now(), fromBlock: 0n });
+    await app.ready();
+    const answers = await Promise.all(Array.from({ length: 20 }, () => app.inject({ method: 'GET', url: '/congo/arc-bounties/stats' })));
+    expect(answers.every((r) => r.json().fundedAtomic === '500000000')).toBe(true);
+    expect(calls).toEqual([0n]);
+    expect(poolReads).toBe(1);
+    await app.close();
+  }, 60_000);
+
   it('refuses to drop a bounty on a protected, unhunted, dead or unknown animal', async () => {
     expect(await engine.inspect('blue_duiker_zzzz')).toEqual({ ok: false, reason: 'not_found' });
     expect(await engine.inspect(leopard)).toEqual({ ok: false, reason: 'not_hunted' });
