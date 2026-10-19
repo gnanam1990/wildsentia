@@ -62,8 +62,9 @@ contract DeployBounties is Script {
             config.minAmount >= 1 && config.minAmount <= config.maxAmount,
             "min amount must be at least 1 unit and at most max"
         );
-        return new WildsentiaBounties(
-            IERC20(config.usdc), config.owner, config.evaluator, config.minAmount, config.maxAmount
-        );
+        return
+            new WildsentiaBounties(
+                IERC20(config.usdc), config.owner, config.evaluator, config.minAmount, config.maxAmount
+            );
     }
 }

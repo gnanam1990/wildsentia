@@ -156,6 +156,16 @@ maybe('Congo bounties paid on Arc', () => {
     expect(after.status).toBe('voided');
   }, 60_000);
 
+  it('does not pay a kill that came a fraction of a second after the deadline', async () => {
+    const b = await publish(3600);
+    // The played clock is at the deadline plus half a second (see `played` above).
+    nowShift = b.deadlineWorldTime - host.world.now();
+    await engine.onHunt({ predatorId: leopard, preyId: duiker, predatorAgentId: 'hunter', killed: true });
+    const after = (await store.get(b.bountyId))!;
+    expect(after.killWorldTime).toBe(b.deadlineWorldTime + 1);
+    expect(after.outcome).toBe('void');
+  }, 60_000);
+
   it('finishes a decision a stop left unsent, and never pays twice', async () => {
     const b = await publish(3600);
     // Decided, but the server stopped before sending it.

@@ -92,7 +92,9 @@ contract WildsentiaBounties is Ownable2Step, ReentrancyGuard {
     error AmountMismatch();
     error RenounceDisabled();
 
-    constructor(IERC20 usdc_, address owner_, address evaluator_, uint96 minAmount_, uint96 maxAmount_) Ownable(owner_) {
+    constructor(IERC20 usdc_, address owner_, address evaluator_, uint96 minAmount_, uint96 maxAmount_)
+        Ownable(owner_)
+    {
         if (address(usdc_) == address(0) || evaluator_ == address(0)) revert ZeroAddress();
         usdc = usdc_;
         evaluator = evaluator_;

@@ -179,7 +179,8 @@ export class ArcBountyEngine {
     if (!hunt.killed) return;
     for (const b of await this.store.inStatus('active')) {
       if (b.targetAnimalId !== hunt.preyId) continue;
-      await this.store.recordKill(b.bountyId, { agentId: hunt.predatorAgentId, animalId: hunt.predatorId, worldTime: Math.floor(this.ports.played()) });
+      // Rounded up: a kill a fraction of a second after the deadline is after it, never on it.
+      await this.store.recordKill(b.bountyId, { agentId: hunt.predatorAgentId, animalId: hunt.predatorId, worldTime: Math.ceil(this.ports.played()) });
     }
     await this.adjudicate();
   }

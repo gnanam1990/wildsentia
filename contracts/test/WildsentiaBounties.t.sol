@@ -216,8 +216,11 @@ contract WildsentiaBountiesTest is Test {
         bounties.publish(ID, a, uint64(block.timestamp + 1 days), RULES, _commit());
         bytes32 id2 = keccak256("bounty-2");
         bounties.publish(id2, b, uint64(block.timestamp + 2 days), RULES, _commit());
-        if (decide % 3 == 0) bounties.settle(ID, WildsentiaBounties.Outcome.Predator, hunter, bytes32(0), TARGET, SALT);
-        else if (decide % 3 == 1) bounties.voidBounty(ID, bytes32(0), TARGET, SALT);
+        if (decide % 3 == 0) {
+            bounties.settle(ID, WildsentiaBounties.Outcome.Predator, hunter, bytes32(0), TARGET, SALT);
+        } else if (decide % 3 == 1) {
+            bounties.voidBounty(ID, bytes32(0), TARGET, SALT);
+        }
         vm.stopPrank();
         if (decide % 3 == 2) {
             vm.warp(block.timestamp + 1 days + 1);
