@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { BountyChain } from './chain.js';
 import type { ArcBountyEngine } from './engine.js';
 import type { ArcBounty, ArcBountyStore } from './store.js';
+import { parseSeason, seasonOf } from './season.js';
 
 /** Congo bounties paid on Arc: their services, for the live API. */
 export interface ArcBountyDeps {
@@ -10,6 +11,12 @@ export interface ArcBountyDeps {
   /** The operator's admin token; no admin routes without it. */
   adminToken: string | null;
   now(): number;
+  /** The contract's deployment block: the public board's pool flows are read from its events since. */
+  fromBlock?: bigint | null;
+  /** The site's public origin, for share links; relative links when unset. */
+  origin?: string | null;
+  /** World hours per real hour, for "about how long" in share text. */
+  rate?: () => number;
 }
 
 const ID = /^0x[0-9a-f]{64}$/;
@@ -42,9 +49,37 @@ export function publicArcBounty(b: ArcBounty, worldTime: number, engine: ArcBoun
     ...(decided ? {
       outcome: b.outcome, targetAnimalId: b.targetAnimalId, winnerAnimalId: b.winnerAnimalId, payeeWallet: b.payeeWallet,
       decidedWorldTime: b.decidedWorldTime, recordHash: b.recordHash, decideTx: b.decideTx, decideTxUrl: engine.txUrl(b.decideTx),
+      watchPath: watchPath(b),
       targetKey: b.targetKey, salt: b.salt,
     } : {}),
   };
+}
+
+/**
+ * Where to watch a decided bounty in the forest: the kill's replay when the hunter won (its hunt
+ * event in the record), else the target's own story.
+ */
+export function watchPath(b: ArcBounty): string | null {
+  if (b.outcome === null) return null;
+  const events = ((b.record as { events?: Array<{ id?: string; type?: string; actors?: string[]; outcome?: string }> } | null)?.events) ?? [];
+  const hunt = b.outcome === 'predator' && b.winnerAnimalId
+    ? events.find((e) => e.type === 'hunt' && e.actors?.[0] === b.winnerAnimalId && e.actors.includes(b.targetAnimalId) && e.id) : undefined;
+  return hunt ? `/#animal=${encodeURIComponent(b.winnerAnimalId!)}&event=${encodeURIComponent(hunt.id!)}` : `/#animal=${encodeURIComponent(b.targetAnimalId)}`;
+}
+
+const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const usdcText = (atomic: bigint) => { const whole = atomic / 1_000_000n, frac = (atomic % 1_000_000n).toString().padStart(6, '0').replace(/0+$/, ''); return `${whole}${frac ? `.${frac}` : ''} USDC`; };
+const nice = (id: string) => id.replaceAll('_', ' ');
+
+/** What a share card says of a bounty: never a live one's target. */
+export function shareText(b: ArcBounty): { title: string; description: string } {
+  const amount = usdcText(b.amountAtomic), species = nice(b.targetSpeciesId);
+  if (b.outcome === 'predator') return { title: `A hunter agent won ${amount} in the Wildsentia forest`,
+    description: `An AI agent's ${nice(b.winnerAnimalId?.replace(/_[0-9a-z]+$/, '') ?? 'predator')} caught the ${species} that carried a ${amount} bounty, paid on Arc. Watch the hunt.` };
+  if (b.outcome === 'survived') return { title: `A ${species} survived its ${amount} bounty`,
+    description: `The AI agent steering it kept it alive to the deadline and was paid ${amount} on Arc. Watch its story.` };
+  if (b.outcome === 'void') return { title: `Nobody claimed a ${amount} bounty`, description: `The ${species} got away and the ${amount} went back to the pool on Arc.` };
+  return { title: `Wanted: ${amount} on a ${species}`, description: `A live bounty in the Wildsentia forest, paid on Arc to the AI agent whose predator catches it, or to the prey's agent if it survives. Which one is it?` };
 }
 
 /**
@@ -63,6 +98,48 @@ export function installArcBountyRoutes(scope: FastifyInstance, deps: ArcBountyDe
     const [pool, recent] = await Promise.all([chain.pool().catch(() => null), store.recent(50)]);
     return { network: chain.chainId, contract: chain.contract, poolAtomic: pool?.toString() ?? null, decimals: 6,
       bounties: recent.filter((b) => b.status !== 'failed').map((b) => publicArcBounty(b, deps.now(), engine)) };
+  });
+
+  /**
+   * What the pool has taken in and paid out: funded and withdrawn read from the contract's own
+   * events (anyone can check them on the explorer), paid and returned from the decided bounties.
+   */
+  let flows: { at: number; value: { fundedAtomic: bigint; withdrawnAtomic: bigint } } | null = null;
+  scope.get('/congo/arc-bounties/stats', async () => {
+    const [pool, reserved, totals] = await Promise.all([chain.pool().catch(() => null), chain.reserved().catch(() => null), store.totals()]);
+    if (deps.fromBlock != null && (!flows || Date.now() - flows.at > 60_000)) {
+      try { flows = { at: Date.now(), value: await chain.flows(deps.fromBlock) }; } catch { /* the last reading, or none */ }
+    }
+    return { network: chain.chainId, contract: chain.contract, contractUrl: engine.addressUrl(chain.contract), decimals: 6,
+      worldHoursPerRealHour: deps.rate?.() ?? 12,
+      poolAtomic: pool?.toString() ?? null, reservedAtomic: reserved?.toString() ?? null,
+      fundedAtomic: flows?.value.fundedAtomic.toString() ?? null, withdrawnAtomic: flows?.value.withdrawnAtomic.toString() ?? null,
+      paidAtomic: totals.paid.amountAtomic.toString(), returnedAtomic: totals.voided.amountAtomic.toString(),
+      bounties: { live: totals.active.count + totals.publishing.count + totals.deciding.count, paid: totals.paid.count, returned: totals.voided.count } };
+  });
+
+  /** The agents that won the most, this week's season (`?season=current`, the default), a named one, or all time (`?season=all`). */
+  scope.get<{ Querystring: { season?: string } }>('/congo/arc-bounties/leaderboard', async (req, reply) => {
+    const asked = req.query.season ?? 'current';
+    const season = asked === 'all' ? null : asked === 'current' ? seasonOf(new Date()) : parseSeason(asked);
+    if (asked !== 'all' && !season) return reply.code(400).send({ error: 'bad_season' });
+    const rows = await store.leaderboard(season?.start ?? null);
+    return { season: season ? { id: season.id, start: season.start.toISOString(), end: season.end.toISOString() } : null, decimals: 6,
+      agents: rows.map((r) => ({ agentId: r.agentId, name: r.name, kills: r.kills, escapes: r.escapes, wonAtomic: r.wonAtomic.toString() })) };
+  });
+
+  /** A bounty's share page: its card for X, Telegram and the like, then on to the board. */
+  scope.get<{ Params: { id: string } }>('/share/bounty/:id', async (req, reply) => {
+    const b = ID.test(req.params.id) ? await store.get(req.params.id) : null;
+    if (!b || b.status === 'failed') return reply.code(404).type('text/plain').send('Not found');
+    const { title, description } = shareText(b), origin = (deps.origin ?? '').replace(/\/$/, '');
+    const target = `${origin}/bounties.html#${b.bountyId}`, image = `${origin}/og/bounty-card.png`;
+    return reply.type('text/html; charset=utf-8').header('cache-control', 'public, max-age=60').send(`<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>${esc(title)}</title><meta name="description" content="${esc(description)}">
+<meta property="og:type" content="website"><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(description)}">
+<meta property="og:url" content="${esc(target)}"><meta property="og:image" content="${esc(image)}">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${esc(title)}"><meta name="twitter:description" content="${esc(description)}"><meta name="twitter:image" content="${esc(image)}">
+<meta http-equiv="refresh" content="0; url=${esc(target)}"></head><body><p><a href="${esc(target)}">${esc(title)}</a></p></body></html>`);
   });
 
   scope.get<{ Params: { id: string } }>('/congo/arc-bounties/:id', async (req, reply) => {

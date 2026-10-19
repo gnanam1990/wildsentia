@@ -7,7 +7,7 @@ export default defineConfig({
   build: { rollupOptions: { input: { forest: 'index.html', characters: 'characters.html', rewardsAdmin: 'rewards-admin.html',
     socialAdmin: 'social-admin.html', holder: 'holder.html', connect: 'connect.html',
     challenges: 'challenges.html', challengeNew: 'challenge-new.html', play: 'play.html', experiences: 'experiences.html',
-    congo: 'congo.html', congoAdmin: 'congo-admin.html', arcAdmin: 'arc-admin.html' } } },
+    congo: 'congo.html', congoAdmin: 'congo-admin.html', arcAdmin: 'arc-admin.html', bounties: 'bounties.html' } } },
   server: {
     port: Number(process.env.VANA_CLIENT_PORT ?? 5173),
     proxy: {

@@ -1,4 +1,4 @@
-import { BaseError, createPublicClient, decodeErrorResult, encodeAbiParameters, encodeFunctionData, getAddress, type Hex, http, keccak256 } from 'viem';
+import { BaseError, createPublicClient, decodeErrorResult, encodeAbiParameters, encodeFunctionData, getAddress, type Hex, http, keccak256, parseEventLogs } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { bountiesAbi } from '../challenges/bountiesAbi.js';
 import { ARC_MIN_FEE_PER_GAS, PRIORITY_FEE_PER_GAS } from '../challenges/chain.js';
@@ -27,6 +27,13 @@ export interface BountyChain {
   readonly chainId: number;
   /** Unreserved USDC in the pool, 6-decimal units. */
   pool(): Promise<bigint>;
+  /** USDC held by open bounties, 6-decimal units. */
+  reserved(): Promise<bigint>;
+  /**
+   * Everything ever paid into the pool (Funded) and taken out unreserved (Withdrawn) since a
+   * block, read from the contract's events: what the public board shows trades funding.
+   */
+  flows(fromBlock: bigint): Promise<{ fundedAtomic: bigint; withdrawnAtomic: bigint; toBlock: bigint }>;
   /** The contract's bounty limits, 6-decimal units. */
   limits(): Promise<{ min: bigint; max: bigint }>;
   status(id: Hex): Promise<OnChainStatus>;
@@ -52,11 +59,14 @@ export function namedBountyRevert(error: unknown): unknown {
   catch { return error; }
 }
 
+/** The most blocks one log query asks for (Arc's public RPC refuses wide ranges). */
+const LOG_CHUNK = 9_000n;
+
 export function viemBountyChain(config: { rpcUrl: string; chainId: number; contract: Hex; evaluatorKey: Hex }): BountyChain {
   const client = createPublicClient({ cacheTime: 0, transport: http(config.rpcUrl, { timeout: 15_000, retryCount: 2 }) });
   const account = privateKeyToAccount(config.evaluatorKey);
   const contract = getAddress(config.contract);
-  const read = <T>(functionName: 'pool' | 'minAmount' | 'maxAmount') =>
+  const read = <T>(functionName: 'pool' | 'reserved' | 'minAmount' | 'maxAmount') =>
     client.readContract({ address: contract, abi: bountiesAbi, functionName }) as Promise<T>;
   const encode = (call: BountyCall): Hex => {
     switch (call.fn) {
@@ -71,6 +81,20 @@ export function viemBountyChain(config: { rpcUrl: string; chainId: number; contr
   return {
     contract, evaluator: account.address, chainId: config.chainId,
     pool: () => read<bigint>('pool'),
+    reserved: () => read<bigint>('reserved'),
+    async flows(fromBlock) {
+      const head = await client.getBlockNumber();
+      let funded = 0n, withdrawn = 0n;
+      // The public RPC limits a log query's range: read it in chunks.
+      for (let from = fromBlock; from <= head; from += LOG_CHUNK) {
+        const to = from + LOG_CHUNK - 1n < head ? from + LOG_CHUNK - 1n : head;
+        const logs = await client.getLogs({ address: contract, fromBlock: from, toBlock: to });
+        for (const log of parseEventLogs({ abi: bountiesAbi, logs, eventName: ['Funded', 'Withdrawn'] })) {
+          if (log.eventName === 'Funded') funded += log.args.amount; else withdrawn += log.args.amount;
+        }
+      }
+      return { fundedAtomic: funded, withdrawnAtomic: withdrawn, toBlock: head };
+    },
     async limits() { const [min, max] = await Promise.all([read<bigint>('minAmount'), read<bigint>('maxAmount')]); return { min, max }; },
     async status(id) {
       const b = await client.readContract({ address: contract, abi: bountiesAbi, functionName: 'bounty', args: [id] });

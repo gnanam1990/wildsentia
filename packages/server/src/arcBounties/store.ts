@@ -116,6 +116,31 @@ export class ArcBountyStore {
     await this.pool.query(`update arc_bounties set status = $2, settled_at = now(), error = null where bounty_id = $1 and status = 'deciding'`, [bountyId, onChain]);
   }
 
+  /** This world's bounties by state: how many, and how much USDC. */
+  async totals(): Promise<Record<ArcBountyStatus, { count: number; amountAtomic: bigint }>> {
+    const r = await this.pool.query<{ status: ArcBountyStatus; count: string; amount: string | null }>(
+      'select status, count(*) as count, sum(amount_atomic) as amount from arc_bounties where world_id = $1 group by status', [this.worldId]);
+    const out = Object.fromEntries((['publishing', 'active', 'deciding', 'paid', 'voided', 'failed'] as const)
+      .map((s) => [s, { count: 0, amountAtomic: 0n }])) as Record<ArcBountyStatus, { count: number; amountAtomic: bigint }>;
+    for (const row of r.rows) out[row.status] = { count: Number(row.count), amountAtomic: BigInt(row.amount ?? '0') };
+    return out;
+  }
+
+  /**
+   * The agents that won bounties paid since `since` (all time when null), most USDC first: their
+   * name, kills (hunter won), escapes (prey survived) and USDC won.
+   */
+  async leaderboard(since: Date | null, limit = 20): Promise<Array<{ agentId: string; name: string | null; kills: number; escapes: number; wonAtomic: bigint }>> {
+    const r = await this.pool.query<{ agent_id: string; name: string | null; kills: string; escapes: string; won: string }>(
+      `select b.winner_agent_id as agent_id, max(a.name) as name,
+          count(*) filter (where b.outcome = 'predator') as kills, count(*) filter (where b.outcome = 'survived') as escapes,
+          sum(b.amount_atomic) as won
+        from arc_bounties b left join live_agents a on a.id = b.winner_agent_id
+        where b.world_id = $1 and b.status = 'paid' and b.winner_agent_id is not null and ($2::timestamptz is null or b.settled_at >= $2)
+        group by b.winner_agent_id order by sum(b.amount_atomic) desc, count(*) desc, b.winner_agent_id limit $3`, [this.worldId, since, limit]);
+    return r.rows.map((x) => ({ agentId: x.agent_id, name: x.name, kills: Number(x.kills), escapes: Number(x.escapes), wonAtomic: BigInt(x.won) }));
+  }
+
   async noteError(bountyId: string, error: string): Promise<void> {
     await this.pool.query('update arc_bounties set error = $2 where bounty_id = $1', [bountyId, error.slice(0, 500)]);
   }

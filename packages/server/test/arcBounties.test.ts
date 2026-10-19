@@ -249,6 +249,32 @@ maybe('Congo bounties paid on Arc', () => {
     expect(after.outcome).toBe('void');
   }, 60_000);
 
+  it('shows the public what the pool took in and paid, who won this season, and a share card that never names a live target', async () => {
+    const app = Fastify();
+    installArcBountyRoutes(app, { store, engine, chain: bountyChain, adminToken: null, now: () => host.world.now(), fromBlock: 0n, origin: 'https://forest.example' });
+    await app.ready();
+    const live = await publish();
+    const card = await app.inject({ method: 'GET', url: `/share/bounty/${live.bountyId}` });
+    expect(card.statusCode).toBe(200);
+    expect(card.body).toContain('og:title');
+    expect(card.body).toContain('https://forest.example/bounties.html#' + live.bountyId);
+    expect(card.body).not.toContain(duiker);
+    await engine.onHunt({ predatorId: leopard, preyId: duiker, predatorAgentId: 'hunter', killed: true });
+    const paidCard = (await app.inject({ method: 'GET', url: `/share/bounty/${live.bountyId}` })).body;
+    expect(paidCard).toContain('A hunter agent won 5 USDC');
+    const stats = (await app.inject({ method: 'GET', url: '/congo/arc-bounties/stats' })).json();
+    expect(stats.fundedAtomic).toBe('500000000');
+    expect(stats.paidAtomic).toBe('5000000');
+    expect(stats.bounties).toMatchObject({ paid: 1, live: 0 });
+    const board = (await app.inject({ method: 'GET', url: '/congo/arc-bounties/leaderboard' })).json();
+    expect(board.season.id).toMatch(/^\d{4}-W\d{2}$/);
+    expect(board.agents).toEqual([{ agentId: 'hunter', name: null, kills: 1, escapes: 0, wonAtomic: '5000000' }]);
+    expect((await app.inject({ method: 'GET', url: '/congo/arc-bounties/leaderboard?season=all' })).json().agents).toHaveLength(1);
+    expect((await app.inject({ method: 'GET', url: '/congo/arc-bounties/leaderboard?season=nope' })).statusCode).toBe(400);
+    expect((await app.inject({ method: 'GET', url: `/congo/arc-bounties/${live.bountyId}` })).json().watchPath).toMatch(/^\/#animal=/);
+    await app.close();
+  }, 60_000);
+
   it('refuses to drop a bounty on a protected, unhunted, dead or unknown animal', async () => {
     expect(await engine.inspect('blue_duiker_zzzz')).toEqual({ ok: false, reason: 'not_found' });
     expect(await engine.inspect(leopard)).toEqual({ ok: false, reason: 'not_hunted' });
