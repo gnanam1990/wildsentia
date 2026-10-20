@@ -53,6 +53,7 @@ import { ReturnPath } from './returnPath.js';
 import { renderBaseY } from './space.js';
 import { AmbientAudio, cueFor, type AudioAnimal } from './ambientAudio.js';
 import { initObserverChrome } from './observerChrome.js';
+import { Watchlist, newsSince, type WatchEvent } from './animalWatch.js';
 import { populationCounter } from './populationCounter.js';
 import { applyTheme, readTheme } from './theme.js';
 import { parseChoice } from './themeModel.js';
@@ -773,6 +774,7 @@ const animalMapDialog = new LazyDialog<[]>('animal map', observerUiStatus, async
   return () => map.open();
 });
 document.querySelector('#open-animal-map')!.addEventListener('click', () => { void animalMapDialog.open(); });
+document.querySelector('#open-bounties')!.addEventListener('click', () => { location.href = '/bounties.html'; });
 const browseAnimals = createAnimalBrowser((id) => watch(id), () => store.world?.population);
 document.querySelector('#population')!.addEventListener('click', (event) => {
   const button = (event.target as HTMLElement).closest<HTMLElement>('[data-browse-species]');
@@ -791,7 +793,49 @@ const shareDialog = new LazyDialog<[string]>('share story', observerUiStatus, as
   const { createShareDialog } = await import('./shareStory.js');
   return createShareDialog();
 });
+// News of the animals a viewer watches: catches, escapes, deaths and births, every half minute.
+const watchlist = new Watchlist((() => { try { return localStorage; } catch { return null; } })());
+hud.watched = (id) => watchlist.has(id);
+const newsToast = document.createElement('div');
+newsToast.className = 'news-toast'; newsToast.setAttribute('role', 'status'); newsToast.setAttribute('aria-live', 'polite'); newsToast.hidden = true;
+document.body.append(newsToast);
+let newsTimer = 0;
+function tellNews(animalId: string, text: string): void {
+  const line = document.createElement('button');
+  line.type = 'button'; line.className = 'news-line'; line.textContent = text;
+  line.addEventListener('click', () => { watch(animalId); line.remove(); if (!newsToast.childElementCount) newsToast.hidden = true; });
+  newsToast.append(line); newsToast.hidden = false;
+  while (newsToast.childElementCount > 4) newsToast.firstElementChild!.remove();
+  clearTimeout(newsTimer);
+  newsTimer = window.setTimeout(() => { newsToast.replaceChildren(); newsToast.hidden = true; }, 20_000);
+  if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+    try { new Notification('Wildsentia', { body: text, tag: `${animalId}:${text}` }); } catch { /* not allowed here */ }
+  }
+}
+async function checkNews(): Promise<void> {
+  for (const id of watchlist.ids) {
+    try {
+      const res = await fetch(`/api/animals/${encodeURIComponent(id)}/events?limit=20`, { cache: 'no-store' });
+      if (!res.ok) continue;
+      const page = await res.json() as { events: WatchEvent[] };
+      const news = newsSince(id, page.events, watchlist.seen(id));
+      for (const n of news) tellNews(id, n.text);
+      const newest = page.events.reduce((t, e) => Math.max(t, e.worldTime), 0);
+      if (newest) watchlist.told(id, newest);
+    } catch { /* next time */ }
+  }
+}
+setInterval(() => { if (watchlist.ids.length) void checkNews(); }, 30_000);
 document.querySelector('#passport')!.addEventListener('click', (event) => {
+  const watchButton = (event.target as HTMLElement).closest<HTMLElement>('[data-watch]');
+  if (watchButton) {
+    const id = watchButton.dataset.watch!, on = watchlist.toggle(id, store.world?.worldTime ?? 0);
+    watchButton.setAttribute('aria-pressed', String(on));
+    watchButton.textContent = on ? 'Getting news' : 'Get news';
+    if (on && 'Notification' in window && Notification.permission === 'default') void Notification.requestPermission().catch(() => undefined);
+    observerUiStatus.textContent = on ? 'You will get news of this animal here, and as a notification when this tab is hidden.' : 'News of this animal stopped.';
+    return;
+  }
   const shareButton = (event.target as HTMLElement).closest<HTMLElement>('[data-share]');
   if (shareButton) {
     void shareDialog.open(shareButton.dataset.share!);

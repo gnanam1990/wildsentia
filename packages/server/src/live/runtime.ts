@@ -24,6 +24,7 @@ import { ArcBountyStore } from '../arcBounties/store.js';
 import { ArcBountyEngine } from '../arcBounties/engine.js';
 import { viemBountyChain } from '../arcBounties/chain.js';
 import type { ArcBountyDeps } from '../arcBounties/routes.js';
+import { Notifier, arcBountyAnnouncer, describeNotify, notifyConfig } from '../notify/notify.js';
 import type { Hex } from 'viem';
 
 /**
@@ -121,18 +122,27 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
     const chain = viemBountyChain({ rpcUrl: required('VANA_ARC_BOUNTIES_RPC_URL'), chainId, contract: required('VANA_ARC_BOUNTIES_CONTRACT') as Hex,
       evaluatorKey: required('VANA_ARC_BOUNTIES_EVALUATOR_KEY') as Hex });
     const store = new ArcBountyStore(pool, host.worldId ?? 'unknown');
-    const engine = new ArcBountyEngine(store, chain, {
+    // Alerts to Discord and Telegram when a bounty goes live and when it is decided (all optional).
+    const alerts = notifyConfig(env);
+    if (alerts) console.log(`arc bounty alerts: ${describeNotify(alerts)}`);
+    const announce = alerts ? arcBountyAnnouncer(new Notifier(alerts), { origin: alerts.origin, rate: () => host.worldHoursPerRealHour, now: played,
+      txUrl: (hash) => engine.txUrl(hash) }) : undefined;
+    const engine: ArcBountyEngine = new ArcBountyEngine(store, chain, {
       world: () => host.world, played, rate: () => host.worldHoursPerRealHour,
-      steered: () => [...live.avatars.values()].map((a) => ({ agentId: a.agentId, animalId: a.animalId, speciesId: a.speciesId })),
+      steered: () => [...live.avatars.values()].map((a) => ({ agentId: a.agentId, animalId: a.animalId, speciesId: a.speciesId, agentName: a.agentName })),
       steererOf: (id) => live.avatars.byAnimal(id)?.agentId ?? null,
       wallet: async (agentId) => { const a = await agentStore.byId(agentId); return a?.wallet && a.walletProven ? a.wallet : null; },
       network: (agentId) => agentStore.networkOf(agentId),
       // Testnet only: refused with a mainnet chain.
       sameNetworkOk: env.VANA_ARC_BOUNTIES_SAME_NETWORK_OK === '1' && chainId === 5042002,
       notify: (agentId, text) => live.notify(agentId, text), eventsOf,
-      explorer: env.VANA_ARC_BOUNTIES_EXPLORER_URL?.trim() || null,
+      explorer: env.VANA_ARC_BOUNTIES_EXPLORER_URL?.trim() || null, ...(announce ? { announce } : {}),
     });
-    return { store, engine, chain, adminToken: env.VANA_ARC_BOUNTIES_ADMIN_TOKEN?.trim() || null, now: played };
+    const fromBlock = env.VANA_ARC_BOUNTIES_FROM_BLOCK?.trim();
+    return { store, engine, chain, adminToken: env.VANA_ARC_BOUNTIES_ADMIN_TOKEN?.trim() || null, now: played,
+      // The public board reads the pool's flows from the contract's events since its deployment block.
+      fromBlock: fromBlock && /^\d+$/.test(fromBlock) ? BigInt(fromBlock) : null, origin: env.VANA_PUBLIC_ORIGIN?.trim() || null,
+      rate: () => host.worldHoursPerRealHour };
   })() : null;
   live.onHunt = (hunt) => {
     if (bounties && hunt.killed) void bounties.engine.adjudicate().catch((e) => console.error('[bounty] adjudicate failed', e));

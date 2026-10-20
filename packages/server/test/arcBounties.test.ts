@@ -6,8 +6,10 @@ import { createPool } from '../src/db/pool.js';
 import { migrate } from '../src/db/migrate.js';
 import { SimHost } from '../src/simHost.js';
 import { ArcBountyStore } from '../src/arcBounties/store.js';
-import { ArcBountyEngine, canonicalJsonOf } from '../src/arcBounties/engine.js';
+import { ArcBountyEngine, canonicalJsonOf, duration } from '../src/arcBounties/engine.js';
 import { targetCommit, viemBountyChain, type BountyChain } from '../src/arcBounties/chain.js';
+import Fastify from 'fastify';
+import { installArcBountyRoutes } from '../src/arcBounties/routes.js';
 import { testDatabaseUrl } from './testDatabase.js';
 import { ANVIL_KEYS, CHAIN_ID, anvilAvailable, startLocalChain, usdcBalance, type LocalChain } from './anvil.js';
 
@@ -89,6 +91,7 @@ maybe('Congo bounties paid on Arc', () => {
     expect(notes).toHaveLength(1);
     expect(notes[0]![0]).toBe('prey');
     expect(notes[0]![1]).toContain('5 USDC');
+    expect(notes[0]![1]).toContain('1 hour of world time (about 5 minutes real time)');
     // The same animal cannot carry two at once.
     const again = await engine.publishRandom({ amountAtomic: 5_000_000n, windowWorldSeconds: 3600 });
     expect(again).toEqual({ ok: false, reason: 'no_candidate' });
@@ -178,6 +181,129 @@ maybe('Congo bounties paid on Arc', () => {
     await engine.processPending();
     expect(await usdcBalance(chain, PREY_WALLET) - before).toBe(5_000_000n);
   }, 60_000);
+
+  it('gives the operator\'s panel every bounty with its target, behind the admin token, and the public never the live target', async () => {
+    const b = await publish();
+    const app = Fastify();
+    installArcBountyRoutes(app, { store, engine, chain: bountyChain, adminToken: 'admin-test-token', now: () => host.world.now() });
+    await app.ready();
+    expect((await app.inject({ method: 'GET', url: '/congo/admin/arc-bounties' })).statusCode).toBe(401);
+    const view = (await app.inject({ method: 'GET', url: '/congo/admin/arc-bounties', headers: { authorization: 'Bearer admin-test-token' } })).json();
+    expect(view.poolAtomic).toBe((await bountyChain.pool()).toString());
+    expect(view.limits).toEqual({ minAtomic: '1000000', maxAtomic: '100000000' });
+    expect(view.bounties[0]).toMatchObject({ bountyId: b.bountyId, targetAnimalId: duiker, targetAgentId: 'prey', status: 'active' });
+    const pub = (await app.inject({ method: 'GET', url: `/congo/arc-bounties/${b.bountyId}` })).json();
+    expect(pub.targetAnimalId).toBeUndefined();
+    expect(JSON.stringify(pub)).not.toContain(duiker);
+    await app.close();
+  }, 60_000);
+
+  it('drops a bounty on any animal the operator chooses: a wild one pays only a hunter, else goes back to the pool', async () => {
+    // A wild blue duiker nobody steers.
+    const wild = host.world.agents.find((a) => a.alive && a.speciesId === 'blue_duiker' && a.id !== duiker)!.id;
+    expect(await engine.inspect(wild)).toMatchObject({ ok: true, agentId: null, wallet: null });
+    const r = await engine.publishOn({ animalId: wild, amountAtomic: 2_000_000n, windowWorldSeconds: 3600 });
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.bounty).toMatchObject({ status: 'active', targetAnimalId: wild, targetAgentId: null, targetWallet: null });
+    expect(r.bounty.rules).toMatchObject({ selection: 'operator' });
+    // Nobody was told: no agent steers it.
+    expect(notes).toHaveLength(0);
+    expect(await engine.inspect(wild)).toEqual({ ok: false, reason: 'target_taken' });
+    const poolBefore = await bountyChain.pool();
+    nowShift = 3600;
+    await engine.adjudicate();
+    const survived = (await store.get(r.bounty.bountyId))!;
+    expect(survived.outcome).toBe('void');
+    expect(await bountyChain.pool() - poolBefore).toBe(2_000_000n);
+
+    // The steered duiker, chosen by hand: its agent is told, and a hunter's kill pays the hunter.
+    nowShift = 0;
+    const d = await engine.publishOn({ animalId: duiker, amountAtomic: 1_000_000n, windowWorldSeconds: 3600 });
+    if (!d.ok) throw new Error(d.reason);
+    expect(d.bounty.targetAgentId).toBe('prey');
+    expect(notes.at(-1)![0]).toBe('prey');
+    const before = await usdcBalance(chain, HUNTER_WALLET);
+    await engine.onHunt({ predatorId: leopard, preyId: duiker, predatorAgentId: 'hunter', killed: true });
+    expect((await store.get(d.bounty.bountyId))!.outcome).toBe('predator');
+    expect(await usdcBalance(chain, HUNTER_WALLET) - before).toBe(1_000_000n);
+  }, 60_000);
+
+  it('never pays a hunter for prey its own side steered at the kill: a wild target taken later, or one held without a proven wallet', async () => {
+    const wild = host.world.agents.find((a) => a.alive && a.speciesId === 'blue_duiker' && a.id !== duiker
+      && !steered.some((s) => s.animalId === a.id))!.id;
+    const r = await engine.publishOn({ animalId: wild, amountAtomic: 1_000_000n, windowWorldSeconds: 3600 });
+    if (!r.ok) throw new Error(r.reason);
+    // After publication, an agent from the hunter's own network takes the wild prey and walks it to the hunter.
+    networks.set('accomplice', 'net-a');
+    await engine.onHunt({ predatorId: leopard, preyId: wild, predatorAgentId: 'hunter', preyAgentId: 'accomplice', killed: true });
+    let after = (await store.get(r.bounty.bountyId))!;
+    expect(after.killPreyAgentId).toBe('accomplice');
+    expect(after.outcome).toBe('void');
+
+    // The hunter's own agent cannot be the prey's either, whatever its network.
+    const wild2 = host.world.agents.find((a) => a.alive && a.speciesId === 'blue_duiker' && ![duiker, wild].includes(a.id)
+      && !steered.some((s) => s.animalId === a.id))!.id;
+    const r2 = await engine.publishOn({ animalId: wild2, amountAtomic: 1_000_000n, windowWorldSeconds: 3600 });
+    if (!r2.ok) throw new Error(r2.reason);
+    await engine.onHunt({ predatorId: leopard, preyId: wild2, predatorAgentId: 'hunter', preyAgentId: 'hunter', killed: true });
+    after = (await store.get(r2.bounty.bountyId))!;
+    expect(after.outcome).toBe('void');
+  }, 60_000);
+
+  it('shows the public what the pool took in and paid, who won this season, and a share card that never names a live target', async () => {
+    const app = Fastify();
+    installArcBountyRoutes(app, { store, engine, chain: bountyChain, adminToken: null, now: () => host.world.now(), fromBlock: 0n, origin: 'https://forest.example' });
+    await app.ready();
+    const live = await publish();
+    const card = await app.inject({ method: 'GET', url: `/share/bounty/${live.bountyId}` });
+    expect(card.statusCode).toBe(200);
+    expect(card.body).toContain('og:title');
+    expect(card.body).toContain('https://forest.example/bounties.html#' + live.bountyId);
+    expect(card.body).not.toContain(duiker);
+    await engine.onHunt({ predatorId: leopard, preyId: duiker, predatorAgentId: 'hunter', killed: true });
+    const paidCard = (await app.inject({ method: 'GET', url: `/share/bounty/${live.bountyId}` })).body;
+    expect(paidCard).toContain('A hunter agent won 5 USDC');
+    const stats = (await app.inject({ method: 'GET', url: '/congo/arc-bounties/stats' })).json();
+    expect(stats.fundedAtomic).toBe('500000000');
+    expect(stats.paidAtomic).toBe('5000000');
+    expect(stats.bounties).toMatchObject({ paid: 1, live: 0 });
+    const board = (await app.inject({ method: 'GET', url: '/congo/arc-bounties/leaderboard' })).json();
+    expect(board.season.id).toMatch(/^\d{4}-W\d{2}$/);
+    expect(board.agents).toEqual([{ agentId: 'hunter', name: null, kills: 1, escapes: 0, wonAtomic: '5000000' }]);
+    expect((await app.inject({ method: 'GET', url: '/congo/arc-bounties/leaderboard?season=all' })).json().agents).toHaveLength(1);
+    expect((await app.inject({ method: 'GET', url: '/congo/arc-bounties/leaderboard?season=nope' })).statusCode).toBe(400);
+    expect((await app.inject({ method: 'GET', url: `/congo/arc-bounties/${live.bountyId}` })).json().watchPath).toMatch(/^\/#animal=/);
+    await app.close();
+  }, 60_000);
+
+  it('never lets public requests drive the chain: one flow scan a minute, from where the last ended, and shared pool reads', async () => {
+    const calls: bigint[] = []; let poolReads = 0;
+    const counted: BountyChain = { ...bountyChain, flows: (from) => { calls.push(from); return bountyChain.flows(from); },
+      pool: () => { poolReads++; return bountyChain.pool(); } };
+    const app = Fastify();
+    installArcBountyRoutes(app, { store, engine, chain: counted, adminToken: null, now: () => host.world.now(), fromBlock: 0n });
+    await app.ready();
+    const answers = await Promise.all(Array.from({ length: 20 }, () => app.inject({ method: 'GET', url: '/congo/arc-bounties/stats' })));
+    expect(answers.every((r) => r.json().fundedAtomic === '500000000')).toBe(true);
+    expect(calls).toEqual([0n]);
+    expect(poolReads).toBe(1);
+    await app.close();
+  }, 60_000);
+
+  it('refuses to drop a bounty on a protected, unhunted, dead or unknown animal', async () => {
+    expect(await engine.inspect('blue_duiker_zzzz')).toEqual({ ok: false, reason: 'not_found' });
+    expect(await engine.inspect(leopard)).toEqual({ ok: false, reason: 'not_hunted' });
+    expect(await engine.publishOn({ animalId: 'blue_duiker_zzzz', amountAtomic: 1_000_000n, windowWorldSeconds: 3600 })).toEqual({ ok: false, reason: 'not_found' });
+  }, 60_000);
+
+  it('tells a span as people say it', () => {
+    expect(duration(1200)).toBe('20 minutes');
+    expect(duration(100)).toBe('2 minutes');
+    expect(duration(3600)).toBe('1 hour');
+    expect(duration(5400)).toBe('1.5 hours');
+    expect(duration(3 * 86_400)).toBe('3 days');
+    expect(duration(86_400 + 6 * 3600)).toBe('1 day 6 hours');
+  });
 
   it('refuses a bounty the pool cannot cover, or outside the contract limits', async () => {
     expect(await engine.publishRandom({ amountAtomic: 101_000_000n, windowWorldSeconds: 3600 })).toEqual({ ok: false, reason: 'amount_out_of_range' });

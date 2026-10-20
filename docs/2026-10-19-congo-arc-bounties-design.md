@@ -67,6 +67,19 @@ due time plus a margin, so an outage cannot strand the money.
   carries a bounty, and how long it must last. Hunters still learn of it only through
   perception and clues.
 
+**The operator's choice** (19 October, after the first demo). The owner asked to choose the prey
+by hand in the admin panel (`arc-admin.html`), from:
+- the animals agents steer;
+- a search by number and species;
+- a map of every living animal.
+
+`POST /congo/admin/arc-bounties/drop` accepts any living animal of a hunted, unprotected
+species that carries no bounty. Its rules record `selection: operator` or `random`.
+- **Wild target:** an animal no agent steers can carry one too. Only a hunter's agent can win
+  it; if it survives, the money goes back to the pool.
+- **Trust:** the operator choosing a target, possibly next to an agent of their own, is trusted
+  by design. The random button remains for bounties nobody chose.
+
 **Adjudication** keeps 1D's rules, with the agent as payee:
 - **Predator:** killed by predation before the deadline by an eligible predator that an agent
   with a proven wallet was steering at the kill, the agent not the prey's. That agent is paid.
@@ -133,3 +146,41 @@ steered prey.
   `VANA_ARC_BOUNTIES_SAME_NETWORK_OK=1`.
 - **The first publish failed:** the server stored a fractional world time (the hour being played
   is mid-hour). World times are now whole seconds, and the tests use a fractional clock.
+
+## Alerts
+
+People follow the hunts in a Discord channel and a Telegram chat
+(`packages/server/src/notify/`). The engine's `announce` port tells the server when a bounty
+goes live on chain and when it is paid or returned. Each event is alerted once.
+
+**Settings**, all optional. Nothing is sent unless a destination or a dry run is set. A malformed
+value stops the server, and the error never repeats it.
+
+| Setting | What |
+|---|---|
+| `VANA_NOTIFY_DISCORD_WEBHOOK` | A Discord webhook, `https://discord.com/api/webhooks/<id>/<token>` (or `discordapp.com`) |
+| `VANA_NOTIFY_TELEGRAM_BOT_TOKEN`, `VANA_NOTIFY_TELEGRAM_CHAT_ID` | A bot and the chat it posts to (Bot API `sendMessage`); both or neither |
+| `VANA_PUBLIC_ORIGIN` | The site, for links (e.g. `https://wildsentia.lol`); no links without it |
+| `VANA_NOTIFY_DRY_RUN=1` | Log each alert's text instead of sending it |
+
+**Messages** are plain text, a few short lines each.
+- **Live:** the amount in USDC, the species, the region, the deadline in world time and about
+  how long that is in real time (at `host.worldHoursPerRealHour`), and a link to
+  `<origin>/bounties.html#<bountyId>`. It never names the target animal or its agent: it says
+  only what the public board says.
+- **Decided:** who won (a hunter, the prey, or nobody, the money back to the pool) and the target,
+  now revealed. A win also names the winning animal and the payee wallet, shortened
+  (`0x1234…abcd`). Each carries the decision's explorer link and a watch link,
+  `<origin>/#animal=<winner, else the target>`.
+
+**Sending:**
+- Each destination has its own queue, sent one at a time, about one alert a second.
+- A 429, a 5xx or a network failure is retried after the wait the service asks for, else with
+  backoff. After four tries, or when asked to wait over two minutes, the alert is logged once and
+  dropped. Any other refusal is not retried.
+- Requests time out after 10 s, and nothing throws into the engine.
+- The webhook URL and the bot token are secrets (whoever holds one can post as the bot), so they
+  are cut out of every log line.
+- Discord gets plain `content` with every mention disabled (`allowed_mentions: { parse: [] }`).
+  Telegram gets plain text with no `parse_mode`, so nothing needs escaping. Link previews stay on,
+  so a link shows the board's share card.

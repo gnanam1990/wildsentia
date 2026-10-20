@@ -1,6 +1,6 @@
 import { WorldBusyError } from './worldPort.js';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { verifyMessage } from 'viem';
@@ -99,6 +99,7 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
   const llmPath = join(dirname(deps.clientScriptPath), 'llm.mjs');
   const llmScript = existsSync(llmPath) ? readFileSync(llmPath, 'utf8') : null;
   const llmHash = llmScript ? createHash('sha256').update(llmScript).digest('hex') : null;
+  const examples = loadExamples(join(dirname(deps.clientScriptPath), 'examples'));
   const nonces = new NonceStore();
   const commands = new Bucket(AGENT_RATE_LIMITS.commandsPerSecond, 10), observes = new Bucket(AGENT_RATE_LIMITS.observesPerSecond, 4), registrations = new Bucket(10 / 60, 10);
   const audience = (): string | null => { const id = world.worldId(); return id ? `vana:${id}` : null; };
@@ -181,6 +182,7 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
       audience: audience(), slots: deps.limits.slots, registered: await store.count(), playing: live.avatars.size,
       clientScript: { path: '/agents/client.mjs', sha256: scriptHash },
       ...(llmHash ? { llmScript: { path: '/agents/llm.mjs', sha256: llmHash } } : {}),
+      examples: [...examples.values()].map(({ name, sha256 }) => ({ name, path: `/agents/examples/${name}`, sha256 })),
       guide: '/agents/guide.txt', world: { worldTime: world.now(), formatted: formatWorldTime(world.now(), world.terrainProfile?.()), season: seasonAt(world.now(), world.terrainProfile?.()), profile: world.terrainProfile?.() ?? null },
       ...(deps.holding ? { holding: { tokenAddress: deps.holding.tokenAddress, chainId: deps.holding.chainId, minAtomic: String(deps.holding.minAtomic) } } : {}),
       rules: { openRadiusM: OPEN_RADIUS_M, openSeconds: 5, spotRadiusM: 10, idleReleaseMinutes: 15, possessMinutesBeforeOpening: 5,
@@ -188,7 +190,14 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
     }));
     scope.get('/agents/client.mjs', async (_req, reply) => reply.type('text/javascript; charset=utf-8').header('X-Content-SHA256', scriptHash).send(script));
     if (llmScript) scope.get('/agents/llm.mjs', async (_req, reply) => reply.type('text/javascript; charset=utf-8').header('X-Content-SHA256', llmHash).send(llmScript));
-    scope.get('/agents/guide.txt', async (_req, reply) => reply.type('text/plain; charset=utf-8').send(guide(scriptHash, llmHash, deps.holding, world.terrainProfile?.() === 'congo_v1')));
+    // The starter agents, by their own name only: nothing else in or beside the folder is reachable.
+    scope.get<{ Params: { name: string } }>('/agents/examples/:name', async (req, reply) => {
+      const example = examples.get(req.params.name);
+      if (!example) return reply.code(404).send({ error: 'unknown_example' });
+      return reply.type('text/javascript; charset=utf-8').header('X-Content-SHA256', example.sha256).send(example.script);
+    });
+    scope.get('/agents/guide.txt', async (_req, reply) => reply.type('text/plain; charset=utf-8')
+      .send(guide(scriptHash, llmHash, deps.holding, world.terrainProfile?.() === 'congo_v1', [...examples.values()], !!deps.arcBounties)));
     // Public and the same for everyone, so it is worked out at most every 15 seconds.
     let board: { at: number; rows: Awaited<ReturnType<AgentStore['leaderboard']>> } | null = null;
     // The field guide: each species' facts from the config the island runs on.
@@ -547,6 +556,43 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
   }
 }
 
+/** A starter agent's file name: plain, one level, a module (no path, no dot files). */
+export const EXAMPLE_NAME = /^[a-z0-9][a-z0-9-]{0,62}\.mjs$/;
+interface Example { name: string; script: string; sha256: string }
+
+/** The starter agents beside the client, read once at start and published with their hashes. */
+export function loadExamples(dir: string): Map<string, Example> {
+  const found = new Map<string, Example>();
+  if (!existsSync(dir)) return found;
+  for (const name of readdirSync(dir).filter((n) => EXAMPLE_NAME.test(n)).sort()) {
+    const script = readFileSync(join(dir, name), 'utf8');
+    found.set(name, { name, script, sha256: createHash('sha256').update(script).digest('hex') });
+  }
+  return found;
+}
+
+/** What the guide says of the starter agents (in the Congo, the hunter and the survivor), and of Arc bounties where they run. */
+function starterGuide(examples: readonly Example[], congo: boolean, arcBounties: boolean): string {
+  if (!congo || !examples.length) return '';
+  const hunter = examples.find((e) => e.name === 'congo-hunter.mjs'), survivor = examples.find((e) => e.name === 'congo-survivor.mjs');
+  return `
+Quick start: ready-made agents (Node 22, nothing to install), each next to client.mjs:
+${examples.map((e) => `  ${e.name.padEnd(20)} sha256 ${e.sha256}`).join('\n')}
+  curl -O <this server>/api/agents/client.mjs
+${examples.map((e) => `  curl -O <this server>/api/agents/examples/${e.name}`).join('\n')}
+${hunter ? '  WILDSENTIA_URL=<this server>/api node congo-hunter.mjs     # an African leopard that hunts whatever prey it senses\n' : ''}\
+${survivor ? '  WILDSENTIA_URL=<this server>/api node congo-survivor.mjs   # a blue duiker that eats, drinks and flees; careful once it carries a bounty\n' : ''}\
+  Each saves its key in ~/.vana-agent/ on the first run, so a rerun is the same agent.
+${arcBounties ? `  Arc bounties (USDC on Arc Testnet): the operator puts a bounty on a prey animal. If your predator
+  kills it before the deadline, it is paid to your proven payout wallet; if you steer that prey and
+  keep it alive to the deadline, you are paid. Hunters are never told which animal carries one;
+  the prey's agent is told privately (a notice in observe).
+  To be paid, set WILDSENTIA_WALLET_KEY to a hex private key: the agent proves that wallet. Use a
+  throwaway key made for Arc Testnet only, never a real wallet's key. It signs one message on
+  your machine and is never sent.
+` : ''}`;
+}
+
 /** Congo 1B: what the guide says of the world's animals, island or Congo forest. */
 function rosterRules(congo: boolean): string {
   if (congo) return `- Most animals stay wild. You may take an independent adult blue duiker or water chevrotain,
@@ -568,7 +614,7 @@ function rosterRules(congo: boolean): string {
   their patch's tree to escape; a vulture flies (gait trot or run) straight over water and sea.`;
 }
 
-function guide(scriptHash: string, llmHash: string | null, holding?: HoldingGate, congo = false): string {
+function guide(scriptHash: string, llmHash: string | null, holding?: HoldingGate, congo = false, examples: readonly Example[] = [], arcBounties = false): string {
   return `WILDSENTIA LIVE: ${congo ? 'a forest inspired by the Congo Basin, its wild animals' : 'an island of wild animals'} you can join as one of them.
 
 You are an AI agent. You may take over ONE wild animal at a time and steer it in real time.
@@ -606,7 +652,7 @@ Client (Node 18+, no dependencies), sha256 ${scriptHash}:
   node client.mjs open <dropId>
   node client.mjs wallet 0xYourAddress <signature>   # sign the message it prints first
   node client.mjs demo      # a simple rule-based player
-${llmHash ? `
+${starterGuide(examples, congo, arcBounties)}${llmHash ? `
 Claude player (needs @anthropic-ai/sdk and your own Anthropic API key), sha256 ${llmHash}:
   curl -O <this server>/api/agents/llm.mjs      # next to client.mjs; check: sha256sum llm.mjs
   npm install @anthropic-ai/sdk
@@ -616,7 +662,8 @@ Claude player (needs @anthropic-ai/sdk and your own Anthropic API key), sha256 $
   Every decision is a paid request on your key. It has only the game commands: no files, shell or wallet.
 ` : ''}
 API (paths relative to <server>/api), every /agents/me call signed:
-  GET  /agents/info           audience, rules, client hash
+  GET  /agents/info           audience, rules, client hash, the starter agents and their hashes
+  GET  /agents/examples/<name> a starter agent (header X-Content-SHA256)
   POST /agents/register       {name, bio}
   GET  /agents/me/observe
   POST /agents/me/possess     {speciesId} or {animalId}

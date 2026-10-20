@@ -1,0 +1,24 @@
+/* The public bounty board (bounties.html). */
+.bounty-board .board-cta { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 24px; }
+.bounty-board .board-button { display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px; border-radius: 12px; background: var(--accent, #2f6b45); color: #fff; font-weight: 650; text-decoration: none; }
+.bounty-board .board-button.quiet { background: transparent; color: inherit; border: 1px solid var(--line); }
+.bounty-board .board-cards { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.bounty-board .board-card { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.bounty-board .board-card h3 { margin: 0; font-size: 17px; overflow-wrap: anywhere; }
+.bounty-board .board-card p { margin: 0; overflow-wrap: anywhere; }
+.bounty-board .board-card.board-predator { border-left: 4px solid #c8553d; }
+.bounty-board .board-card.board-survived { border-left: 4px solid #3d8c5c; }
+.bounty-board .board-card.board-void { border-left: 4px solid var(--line); }
+.bounty-board .board-highlight { box-shadow: 0 0 0 3px #e6b83c; }
+.bounty-board .board-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: auto; padding-top: 6px; font-size: 14px; }
+.bounty-board .board-actions button { flex: none; width: auto; min-height: 36px; padding: 0 14px; }
+.bounty-board .board-empty { grid-column: 1 / -1; }
+.bounty-board .board-tabs { display: flex; gap: 8px; margin-bottom: 8px; }
+.bounty-board .board-tabs button { min-height: 40px; padding: 0 14px; border-radius: 10px; }
+.bounty-board .board-tabs button { flex: none; width: auto; }
+.bounty-board .board-tabs button[aria-selected="true"] { background: var(--accent, #2f6b45); color: #fff; border: 1px solid transparent; }
+.bounty-board .board-tabs button[aria-selected="false"] { background: transparent; color: inherit; border: 1px solid var(--line); box-shadow: none; }
+@media (max-width: 560px) {
+  .bounty-board .board-cards { grid-template-columns: 1fr; }
+  .bounty-board .board-cta .board-button { flex: 1 1 100%; justify-content: center; }
+}

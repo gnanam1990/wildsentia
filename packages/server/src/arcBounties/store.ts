@@ -5,18 +5,18 @@ export type ArcBountyStatus = 'publishing' | 'active' | 'deciding' | 'paid' | 'v
 export type ArcOutcome = 'predator' | 'survived' | 'void';
 export interface ArcBounty {
   bountyId: string; worldId: string; status: ArcBountyStatus;
-  targetAnimalId: string; targetSpeciesId: string; targetRegion: string; targetAgentId: string; targetWallet: string;
+  targetAnimalId: string; targetSpeciesId: string; targetRegion: string; targetAgentId: string | null; targetWallet: string | null;
   targetKey: string; salt: string; amountAtomic: bigint; windowWorldSeconds: number;
   publishedWorldTime: number; deadlineWorldTime: number; expiresAt: Date; eligiblePredators: string[];
   rules: Record<string, unknown>; rulesHash: string; notified: boolean;
-  killAgentId: string | null; killAnimalId: string | null; killWorldTime: number | null;
+  killAgentId: string | null; killAnimalId: string | null; killWorldTime: number | null; killPreyAgentId: string | null;
   outcome: ArcOutcome | null; payeeWallet: string | null; winnerAgentId: string | null; winnerAnimalId: string | null;
   decidedWorldTime: number | null; record: unknown; recordHash: string | null;
   publishTx: string | null; publishSentAt: Date | null; decideTx: string | null; decideSentAt: Date | null; error: string | null;
   createdAt: Date; decidedAt: Date | null; settledAt: Date | null;
 }
 export interface NewArcBounty {
-  bountyId: string; targetAnimalId: string; targetSpeciesId: string; targetRegion: string; targetAgentId: string; targetWallet: string;
+  bountyId: string; targetAnimalId: string; targetSpeciesId: string; targetRegion: string; targetAgentId: string | null; targetWallet: string | null;
   targetKey: string; salt: string; amountAtomic: bigint; windowWorldSeconds: number; publishedWorldTime: number;
   deadlineWorldTime: number; expiresAt: Date; eligiblePredators: string[]; rules: Record<string, unknown>; rulesHash: string;
 }
@@ -29,12 +29,12 @@ const n = (v: unknown): number | null => v === null || v === undefined ? null : 
 const row = (r: Record<string, unknown>): ArcBounty => ({
   bountyId: r.bounty_id as string, worldId: r.world_id as string, status: r.status as ArcBountyStatus,
   targetAnimalId: r.target_animal_id as string, targetSpeciesId: r.target_species_id as string, targetRegion: r.target_region as string,
-  targetAgentId: r.target_agent_id as string, targetWallet: r.target_wallet as string, targetKey: r.target_key as string, salt: r.salt as string,
+  targetAgentId: r.target_agent_id as string | null, targetWallet: r.target_wallet as string | null, targetKey: r.target_key as string, salt: r.salt as string,
   amountAtomic: BigInt(r.amount_atomic as string), windowWorldSeconds: Number(r.window_world_seconds),
   publishedWorldTime: Number(r.published_world_time), deadlineWorldTime: Number(r.deadline_world_time), expiresAt: r.expires_at as Date,
   eligiblePredators: r.eligible_predators as string[], rules: r.rules as Record<string, unknown>, rulesHash: r.rules_hash as string,
   notified: r.notified as boolean, killAgentId: r.kill_agent_id as string | null, killAnimalId: r.kill_animal_id as string | null,
-  killWorldTime: n(r.kill_world_time), outcome: r.outcome as ArcOutcome | null, payeeWallet: r.payee_wallet as string | null,
+  killWorldTime: n(r.kill_world_time), killPreyAgentId: r.kill_prey_agent_id as string | null, outcome: r.outcome as ArcOutcome | null, payeeWallet: r.payee_wallet as string | null,
   winnerAgentId: r.winner_agent_id as string | null, winnerAnimalId: r.winner_animal_id as string | null, decidedWorldTime: n(r.decided_world_time),
   record: r.record, recordHash: r.record_hash as string | null, publishTx: r.publish_tx as string | null, publishSentAt: r.publish_sent_at as Date | null,
   decideTx: r.decide_tx as string | null, decideSentAt: r.decide_sent_at as Date | null, error: r.error as string | null,
@@ -51,7 +51,7 @@ export class ArcBountyStore {
         expires_at, eligible_predators, rules, rules_hash)
       values ($1, $2, 'publishing', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
       on conflict do nothing`,
-    [b.bountyId, this.worldId, b.targetAnimalId, b.targetSpeciesId, b.targetRegion, b.targetAgentId, b.targetWallet.toLowerCase(), b.targetKey,
+    [b.bountyId, this.worldId, b.targetAnimalId, b.targetSpeciesId, b.targetRegion, b.targetAgentId, b.targetWallet?.toLowerCase() ?? null, b.targetKey,
       b.salt, b.amountAtomic.toString(), b.windowWorldSeconds, b.publishedWorldTime, b.deadlineWorldTime, b.expiresAt, b.eligiblePredators,
       JSON.stringify(b.rules), b.rulesHash]);
     return r.rowCount === 1;
@@ -96,9 +96,9 @@ export class ArcBountyStore {
   }
 
   /** A live kill of the target, recorded the moment it happens; the first one only. */
-  async recordKill(bountyId: string, kill: { agentId: string | null; animalId: string; worldTime: number }): Promise<boolean> {
-    const r = await this.pool.query(`update arc_bounties set kill_agent_id = $2, kill_animal_id = $3, kill_world_time = $4
-      where bounty_id = $1 and status = 'active' and kill_animal_id is null`, [bountyId, kill.agentId, kill.animalId, kill.worldTime]);
+  async recordKill(bountyId: string, kill: { agentId: string | null; animalId: string; worldTime: number; preyAgentId: string | null }): Promise<boolean> {
+    const r = await this.pool.query(`update arc_bounties set kill_agent_id = $2, kill_animal_id = $3, kill_world_time = $4, kill_prey_agent_id = $5
+      where bounty_id = $1 and status = 'active' and kill_animal_id is null`, [bountyId, kill.agentId, kill.animalId, kill.worldTime, kill.preyAgentId]);
     return r.rowCount === 1;
   }
 
@@ -114,6 +114,31 @@ export class ArcBountyStore {
   /** The decision's transaction is confirmed on chain (or the chain shows it done). */
   async settled(bountyId: string, onChain: 'paid' | 'voided'): Promise<void> {
     await this.pool.query(`update arc_bounties set status = $2, settled_at = now(), error = null where bounty_id = $1 and status = 'deciding'`, [bountyId, onChain]);
+  }
+
+  /** This world's bounties by state: how many, and how much USDC. */
+  async totals(): Promise<Record<ArcBountyStatus, { count: number; amountAtomic: bigint }>> {
+    const r = await this.pool.query<{ status: ArcBountyStatus; count: string; amount: string | null }>(
+      'select status, count(*) as count, sum(amount_atomic) as amount from arc_bounties where world_id = $1 group by status', [this.worldId]);
+    const out = Object.fromEntries((['publishing', 'active', 'deciding', 'paid', 'voided', 'failed'] as const)
+      .map((s) => [s, { count: 0, amountAtomic: 0n }])) as Record<ArcBountyStatus, { count: number; amountAtomic: bigint }>;
+    for (const row of r.rows) out[row.status] = { count: Number(row.count), amountAtomic: BigInt(row.amount ?? '0') };
+    return out;
+  }
+
+  /**
+   * The agents that won bounties paid since `since` (all time when null), most USDC first: their
+   * name, kills (hunter won), escapes (prey survived) and USDC won.
+   */
+  async leaderboard(since: Date | null, limit = 20): Promise<Array<{ agentId: string; name: string | null; kills: number; escapes: number; wonAtomic: bigint }>> {
+    const r = await this.pool.query<{ agent_id: string; name: string | null; kills: string; escapes: string; won: string }>(
+      `select b.winner_agent_id as agent_id, max(a.name) as name,
+          count(*) filter (where b.outcome = 'predator') as kills, count(*) filter (where b.outcome = 'survived') as escapes,
+          sum(b.amount_atomic) as won
+        from arc_bounties b left join live_agents a on a.id = b.winner_agent_id
+        where b.world_id = $1 and b.status = 'paid' and b.winner_agent_id is not null and ($2::timestamptz is null or b.settled_at >= $2)
+        group by b.winner_agent_id order by sum(b.amount_atomic) desc, count(*) desc, b.winner_agent_id limit $3`, [this.worldId, since, limit]);
+    return r.rows.map((x) => ({ agentId: x.agent_id, name: x.name, kills: Number(x.kills), escapes: Number(x.escapes), wonAtomic: BigInt(x.won) }));
   }
 
   async noteError(bountyId: string, error: string): Promise<void> {

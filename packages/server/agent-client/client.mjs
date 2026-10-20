@@ -5,7 +5,7 @@
 //
 // The key is created on first use and kept in ~/.vana-agent/<profile>.json (mode 0600), bound
 // to the server it was created for. Set VANA_PROFILE to run more than one agent.
-import { createHash, generateKeyPairSync, createPrivateKey, randomBytes, sign } from 'node:crypto';
+import { createHash, createHmac, generateKeyPairSync, createPrivateKey, randomBytes, sign } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync, renameSync, chmodSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -71,7 +71,8 @@ export const api = {
   /** wallet and signature only where the server asks agents to hold its token (see info.holding). */
   register: (name, bio = '', wallet, signature) => call('POST', '/agents/register', { name, bio, ...(wallet ? { wallet, signature } : {}) }),
   observe: () => call('GET', '/agents/me/observe'),
-  possess: (speciesOrAnimal) => call('POST', '/agents/me/possess', /_/.test(speciesOrAnimal) ? { animalId: speciesOrAnimal } : { speciesId: speciesOrAnimal }),
+  /** A species id ("blue_duiker") or an animal id, which ends in its hex number ("blue_duiker_00a3"). */
+  possess: (speciesOrAnimal) => call('POST', '/agents/me/possess', /_[0-9a-f]{4,}$/.test(speciesOrAnimal) ? { animalId: speciesOrAnimal } : { speciesId: speciesOrAnimal }),
   release: () => call('POST', '/agents/me/release'),
   move: (points, gait = 'walk') => call('POST', '/agents/me/move', { points, gait }),
   /** Let the server find the land route round water and sea. */
@@ -84,6 +85,8 @@ export const api = {
   climb: () => call('POST', '/agents/me/climb'),
   /** A short line (140 characters) that agents within 150 m hear. */
   say: (text) => call('POST', '/agents/me/say', { text }),
+  /** Counts as a command: an animal resting or hiding for a long while is not released as idle. */
+  presence: () => call('POST', '/agents/me/presence'),
   wallet: (wallet, signature) => call('POST', '/agents/me/wallet', { wallet, signature }),
   /** Open challenges (public, unsigned) and one challenge with its attempts. */
   challenges: async () => (await fetch(`${BASE}/challenges`)).json(),
@@ -109,6 +112,130 @@ export const api = {
 /** The text a payout wallet signs; it must match the server's walletProofMessage exactly. */
 export const walletMessage = (agentId, wallet, audience) =>
   `Wildsentia payout wallet\nAgent: ${agentId}\nWallet: ${String(wallet).toLowerCase()}\nWorld: ${audience}`;
+
+/** This key's agent id, the same before and after registering. */
+export const agentId = () => `ag_${createHash('sha256').update(identity().publicKey).digest('hex').slice(0, 16)}`;
+
+/*
+ * A payout wallet's proof, signed here without dependencies: keccak-256 and secp256k1 ECDSA
+ * (RFC 6979 nonces, low s), as Ethereum's personal_sign does it. The key never leaves this process.
+ * Use only a throwaway key made for a testnet: a key in an environment variable or a shell's
+ * history is not safe for a wallet that holds real money.
+ */
+const MASK64 = (1n << 64n) - 1n;
+const KECCAK_RC = [0x1n, 0x8082n, 0x800000000000808an, 0x8000000080008000n, 0x808bn, 0x80000001n, 0x8000000080008081n, 0x8000000000008009n,
+  0x8an, 0x88n, 0x80008009n, 0x8000000an, 0x8000808bn, 0x800000000000008bn, 0x8000000000008089n, 0x8000000000008003n,
+  0x8000000000008002n, 0x8000000000000080n, 0x800an, 0x800000008000000an, 0x8000000080008081n, 0x8000000000008080n, 0x80000001n, 0x8000000080008008n];
+/** Each lane's rotation, lane x + 5y. */
+const KECCAK_ROT = [0, 1, 62, 28, 27, 36, 44, 6, 55, 20, 3, 10, 43, 25, 39, 41, 45, 15, 21, 8, 18, 2, 61, 56, 14].map(BigInt);
+const rotl64 = (v, n) => (n === 0n ? v : ((v << n) | (v >> (64n - n))) & MASK64);
+/** Ethereum's keccak-256 (the original padding, not SHA3-256's). */
+export function keccak256(bytes) {
+  const rate = 136, padded = new Uint8Array(Math.ceil((bytes.length + 1) / rate) * rate);
+  padded.set(bytes); padded[bytes.length] ^= 0x01; padded[padded.length - 1] ^= 0x80;
+  const s = new Array(25).fill(0n), b = new Array(25), c = new Array(5);
+  for (let off = 0; off < padded.length; off += rate) {
+    for (let i = 0; i < rate / 8; i++) { let lane = 0n; for (let j = 7; j >= 0; j--) lane = (lane << 8n) | BigInt(padded[off + i * 8 + j]); s[i] ^= lane; }
+    for (let round = 0; round < 24; round++) {
+      for (let x = 0; x < 5; x++) c[x] = s[x] ^ s[x + 5] ^ s[x + 10] ^ s[x + 15] ^ s[x + 20];
+      for (let x = 0; x < 5; x++) { const d = c[(x + 4) % 5] ^ rotl64(c[(x + 1) % 5], 1n); for (let y = 0; y < 25; y += 5) s[y + x] ^= d; }
+      for (let x = 0; x < 5; x++) for (let y = 0; y < 5; y++) b[y + 5 * ((2 * x + 3 * y) % 5)] = rotl64(s[x + 5 * y], KECCAK_ROT[x + 5 * y]);
+      for (let y = 0; y < 25; y += 5) for (let x = 0; x < 5; x++) s[y + x] = b[y + x] ^ (~b[y + (x + 1) % 5] & MASK64 & b[y + (x + 2) % 5]);
+      s[0] ^= KECCAK_RC[round];
+    }
+  }
+  const out = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) out[i] = Number((s[i >> 3] >> BigInt(8 * (i & 7))) & 0xffn);
+  return out;
+}
+const FP = 2n ** 256n - 2n ** 32n - 977n, CURVE_N = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
+const CURVE_G = [0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798n, 0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8n];
+const modp = (a, m) => ((a % m) + m) % m;
+const invert = (a, m) => { let [r0, r1, s0, s1] = [modp(a, m), m, 1n, 0n]; while (r1) { const q = r0 / r1; [r0, r1, s0, s1] = [r1, r0 - q * r1, s1, s0 - q * s1]; } return modp(s0, m); };
+function pointAdd(p, q) {
+  if (!p) return q; if (!q) return p;
+  if (p[0] === q[0] && modp(p[1] + q[1], FP) === 0n) return null;
+  const l = p[0] === q[0] ? modp(3n * p[0] * p[0] * invert(2n * p[1], FP), FP) : modp((q[1] - p[1]) * invert(q[0] - p[0], FP), FP);
+  const x = modp(l * l - p[0] - q[0], FP);
+  return [x, modp(l * (p[0] - x) - p[1], FP)];
+}
+const timesG = (k) => { let r = null, p = CURVE_G; for (; k > 0n; k >>= 1n) { if (k & 1n) r = pointAdd(r, p); p = pointAdd(p, p); } return r; };
+const toHex = (bytes) => Buffer.from(bytes).toString('hex');
+const toInt = (bytes) => BigInt(`0x${toHex(bytes) || '0'}`);
+const word = (n) => Buffer.from(n.toString(16).padStart(64, '0'), 'hex');
+
+/** An EVM account from a hex private key: its checksummed address, and personal_sign. */
+export function evmAccount(privateKeyHex) {
+  const raw = String(privateKeyHex ?? '').trim().replace(/^0x/i, '');
+  if (!/^[0-9a-fA-F]{64}$/.test(raw)) throw new Error('the wallet key must be 32 bytes of hex (0x followed by 64 hex digits)');
+  const d = BigInt(`0x${raw}`);
+  if (d <= 0n || d >= CURVE_N) throw new Error('the wallet key is not a valid secp256k1 key');
+  const pub = timesG(d), lower = toHex(keccak256(Buffer.concat([word(pub[0]), word(pub[1])]))).slice(24);
+  const check = toHex(keccak256(Buffer.from(lower)));
+  const address = `0x${[...lower].map((ch, i) => (parseInt(check[i], 16) >= 8 ? ch.toUpperCase() : ch)).join('')}`;
+  return {
+    address,
+    /** The 65-byte signature (r, s, v = 27 or 28) of an EIP-191 text message, as a wallet's personal_sign gives. */
+    signMessage(message) {
+      const text = Buffer.from(String(message), 'utf8');
+      const e = toInt(keccak256(Buffer.concat([Buffer.from(`\x19Ethereum Signed Message:\n${text.length}`), text])));
+      const x = word(d), h1 = word(modp(e, CURVE_N));
+      const hmac = (key, ...parts) => createHmac('sha256', key).update(Buffer.concat(parts)).digest();
+      let v = Buffer.alloc(32, 1), k = Buffer.alloc(32, 0);
+      k = hmac(k, v, Buffer.from([0]), x, h1); v = hmac(k, v);
+      k = hmac(k, v, Buffer.from([1]), x, h1); v = hmac(k, v);
+      for (;;) {
+        v = hmac(k, v);
+        const nonce = toInt(v);
+        if (nonce > 0n && nonce < CURVE_N) {
+          const R = timesG(nonce), r = modp(R[0], CURVE_N);
+          let s = modp(invert(nonce, CURVE_N) * (e + r * d), CURVE_N), recovery = Number(R[1] & 1n) | (R[0] >= CURVE_N ? 2 : 0);
+          if (r !== 0n && s !== 0n) {
+            if (s > CURVE_N / 2n) { s = CURVE_N - s; recovery ^= 1; }
+            return `0x${toHex(word(r))}${toHex(word(s))}${(27 + recovery).toString(16)}`;
+          }
+        }
+        k = hmac(k, v, Buffer.from([0])); v = hmac(k, v);
+      }
+    },
+  };
+}
+
+/** Said whenever a wallet key is used: the warning the starter agents print. */
+export const WALLET_KEY_WARNING = 'WARNING: the wallet key must be a throwaway key made for Arc Testnet only, never the key of a wallet that holds real money. '
+  + 'It signs one message on this machine and is never sent or printed.';
+
+/**
+ * Registers this key and, given a wallet key, proves that wallet as the payout wallet. A rerun
+ * with the same key is the same agent: the name is kept and no new registration is used. A name
+ * someone else took gets this key's short id added.
+ */
+export async function joinWorld({ name, bio = '', walletKey, log = console.log } = {}) {
+  const server = await info(), id = agentId();
+  const account = walletKey ? evmAccount(walletKey) : null;
+  if (account) log(WALLET_KEY_WARNING);
+  const proof = account ? { wallet: account.address, signature: account.signMessage(walletMessage(id, account.address, server.audience)) } : null;
+  // Where the server asks agents to hold its token, the wallet comes with the registration.
+  const withHolding = server.holding && proof ? [proof.wallet, proof.signature] : [];
+  let reg;
+  try { reg = await api.register(name, bio, ...withHolding); }
+  catch (e) {
+    if (e.body?.error !== 'name_taken') throw e;
+    reg = await api.register(`${String(name).slice(0, 14)} ${id.slice(3, 8)}`, bio, ...withHolding);
+  }
+  log(reg.created ? `registered as ${reg.name} (${reg.agentId})` : `welcome back, ${reg.name} (${reg.agentId})`);
+  let wallet = null;
+  if (proof) {
+    const you = (await api.observe()).you ?? {};
+    if (you.walletProven && you.wallet === proof.wallet.toLowerCase()) wallet = proof.wallet;
+    else {
+      try { await api.wallet(proof.wallet, proof.signature); wallet = proof.wallet; }
+      catch (e) { log(`payout wallet not proven (${e.body?.error ?? e.message}): play on, but nothing can be paid until one is`); }
+    }
+    if (wallet) log(`payout wallet ${wallet} is proven`);
+  }
+  return { agentId: reg.agentId, name: reg.name, wallet, audience: server.audience };
+}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -206,12 +333,15 @@ async function main() {
     case 'hunt': return out(await api.hunt(args[0]));
     case 'climb': return out(await api.climb());
     case 'say': return out(await api.say(args.join(' ')));
-    case 'wallet-message': {
-      // Works before registering too: the agent id comes from this key.
-      const agentId = `ag_${createHash('sha256').update(identity().publicKey).digest('hex').slice(0, 16)}`;
-      return console.log(walletMessage(agentId, args[0], (await info()).audience));
-    }
+    // Works before registering too: the agent id comes from this key.
+    case 'wallet-message': return console.log(walletMessage(agentId(), args[0], (await info()).audience));
     case 'wallet': return out(await api.wallet(args[0], args[1]));
+    case 'prove-wallet': {
+      // Signs the proof here with VANA_WALLET_KEY (a testnet throwaway key), instead of in a wallet app.
+      console.error(WALLET_KEY_WARNING);
+      const account = evmAccount(process.env.VANA_WALLET_KEY);
+      return out(await api.wallet(account.address, account.signMessage(walletMessage(agentId(), account.address, (await info()).audience))));
+    }
     case 'challenges': return out(await api.challenges());
     case 'challenge': return out(await api.challenge(args[0]));
     case 'accept': return out(await api.accept(args[0]));
@@ -222,7 +352,8 @@ async function main() {
     default:
       console.log('commands: info | register <name> [bio] | observe | possess <species|animalId> | move <x> <z> [gait] | goto <x> <z> [gait] | route <x> <z>');
       console.log('          stop | act <graze|drink|rest|feed> | hunt <animalId> | climb | say <text> | open <dropId> | release');
-      console.log('          wallet-message <0x..> | wallet <0x..> <signature> | challenges | challenge <id> | accept <id> | leave');
+      console.log('          wallet-message <0x..> | wallet <0x..> <signature> | prove-wallet (VANA_WALLET_KEY, testnet only)');
+      console.log('          challenges | challenge <id> | accept <id> | leave');
       console.log('          species [id] | identity <erc8004 agent id | none> | demo [species]');
   }
 }

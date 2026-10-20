@@ -5,6 +5,8 @@ import { friendlyWorldTime } from './worldTime.js';
 interface AgentInfo {
   audience: string | null; slots: number; registered: number; playing: number;
   clientScript: { path: string; sha256: string }; llmScript?: { path: string; sha256: string };
+  /** The starter agents the server publishes beside the client (absent from an older server). */
+  examples?: Array<{ name: string; path: string; sha256: string }>;
   holding?: { tokenAddress: string; chainId: number; minAtomic: string };
   world: { worldTime?: number; formatted: string; season: string; profile?: string };
   rules: { openRadiusM: number; openSeconds: number; spotRadiusM: number; idleReleaseMinutes: number;
@@ -32,7 +34,32 @@ export function commands(apiBase: string, congo = false): Record<string, string[
       `VANA_LLM_TOKEN_BUDGET=200000 node llm.mjs ${prey}`],
     wallet: ['node client.mjs wallet-message 0xYourAddress   # sign this text with that wallet',
       'node client.mjs wallet 0xYourAddress 0xSignature'],
+    ...quickStart(apiBase),
   };
+}
+
+/** The starter agents' file names, as the server publishes them under /agents/examples/. */
+export const HUNTER = 'congo-hunter.mjs', SURVIVOR = 'congo-survivor.mjs';
+
+/**
+ * Quick start: download the client and one starter agent, check them, run it. The wallet key is
+ * read without echo, so it stays off the screen and out of the shell's history.
+ */
+export function quickStart(apiBase: string): Record<'quickHunter' | 'quickSurvivor' | 'quickWallet', string[]> {
+  const get = (file: string) => [`curl -O ${apiBase}/agents/client.mjs`, `curl -O ${apiBase}/agents/examples/${file}`,
+    `shasum -a 256 client.mjs ${file}   # must match the hashes below`];
+  return {
+    quickHunter: [...get(HUNTER), `WILDSENTIA_URL=${apiBase} node ${HUNTER}`],
+    quickSurvivor: [...get(SURVIVOR), `WILDSENTIA_URL=${apiBase} node ${SURVIVOR} blue_duiker`],
+    quickWallet: ['read -rs WILDSENTIA_WALLET_KEY && export WILDSENTIA_WALLET_KEY   # paste a TESTNET-only throwaway key; it is not shown',
+      `WILDSENTIA_URL=${apiBase} node ${SURVIVOR}   # or ${HUNTER}: it proves that key's wallet as your payout wallet`],
+  };
+}
+
+/** The files the quick start downloads, each with the hash this server publishes; none from an older server. */
+export function quickStartFiles(info: Pick<AgentInfo, 'clientScript' | 'examples'>): Array<{ name: string; sha256: string }> {
+  const examples = (info.examples ?? []).filter((e) => e.name === HUNTER || e.name === SURVIVOR);
+  return examples.length ? [{ name: 'client.mjs', sha256: info.clientScript.sha256 }, ...examples.map(({ name, sha256 }) => ({ name, sha256 }))] : [];
 }
 
 /** The page's world-specific words: the island's, or the Congo forest's. */
@@ -103,6 +130,15 @@ async function load(): Promise<void> {
     b(String(info.playing)), ` agent${info.playing === 1 ? ' is' : 's are'} playing; `,
     b(String(free)), ` of ${info.slots} agent slots are free.`);
   document.querySelector('#client-hash')!.textContent = info.clientScript.sha256;
+  // The starter agents are the Congo's hunter and survivor.
+  const files = congo ? quickStartFiles(info) : [];
+  if (files.length) {
+    document.querySelector('#quick-hashes')!.replaceChildren(...files.map((f) => {
+      const li = document.createElement('li'), code = document.createElement('code');
+      code.textContent = f.sha256; li.append(`SHA-256 ${f.name} `, code); return li;
+    }));
+    document.querySelector<HTMLElement>('#quick-card')!.hidden = false;
+  }
   if (info.llmScript) {
     document.querySelector('#llm-hash')!.textContent = info.llmScript.sha256;
     document.querySelector<HTMLElement>('#llm-step')!.hidden = false;
