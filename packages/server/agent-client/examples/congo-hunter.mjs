@@ -255,7 +255,7 @@ async function performHunter(api, step, mem, log, now) {
       try {
         const p = await api.possess(step.target);
         if (p.queued) log(`no ${step.target} is free: waiting in line (place ${p.queued})`);
-        else { log(`now steering ${p.animalId}`); mem.home = null; mem.goal = null; }
+        else { log(`now steering ${p.animalId}`); mem.home = null; mem.goal = null; mem.arc = mem.arc && { ...mem.arc, at: -Infinity }; }
       } catch (e) {
         log(`could not take a ${step.target}: ${refused(e)}`);
         // Only owned animals here: take one this agent's owners authorised.
@@ -301,6 +301,8 @@ export async function readArcBounties(api, mem, log, now) {
   const read = await api.arcBounties().catch(() => null);
   const told = mem.arc?.told ?? new Set();
   mem.arc = { at: now, live: read?.live ?? [], told };
+  // Whether its species can take one is known only once it steers an animal: tell them then.
+  if (!read?.you) return;
   for (const b of mem.arc.live) {
     if (told.has(b.bountyId)) continue;
     told.add(b.bountyId);

@@ -177,7 +177,12 @@ describe('the hunter decides', () => {
     const bounty = (over: Record<string, unknown>) => ({ bountyId: '0x01', status: 'active', speciesId: 'water_chevrotain', region: 'r1_0', amountAtomic: '1000000',
       area: { x: 2000, z: 0, sizeM: 1500 }, youCanTake: true, inYourRegion: false, ...over });
     let live = [bounty({}), bounty({ bountyId: '0x02', amountAtomic: '3000000', youCanTake: false }), bounty({ bountyId: '0x03', amountAtomic: '2000000', region: 'r2_0', area: { x: -2000, z: 0, sizeM: 1500 } })];
-    const api = { arcBounties: async () => ({ live, yours: [], results: [] }) };
+    let you: unknown = null;
+    const api = { arcBounties: async () => ({ live, yours: [], results: [], you }) };
+    // Before it steers an animal, nothing is told: whether it can take one is not known yet.
+    await readArcBounties(api, mem, (l: string) => lines.push(l), -60_000);
+    expect(lines).toHaveLength(0);
+    you = { animalId: 'african_leopard_0003', speciesId: 'african_leopard', region: 'r0_0', x: 0, z: 0 };
     await readArcBounties(api, mem, (l: string) => lines.push(l), 0);
     expect(lines).toHaveLength(3);
     expect(lines[1]).toContain('not prey a african leopard can take');
