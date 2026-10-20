@@ -54,6 +54,7 @@ import { renderBaseY } from './space.js';
 import { AmbientAudio, cueFor, type AudioAnimal } from './ambientAudio.js';
 import { initObserverChrome } from './observerChrome.js';
 import { Watchlist, newsSince, type WatchEvent } from './animalWatch.js';
+import { BountyForest } from './bountyPanel.js';
 import { populationCounter } from './populationCounter.js';
 import { applyTheme, readTheme } from './theme.js';
 import { parseChoice } from './themeModel.js';
@@ -774,7 +775,21 @@ const animalMapDialog = new LazyDialog<[]>('animal map', observerUiStatus, async
   return () => map.open();
 });
 document.querySelector('#open-animal-map')!.addEventListener('click', () => { void animalMapDialog.open(); });
-document.querySelector('#open-bounties')!.addEventListener('click', () => { location.href = '/bounties.html'; });
+// Arc bounties in the forest: a chip while any is live, a card when one goes live or is decided, a panel of them all.
+const bountyForest = new BountyForest({
+  flyTo: (x, z, sizeM) => {
+    watch(null);
+    follow.target.set(x, animals.groundHeightAt(x, z), z);
+    follow.flyToDistance(Math.min(1500, Math.max(300, sizeM * 0.8)));
+    canvas.focus();
+  },
+  watch: (bountyId) => {
+    if (bountyFromHash(location.hash) === bountyId) void startBountyReplay(bountyId);
+    else location.hash = `bounty=${encodeURIComponent(bountyId)}`;
+  },
+}, document.querySelector<HTMLElement>('.world-glance')!, (() => { try { return localStorage; } catch { return null; } })());
+bountyForest.start();
+document.querySelector('#open-bounties')!.addEventListener('click', () => bountyForest.open());
 const browseAnimals = createAnimalBrowser((id) => watch(id), () => store.world?.population);
 document.querySelector('#population')!.addEventListener('click', (event) => {
   const button = (event.target as HTMLElement).closest<HTMLElement>('[data-browse-species]');

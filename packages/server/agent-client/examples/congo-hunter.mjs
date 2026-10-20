@@ -2,7 +2,9 @@
 // A ready-to-run Wildsentia hunter (Node 22, nothing to install): it takes an African leopard,
 // keeps it watered, looks for prey it can hunt among what it senses, and hunts again and again.
 // Arc bounties sit on prey animals the hunters are never shown: any duiker it kills may carry
-// one, and if it does, the USDC is paid to this agent's proven payout wallet.
+// one, and if it does, the USDC is paid to this agent's proven payout wallet. It reads the live
+// bounties (amount, species, region) every half minute, ranges in the region of the best one its
+// species can take, and goes for that species first.
 //
 //   curl -O <server>/agents/client.mjs && curl -O <server>/agents/examples/congo-hunter.mjs
 //   WILDSENTIA_URL=<server> node congo-hunter.mjs [species]       # default african_leopard
@@ -152,7 +154,26 @@ const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 /** How long a refused hunt keeps that animal off the list: out of sight a moment, wrong prey for good. */
 const SKIP_MS = { out_of_sight: 6_000, incompatible_prey: 10 * 60_000, not_its_prey: 60 * 60_000, no_such_animal: 60 * 60_000 };
 
-export function hunterMemory(species = 'african_leopard') { return { species, home: null, goal: null, leg: 0, skip: {}, seenAt: 0, said: '', kills: 0 }; }
+export function hunterMemory(species = 'african_leopard') { return { species, home: null, goal: null, leg: 0, skip: {}, seenAt: 0, said: '', kills: 0, arc: null }; }
+
+/** How far one leg toward a bounty's region goes: a long route is walked in legs, re-aimed each time. */
+const LEG_M = 400;
+
+/**
+ * The live Arc bounty worth going for, from GET /agents/me/arc-bounties as last read: one this
+ * species can take, in its own region first, then the largest. Null with none.
+ */
+export function bountyAim(mem) {
+  const live = (mem.arc?.live ?? []).filter((b) => b.youCanTake && b.status === 'active');
+  return live.sort((x, y) => Number(y.inYourRegion) - Number(x.inYourRegion) || Number(BigInt(y.amountAtomic) - BigInt(x.amountAtomic)))[0] ?? null;
+}
+
+/** A point at most `metres` from `here` toward `to`. */
+export function toward(here, to, metres) {
+  const d = dist(here, to);
+  if (d <= metres) return { x: Math.round(to.x), z: Math.round(to.z) };
+  return { x: Math.round(here.x + (to.x - here.x) / d * metres), z: Math.round(here.z + (to.z - here.z) / d * metres) };
+}
 
 /** The notices not read yet, oldest first (the server keeps the last few). */
 export function freshNotices(o, mem) {
@@ -197,12 +218,14 @@ export function decideHunter(o, mem, now = Date.now()) {
     if (water.distance > 2) return a.moving && mem.goal?.kind === 'water' ? wait('walking to water') : { kind: 'goTo', to: { x: water.x, z: water.z }, gait: 'walk', goal: 'water', why: 'thirsty: going to water' };
     return a.action === 'drink' ? wait('drinking') : { kind: 'act', action: 'drink', why: 'drinking' };
   }
+  // A sensed target first, then the species a live bounty in this region is on, then the nearest.
+  const aim = bountyAim(mem), wanted = (n) => Number(!!aim && aim.inYourRegion && n.speciesId === aim.speciesId);
   const prey = nearby.filter((n) => (o.huntable ?? []).includes(n.speciesId) && !n.predator && !((mem.skip[n.id] ?? 0) > now))
-    .sort((x, y) => Number(!!y.bounty) - Number(!!x.bounty) || x.distance - y.distance)[0];
+    .sort((x, y) => Number(!!y.bounty) - Number(!!x.bounty) || wanted(y) - wanted(x) || x.distance - y.distance)[0];
   if (prey) {
     const sight = o.guide?.senses?.sightM ?? 40;
     if (prey.distance <= sight) return { kind: 'hunt', id: prey.id, at: { x: prey.x, z: prey.z },
-      why: `hunting ${prey.id} at ${Math.round(prey.distance)} m${prey.bounty ? ' (a sensed bounty target)' : ' (any prey may carry a hidden bounty)'}` };
+      why: `hunting ${prey.id} at ${Math.round(prey.distance)} m${prey.bounty ? ' (a sensed bounty target)' : wanted(prey) ? ` (a ${aim.speciesId.replaceAll('_', ' ')} where a bounty is live)` : ' (any prey may carry a hidden bounty)'}` };
     // Sensed but not yet in sight (smell, hearing): creep closer at a walk, re-aimed as it moves.
     if (a.moving && mem.goal?.kind === 'prey' && dist(mem.goal, prey) < 10) return wait(`stalking ${prey.id}`);
     return { kind: 'goTo', to: { x: prey.x, z: prey.z }, gait: 'walk', goal: 'prey', why: `stalking ${prey.id} (${prey.sense ?? 'sensed'}, ${Math.round(prey.distance)} m)` };
@@ -210,11 +233,18 @@ export function decideHunter(o, mem, now = Date.now()) {
   // Fresh tracks or a call, where the world gives clues: follow where they lead.
   const clue = followClue(here, o.clues ?? []);
   if (clue && !(a.moving && mem.goal?.kind === 'clue')) return { kind: 'goTo', to: { x: clue.x, z: clue.z }, gait: clue.gait, goal: 'clue', why: 'following a clue' };
+  // A live bounty this species can take, in another region: walk there, a leg at a time.
+  if (aim?.area && !aim.inYourRegion) {
+    if (a.moving && mem.goal?.kind === 'bounty') return wait(`heading for region ${aim.region}`);
+    return { kind: 'goTo', to: toward(here, aim.area, LEG_M), gait: 'walk', goal: 'bounty',
+      why: `heading for region ${aim.region}: a ${Number(aim.amountAtomic) / 1e6} USDC bounty is live on a ${aim.speciesId.replaceAll('_', ' ')} there` };
+  }
   if (a.moving) return wait('ranging');
-  // Range: a widening spiral round where it started, so its senses sweep new ground.
+  // Range: a widening spiral round where it started (or round the bounty's region), so its senses sweep new ground.
   mem.leg++;
-  const angle = mem.leg * 0.9, r = 80 + (mem.leg % 24) * 25;
-  return { kind: 'goTo', to: { x: Math.round(mem.home.x + Math.cos(angle) * r), z: Math.round(mem.home.z + Math.sin(angle) * r) }, gait: 'walk', goal: 'range', why: 'ranging for prey' };
+  const centre = aim?.area ?? mem.home, angle = mem.leg * 0.9, r = 80 + (mem.leg % 24) * 25;
+  return { kind: 'goTo', to: { x: Math.round(centre.x + Math.cos(angle) * r), z: Math.round(centre.z + Math.sin(angle) * r) }, gait: 'walk', goal: 'range',
+    why: aim ? `ranging for a ${aim.speciesId.replaceAll('_', ' ')} in region ${aim.region}` : 'ranging for prey' };
 }
 
 /** Carries out one step; a refusal is logged and remembered, never fatal. */
@@ -225,7 +255,7 @@ async function performHunter(api, step, mem, log, now) {
       try {
         const p = await api.possess(step.target);
         if (p.queued) log(`no ${step.target} is free: waiting in line (place ${p.queued})`);
-        else { log(`now steering ${p.animalId}`); mem.home = null; mem.goal = null; }
+        else { log(`now steering ${p.animalId}`); mem.home = null; mem.goal = null; mem.arc = mem.arc && { ...mem.arc, at: -Infinity }; }
       } catch (e) {
         log(`could not take a ${step.target}: ${refused(e)}`);
         // Only owned animals here: take one this agent's owners authorised.
@@ -263,6 +293,25 @@ async function performHunter(api, step, mem, log, now) {
 }
 
 /**
+ * Reads the Arc bounties every half minute (a server without them, or a refusal, leaves none),
+ * telling each live one once.
+ */
+export async function readArcBounties(api, mem, log, now) {
+  if (!api.arcBounties || (mem.arc && now - mem.arc.at < 30_000)) return;
+  const read = await api.arcBounties().catch(() => null);
+  const told = mem.arc?.told ?? new Set();
+  mem.arc = { at: now, live: read?.live ?? [], told };
+  // Whether its species can take one is known only once it steers an animal: tell them then.
+  if (!read?.you) return;
+  for (const b of mem.arc.live) {
+    if (told.has(b.bountyId)) continue;
+    told.add(b.bountyId);
+    log(`ARC BOUNTY live: ${Number(b.amountAtomic) / 1e6} USDC on a ${b.speciesId.replaceAll('_', ' ')} in region ${b.region}`
+      + `${b.youCanTake ? (b.inYourRegion ? ' (this region: hunting that species first)' : ' (heading there)') : ' (not prey a ' + mem.species.replaceAll('_', ' ') + ' can take)'}`);
+  }
+}
+
+/**
  * Plays until stopped (or for `steps` observations): observe, decide, act, every two seconds.
  * Commands also keep the animal from being released as idle.
  */
@@ -276,6 +325,7 @@ export async function playHunter(api, { species = 'african_leopard', log = conso
       log(`· ${n.text}`);
       if (/^You caught the /.test(n.text)) { mem.kills++; log('  a kill: if that animal carried a bounty, its USDC goes to this agent\'s proven wallet'); }
     }
+    await readArcBounties(api, mem, log, now());
     const step = decideHunter(o, mem, now());
     if (step.why && step.why !== mem.said) { log(step.why); mem.said = step.why; }
     let pause;

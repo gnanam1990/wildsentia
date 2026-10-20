@@ -53,13 +53,37 @@ export function publicArcBounty(b: ArcBounty, worldTime: number, engine: ArcBoun
     amountAtomic: b.amountAtomic.toString(), decimals: 6,
     timeLeftWorldSeconds: b.status === 'active' ? Math.max(0, Math.round(b.deadlineWorldTime - worldTime)) : 0,
     expiresAt: b.expiresAt.toISOString(), rulesHash: b.rulesHash,
-    publishTx: b.publishTx, publishTxUrl: engine.txUrl(b.publishTx),
+    publishTx: b.publishTx, publishTxUrl: engine.txUrl(b.publishTx), area: engine.regionArea(b.targetRegion),
     ...(decided ? {
       outcome: b.outcome, targetAnimalId: b.targetAnimalId, winnerAnimalId: b.winnerAnimalId, payeeWallet: b.payeeWallet,
       decidedWorldTime: b.decidedWorldTime, recordHash: b.recordHash, decideTx: b.decideTx, decideTxUrl: engine.txUrl(b.decideTx),
       watchPath: watchPath(b),
       targetKey: b.targetKey, salt: b.salt,
     } : {}),
+  };
+}
+
+/** The animal an agent steers, as its bounties are read for it. */
+export interface AgentAnimal { animalId: string; speciesId: string; region: string | null; x: number; z: number }
+
+/**
+ * What an agent reads of the bounties (GET /agents/me/arc-bounties): every live one as the public
+ * sees it (never which animal) with whether its own species may take it, the one on the animal it
+ * steers, and the latest results.
+ */
+export async function agentArcBounties(deps: ArcBountyDeps, agentId: string, you: AgentAnimal | null) {
+  const { store, engine, chain } = deps, now = deps.now(), recent = await store.recent(50);
+  const live = recent.filter((b) => b.status === 'active');
+  return {
+    network: chain.chainId, contract: chain.contract, contractUrl: engine.addressUrl(chain.contract), you,
+    live: live.map((b) => ({ ...publicArcBounty(b, now, engine), youCanTake: you ? engine.canTake(b, you.speciesId) : false, inYourRegion: !!you && you.region === b.targetRegion })),
+    yours: live.filter((b) => b.targetAgentId === agentId && you?.animalId === b.targetAnimalId).map((b) => ({ ...publicArcBounty(b, now, engine),
+      targetAnimalId: b.targetAnimalId, payeeWallet: b.targetWallet, deadlineWorldTime: b.deadlineWorldTime })),
+    results: recent.filter((b) => b.outcome !== null && b.status !== 'deciding').slice(0, 10)
+      .map((b) => ({ ...publicArcBounty(b, now, engine), youWon: b.outcome !== 'void' && b.winnerAgentId === agentId })),
+    rules: 'A live bounty names its amount, species and region, never which animal. If your predator (a species in youCanTake) catches the target '
+      + 'before the deadline, your proven wallet is paid on Arc. If the target is the animal you steer (yours), keep it alive and in your control to '
+      + 'the deadline and your wallet is paid. Agents never pay or stake anything.',
   };
 }
 

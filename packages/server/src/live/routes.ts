@@ -16,7 +16,7 @@ import { sameOriginJson } from '../accounts/cookies.js';
 import { MIN_X_ACCOUNT_DAYS } from '../accounts/store.js';
 import { installOwnershipRoutes, type OwnedDeps } from '../ownership/routes.js';
 import { installBountyRoutes, publicBounty, type BountyDeps } from '../bounties/routes.js';
-import { installArcBountyRoutes, type ArcBountyDeps } from '../arcBounties/routes.js';
+import { agentArcBounties, installArcBountyRoutes, type ArcBountyDeps } from '../arcBounties/routes.js';
 import { motionOf } from '../bounties/discovery.js';
 
 /**
@@ -449,7 +449,18 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
     if (deps.owned) ownedAgentRoutes(deps.owned);
     if (deps.humans) commandRoutes('/play', person(deps.humans));
     if (deps.bounties) installBountyRoutes(scope, deps.bounties);
-    if (deps.arcBounties) installArcBountyRoutes(scope, deps.arcBounties);
+    if (deps.arcBounties) {
+      const arc = deps.arcBounties;
+      installArcBountyRoutes(scope, arc);
+      // The Arc bounties an agent reads: the live ones (never which animal), the one on its own animal, and results.
+      scope.get('/agents/me/arc-bounties', async (req, reply) => {
+        const ctx = await me(req, reply, observes); if (!ctx) return reply;
+        const animalId = live.avatars.get(ctx.agent.id)?.animalId, animal = animalId ? world.animal(animalId) : undefined;
+        const at = animal ? live.positionOf(animal.id) ?? animal.position : null;
+        return agentArcBounties(arc, ctx.agent.id, animal && at ? { animalId: animal.id, speciesId: animal.speciesId,
+          region: arc.engine.regionOf(animal.patchId), x: Math.round(at.x * 10) / 10, z: Math.round(at.z * 10) / 10 } : null);
+      });
+    }
     if (deps.humans && deps.owned) {
       const asPerson = person(deps.humans);
       installOwnershipRoutes(scope, deps.owned, (req, reply) => asPerson(req, reply, commands));
@@ -586,7 +597,11 @@ ${survivor ? '  WILDSENTIA_URL=<this server>/api node congo-survivor.mjs   # a b
 ${arcBounties ? `  Arc bounties (USDC on Arc Testnet): the operator puts a bounty on a prey animal. If your predator
   kills it before the deadline, it is paid to your proven payout wallet; if you steer that prey and
   keep it alive to the deadline, you are paid. Hunters are never told which animal carries one;
-  the prey's agent is told privately (a notice in observe).
+  the prey's agent is told privately (a notice in observe). Every agent steering an animal gets a
+  notice when a bounty goes live and when one it won is paid.
+  GET /agents/me/arc-bounties   the live bounties (amount, species, region and its middle in
+                                metres, time left, whether your species can take it, whether it is
+                                in your region), the one on the animal you steer, and recent results
   To be paid, set WILDSENTIA_WALLET_KEY to a hex private key: the agent proves that wallet. Use a
   throwaway key made for Arc Testnet only, never a real wallet's key. It signs one message on
   your machine and is never sent.

@@ -76,6 +76,8 @@ export const TOOLS = [
     const to = { x: me.x + dx / d * 60, z: me.z + dz / d * 60 };
     return { ...(await api.goTo(to, 'walk')), to };
   } },
+  { name: 'get_arc_bounties', description: 'USDC bounties paid on Arc: each live one (amount, species, region and where its middle is, time left, whether your species can take it, whether it is in your region; never which animal), the one on the animal you steer if any, and recent results with who was paid.',
+    inputSchema: none, run: () => api.arcBounties() },
   { name: 'get_bounty_status', description: 'A bounty\'s public status, and once it is settled its outcome and record.',
     inputSchema: { type: 'object', properties: { bountyId: { type: 'string' } }, required: ['bountyId'] }, run: (a) => api.bounty(a.bountyId) },
   { name: 'get_life_history', description: 'Every life of one of your authorised animals (asset): spawned, died, cause, cooldown.',

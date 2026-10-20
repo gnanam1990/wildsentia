@@ -105,6 +105,8 @@ export const api = {
   /** Congo: open bounties, and the targets your animal senses or last saw (SIMULATED rewards). */
   bounties: () => call('GET', '/agents/me/bounties'),
   bounty: async (id) => (await fetch(`${BASE}/congo/bounties/${encodeURIComponent(id)}`)).json(),
+  /** Congo: USDC bounties on Arc: the live ones (never which animal), the one on your animal, and results. */
+  arcBounties: () => call('GET', '/agents/me/arc-bounties'),
   /** The island's species, or one species' field guide (public, unsigned). */
   species: async (id) => (await fetch(`${BASE}/agents/species${id ? `/${encodeURIComponent(id)}` : ''}`)).json(),
 };
@@ -233,6 +235,10 @@ export async function joinWorld({ name, bio = '', walletKey, log = console.log }
       catch (e) { log(`payout wallet not proven (${e.body?.error ?? e.message}): play on, but nothing can be paid until one is`); }
     }
     if (wallet) log(`payout wallet ${wallet} is proven`);
+  } else {
+    // No key this run: a wallet this agent proved before still pays.
+    const you = (await api.observe().catch(() => ({}))).you ?? {};
+    if (you.walletProven && you.wallet) { wallet = you.wallet; log(`payout wallet ${wallet} (proven before) is kept`); }
   }
   return { agentId: reg.agentId, name: reg.name, wallet, audience: server.audience };
 }

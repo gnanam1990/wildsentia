@@ -178,6 +178,19 @@ async function performSurvivor(api, step, o, mem, log, now) {
 }
 
 /**
+ * Every half minute, GET /agents/me/arc-bounties: a bounty on the animal it steers counts even if
+ * its notice was missed (the server keeps only the last few notices).
+ */
+export async function checkArcBounty(api, o, mem, now) {
+  if (!api.arcBounties || !o.animal || now - (mem.arcAt ?? -Infinity) < 30_000) return;
+  mem.arcAt = now;
+  const read = await api.arcBounties().catch(() => null);
+  const mine = (read?.yours ?? []).find((b) => b.targetAnimalId === o.animal.id);
+  if (mine && !(mem.bounty && mem.bounty.animalId === mine.targetAnimalId))
+    mem.bounty = { animalId: mine.targetAnimalId, usdc: Number(mine.amountAtomic) / 1e6, text: `bounty ${mine.bountyId}`, since: now };
+}
+
+/**
  * Plays until stopped (or for `steps` observations): observe, decide, act, every two seconds
  * (one while fleeing). A quiet spell still sends a presence every five minutes, so a resting
  * animal is never released as idle: losing it would lose the bounty.
@@ -191,6 +204,7 @@ export async function playSurvivor(api, { species = 'blue_duiker', log = console
     try { o = await api.observe(); } catch (e) { log(`observe: ${e.body?.error ?? e.message}`); await sleep(3000); continue; }
     const had = mem.bounty;
     for (const n of readNotices(o, mem, now())) log(`· ${n.text}`);
+    await checkArcBounty(api, o, mem, now());
     if (mem.bounty && mem.bounty !== had) {
       log(`BOUNTY: ${mem.bounty.usdc} USDC on ${mem.bounty.animalId}. Playing carefully: watching further, fleeing sooner, topping up early, staying put.`);
     }
