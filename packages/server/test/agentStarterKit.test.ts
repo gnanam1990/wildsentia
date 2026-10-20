@@ -19,9 +19,9 @@ import { testDatabaseUrl } from './testDatabase.js';
 // @ts-expect-error a plain ES module without types
 import { evmAccount, keccak256 } from '../agent-client/client.mjs';
 // @ts-expect-error a plain ES module without types
-import { decideHunter, hunterMemory } from '../agent-client/examples/congo-hunter.mjs';
+import { bountyAim, decideHunter, hunterMemory, readArcBounties } from '../agent-client/examples/congo-hunter.mjs';
 // @ts-expect-error a plain ES module without types
-import { decideSurvivor, readNotices, survivorMemory } from '../agent-client/examples/congo-survivor.mjs';
+import { checkArcBounty, decideSurvivor, readNotices, survivorMemory } from '../agent-client/examples/congo-survivor.mjs';
 
 const clientScriptPath = fileURLToPath(new URL('../agent-client/client.mjs', import.meta.url));
 const examplesDir = fileURLToPath(new URL('../agent-client/examples/', import.meta.url));
@@ -141,6 +141,17 @@ describe('the survivor decides', () => {
     // Another animal (after a death) is not careful about someone else's bounty.
     expect(decideSurvivor({ ...o, animal: { ...o.animal, id: 'blue_duiker_0009' }, nearby: [leopardNear(50)] }, mem)).toMatchObject({ kind: 'act', action: 'rest' });
   });
+  it('counts a bounty on its animal read from GET /agents/me/arc-bounties, even with the notice missed; every half minute', async () => {
+    const mem = calm(); let reads = 0;
+    const api = { arcBounties: async () => { reads++; return { live: [], yours: [{ bountyId: '0xb1', targetAnimalId: 'blue_duiker_0001', amountAtomic: '1500000' }] }; } };
+    const o = { animal: animal() };
+    await checkArcBounty(api, o, mem, 1000);
+    expect(mem.bounty).toMatchObject({ animalId: 'blue_duiker_0001', usdc: 1.5 });
+    await checkArcBounty(api, o, mem, 20_000);
+    expect(reads).toBe(1);
+    await checkArcBounty(api, { animal: animal({ id: 'blue_duiker_0002' }) }, survivorMemory(), 1000);
+    expect(reads).toBe(2);
+  });
 });
 
 describe('the hunter decides', () => {
@@ -160,6 +171,32 @@ describe('the hunter decides', () => {
     expect(decideHunter({ ...base, animal: leopard({ carcassBeside: true, drives: { hunger: 0.5, thirst: 0.1 } }), nearby: [] }, hunterMemory())).toMatchObject({ kind: 'act', action: 'feed' });
     expect(decideHunter({ ...base, animal: leopard(), nearby: [] }, hunterMemory())).toMatchObject({ kind: 'goTo', goal: 'range' });
     expect(decideHunter({ animal: null }, hunterMemory())).toMatchObject({ kind: 'possess', target: 'african_leopard' });
+  });
+  it('reads the live Arc bounties, heads for the region of one it can take, and goes for that species first there', async () => {
+    const lines: string[] = [], mem = hunterMemory();
+    const bounty = (over: Record<string, unknown>) => ({ bountyId: '0x01', status: 'active', speciesId: 'water_chevrotain', region: 'r1_0', amountAtomic: '1000000',
+      area: { x: 2000, z: 0, sizeM: 1500 }, youCanTake: true, inYourRegion: false, ...over });
+    let live = [bounty({}), bounty({ bountyId: '0x02', amountAtomic: '3000000', youCanTake: false }), bounty({ bountyId: '0x03', amountAtomic: '2000000', region: 'r2_0', area: { x: -2000, z: 0, sizeM: 1500 } })];
+    const api = { arcBounties: async () => ({ live, yours: [], results: [] }) };
+    await readArcBounties(api, mem, (l: string) => lines.push(l), 0);
+    expect(lines).toHaveLength(3);
+    expect(lines[1]).toContain('not prey a african leopard can take');
+    // The largest it can take, in another region: a leg of 400 m toward its middle.
+    expect(bountyAim(mem)).toMatchObject({ bountyId: '0x03' });
+    expect(decideHunter({ ...base, animal: leopard(), nearby: [] }, mem)).toMatchObject({ kind: 'goTo', goal: 'bounty', to: { x: -400, z: 0 } });
+    // In its region: the bounty's species before a nearer duiker.
+    live = [bounty({ inYourRegion: true })];
+    await readArcBounties(api, mem, (l: string) => lines.push(l), 10_000);
+    expect(lines).toHaveLength(3);
+    await readArcBounties(api, mem, (l: string) => lines.push(l), 40_000);
+    expect(bountyAim(mem)).toMatchObject({ bountyId: '0x01' });
+    const o = { ...base, animal: leopard(), nearby: [duiker('blue_duiker_0007', 10), { ...duiker('water_chevrotain_0001', 25), speciesId: 'water_chevrotain' }] };
+    expect(decideHunter(o, mem)).toMatchObject({ kind: 'hunt', id: 'water_chevrotain_0001' });
+    expect(decideHunter({ ...base, animal: leopard(), nearby: [] }, mem)).toMatchObject({ kind: 'goTo', goal: 'range' });
+    // A server without Arc bounties: nothing read, the hunter as before.
+    const plain = hunterMemory();
+    await readArcBounties({}, plain, () => undefined, 0);
+    expect(bountyAim(plain)).toBeNull();
   });
 });
 

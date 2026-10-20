@@ -1,6 +1,6 @@
 import { randomBytes, randomInt } from 'node:crypto';
 import { canHunt, type World } from '@vana/sim';
-import { regionOfPatch } from '@vana/shared';
+import { patchCentre, regionOfPatch, regionPatchIds } from '@vana/shared';
 import { getAddress, type Hex, keccak256, stringToHex } from 'viem';
 import { PROTECTED_SPECIES } from '../bounties/engine.js';
 import { type BountyCall, type BountyChain, targetCommit } from './chain.js';
@@ -57,6 +57,8 @@ export type PublishResult = { ok: true; bounty: ArcBounty } | { ok: false; reaso
 
 export class ArcBountyEngine {
   #queue: Promise<unknown> = Promise.resolve();
+  /** Bounties whose publication or result the steering agents were told of (once each, while the server runs). */
+  readonly #told = new Set<string>();
   constructor(private readonly store: ArcBountyStore, private readonly chain: BountyChain, private readonly ports: ArcBountyPorts) {}
 
   /** Chain work and decisions one at a time: the evaluator's nonce, and one decision per bounty. */
@@ -243,6 +245,7 @@ export class ArcBountyEngine {
     await this.store.published(bountyId);
     const b = (await this.store.get(bountyId))!;
     await this.#notifyPrey(b);
+    this.#tellAgents('published', b);
     this.#announce('published', b);
   }
 
@@ -250,7 +253,52 @@ export class ArcBountyEngine {
   async #settled(bountyId: string, onChain: 'paid' | 'voided'): Promise<void> {
     await this.store.settled(bountyId, onChain);
     const b = await this.store.get(bountyId);
-    if (b) this.#announce('settled', b);
+    if (b) { this.#tellAgents('settled', b); this.#announce('settled', b); }
+  }
+
+  /**
+   * The agents steering animals hear what the public board says: a bounty went live (its amount,
+   * species and region, never which animal), and how one ended. The agent paid hears where.
+   */
+  #tellAgents(kind: 'published' | 'settled', b: ArcBounty): void {
+    const key = `${kind}:${b.bountyId}`;
+    if (this.#told.has(key)) return;
+    this.#told.add(key);
+    const usdc = Number(b.amountAtomic) / 1e6, species = b.targetSpeciesId.replaceAll('_', ' ');
+    const send = (agentId: string, text: string) => { try { this.ports.notify(agentId, text); } catch { /* an agent that left */ } };
+    if (kind === 'published') {
+      const realLeft = Math.max(0, b.deadlineWorldTime - this.ports.played()) / Math.max(1e-9, this.ports.rate());
+      const text = `A ${usdc} USDC bounty is live on Arc on a ${species} somewhere in region ${b.targetRegion}, for about ${duration(realLeft)} real time. `
+        + 'Nobody is told which animal it is. An agent whose predator catches it is paid to its wallet. Details: GET /agents/me/arc-bounties.';
+      for (const s of this.ports.steered()) if (s.agentId !== b.targetAgentId) send(s.agentId, text);
+      return;
+    }
+    const paid = b.payeeWallet ? ` Paid on Arc to ${b.payeeWallet}${this.txUrl(b.decideTx) ? ` (${this.txUrl(b.decideTx)})` : ''}.` : '';
+    if (b.outcome === 'predator' && b.winnerAgentId) send(b.winnerAgentId, `Your ${b.winnerAnimalId ?? 'predator'} caught ${b.targetAnimalId}, the target of a ${usdc} USDC bounty: it is yours.${paid}`);
+    if (b.targetAgentId && b.targetAgentId !== b.winnerAgentId) {
+      send(b.targetAgentId, b.outcome === 'survived' ? `Your ${b.targetAnimalId} survived its ${usdc} USDC bounty: it is yours.${paid}`
+        : `The ${usdc} USDC bounty on your ${b.targetAnimalId} has ended (${b.outcome === 'predator' ? 'a hunter caught it' : 'nobody won it'}).`);
+    }
+  }
+
+  /** A region's middle and width in metres: where the public may look, never which animal. */
+  regionArea(region: string): { x: number; z: number; sizeM: number } | null {
+    try {
+      const g = this.ports.world().grid, centres = regionPatchIds(g, region).map((id) => patchCentre(g, id));
+      const xs = centres.map((c) => c.x), zs = centres.map((c) => c.z);
+      const [x0, x1, z0, z1] = [Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)];
+      return { x: (x0 + x1) / 2, z: (z0 + z1) / 2, sizeM: Math.max(x1 - x0, z1 - z0) + g.patchM };
+    } catch { return null; }
+  }
+
+  /** The region a patch lies in, as bounties name it. */
+  regionOf(patchId: number): string | null {
+    try { return regionOfPatch(this.ports.world().grid, patchId); } catch { return null; }
+  }
+
+  /** Whether this species may take a bounty on that one (the bounty's eligible predators). */
+  canTake(b: ArcBounty, speciesId: string): boolean {
+    return b.eligiblePredators.includes(speciesId);
   }
 
   #announce(kind: 'published' | 'settled', bounty: ArcBounty): void {

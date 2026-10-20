@@ -5,6 +5,50 @@ export interface PublicBounty {
   bountyId: string; status: string; speciesId: string; region: string; amountAtomic: string; timeLeftWorldSeconds: number;
   publishTxUrl: string | null; outcome?: 'predator' | 'survived' | 'void'; targetAnimalId?: string; winnerAnimalId?: string | null;
   payeeWallet?: string | null; decideTxUrl?: string | null; watchPath?: string | null;
+  /** The region's middle and width in metres: where to look, never which animal. */
+  area?: { x: number; z: number; sizeM: number } | null;
+}
+
+/** Whether a bounty is live (shown as wanted) or decided (shown as a result); one on its way to the chain is neither. */
+export const isLive = (b: PublicBounty) => !b.outcome && b.status === 'active';
+export const isResult = (b: PublicBounty) => !!b.outcome && b.status !== 'deciding';
+
+/** What the forest tells a viewer it has not told before: bounties gone live, then bounties decided. */
+export interface BountyNews { key: string; kind: 'live' | 'result'; bounty: PublicBounty }
+export function bountyNews(list: readonly PublicBounty[], told: ReadonlySet<string>): BountyNews[] {
+  const news: BountyNews[] = [];
+  for (const b of list) {
+    const kind = isLive(b) ? 'live' : isResult(b) ? 'result' : null;
+    if (kind && !told.has(`${kind}:${b.bountyId}`)) news.push({ key: `${kind}:${b.bountyId}`, kind, bounty: b });
+  }
+  return news.sort((x, y) => Number(x.kind === 'result') - Number(y.kind === 'result'));
+}
+
+/** The keys of news already told, kept in the browser (newest last, at most `limit`); storage may be blocked. */
+export class ToldBounties {
+  readonly #keys: string[];
+  /** Whether nothing was ever told in this browser: its first look starts from what is live, not from old results. */
+  readonly first: boolean;
+  constructor(private readonly storage: Pick<Storage, 'getItem' | 'setItem'> | null, private readonly limit = 200, private readonly name = 'wildsentia.bountiesTold') {
+    let keys: unknown = null;
+    try { keys = JSON.parse(storage?.getItem(name) ?? 'null'); } catch { keys = null; }
+    this.first = !Array.isArray(keys);
+    this.#keys = Array.isArray(keys) ? keys.filter((k): k is string => typeof k === 'string').slice(-limit) : [];
+  }
+  get set(): ReadonlySet<string> { return new Set(this.#keys); }
+  add(...keys: string[]): void {
+    for (const k of keys) if (!this.#keys.includes(k)) this.#keys.push(k);
+    this.#keys.splice(0, Math.max(0, this.#keys.length - this.limit));
+    try { this.storage?.setItem(this.name, JSON.stringify(this.#keys)); } catch { /* told again next visit */ }
+  }
+}
+
+/** The forest's chip: how many bounties are live and what they hold together. */
+export function liveSummary(list: readonly PublicBounty[]): string | null {
+  const live = list.filter(isLive);
+  if (!live.length) return null;
+  const total = live.reduce((sum, b) => sum + BigInt(b.amountAtomic), 0n);
+  return `${live.length} ${live.length === 1 ? 'bounty' : 'bounties'} live · ${usdc(total)}`;
 }
 
 const readable = (id: string) => id.replaceAll('_', ' ');

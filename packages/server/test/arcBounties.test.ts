@@ -9,7 +9,7 @@ import { ArcBountyStore } from '../src/arcBounties/store.js';
 import { ArcBountyEngine, canonicalJsonOf, duration } from '../src/arcBounties/engine.js';
 import { targetCommit, viemBountyChain, type BountyChain } from '../src/arcBounties/chain.js';
 import Fastify from 'fastify';
-import { installArcBountyRoutes } from '../src/arcBounties/routes.js';
+import { agentArcBounties, installArcBountyRoutes } from '../src/arcBounties/routes.js';
 import { testDatabaseUrl } from './testDatabase.js';
 import { ANVIL_KEYS, CHAIN_ID, anvilAvailable, startLocalChain, usdcBalance, type LocalChain } from './anvil.js';
 
@@ -88,10 +88,14 @@ maybe('Congo bounties paid on Arc', () => {
     // The chain holds only the commit; the target is the keccak of the animal's id.
     expect(b.targetKey).toBe(keccak256(stringToHex(duiker)));
     expect(targetCommit(b.targetKey as Hex, b.salt as Hex)).toMatch(/^0x[0-9a-f]{64}$/);
-    expect(notes).toHaveLength(1);
-    expect(notes[0]![0]).toBe('prey');
+    // Its agent is told which animal; every other steering agent hears only amount, species and region.
+    expect(notes.map(([agent]) => agent)).toEqual(['prey', 'hunter']);
+    expect(notes[0]![1]).toContain(duiker);
     expect(notes[0]![1]).toContain('5 USDC');
     expect(notes[0]![1]).toContain('1 hour of world time (about 5 minutes real time)');
+    expect(notes[1]![1]).toContain(`5 USDC bounty is live on Arc on a blue duiker somewhere in region ${b.targetRegion}`);
+    expect(notes[1]![1]).toContain('GET /agents/me/arc-bounties');
+    expect(notes[1]![1]).not.toContain(duiker);
     // The same animal cannot carry two at once.
     const again = await engine.publishRandom({ amountAtomic: 5_000_000n, windowWorldSeconds: 3600 });
     expect(again).toEqual({ ok: false, reason: 'no_candidate' });
@@ -107,8 +111,34 @@ maybe('Congo bounties paid on Arc', () => {
     expect(after.winnerAnimalId).toBe(leopard);
     expect(await usdcBalance(chain, HUNTER_WALLET)).toBe(5_000_000n);
     expect(await bountyChain.status(b.bountyId as Hex)).toBe('paid');
+    // The winner hears it is paid and where; the prey's agent that it ended.
+    expect(notes.find(([agent, text]) => agent === 'hunter' && text.startsWith('Your '))?.[1]).toMatch(new RegExp(`caught ${duiker}.*it is yours\\. Paid on Arc to ${HUNTER_WALLET}`));
+    expect(notes.at(-1)).toEqual(['prey', `The 5 USDC bounty on your ${duiker} has ended (a hunter caught it).`]);
     // Anyone can check the record against the hash on chain.
     expect(keccak256(stringToHex(canonicalJsonOf(after.record)))).toBe(after.recordHash);
+  }, 60_000);
+
+  it('lets each agent read the live bounties (never which animal), the one on its own animal, and the results', async () => {
+    const b = await publish();
+    const deps = { store, engine, chain: bountyChain, adminToken: null, now: () => host.world.now() };
+    const at = host.world.animal(leopard)!, here = { x: at.position!.x, z: at.position!.z };
+    const hunter = await agentArcBounties(deps, 'hunter', { animalId: leopard, speciesId: 'african_leopard', region: engine.regionOf(at.patchId), ...here });
+    expect(hunter.live).toHaveLength(1);
+    expect(hunter.live[0]).toMatchObject({ bountyId: b.bountyId, speciesId: 'blue_duiker', region: b.targetRegion, amountAtomic: '5000000', youCanTake: true });
+    expect(hunter.live[0]!.area).toMatchObject({ x: expect.any(Number), z: expect.any(Number), sizeM: expect.any(Number) });
+    expect(JSON.stringify(hunter.live)).not.toContain(duiker);
+    expect(hunter.yours).toEqual([]);
+    const preyAt = host.world.animal(duiker)!;
+    const prey = await agentArcBounties(deps, 'prey', { animalId: duiker, speciesId: 'blue_duiker', region: engine.regionOf(preyAt.patchId), x: 0, z: 0 });
+    expect(prey.live[0]!.youCanTake).toBe(false);
+    expect(prey.live[0]!.inYourRegion).toBe(true);
+    expect(prey.yours).toEqual([expect.objectContaining({ bountyId: b.bountyId, targetAnimalId: duiker, payeeWallet: PREY_WALLET })]);
+    // Another agent steering another duiker is not told it is the one.
+    expect((await agentArcBounties(deps, 'someone', { animalId: 'blue_duiker_x', speciesId: 'blue_duiker', region: null, x: 0, z: 0 })).yours).toEqual([]);
+    await engine.onHunt({ predatorId: leopard, preyId: duiker, predatorAgentId: 'hunter', killed: true });
+    const after = await agentArcBounties(deps, 'hunter', null);
+    expect(after.live).toEqual([]);
+    expect(after.results[0]).toMatchObject({ bountyId: b.bountyId, outcome: 'predator', youWon: true, targetAnimalId: duiker });
   }, 60_000);
 
   it('pays the prey agent that keeps it alive and in hand to the deadline', async () => {
@@ -206,8 +236,8 @@ maybe('Congo bounties paid on Arc', () => {
     if (!r.ok) throw new Error(r.reason);
     expect(r.bounty).toMatchObject({ status: 'active', targetAnimalId: wild, targetAgentId: null, targetWallet: null });
     expect(r.bounty.rules).toMatchObject({ selection: 'operator' });
-    // Nobody was told: no agent steers it.
-    expect(notes).toHaveLength(0);
+    // No agent steers it, so nobody is told which animal; the steering agents hear only that one is live.
+    expect(notes.every(([, text]) => !text.includes(wild) && text.includes('bounty is live on Arc'))).toBe(true);
     expect(await engine.inspect(wild)).toEqual({ ok: false, reason: 'target_taken' });
     const poolBefore = await bountyChain.pool();
     nowShift = 3600;
@@ -221,7 +251,7 @@ maybe('Congo bounties paid on Arc', () => {
     const d = await engine.publishOn({ animalId: duiker, amountAtomic: 1_000_000n, windowWorldSeconds: 3600 });
     if (!d.ok) throw new Error(d.reason);
     expect(d.bounty.targetAgentId).toBe('prey');
-    expect(notes.at(-1)![0]).toBe('prey');
+    expect(notes.find(([, text]) => text.includes(duiker))?.[0]).toBe('prey');
     const before = await usdcBalance(chain, HUNTER_WALLET);
     await engine.onHunt({ predatorId: leopard, preyId: duiker, predatorAgentId: 'hunter', killed: true });
     expect((await store.get(d.bounty.bountyId))!.outcome).toBe('predator');

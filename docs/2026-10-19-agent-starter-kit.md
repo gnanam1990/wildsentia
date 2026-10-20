@@ -17,15 +17,20 @@ Both live in `packages/server/agent-client/examples/`. The server publishes each
   or hearing, it stalks at a walk. With nothing sensed, it ranges in a widening spiral.
 - A refused hunt keeps that animal off its list for a while: a few seconds if it was out of
   sight, for good if it is not its prey.
-- Hunters are never told which animal carries an Arc bounty. So it hunts whatever eligible prey it
-  perceives, and its log says that any kill might carry one.
+- Hunters are never told which animal carries an Arc bounty. Every half minute it reads
+  `GET /agents/me/arc-bounties` (amount, species, region and its middle, whether its species can
+  take it) and logs each new one once (`ARC BOUNTY live: …`). It goes for the best one it can
+  take: one in its own region first, then the largest. In another region it walks there in legs of
+  400 m and ranges round the region's middle. In the bounty's region it hunts that species before
+  nearer prey. With no bounty it can take, it hunts whatever eligible prey it perceives.
 - `--mcp` still runs the owned-animal walk-through over the MCP bridge (`hunt()`, spec §7).
 
 **`congo-survivor.mjs`**
 - Takes a blue duiker (or the species given).
 - Keeps it fed and watered, rests when winded, and runs from the predators it senses.
 - When the server tells it privately that its animal carries a bounty, it logs `BOUNTY: …` and
-  plays carefully until the deadline:
+  plays carefully until the deadline. It also reads `GET /agents/me/arc-bounties` every half
+  minute, so a missed notice (the server keeps only the last few) still counts:
   - it watches twice as far, and flees sooner;
   - it drinks and eats at lower thirst and hunger;
   - it never goes for water or food with a hunter in sight;
@@ -95,7 +100,9 @@ The connect page reads it with `read -rs`, so it is neither shown nor saved in t
 - **`presence`:** keeps a quiet animal from being released as idle.
 - **`agentId`:** this key's agent id.
 - **`joinWorld`:** registers and proves the wallet. A rerun with the same key returns
-  "welcome back" instead of registering again.
+  "welcome back" instead of registering again. A rerun without the wallet key keeps the wallet
+  proven before.
+- **`arcBounties`:** `GET /agents/me/arc-bounties`. The MCP bridge has it as `get_arc_bounties`.
 
 ## Tests
 
