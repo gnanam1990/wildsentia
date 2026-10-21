@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fileURLToPath } from 'node:url';
-import { landWalkable, patchCentre } from '@vana/shared';
+import { landWalkable, patchCentre, EVEN_NEED } from '@vana/shared';
 import { createWorld, type World } from '@vana/sim';
 import { DEATH_COOLDOWN_MS, LiveLayer } from '../src/live/liveLayer.js';
 import { worldPort } from '../src/live/worldPort.js';
@@ -111,6 +111,7 @@ describe('live hunting', () => {
     const { world, live, put, run, adult } = setup(() => 0);
     const tiger = adult('tiger'), chital = adult('chital');
     for (const t of world.agents) if (t.speciesId === 'tiger') t.drives.hunger = 0; // No wild tiger joins in.
+    Object.assign(tiger.drives, { hunger: EVEN_NEED, thirst: EVEN_NEED, fatigue: EVEN_NEED }); // Even fitness: the species' own trot.
     put(tiger.id, 0); put(chital.id, 24); // Inside the tiger's commit distance: it charges.
     live.possess('ag_t', 'Stripe', { animalId: tiger.id });
     live.possess('ag_c', 'Doe', { animalId: chital.id }); // Steered, standing still: no wild bolt.
@@ -134,6 +135,7 @@ describe('live hunting', () => {
     const { world, live, put, run, adult } = setup(() => 0);
     const tiger = adult('tiger'), chital = adult('chital');
     for (const t of world.agents) if (t.speciesId === 'tiger') t.drives.hunger = 0;
+    Object.assign(chital.drives, { hunger: EVEN_NEED, thirst: EVEN_NEED, fatigue: EVEN_NEED }); // Even fitness: the species' own trot.
     put(tiger.id, 0); put(chital.id, 30);
     live.possess('ag_t', 'Stripe', { animalId: tiger.id });
     const at = world.animal(chital.id)!.position!;

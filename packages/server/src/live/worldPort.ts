@@ -1,11 +1,12 @@
-import { fliesSpecies, terrainCostFor, isWorldPosition, landWalkable, patchAtPosition, patchCentre, patchIdAt, treeAnchorForPatch, waterAccessPosition, type Agent, type HabitatType, type WorldGrid } from '@vana/shared';
+import { fitnessOf, fliesSpecies, terrainCostFor, isWorldPosition, landWalkable, patchAtPosition, patchCentre, patchIdAt, treeAnchorForPatch, waterAccessPosition, type Agent, type HabitatType, type WorldGrid } from '@vana/shared';
 import { canHunt, locomotionFactor, type World } from '@vana/sim';
 import { WorldBusyError, type AnimalView, type PatchView, type SpeciesMotion, type WorldPort } from './liveLayer.js';
 import { landRoute } from './route.js';
 
 const view = (grid: WorldGrid, a: Agent): AnimalView => ({ id: a.id, speciesId: a.speciesId, alive: a.alive, controller: a.controller,
   position: { ...(a.position ?? { ...patchCentre(grid, a.patchId), heading: 0 }) }, patchId: a.patchId, state: a.state,
-  lifeStage: a.lifeStage, drives: { ...a.drives }, ...(a.locomotionMode === 'submerged' ? { submerged: true } : {}) });
+  lifeStage: a.lifeStage, drives: { ...a.drives }, ...(a.locomotionMode === 'submerged' ? { submerged: true } : {}),
+  fitness: fitnessOf({ drives: a.drives, condition: a.condition, woundSeverity: a.wound?.severity }) });
 
 const inWorld = (grid: WorldGrid, x: number, z: number) => isWorldPosition(grid, { x, z, heading: 0 });
 

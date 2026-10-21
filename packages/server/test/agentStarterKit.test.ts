@@ -172,6 +172,25 @@ describe('the hunter decides', () => {
     expect(decideHunter({ ...base, animal: leopard(), nearby: [] }, hunterMemory())).toMatchObject({ kind: 'goTo', goal: 'range' });
     expect(decideHunter({ animal: null }, hunterMemory())).toMatchObject({ kind: 'possess', target: 'african_leopard' });
   });
+  it('keeps itself fit: tops up and rests when its fitness is low, and takes the weakest-looking prey', () => {
+    const unfit = { score: 0.45, label: 'weak' };
+    // Worn out and unfit with no prey close: it rests rather than ranging.
+    expect(decideHunter({ ...base, animal: leopard({ fitness: unfit, drives: { hunger: 0.3, thirst: 0.2, fatigue: 0.7 } }), nearby: [] }, hunterMemory()))
+      .toMatchObject({ kind: 'act', action: 'rest' });
+    // Spent, it rests however fit it still is.
+    expect(decideHunter({ ...base, animal: leopard({ fitness: { score: 0.67, label: 'fair' }, drives: { hunger: 0.1, thirst: 0.2, fatigue: 1 } }), nearby: [] }, hunterMemory()))
+      .toMatchObject({ kind: 'act', action: 'rest' });
+    // Unfit, it drinks at a thirst a fit one would ignore.
+    const water = [{ x: 30, z: 0, litres: 100, distance: 30 }];
+    expect(decideHunter({ ...base, animal: leopard({ fitness: unfit, drives: { hunger: 0.2, thirst: 0.4, fatigue: 0.1 } }), nearby: [], water }, hunterMemory()))
+      .toMatchObject({ kind: 'goTo', goal: 'water' });
+    expect(decideHunter({ ...base, animal: leopard({ fitness: { score: 0.9, label: 'fit' }, drives: { hunger: 0.2, thirst: 0.4, fatigue: 0.1 } }), nearby: [], water }, hunterMemory()))
+      .toMatchObject({ goal: 'range' });
+    // Of two duikers about as near, the weak-looking one, though a little farther.
+    const o = { ...base, animal: leopard(), nearby: [duiker('blue_duiker_0008', 20, { looks: 'fit' }), duiker('blue_duiker_0009', 28, { looks: 'weak' })] };
+    expect(decideHunter(o, hunterMemory())).toMatchObject({ kind: 'hunt', id: 'blue_duiker_0009' });
+  });
+
   it('reads the live Arc bounties, heads for the region of one it can take, and goes for that species first there', async () => {
     const lines: string[] = [], mem = hunterMemory();
     const bounty = (over: Record<string, unknown>) => ({ bountyId: '0x01', status: 'active', speciesId: 'water_chevrotain', region: 'r1_0', amountAtomic: '1000000',

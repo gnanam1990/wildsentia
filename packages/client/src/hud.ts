@@ -1,3 +1,4 @@
+import { fitnessLabel } from '@vana/shared';
 import type { WorldStore } from './protocol.js';
 import { withTimeout } from './abortSignals.js';
 import { modelStatusForAnimal } from './species.js';
@@ -31,6 +32,8 @@ export interface Passport {
   /** The species as players meet it (its config's persona), when it has one. */
   persona?: { temperament: string; sketch: string };
   lifeStage: string; generation: number; alive: boolean; massKg: number;
+  /** How fit it is, 0-1: fed, watered, rested, in condition and unhurt (faster and surer in a live chase). */
+  fitness?: number;
   thought: { text: string; basis: string[]; confident: boolean } | null;
   lineage: {
     mother: { id: string; alive: boolean } | null;
@@ -358,7 +361,9 @@ export class Hud {
     const name = p?.displayName ?? readable(animal ? SPECIES_NAME[animal.speciesId] ?? animal.speciesId : speciesOf(followedId) ?? 'Animal');
     const state = animal ? readable(live?.state ?? animal.state) : p?.death ? 'Died' : 'Unavailable';
     const overview = animal
-      ? `<div class="vitals" aria-label="Reported drives">
+      ? `${typeof p?.fitness === 'number' ? `<div class="fitness" title="Fed, watered, rested and unhurt: a fitter animal runs faster and longer, and hunts or escapes better">
+          ${bar(`Fitness <em>${fitnessLabel(p.fitness)}</em>`, p.fitness, p.fitness >= 0.75 ? 'var(--moss)' : p.fitness >= 0.5 ? 'var(--gold-ink)' : 'var(--blood)')}</div>` : ''}
+        <div class="vitals" aria-label="Reported drives">
           ${bar('Hunger', animal.drives.hunger, 'var(--clay)')}
           ${bar('Thirst', animal.drives.thirst, 'var(--mist)')}
           ${bar('Fatigue', animal.drives.fatigue, 'var(--ink-3)')}

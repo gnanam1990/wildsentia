@@ -494,3 +494,7 @@
   .observer-app .chip.bounty-chip { padding: 0 10px; }
   .observer-app .chip.bounty-chip .bounty-chip-sum { display: none; }
 }
+
+/* Fitness: one wide meter above the drives (docs/2026-10-21-congo-fitness.md). */
+.observer-app .fitness { padding: 0 0 14px; }
+.observer-app .fitness .meter em { margin-left: 6px; font-style: normal; font-weight: 700; text-transform: capitalize; color: var(--ink-2); }

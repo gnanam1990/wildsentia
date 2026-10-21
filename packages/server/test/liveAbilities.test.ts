@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fileURLToPath } from 'node:url';
-import { landWalkable, patchAtPosition, patchCentre, treeAnchorForPatch } from '@vana/shared';
+import { landWalkable, patchAtPosition, patchCentre, treeAnchorForPatch, EVEN_NEED } from '@vana/shared';
 import { createWorld, type World } from '@vana/sim';
 import { LiveLayer } from '../src/live/liveLayer.js';
 import { worldPort } from '../src/live/worldPort.js';
@@ -90,6 +90,7 @@ describe('species abilities and fair turns', () => {
       const { world, live, put, run, adults } = setup({ dhole: 6, chital: 10 }, () => 0.45);
       const [lead, ...others] = adults('dhole'), chital = adults('chital')[0]!;
       put(lead!.id, 0); put(chital.id, 1); // Within reach: the odds are rolled on the first step.
+      for (const a of [lead!, chital]) Object.assign(a.drives, { hunger: EVEN_NEED, thirst: EVEN_NEED, fatigue: EVEN_NEED }); // Even fitness: the species' own odds.
       live.possess('ag_d', 'Kodi', { animalId: lead!.id });
       live.tick(0.01); // Past the first tick's new-hour sweep of finished chases.
       for (const d of others.slice(0, pack)) {
