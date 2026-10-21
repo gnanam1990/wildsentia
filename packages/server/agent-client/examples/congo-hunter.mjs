@@ -154,7 +154,7 @@ const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 /** How long a refused hunt keeps that animal off the list: out of sight a moment, wrong prey for good. */
 const SKIP_MS = { out_of_sight: 6_000, incompatible_prey: 10 * 60_000, not_its_prey: 60 * 60_000, no_such_animal: 60 * 60_000 };
 
-export function hunterMemory(species = 'african_leopard') { return { species, home: null, goal: null, leg: 0, skip: {}, seenAt: 0, said: '', kills: 0, arc: null }; }
+export function hunterMemory(species = 'african_leopard') { return { species, home: null, goal: null, leg: 0, skip: {}, seenAt: 0, said: '', kills: 0, arc: null, fitness: null }; }
 
 /** How far one leg toward a bounty's region goes: a long route is walked in legs, re-aimed each time. */
 const LEG_M = 400;
@@ -213,19 +213,28 @@ export function decideHunter(o, mem, now = Date.now()) {
   }
   if (a.action === 'hunt') return wait(`on the hunt (${a.hunting})`);
   if (a.carcassBeside && (drives.hunger ?? 0) > 0.1) return a.action === 'feed' ? wait('feeding') : { kind: 'act', action: 'feed', why: 'feeding on the kill' };
+  // A fitter animal runs faster and longer and holds its prey better (animal.fitness): below fair,
+  // it tops up before it hunts again, at lower thirst, and rests off its fatigue.
+  const unfit = (a.fitness?.score ?? 1) < 0.6;
   const water = o.water?.[0];
-  if (water && ((drives.thirst ?? 0) > 0.6 || (a.action === 'drink' && (drives.thirst ?? 0) > 0.1))) {
+  if (water && ((drives.thirst ?? 0) > (unfit ? 0.3 : 0.6) || (a.action === 'drink' && (drives.thirst ?? 0) > 0.1))) {
     if (water.distance > 2) return a.moving && mem.goal?.kind === 'water' ? wait('walking to water') : { kind: 'goTo', to: { x: water.x, z: water.z }, gait: 'walk', goal: 'water', why: 'thirsty: going to water' };
     return a.action === 'drink' ? wait('drinking') : { kind: 'act', action: 'drink', why: 'drinking' };
   }
-  // A sensed target first, then the species a live bounty in this region is on, then the nearest.
+  const worn = (drives.fatigue ?? 0) > 0.8 || (unfit && (drives.fatigue ?? 0) > 0.45);
+  if (worn && !nearby.some((n) => (o.huntable ?? []).includes(n.speciesId) && n.distance < 25))
+    return a.action === 'rest' ? wait('resting to get fit for the next hunt')
+      : { kind: 'act', action: 'rest', why: `resting: worn out${a.fitness ? ` (fitness ${Math.round(a.fitness.score * 100)}%)` : ''}` };
+  // A sensed target first, then the species a live bounty in this region is on, then the weakest-looking, then the nearest.
   const aim = bountyAim(mem), wanted = (n) => Number(!!aim && aim.inYourRegion && n.speciesId === aim.speciesId);
+  // A weak animal is slower and easier to hold: of prey about as near, take the weakest-looking.
+  const frailty = (n) => (n.looks === 'weak' ? 2 : n.looks === 'fair' ? 1 : 0) * Number(n.distance < 60);
   const prey = nearby.filter((n) => (o.huntable ?? []).includes(n.speciesId) && !n.predator && !((mem.skip[n.id] ?? 0) > now))
-    .sort((x, y) => Number(!!y.bounty) - Number(!!x.bounty) || wanted(y) - wanted(x) || x.distance - y.distance)[0];
+    .sort((x, y) => Number(!!y.bounty) - Number(!!x.bounty) || wanted(y) - wanted(x) || frailty(y) - frailty(x) || x.distance - y.distance)[0];
   if (prey) {
     const sight = o.guide?.senses?.sightM ?? 40;
     if (prey.distance <= sight) return { kind: 'hunt', id: prey.id, at: { x: prey.x, z: prey.z },
-      why: `hunting ${prey.id} at ${Math.round(prey.distance)} m${prey.bounty ? ' (a sensed bounty target)' : wanted(prey) ? ` (a ${aim.speciesId.replaceAll('_', ' ')} where a bounty is live)` : ' (any prey may carry a hidden bounty)'}` };
+      why: `hunting ${prey.id} at ${Math.round(prey.distance)} m${prey.looks === 'weak' ? ' (it looks weak)' : ''}${prey.bounty ? ' (a sensed bounty target)' : wanted(prey) ? ` (a ${aim.speciesId.replaceAll('_', ' ')} where a bounty is live)` : ' (any prey may carry a hidden bounty)'}` };
     // Sensed but not yet in sight (smell, hearing): creep closer at a walk, re-aimed as it moves.
     if (a.moving && mem.goal?.kind === 'prey' && dist(mem.goal, prey) < 10) return wait(`stalking ${prey.id}`);
     return { kind: 'goTo', to: { x: prey.x, z: prey.z }, gait: 'walk', goal: 'prey', why: `stalking ${prey.id} (${prey.sense ?? 'sensed'}, ${Math.round(prey.distance)} m)` };
@@ -326,6 +335,8 @@ export async function playHunter(api, { species = 'african_leopard', log = conso
       if (/^You caught the /.test(n.text)) { mem.kills++; log('  a kill: if that animal carried a bounty, its USDC goes to this agent\'s proven wallet'); }
     }
     await readArcBounties(api, mem, log, now());
+    const label = o.animal?.fitness?.label;
+    if (label && label !== mem.fitness) { log(`fitness ${Math.round(o.animal.fitness.score * 100)}% (${label})`); mem.fitness = label; }
     const step = decideHunter(o, mem, now());
     if (step.why && step.why !== mem.said) { log(step.why); mem.said = step.why; }
     let pause;

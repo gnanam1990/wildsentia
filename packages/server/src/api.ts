@@ -1,5 +1,5 @@
 import Fastify, { type FastifyError, type FastifyInstance, type FastifyRequest } from 'fastify';
-import { RECAP_EVENT_TYPES, SKILL_IDS, formatWorldTime, isCongoProfile, seasonAt, thoughtFor, type Agent, type Patch } from '@vana/shared';
+import { RECAP_EVENT_TYPES, SKILL_IDS, fitnessOf, formatWorldTime, isCongoProfile, seasonAt, thoughtFor, type Agent, type Patch } from '@vana/shared';
 import { confidenceOf } from '@vana/sim';
 import type { Pool } from './db/pool.js';
 import { EventStore } from './db/eventStore.js';
@@ -339,6 +339,8 @@ export function buildApi({ host, pool, narrator, insights: insightDeps, live, re
       currentGoal: agent.currentGoal,
       ...(agent.alive && agent.illness?.phase === 'active' ? { illnessStatus: 'symptomatic' } : {}),
       ...(agent.alive && agent.wound ? { woundStatus: agent.wound.phase } : {}),
+      // How fit it is (docs/2026-10-21-congo-fitness.md): in a live chase a fitter animal is faster and surer.
+      ...(agent.alive ? { fitness: fitnessOf({ drives: agent.drives, condition: agent.condition, woundSeverity: agent.wound?.severity }).score } : {}),
       alternativeGoal: agent.alternativeGoal,
       thought: agent.alive
         ? thoughtFor({

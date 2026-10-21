@@ -21,6 +21,7 @@ export * from './narration/thought.js';
 export * from './narration/recap.js';
 export * from './weather.js';
 export * from './pacing.js';
+export * from './fitness.js';
 export * from './experiences.js';
 export * from './congo/noise.js';
 export * from './congo/rivers.js';

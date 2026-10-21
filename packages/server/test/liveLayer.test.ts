@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fileURLToPath } from 'node:url';
-import { landWalkable, waterAccessPosition } from '@vana/shared';
+import { landWalkable, waterAccessPosition, EVEN_NEED } from '@vana/shared';
 import { createWorld, type World } from '@vana/sim';
 import { IDLE_RELEASE_MS, LiveLayer, OPEN_SECONDS, type DropLedger, type PlaceDrop } from '../src/live/liveLayer.js';
 import { randomLandSpot, worldPort } from '../src/live/worldPort.js';
@@ -150,6 +150,8 @@ describe('live layer', () => {
     const { live, world, run } = setup();
     live.possess('ag_1', 'Sora', { speciesId: 'chital' });
     const a = live.avatars.get('ag_1')!, start = { x: a.x, z: a.z };
+    // Kept at even fitness, it moves at the species' own figures.
+    Object.assign(world.animal(a.animalId)!.drives, { hunger: EVEN_NEED, thirst: EVEN_NEED, fatigue: EVEN_NEED });
     const motion = world.species.get('chital')!.locomotion;
     // A far point in a straight line over land, found by probing.
     const far = [1, -1].flatMap((s) => [{ x: start.x + s * 400, z: start.z }, { x: start.x, z: start.z + s * 400 }])

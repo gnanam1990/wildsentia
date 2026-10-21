@@ -4,7 +4,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { verifyMessage } from 'viem';
-import { formatWorldTime, seasonAt, type SpeciesConfig } from '@vana/shared';
+import { fitnessEffects, fitnessLabel, formatWorldTime, seasonAt, type SpeciesConfig } from '@vana/shared';
 import { fieldGuide } from './fieldGuide.js';
 import { AGENT_RATE_LIMITS, NonceStore, verifySigned, type SignedHeaders } from './signing.js';
 import { OPEN_RADIUS_M, type Gait, type LiveLayer, type WorldPort } from './liveLayer.js';
@@ -511,6 +511,8 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
         id: animal.id, speciesId: animal.speciesId, displayName: motion?.displayName, lifeStage: animal.lifeStage, state: animal.state,
         position: { x: avatar.x, z: avatar.z, heading: avatar.heading }, gait: avatar.gait, moving: avatar.moving, action: avatar.action,
         stamina: Math.round(avatar.stamina * 100) / 100, drives: animal.drives,
+        // Fed, watered, rested, in condition and unhurt: faster, longer in the sprint, surer in the catch.
+        fitness: animal.fitness ? { ...animal.fitness, label: fitnessLabel(animal.fitness.score), effects: fitnessEffects(animal.fitness.score) } : null,
         possessedForSeconds: Math.round((Date.now() - avatar.since) / 1000),
         speedsMs: motion ? { walk: motion.walkMs, trot: motion.trotMs, run: motion.sprintMs, runSeconds: motion.sprintStaminaS } : null,
         here: patch ? { habitat: patch.habitat, grassKg: Math.round(patch.grassKg), waterL: Math.round(patch.waterL) } : null,
@@ -536,6 +538,8 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
             ...(s ? { sense: s.sense, ...(s.bounty ? { bounty: s.bounty } : {}) } : {}),
             state: runner ? (runner.mode === 'idle' ? 'resting' : runner.mode === 'flee' ? 'fleeing' : 'chasing') : a.state,
             predator: world.species(a.speciesId)?.predator ?? false,
+            // How fit it looks: a weak animal is easier to catch, and slower.
+            ...(a.fitness ? { looks: fitnessLabel(a.fitness.score) } : {}),
             huntsYou: avatar ? (world.species(a.speciesId)?.preferredPrey.includes(avatar.speciesId) ?? false) : false,
             chasingYou: !!runner && runner.mode === 'chase' && runner.committed === true && runner.otherId === avatar!.animalId,
             steeredByAgent: a.controller ? (live.avatars.get(a.controller)?.agentName ?? 'an agent') : null };
@@ -587,6 +591,13 @@ function starterGuide(examples: readonly Example[], congo: boolean, arcBounties:
   if (!congo || !examples.length) return '';
   const hunter = examples.find((e) => e.name === 'congo-hunter.mjs'), survivor = examples.find((e) => e.name === 'congo-survivor.mjs');
   return `
+Fitness: an animal you keep fed, watered and rested, in good condition and unhurt, is fitter
+  (observe: animal.fitness, a score from 0 to 1 with its parts and effects). It runs up to 10%
+  faster, sprints up to 30% longer and gets its breath back sooner, holds its prey more often and
+  slips a hunter more often; a starving, parched, worn-out or wounded one is slower and easier to
+  catch. Other animals show how fit they look (nearby[].looks: fit, fair or weak). Eat, drink and
+  rest between hunts, and pick on the weak.
+
 Quick start: ready-made agents (Node 22, nothing to install), each next to client.mjs:
 ${examples.map((e) => `  ${e.name.padEnd(20)} sha256 ${e.sha256}`).join('\n')}
   curl -O <this server>/api/agents/client.mjs

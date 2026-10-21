@@ -8,6 +8,7 @@
  * timed open, and handing a finished open to the reward ledger.
  */
 
+import { fitnessEffects, type Fitness } from '@vana/shared';
 import { CHAT_GAP_MS, HEAR_RADIUS_M, HEARD_FOR_MS, SHOWN_FOR_MS, cleanChat } from './chat.js';
 
 export type Gait = 'walk' | 'trot' | 'run';
@@ -19,6 +20,8 @@ export interface AnimalView {
   drives: { hunger: number; thirst: number; fatigue: number; fear: number };
   /** Congo 1B: under water (a diving chevrotain): out of sight and out of reach. */
   submerged?: boolean;
+  /** How fit it is (fitnessOf: fed, watered, rested, in condition, unhurt); unknown is taken as even. */
+  fitness?: Fitness;
 }
 export interface SpeciesMotion {
   displayName: string; walkMs: number; trotMs: number; sprintMs: number; sprintStaminaS: number; predator: boolean;
@@ -188,6 +191,8 @@ const winded = (stamina: number, was: boolean | undefined) => stamina <= 0 || (!
 /** Breath comes back fastest standing or walking, slowly at a trot, never at a sprint. */
 const recover = (stamina: number, dt: number, sprintStaminaS: number, gait: Gait) =>
   gait === 'run' ? stamina : Math.min(1, stamina + dt / (3 * sprintStaminaS) * (gait === 'walk' ? 1 : 0.3));
+
+const EVEN = { speed: 1, breath: 1, grip: 1, dodge: 1 } as const;
 
 export class LiveLayer {
   readonly avatars = new AvatarMap();
@@ -504,7 +509,7 @@ export class LiveLayer {
       const motion = this.world.species(avatar.speciesId)!;
       if (avatar.hunt) this.#huntStep(avatar, motion, dt, now);
       else if (avatar.moving) this.#move(avatar, motion, dt);
-      else avatar.stamina = Math.min(1, avatar.stamina + dt / (3 * motion.sprintStaminaS));
+      else avatar.stamina = Math.min(1, avatar.stamina + dt * this.#fx(avatar.animalId).breath / (3 * motion.sprintStaminaS));
       if (avatar.action === 'graze' || avatar.action === 'drink' || avatar.action === 'rest' || avatar.action === 'feed') {
         avatar.pendingSeconds += dt;
         if (avatar.pendingSeconds >= ACTION_FLUSH_SECONDS) this.#flushAction(avatar);
@@ -569,7 +574,8 @@ export class LiveLayer {
     // Spent, it keeps after its prey at a trot until it has its breath back.
     avatar.winded = winded(avatar.stamina, avatar.winded);
     const gait: Gait = !committed ? 'walk' : avatar.winded ? 'trot' : 'run';
-    avatar.stamina = recover(avatar.stamina, dt, motion.sprintStaminaS, gait);
+    const fx = this.#fx(avatar.animalId);
+    avatar.stamina = recover(avatar.stamina, dt, motion.sprintStaminaS / fx.breath, gait);
     // Prey spots a sprinting hunter at its detection distance, a stalker only when it is close.
     const spotAt = committed ? prey.detectionM : prey.flightInitiationM * (1 - motion.stalkConcealment);
     if (gap <= spotAt) {
@@ -582,8 +588,8 @@ export class LiveLayer {
     }
     const reach = this.#contact(motion, prey);
     if (gap <= reach) { this.#reach(avatar.animalId, targetId, at); return; }
-    if (gait === 'run') { avatar.stamina = Math.max(0, avatar.stamina - dt / motion.sprintStaminaS); avatar.sprintedAt = this.clock(); }
-    const speed = (gait === 'run' ? motion.sprintMs : gait === 'trot' ? motion.trotMs : motion.walkMs) * this.world.speedFactor(avatar.animalId, avatar.x, avatar.z);
+    if (gait === 'run') { avatar.stamina = Math.max(0, avatar.stamina - dt / (motion.sprintStaminaS * fx.breath)); avatar.sprintedAt = this.clock(); }
+    const speed = (gait === 'run' ? motion.sprintMs : gait === 'trot' ? motion.trotMs : motion.walkMs) * this.world.speedFactor(avatar.animalId, avatar.x, avatar.z) * fx.speed;
     const next = this.#stepToward(avatar.animalId, avatar, at, Math.min(speed * dt, Math.max(0, gap - reach * 0.5)), false, false);
     if (!next) return stop('Blocked: the way to your prey is not walkable land.');
     avatar.x = next.x; avatar.z = next.z; avatar.heading = next.heading; avatar.gait = gait; avatar.moving = true;
@@ -601,7 +607,8 @@ export class LiveLayer {
     const animal = this.world.animal(r.animalId);
     if (!animal?.alive || animal.controller) { this.wild.delete(r.animalId); return; }
     const motion = this.world.species(r.speciesId)!;
-    if (r.mode === 'idle' || now < r.stunnedUntil) { r.stamina = Math.min(1, r.stamina + dt / (3 * motion.sprintStaminaS)); return; }
+    const fx = this.#fx(r.animalId);
+    if (r.mode === 'idle' || now < r.stunnedUntil) { r.stamina = Math.min(1, r.stamina + dt * fx.breath / (3 * motion.sprintStaminaS)); return; }
     const other = r.otherId ? this.positionOf(r.otherId) : null;
     const otherAlive = r.otherId ? this.world.animal(r.otherId)?.alive : false;
     if (!other || !otherAlive) { r.mode = 'idle'; return; }
@@ -617,9 +624,9 @@ export class LiveLayer {
     }
     r.winded = winded(r.stamina, r.winded);
     const running = !stalking && !r.winded;
-    if (running) r.stamina = Math.max(0, r.stamina - dt / motion.sprintStaminaS);
-    else r.stamina = recover(r.stamina, dt, motion.sprintStaminaS, stalking ? 'walk' : 'trot');
-    const speed = (stalking ? motion.walkMs : running ? motion.sprintMs : motion.trotMs) * this.world.speedFactor(r.animalId, r.x, r.z);
+    if (running) r.stamina = Math.max(0, r.stamina - dt / (motion.sprintStaminaS * fx.breath));
+    else r.stamina = recover(r.stamina, dt, motion.sprintStaminaS / fx.breath, stalking ? 'walk' : 'trot');
+    const speed = (stalking ? motion.walkMs : running ? motion.sprintMs : motion.trotMs) * this.world.speedFactor(r.animalId, r.x, r.z) * fx.speed;
     if (r.mode === 'flee') {
       if (gap > Math.max(3 * motion.flightInitiationM, 80)) { r.mode = 'idle'; return; }
       const next = this.#stepToward(r.animalId, r, other, speed * dt, true, true);
@@ -643,6 +650,15 @@ export class LiveLayer {
     if (Math.hypot(other.x - r.x, other.z - r.z) <= reach) this.#reach(r.animalId, preyId, other);
   }
 
+  /**
+   * What an animal's fitness does in a live chase (docs/2026-10-21-congo-fitness.md): a fed,
+   * watered, rested animal runs faster and longer, holds its prey better and is harder to hold.
+   */
+  #fx(animalId: string): { speed: number; breath: number; grip: number; dodge: number } {
+    const fitness = this.world.animal(animalId)?.fitness;
+    return fitness === undefined ? EVEN : fitnessEffects(fitness.score);
+  }
+
   /** A hunter reached its prey: the species' odds decide, and the world records it. */
   #reach(predatorId: string, preyId: string, at: { x: number; z: number; heading: number }): void {
     const predatorAnimal = this.world.animal(predatorId), preyAnimal = this.world.animal(preyId);
@@ -659,7 +675,9 @@ export class LiveLayer {
       for (const r of this.wild.values()) if (r.animalId !== predatorId && r.speciesId === predatorAnimal.speciesId
         && Math.hypot(r.x - at.x, r.z - at.z) <= 30) pack++;
     }
-    const chance = Math.min(0.9, Math.max(0.1, pm.baseSuccess * (1.4 - prm.evasiveness * 0.8) * (tired ? 1.3 : 1) * (1 + Math.min(3, pack) / 3)));
+    // A fit hunter holds better, a fit prey slips away more often (and a weak one less).
+    const chance = Math.min(0.9, Math.max(0.1, pm.baseSuccess * (1.4 - prm.evasiveness * 0.8) * (tired ? 1.3 : 1) * (1 + Math.min(3, pack) / 3)
+      * this.#fx(predatorId).grip * this.#fx(preyId).dodge));
     const killed = this.random() < chance;
     const recorded = this.world.resolveHunt(predatorId, preyId, at, this.world.playedTime(), killed);
     const now = this.clock();
@@ -754,14 +772,15 @@ export class LiveLayer {
 
   #move(avatar: Avatar, motion: SpeciesMotion, dt: number): void {
     let gait = avatar.gait;
+    const fx = this.#fx(avatar.animalId);
     if (gait === 'run' && !avatar.flying) {
-      avatar.stamina = Math.max(0, avatar.stamina - dt / motion.sprintStaminaS);
+      avatar.stamina = Math.max(0, avatar.stamina - dt / (motion.sprintStaminaS * fx.breath));
       if (avatar.stamina <= 0) gait = 'trot'; // Out of breath: it keeps going, slower.
-    } else avatar.stamina = Math.min(1, avatar.stamina + dt / (3 * motion.sprintStaminaS) * (gait === 'walk' ? 1 : 0.3));
+    } else avatar.stamina = Math.min(1, avatar.stamina + dt * fx.breath / (3 * motion.sprintStaminaS) * (gait === 'walk' ? 1 : 0.3));
     const base = avatar.flying ? (gait === 'run' ? motion.sprintMs : motion.sprintMs * 0.6)
       : gait === 'run' ? motion.sprintMs : gait === 'trot' ? motion.trotMs : motion.walkMs;
     // Rough ground slows walkers, not a bird overhead.
-    let budget = base * (avatar.flying ? 1 : this.world.speedFactor(avatar.animalId, avatar.x, avatar.z)) * dt;
+    let budget = base * (avatar.flying ? 1 : this.world.speedFactor(avatar.animalId, avatar.x, avatar.z)) * fx.speed * dt;
     if (gait === 'run' && avatar.path.length) avatar.sprintedAt = this.clock();
     while (budget > 1e-6 && avatar.path.length) {
       const next = avatar.path[0]!, dx = next.x - avatar.x, dz = next.z - avatar.z, gap = Math.hypot(dx, dz);
