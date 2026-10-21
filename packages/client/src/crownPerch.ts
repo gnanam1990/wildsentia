@@ -1,12 +1,21 @@
 /**
  * A troop resting up a tree, spread through its crown. The simulation records every climber
  * resting in a patch's tree at that tree's one point, so a whole mangabey troop was drawn inside
- * itself, and a lone one inside the trunk. Presentation only: each resting climber is given its own
+ * itself, and a lone one inside the trunk; the birds perched there (a crowned eagle pair) too. Presentation only: each resting climber is given its own
  * place out on a limb, fixed by its id (the same place every frame, whoever else is up there): a
  * spiral out from the trunk, at one of three heights in the crown. The trunk is returned too, so
  * the limb it sits on can be drawn.
  */
 export interface PerchSubject { id: string; x: number; z: number; altitudeM: number; moving: boolean }
+
+/**
+ * Who is drawn in a crown: a climber up a tree, and a bird perched in one (the simulation perches a
+ * crowned eagle on its patch's tree in 'climb' mode). Never a bird in flight.
+ */
+export function inCrown(kind: { arboreal: boolean; flies: boolean }, locomotionMode: string | undefined, altitudeM: number | undefined): boolean {
+  if ((altitudeM ?? 0) <= 0) return false;
+  return kind.flies ? locomotionMode === 'climb' : kind.arboreal;
+}
 
 /** Climbers within this many metres of each other, aloft, share a tree. */
 const SAME_TREE_M = 1.5;

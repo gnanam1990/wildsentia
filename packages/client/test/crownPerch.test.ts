@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { spreadInCrowns } from '../src/crownPerch.js';
+import { inCrown, spreadInCrowns } from '../src/crownPerch.js';
 
 const at = (id: string, x = 100, z = 200, altitudeM = 20, moving = false) => ({ id, x, z, heading: 0, moving, altitudeM });
 
@@ -43,3 +43,27 @@ describe('spreading a troop through its tree', () => {
     expect(apart.get('m2')).toMatchObject({ trunkX: 400, trunkZ: 200 });
   });
 });
+
+// Crowned eagles perch on a patch's one tree too, at its crown: a pair (or a pair and its grown
+// young) was recorded at the same point and drawn as one bird inside another.
+describe('birds perched in a tree', () => {
+  const eagle = { arboreal: false, flies: true }, mangabey = { arboreal: true, flies: false }, duiker = { arboreal: false, flies: false };
+  it('draws a perched bird in the crown, and never one in flight or on the ground', () => {
+    expect(inCrown(eagle, 'climb', 34)).toBe(true);
+    expect(inCrown(eagle, 'fly', 55)).toBe(false);
+    expect(inCrown(eagle, 'walk', 0)).toBe(false);
+    expect(inCrown(mangabey, 'climb', 26)).toBe(true);
+    expect(inCrown(mangabey, 'walk', 0)).toBe(false);
+    expect(inCrown(duiker, 'walk', 0)).toBe(false);
+  });
+
+  it('gives each eagle perched in one tree its own place, apart from the others', () => {
+    const four = ['crowned_eagle_9f38', 'crowned_eagle_9f44', 'crowned_eagle_9fc0', 'crowned_eagle_9fc2'].map((id) => at(id, 100, 200, 34));
+    const spread = spreadInCrowns(four), placed = four.map((a) => spread.get(a.id)!);
+    for (let i = 0; i < placed.length; i++) for (let j = i + 1; j < placed.length; j++) {
+      const a = placed[i]!, b = placed[j]!;
+      expect(Math.hypot(a.x - b.x, a.z - b.z, a.altitudeM - b.altitudeM)).toBeGreaterThan(0.9);
+    }
+  });
+});
+

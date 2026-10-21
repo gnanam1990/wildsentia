@@ -8,7 +8,7 @@ import { chooseVisible } from './lod.js';
 import { RENDER_BUDGETS, type RenderTier } from './renderQuality.js';
 import { visualFor, visualForAnimal } from './species.js';
 import { onShore, type Pool } from './pools.js';
-import { spreadInCrowns, type CrownPlace, type PerchSubject } from './crownPerch.js';
+import { inCrown, spreadInCrowns, type CrownPlace, type PerchSubject } from './crownPerch.js';
 import { CrownLimbs } from './crownLimbs.js';
 import { characterScale, coatMultiplier } from './appearance.js';
 import { separateBodies, type Body, type Obstacle, type ObstacleField } from './obstacles.js';
@@ -326,11 +326,11 @@ export class AnimalLayer {
       this.tracker.update(animal.id, animal.patchId, nowMs, animal.position, animal.altitudeM);
       positions.set(animal.id, this.tracker.positionAt(animal.id, nowMs));
     }
-    // A troop resting up one tree is recorded at the tree's one point: spread it through the crown.
+    // A troop resting up one tree, and the birds perched in it, are recorded at the tree's one point: spread them through the crown.
     const aloft: PerchSubject[] = [];
     for (const [id, p] of positions) {
       const animal = animals.get(id)!;
-      if ((p.altitudeM ?? 0) > 0 && arboreal(animal.speciesId) && !flies(animal.speciesId) && !recorded.has(id)) {
+      if (!recorded.has(id) && inCrown({ arboreal: arboreal(animal.speciesId), flies: flies(animal.speciesId) }, animal.locomotionMode, p.altitudeM)) {
         aloft.push({ id, x: p.x, z: p.z, altitudeM: p.altitudeM!, moving: p.moving });
       }
     }
