@@ -113,7 +113,17 @@ export class ArcBountyStore {
 
   /** The decision's transaction is confirmed on chain (or the chain shows it done). */
   async settled(bountyId: string, onChain: 'paid' | 'voided'): Promise<void> {
-    await this.pool.query(`update arc_bounties set status = $2, settled_at = now(), error = null where bounty_id = $1 and status = 'deciding'`, [bountyId, onChain]);
+    // The chain is the truth: a decision returned to the pool (expired, or refused) paid nobody, whatever was decided.
+    await this.pool.query(`update arc_bounties set status = $2, settled_at = now(), error = null,
+        outcome = case when $2 = 'voided' then 'void' else outcome end, payee_wallet = case when $2 = 'voided' then null else payee_wallet end
+      where bounty_id = $1 and status = 'deciding'`, [bountyId, onChain]);
+  }
+
+  /** USDC this world's bounties reserved since a time (all but those that never reached the chain): for the daily cap. */
+  async publishedSince(since: Date): Promise<bigint> {
+    const r = await this.pool.query<{ amount: string | null }>(
+      `select sum(amount_atomic) as amount from arc_bounties where world_id = $1 and created_at >= $2 and status <> 'failed'`, [this.worldId, since]);
+    return BigInt(r.rows[0]?.amount ?? 0);
   }
 
   /** This world's bounties by state: how many, and how much USDC. */

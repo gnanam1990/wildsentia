@@ -117,6 +117,13 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
   const arcBounties: ArcBountyDeps | null = owned && env.VANA_ARC_BOUNTIES === '1' ? (() => {
     const required = (name: string) => { const v = env[name]?.trim(); if (!v) throw new Error(`${name} is required with VANA_ARC_BOUNTIES=1`); return v; };
     const chainId = Number(required('VANA_ARC_BOUNTIES_CHAIN_ID'));
+    // Whoever holds the admin token sees every live target: a guessable one is refused.
+    const adminToken = env.VANA_ARC_BOUNTIES_ADMIN_TOKEN?.trim() || null;
+    if (adminToken && adminToken.length < 32) throw new Error('VANA_ARC_BOUNTIES_ADMIN_TOKEN must be at least 32 characters');
+    // The collusion check compares agents' network hashes: a secret that changed with every boot would split them.
+    required('VANA_LIVE_SECRET');
+    const capUsdc = env.VANA_ARC_BOUNTIES_DAILY_CAP_USDC?.trim();
+    if (capUsdc !== undefined && capUsdc !== '' && !/^\d+(\.\d{1,6})?$/.test(capUsdc)) throw new Error('VANA_ARC_BOUNTIES_DAILY_CAP_USDC must be a USDC amount');
     // Arc Testnet only, until mainnet use is approved after the legal review.
     if (chainId !== 5042002 && env.VANA_ARC_BOUNTIES_MAINNET_APPROVED !== 'true') throw new Error('VANA_ARC_BOUNTIES_CHAIN_ID must be Arc Testnet (5042002)');
     const chain = viemBountyChain({ rpcUrl: required('VANA_ARC_BOUNTIES_RPC_URL'), chainId, contract: required('VANA_ARC_BOUNTIES_CONTRACT') as Hex,
@@ -137,9 +144,13 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
       sameNetworkOk: env.VANA_ARC_BOUNTIES_SAME_NETWORK_OK === '1' && chainId === 5042002,
       notify: (agentId, text) => live.notify(agentId, text), eventsOf,
       explorer: env.VANA_ARC_BOUNTIES_EXPLORER_URL?.trim() || null, ...(announce ? { announce } : {}),
+      // Default: at most 10 USDC of bounties a day; "0" turns the cap off.
+      dailyCapAtomic: capUsdc === '0' ? null : BigInt(Math.round(Number(capUsdc || '10') * 1e6)),
     });
+    // Before anything is sent: is this key the contract's evaluator, and does USDC count 6 decimals?
+    void engine.checkIdentity().then((id) => console.log(`arc bounties: ${id.ok ? `evaluator ${chain.evaluator} confirmed` : `publishing refused (${id.reason})`}`));
     const fromBlock = env.VANA_ARC_BOUNTIES_FROM_BLOCK?.trim();
-    return { store, engine, chain, adminToken: env.VANA_ARC_BOUNTIES_ADMIN_TOKEN?.trim() || null, now: played,
+    return { store, engine, chain, adminToken, now: played,
       // The public board reads the pool's flows from the contract's events since its deployment block.
       fromBlock: fromBlock && /^\d+$/.test(fromBlock) ? BigInt(fromBlock) : null, origin: env.VANA_PUBLIC_ORIGIN?.trim() || null,
       rate: () => host.worldHoursPerRealHour };

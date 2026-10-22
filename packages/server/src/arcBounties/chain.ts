@@ -1,4 +1,4 @@
-import { BaseError, createPublicClient, decodeErrorResult, encodeAbiParameters, encodeFunctionData, getAddress, type Hex, http, keccak256, parseEventLogs } from 'viem';
+import { BaseError, createPublicClient, decodeErrorResult, encodeAbiParameters, encodeFunctionData, erc20Abi, fallback, getAddress, type Hex, http, keccak256, parseEventLogs } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { bountiesAbi } from '../challenges/bountiesAbi.js';
 import { ARC_MIN_FEE_PER_GAS, PRIORITY_FEE_PER_GAS } from '../challenges/chain.js';
@@ -19,7 +19,9 @@ export const OUTCOME = { predator: 1, survived: 2 } as const;
 export type BountyCall =
   | { fn: 'publish'; id: Hex; amount: bigint; expiresAt: bigint; rulesHash: Hex; targetCommit: Hex }
   | { fn: 'settle'; id: Hex; outcome: 'predator' | 'survived'; payee: Hex; recordHash: Hex; target: Hex; salt: Hex }
-  | { fn: 'voidBounty'; id: Hex; recordHash: Hex; target: Hex; salt: Hex };
+  | { fn: 'voidBounty'; id: Hex; recordHash: Hex; target: Hex; salt: Hex }
+  /** Anyone may return an open bounty to the pool once it has expired; the evaluator does it for a stranded one. */
+  | { fn: 'expire'; id: Hex };
 
 export interface BountyChain {
   readonly contract: Hex;
@@ -34,6 +36,12 @@ export interface BountyChain {
    * block, read from the contract's events: what the public board shows trades funding.
    */
   flows(fromBlock: bigint): Promise<{ fundedAtomic: bigint; withdrawnAtomic: bigint; toBlock: bigint }>;
+  /**
+   * What the server checks before it sends anything: that its key is the contract's evaluator (a
+   * rotated-out key is refused by the contract), and that the USDC token counts 6 decimals as every
+   * amount here assumes (Arc's native USDC counts 18).
+   */
+  identity(): Promise<{ evaluator: Hex; usdcDecimals: number }>;
   /** The contract's bounty limits, 6-decimal units. */
   limits(): Promise<{ min: bigint; max: bigint }>;
   status(id: Hex): Promise<OnChainStatus>;
@@ -62,8 +70,19 @@ export function namedBountyRevert(error: unknown): unknown {
 /** The most blocks one log query asks for (Arc's public RPC refuses wide ranges). */
 const LOG_CHUNK = 9_000n;
 
+/**
+ * The RPC transport: one URL, or several separated by commas, tried in order (a dedicated provider
+ * first and Arc's public RPC after it, which rate-limits: "Request exceeds defined limit").
+ */
+export function rpcTransport(rpcUrl: string) {
+  const urls = rpcUrl.split(',').map((u) => u.trim()).filter(Boolean);
+  if (!urls.length) throw new Error('no RPC URL');
+  const one = (url: string) => http(url, { timeout: 15_000, retryCount: 2 });
+  return urls.length === 1 ? one(urls[0]!) : fallback(urls.map(one));
+}
+
 export function viemBountyChain(config: { rpcUrl: string; chainId: number; contract: Hex; evaluatorKey: Hex }): BountyChain {
-  const client = createPublicClient({ cacheTime: 0, transport: http(config.rpcUrl, { timeout: 15_000, retryCount: 2 }) });
+  const client = createPublicClient({ cacheTime: 0, transport: rpcTransport(config.rpcUrl) });
   const account = privateKeyToAccount(config.evaluatorKey);
   const contract = getAddress(config.contract);
   const read = <T>(functionName: 'pool' | 'reserved' | 'minAmount' | 'maxAmount') =>
@@ -76,6 +95,7 @@ export function viemBountyChain(config: { rpcUrl: string; chainId: number; contr
         args: [call.id, OUTCOME[call.outcome], call.payee, call.recordHash, call.target, call.salt] });
       case 'voidBounty': return encodeFunctionData({ abi: bountiesAbi, functionName: 'voidBounty',
         args: [call.id, call.recordHash, call.target, call.salt] });
+      case 'expire': return encodeFunctionData({ abi: bountiesAbi, functionName: 'expire', args: [call.id] });
     }
   };
   return {
@@ -94,6 +114,14 @@ export function viemBountyChain(config: { rpcUrl: string; chainId: number; contr
         }
       }
       return { fundedAtomic: funded, withdrawnAtomic: withdrawn, toBlock: head };
+    },
+    async identity() {
+      const [evaluator, usdc] = await Promise.all([
+        client.readContract({ address: contract, abi: bountiesAbi, functionName: 'evaluator' }) as Promise<Hex>,
+        client.readContract({ address: contract, abi: bountiesAbi, functionName: 'usdc' }) as Promise<Hex>,
+      ]);
+      const usdcDecimals = await client.readContract({ address: usdc, abi: erc20Abi, functionName: 'decimals' });
+      return { evaluator: getAddress(evaluator), usdcDecimals };
     },
     async limits() { const [min, max] = await Promise.all([read<bigint>('minAmount'), read<bigint>('maxAmount')]); return { min, max }; },
     async status(id) {

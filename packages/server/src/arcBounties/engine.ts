@@ -47,6 +47,11 @@ export interface ArcBountyPorts {
   eventsOf: (animalIds: string[], from: number, to: number) => Promise<unknown[]>;
   explorer?: string | null;
   /**
+   * The most USDC (6-decimal units) bounties may reserve in any 24 hours, however they are dropped:
+   * a stolen admin token, or a bug, cannot spend the pool faster. None: no cap.
+   */
+  dailyCapAtomic?: bigint | null;
+  /**
    * Told when a bounty goes live on chain and when it is paid or returned, with what the public may
    * know (never a live bounty's target): for alerts and the public board.
    */
@@ -57,6 +62,8 @@ export type PublishResult = { ok: true; bounty: ArcBounty } | { ok: false; reaso
 
 export class ArcBountyEngine {
   #queue: Promise<unknown> = Promise.resolve();
+  /** Whether this key may publish (it is the contract's evaluator, and USDC counts 6 decimals), once checked. */
+  #identity: { ok: true } | { ok: false; reason: string } | null = null;
   /** Bounties whose publication or result the steering agents were told of (once each, while the server runs). */
   readonly #told = new Set<string>();
   constructor(private readonly store: ArcBountyStore, private readonly chain: BountyChain, private readonly ports: ArcBountyPorts) {}
@@ -181,9 +188,29 @@ export class ArcBountyEngine {
     });
   }
 
-  /** A bounty's amount and window, against the contract's limits and the pool: why not, or null. */
+  /**
+   * Checks, before anything is sent, that this server's key is the contract's evaluator (after a
+   * rotation the old key is refused, and a server left with it must not try) and that the USDC
+   * token counts 6 decimals. Checked once, again after a failure.
+   */
+  async checkIdentity(): Promise<{ ok: true } | { ok: false; reason: string }> {
+    if (this.#identity?.ok) return this.#identity;
+    try {
+      const id = await this.chain.identity();
+      this.#identity = id.evaluator.toLowerCase() !== this.chain.evaluator.toLowerCase() ? { ok: false, reason: 'not_the_evaluator' }
+        : id.usdcDecimals !== 6 ? { ok: false, reason: 'usdc_decimals' } : { ok: true };
+      if (!this.#identity.ok) console.error(`[arc-bounty] refusing to publish: ${this.#identity.reason} (key ${this.chain.evaluator}, contract evaluator ${id.evaluator}, USDC decimals ${id.usdcDecimals})`);
+    } catch { return { ok: false, reason: 'chain_unavailable' }; }
+    return this.#identity;
+  }
+
+  /** A bounty's amount and window, against the contract's limits, the pool and the daily cap: why not, or null. */
   async #terms(p: { amountAtomic: bigint; windowWorldSeconds: number }): Promise<string | null> {
+    const identity = await this.checkIdentity();
+    if (!identity.ok) return identity.reason;
     if (!Number.isSafeInteger(p.windowWorldSeconds) || p.windowWorldSeconds < 600 || p.windowWorldSeconds > 14 * 86_400) return 'bad_window';
+    const cap = this.ports.dailyCapAtomic;
+    if (cap != null && (await this.store.publishedSince(new Date(Date.now() - 86_400_000))) + p.amountAtomic > cap) return 'daily_cap';
     const limits = await this.chain.limits();
     if (p.amountAtomic < limits.min || p.amountAtomic > limits.max) return 'amount_out_of_range';
     if ((await this.chain.pool()) < p.amountAtomic) return 'pool_too_small';
@@ -199,7 +226,9 @@ export class ArcBountyEngine {
     const rules = { version: 'congo-arc-bounty@1', selection, amountAtomic: p.amountAtomic.toString(), decimals: 6, windowWorldSeconds: p.windowWorldSeconds,
       speciesId: pick.speciesId, eligiblePredators: pick.eligible, predator: 'an agent-steered eligible predator kills it before the deadline (world time)',
       survived: pick.agentId ? 'alive at the deadline and still steered by the agent that held it at publication' : 'no agent steered it at publication: nobody',
-      otherwise: 'void: back to the pool' };
+      otherwise: 'void: back to the pool',
+      // A random nonce: the rules' other fields can be guessed, and their hash must not tell whether the target is steered.
+      nonce: randomBytes(16).toString('hex') };
     const bountyId = `0x${randomBytes(32).toString('hex')}`, salt = `0x${randomBytes(32).toString('hex')}`;
     const created = await this.store.create({ bountyId, targetAnimalId: pick.animalId, targetSpeciesId: pick.speciesId,
       targetRegion: regionOfPatch(world.grid, animal.patchId), targetAgentId: pick.agentId, targetWallet: pick.wallet,
@@ -365,7 +394,23 @@ export class ArcBountyEngine {
       : close('void', null, null, null, deadline);
   }
 
+  /**
+   * The wallet a decision may pay, worked out again from the agent's own proven wallet rather than
+   * taken from the row: a row changed in the database cannot redirect a payment.
+   */
+  async #payeeHolds(b: ArcBounty): Promise<boolean> {
+    if (b.outcome === 'void' || b.outcome === null) return true;
+    const expected = b.outcome === 'predator' ? (b.winnerAgentId ? await this.ports.wallet(b.winnerAgentId) : null) : b.targetWallet;
+    return !!expected && !!b.payeeWallet && expected.toLowerCase() === b.payeeWallet.toLowerCase()
+      && (b.outcome !== 'survived' || b.winnerAgentId === b.targetAgentId);
+  }
+
   async #sendDecision(b: ArcBounty): Promise<void> {
+    if (!(await this.#payeeHolds(b))) {
+      await this.store.noteError(b.bountyId, 'payee_mismatch: the payee is not the winning agent\'s proven wallet');
+      console.error(`[arc-bounty] decide ${b.bountyId.slice(0, 10)} refused: payee_mismatch`);
+      return;
+    }
     const base = { id: b.bountyId as Hex, recordHash: b.recordHash as Hex, target: b.targetKey as Hex, salt: b.salt as Hex };
     const call: BountyCall = b.outcome === 'void' ? { fn: 'voidBounty', ...base }
       : { fn: 'settle', ...base, outcome: b.outcome!, payee: getAddress(b.payeeWallet!) };
@@ -387,21 +432,34 @@ export class ArcBountyEngine {
         if (b.publishTx && (await this.chain.receipt(b.publishTx as Hex)) === 'reverted') { await this.store.failed(b.bountyId, 'publish reverted'); continue; }
         if (due(b.publishSentAt)) await this.#publish(b);
       }
+      const expired = (b: ArcBounty) => Date.now() > b.expiresAt.getTime() + 60_000;
+      const asVoid = (b: ArcBounty) => this.store.decide(b.bountyId,
+        { outcome: 'void', payeeWallet: null, winnerAgentId: null, winnerAnimalId: null, decidedWorldTime: this.ports.world().now(),
+          record: { bountyId: b.bountyId, expired: true }, recordHash: keccak256(stringToHex(`expired:${b.bountyId}`)) });
       for (const b of await this.store.inStatus('active')) {
+        const onChain = await this.chain.status(b.bountyId as Hex);
         // Left open past its expiry (the server was down): anyone may return it; decided here as void.
-        if ((await this.chain.status(b.bountyId as Hex)) === 'expired' && await this.store.decide(b.bountyId,
-          { outcome: 'void', payeeWallet: null, winnerAgentId: null, winnerAnimalId: null, decidedWorldTime: this.ports.world().now(),
-            record: { bountyId: b.bountyId, expired: true }, recordHash: keccak256(stringToHex(`expired:${b.bountyId}`)) })) {
-          await this.#settled(b.bountyId, 'voided');
-        } else await this.#notifyPrey(b);
+        if (onChain === 'expired' && await asVoid(b)) { await this.#settled(b.bountyId, 'voided'); continue; }
+        if (onChain === 'open' && expired(b) && await asVoid(b)) { await this.#expire((await this.store.get(b.bountyId))!); continue; }
+        await this.#notifyPrey(b);
       }
       for (const b of await this.store.inStatus('deciding')) {
         const onChain = await this.chain.status(b.bountyId as Hex);
         if (onChain === 'paid') { await this.#settled(b.bountyId, 'paid'); continue; }
         if (onChain === 'voided' || onChain === 'expired') { await this.#settled(b.bountyId, 'voided'); continue; }
-        if (onChain === 'open' && due(b.decideSentAt)) await this.#sendDecision(b);
+        if (onChain !== 'open') continue;
+        // Past its expiry, or stranded (published under an evaluator since rotated out, which alone may decide it): return it.
+        if (expired(b)) { if (due(b.decideSentAt)) await this.#expire(b); continue; }
+        if (/NotEvaluator/.test(b.error ?? '')) continue;
+        if (due(b.decideSentAt)) await this.#sendDecision(b);
       }
     });
+  }
+
+  /** Returns an expired bounty to the pool (anyone may; the contract pays nobody). */
+  async #expire(b: ArcBounty): Promise<void> {
+    const sent = await this.#send(b.bountyId, 'decide', { fn: 'expire', id: b.bountyId as Hex });
+    if (sent === 'success') await this.#settled(b.bountyId, 'voided');
   }
 
   /** A link to an address on the explorer, if one is configured. */

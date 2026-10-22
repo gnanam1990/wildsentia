@@ -9,7 +9,7 @@ import { ArcBountyStore } from '../src/arcBounties/store.js';
 import { ArcBountyEngine, canonicalJsonOf, duration } from '../src/arcBounties/engine.js';
 import { targetCommit, viemBountyChain, type BountyChain } from '../src/arcBounties/chain.js';
 import Fastify from 'fastify';
-import { agentArcBounties, installArcBountyRoutes } from '../src/arcBounties/routes.js';
+import { agentArcBounties, installArcBountyRoutes, publicArcBounty } from '../src/arcBounties/routes.js';
 import { testDatabaseUrl } from './testDatabase.js';
 import { ANVIL_KEYS, CHAIN_ID, anvilAvailable, startLocalChain, usdcBalance, type LocalChain } from './anvil.js';
 
@@ -38,7 +38,7 @@ beforeAll(async () => {
 afterAll(async () => { chain?.stop(); await host?.abort(); await pool?.end(); });
 
 maybe('Congo bounties paid on Arc', () => {
-  let store: ArcBountyStore, engine: ArcBountyEngine;
+  let store: ArcBountyStore, engine: ArcBountyEngine, ports: ConstructorParameters<typeof ArcBountyEngine>[2];
   let steered: Array<{ agentId: string; animalId: string; speciesId: string }>, wallets: Map<string, string>, notes: Array<[string, string]>;
   let networks: Map<string, string>;
   let nowShift = 0;
@@ -60,14 +60,15 @@ maybe('Congo bounties paid on Arc', () => {
     const shifted = new Proxy({} as World, { get: (_t, key) => key === 'now' ? () => host.world.now() + nowShift
       : (Reflect.get(host.world, key) as unknown as { bind?: unknown }) instanceof Function ? (Reflect.get(host.world, key) as (...a: unknown[]) => unknown).bind(host.world)
         : Reflect.get(host.world, key) });
-    engine = new ArcBountyEngine(store, bountyChain, {
+    ports = {
       // The hour being played is mid-hour: a fractional world time, as live play gives.
       world: () => shifted, played: () => host.world.now() + nowShift + 0.5, rate: () => 12,
       steered: () => steered, steererOf: (id) => steered.find((s) => s.animalId === id)?.agentId ?? null,
       wallet: async (agentId) => wallets.get(agentId) ?? null, network: async (agentId) => networks.get(agentId) ?? null,
       notify: (agentId, text) => { notes.push([agentId, text]); },
       eventsOf: async () => [{ id: 'e1', worldTime: 1 }], explorer: 'https://explorer.example',
-    });
+    };
+    engine = new ArcBountyEngine(store, bountyChain, ports);
   }, 60_000);
 
   const publish = async (windowWorldSeconds = 3600) => {
@@ -338,5 +339,62 @@ maybe('Congo bounties paid on Arc', () => {
   it('refuses a bounty the pool cannot cover, or outside the contract limits', async () => {
     expect(await engine.publishRandom({ amountAtomic: 101_000_000n, windowWorldSeconds: 3600 })).toEqual({ ok: false, reason: 'amount_out_of_range' });
     expect(await engine.publishRandom({ amountAtomic: 5_000_000n, windowWorldSeconds: 60 })).toEqual({ ok: false, reason: 'bad_window' });
+  }, 60_000);
+  it('refuses to publish from a key that is not the contract evaluator (one rotated out, or the wrong one)', async () => {
+    const other = viemBountyChain({ rpcUrl: chain.url, chainId: CHAIN_ID, contract: chain.bounties, evaluatorKey: ANVIL_KEYS.player });
+    const wrong = new ArcBountyEngine(store, other, ports);
+    expect(await wrong.checkIdentity()).toEqual({ ok: false, reason: 'not_the_evaluator' });
+    expect(await wrong.publishRandom({ amountAtomic: 5_000_000n, windowWorldSeconds: 3600 })).toEqual({ ok: false, reason: 'not_the_evaluator' });
+    expect(await engine.checkIdentity()).toEqual({ ok: true });
+  }, 60_000);
+
+  it('caps what bounties may reserve in a day, however they are dropped', async () => {
+    const capped = new ArcBountyEngine(store, bountyChain, { ...ports, dailyCapAtomic: 6_000_000n });
+    expect((await capped.publishRandom({ amountAtomic: 5_000_000n, windowWorldSeconds: 3600 })).ok).toBe(true);
+    const wild = host.world.agents.find((a) => a.alive && a.speciesId === 'blue_duiker' && a.id !== duiker)!.id;
+    expect(await capped.publishOn({ animalId: wild, amountAtomic: 2_000_000n, windowWorldSeconds: 3600 })).toEqual({ ok: false, reason: 'daily_cap' });
+    expect((await capped.publishOn({ animalId: wild, amountAtomic: 1_000_000n, windowWorldSeconds: 3600 })).ok).toBe(true);
+  }, 60_000);
+
+  it('never pays a payee changed in the database: the payee must be the winning agent\'s proven wallet', async () => {
+    const b = await publish(3600);
+    await store.decide(b.bountyId, { outcome: 'predator', payeeWallet: HUNTER_WALLET, winnerAgentId: 'hunter', winnerAnimalId: leopard,
+      decidedWorldTime: b.publishedWorldTime + 10, record: { test: true }, recordHash: keccak256(stringToHex('{"test":true}')) });
+    await pool!.query('update arc_bounties set payee_wallet = $2 where bounty_id = $1', [b.bountyId, '0x00000000000000000000000000000000000000c3']);
+    await engine.processPending();
+    const after = (await store.get(b.bountyId))!;
+    expect(after.status).toBe('deciding');
+    expect(after.error).toContain('payee_mismatch');
+    expect(await bountyChain.status(b.bountyId as Hex)).toBe('open');
+    expect(await usdcBalance(chain, '0x00000000000000000000000000000000000000c3')).toBe(0n);
+  }, 60_000);
+
+  it('keeps the salt secret until the chain has settled a bounty, not while its decision is pending', async () => {
+    const b = await publish(3600);
+    await store.decide(b.bountyId, { outcome: 'survived', payeeWallet: PREY_WALLET, winnerAgentId: 'prey', winnerAnimalId: duiker,
+      decidedWorldTime: b.deadlineWorldTime, record: { test: true }, recordHash: keccak256(stringToHex('{"test":true}')) });
+    const deciding = publicArcBounty((await store.get(b.bountyId))!, host.world.now(), engine);
+    expect(deciding).not.toHaveProperty('salt'); expect(deciding).not.toHaveProperty('targetKey');
+    await engine.processPending();
+    const paid = publicArcBounty((await store.get(b.bountyId))!, host.world.now(), engine);
+    expect(paid).toMatchObject({ status: 'paid', salt: b.salt, targetKey: b.targetKey });
+  }, 60_000);
+
+  // Last: it moves the chain's clock past the bounty's expiry.
+  it('returns an expired bounty to the pool itself, and tells nobody they were paid when the chain paid nobody', async () => {
+    const b = await publish(3600);
+    // Decided for the hunter, but never sent before the bounty expired (a stranded decision, or a long outage).
+    await store.decide(b.bountyId, { outcome: 'predator', payeeWallet: HUNTER_WALLET, winnerAgentId: 'hunter', winnerAnimalId: leopard,
+      decidedWorldTime: b.publishedWorldTime + 10, record: { test: true }, recordHash: keccak256(stringToHex('{"test":true}')) });
+    await pool!.query(`update arc_bounties set expires_at = now() - interval '5 minutes', decide_sent_at = now() - interval '1 hour' where bounty_id = $1`, [b.bountyId]);
+    await chain.mine(Math.ceil((b.expiresAt.getTime() - Date.now()) / 1000) + 120);
+    const poolBefore = await bountyChain.pool();
+    notes = [];
+    await engine.processPending();
+    const after = (await store.get(b.bountyId))!;
+    expect(await bountyChain.status(b.bountyId as Hex)).toBe('expired');
+    expect(after).toMatchObject({ status: 'voided', outcome: 'void', payeeWallet: null });
+    expect(await bountyChain.pool() - poolBefore).toBe(5_000_000n);
+    expect(notes.some(([, text]) => /it is yours/.test(text))).toBe(false);
   }, 60_000);
 });
