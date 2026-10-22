@@ -48,9 +48,27 @@ export interface BountyChain {
   /** Signs the call with the evaluator key at fresh fees; nothing is sent. */
   prepare(call: BountyCall): Promise<{ hash: Hex; raw: Hex }>;
   broadcast(raw: Hex): Promise<void>;
-  /** The receipt's outcome, or null while the transaction is not mined. */
-  receipt(hash: Hex): Promise<'success' | 'reverted' | null>;
+  /** The receipt's outcome, or null while the transaction is not mined (a hash, or an external signer's reference). */
+  receipt(ref: string): Promise<'success' | 'reverted' | null>;
+  /**
+   * With an external signer (a Circle developer-controlled wallet): sends the call under an
+   * idempotency key, so the same key never sends twice, and returns its reference (`circle:<id>`);
+   * `prepare` and `broadcast` are not used. A contract refusal is raised by name before sending.
+   */
+  submit?(call: BountyCall, idempotencyKey: string): Promise<string>;
+  /** The chain transaction hash behind an external signer's reference, once it is known. */
+  hashOf?(ref: string): Promise<Hex | null>;
 }
+
+/** A signer outside this process (docs/2026-10-22-circle-evaluator.md): it holds the evaluator's key and sends for it. */
+export interface ExternalSigner {
+  readonly address: Hex;
+  /** Sends `data` to `contract` under the idempotency key; the signer's transaction id. */
+  send(contract: Hex, data: Hex, idempotencyKey: string): Promise<string>;
+  /** The transaction's end (null while pending) and its hash once known. */
+  state(id: string): Promise<{ done: 'success' | 'reverted' | null; txHash: Hex | null }>;
+}
+export const EXTERNAL_REF = 'circle:';
 
 /** The commit `publish` takes: keccak256(abi.encode(target, salt)), as the contract's `commitOf`. */
 export function targetCommit(target: Hex, salt: Hex): Hex {
@@ -81,9 +99,11 @@ export function rpcTransport(rpcUrl: string) {
   return urls.length === 1 ? one(urls[0]!) : fallback(urls.map(one));
 }
 
-export function viemBountyChain(config: { rpcUrl: string; chainId: number; contract: Hex; evaluatorKey: Hex }): BountyChain {
+export function viemBountyChain(config: { rpcUrl: string; chainId: number; contract: Hex } & ({ evaluatorKey: Hex; signer?: undefined } | { signer: ExternalSigner; evaluatorKey?: undefined })): BountyChain {
   const client = createPublicClient({ cacheTime: 0, transport: rpcTransport(config.rpcUrl) });
-  const account = privateKeyToAccount(config.evaluatorKey);
+  const signer = config.signer;
+  const account = config.evaluatorKey ? privateKeyToAccount(config.evaluatorKey) : null;
+  const evaluator = account ? account.address : getAddress(signer!.address);
   const contract = getAddress(config.contract);
   const read = <T>(functionName: 'pool' | 'reserved' | 'minAmount' | 'maxAmount') =>
     client.readContract({ address: contract, abi: bountiesAbi, functionName }) as Promise<T>;
@@ -98,8 +118,12 @@ export function viemBountyChain(config: { rpcUrl: string; chainId: number; contr
       case 'expire': return encodeFunctionData({ abi: bountiesAbi, functionName: 'expire', args: [call.id] });
     }
   };
+  const chainReceipt = async (hash: Hex): Promise<'success' | 'reverted' | null> => {
+    try { return (await client.getTransactionReceipt({ hash })).status; }
+    catch (error) { if ((error as Error).name === 'TransactionReceiptNotFoundError') return null; throw error; }
+  };
   return {
-    contract, evaluator: account.address, chainId: config.chainId,
+    contract, evaluator, chainId: config.chainId,
     pool: () => read<bigint>('pool'),
     reserved: () => read<bigint>('reserved'),
     async flows(fromBlock) {
@@ -129,6 +153,7 @@ export function viemBountyChain(config: { rpcUrl: string; chainId: number; contr
       return STATUS[b.status] ?? 'none';
     },
     async prepare(call) {
+      if (!account) throw new Error('an external signer sends this evaluator\'s transactions: use submit');
       const data = encode(call);
       const [nonce, block, gas] = await Promise.all([
         client.getTransactionCount({ address: account.address, blockTag: 'pending' }),
@@ -150,9 +175,20 @@ export function viemBountyChain(config: { rpcUrl: string; chainId: number; contr
         throw namedBountyRevert(error);
       }
     },
-    async receipt(hash) {
-      try { return (await client.getTransactionReceipt({ hash })).status; }
-      catch (error) { if ((error as Error).name === 'TransactionReceiptNotFoundError') return null; throw error; }
+    async receipt(ref) {
+      if (ref.startsWith(EXTERNAL_REF)) return signer ? (await signer.state(ref.slice(EXTERNAL_REF.length))).done : null;
+      return chainReceipt(ref as Hex);
     },
+    ...(signer ? {
+      async submit(call: BountyCall, idempotencyKey: string) {
+        const data = encode(call);
+        // Refused by the contract? Say why, by name, before anything is sent.
+        await client.estimateGas({ account: evaluator, to: contract, data }).catch((error: unknown) => { throw namedBountyRevert(error); });
+        return `${EXTERNAL_REF}${await signer.send(contract, data, idempotencyKey)}`;
+      },
+      async hashOf(ref: string) {
+        return ref.startsWith(EXTERNAL_REF) ? (await signer.state(ref.slice(EXTERNAL_REF.length))).txHash : ref as Hex;
+      },
+    } : {}),
   };
 }
