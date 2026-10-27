@@ -3,7 +3,8 @@ import { canHunt, type World } from '@vana/sim';
 import { patchCentre, regionOfPatch, regionPatchIds } from '@vana/shared';
 import { getAddress, type Hex, keccak256, stringToHex } from 'viem';
 import { PROTECTED_SPECIES } from '../bounties/engine.js';
-import { type BountyCall, type BountyChain, targetCommit } from './chain.js';
+import { type BountyCall, type BountyChain, EXTERNAL_REF, targetCommit } from './chain.js';
+import { idempotencyUuid } from './circle.js';
 import type { ArcBounty, ArcBountyStore, ArcDecision } from './store.js';
 
 /**
@@ -21,6 +22,11 @@ const MAX_OPEN_MS = 29 * 86_400_000;
 /** A transaction not mined after this long is sent again (the contract refuses a second decision). */
 const RESEND_AFTER_MS = 120_000;
 const PREDATOR_WITHIN_M = 15_000;
+/** An external signer's transaction is checked every 3 s (Circle's own sample) for up to 30 s, then left to processPending. */
+export let EXTERNAL_POLL_MS = 3_000;
+const EXTERNAL_POLLS = 10;
+/** Tests: poll faster. */
+export function setExternalPollMs(ms: number): void { EXTERNAL_POLL_MS = ms; }
 
 export interface ArcBountyPorts {
   world: () => World;
@@ -251,6 +257,7 @@ export class ArcBountyEngine {
   /** Signs, stores the hash, sends, and waits a little for the receipt. */
   async #send(bountyId: string, which: 'publish' | 'decide', call: BountyCall): Promise<'success' | 'reverted' | 'pending' | 'error'> {
     try {
+      if (this.chain.submit) return await this.#sendExternal(bountyId, which, call);
       const prepared = await this.chain.prepare(call);
       await this.store.sending(bountyId, which, prepared.hash);
       await this.chain.broadcast(prepared.raw);
@@ -267,6 +274,34 @@ export class ArcBountyEngine {
       console.error(`[arc-bounty] ${which} ${bountyId.slice(0, 10)} failed: ${message}`);
       return 'error';
     }
+  }
+
+  /**
+   * Through an external signer (a Circle wallet): one transaction per call and attempt, under an
+   * idempotency key drawn from them, so a send repeated after a crash returns the first; one still
+   * in flight is waited on, never sent again; only one that failed is tried again, under a new key.
+   * Once it is mined, its chain hash replaces the signer's reference, for the explorer links.
+   */
+  async #sendExternal(bountyId: string, which: 'publish' | 'decide', call: BountyCall): Promise<'success' | 'reverted' | 'pending'> {
+    const row = await this.store.get(bountyId), prior = which === 'publish' ? row?.publishTx : row?.decideTx;
+    const finish = async (ref: string, done: 'success' | 'reverted') => {
+      const hash = done === 'success' ? await this.chain.hashOf?.(ref) : null;
+      if (hash) await this.store.sending(bountyId, which, hash);
+      return done;
+    };
+    if (prior?.startsWith(EXTERNAL_REF)) {
+      const done = await this.chain.receipt(prior);
+      if (done === null) return 'pending';
+      if (done === 'success') return finish(prior, done);
+    }
+    const ref = await this.chain.submit!(call, idempotencyUuid(`${this.chain.contract}:${bountyId}:${which}:${call.fn}:${prior ?? ''}`));
+    await this.store.sending(bountyId, which, ref);
+    for (let i = 0; i < EXTERNAL_POLLS; i++) {
+      const done = await this.chain.receipt(ref);
+      if (done) return finish(ref, done);
+      await new Promise((resolve) => setTimeout(resolve, EXTERNAL_POLL_MS));
+    }
+    return 'pending';
   }
 
   /** A publish confirmed on chain: live, its prey's agent told, and announced. */

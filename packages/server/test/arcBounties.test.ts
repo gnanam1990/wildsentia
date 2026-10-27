@@ -6,7 +6,11 @@ import { createPool } from '../src/db/pool.js';
 import { migrate } from '../src/db/migrate.js';
 import { SimHost } from '../src/simHost.js';
 import { ArcBountyStore } from '../src/arcBounties/store.js';
-import { ArcBountyEngine, canonicalJsonOf, duration } from '../src/arcBounties/engine.js';
+import { ArcBountyEngine, canonicalJsonOf, duration, setExternalPollMs } from '../src/arcBounties/engine.js';
+import { circleSigner, idempotencyUuid } from '../src/arcBounties/circle.js';
+import { constants, generateKeyPairSync, privateDecrypt, randomBytes } from 'node:crypto';
+import { createPublicClient, createWalletClient, http as viemHttp } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
 import { targetCommit, viemBountyChain, type BountyChain } from '../src/arcBounties/chain.js';
 import Fastify from 'fastify';
 import { agentArcBounties, installArcBountyRoutes, publicArcBounty } from '../src/arcBounties/routes.js';
@@ -378,6 +382,64 @@ maybe('Congo bounties paid on Arc', () => {
     await engine.processPending();
     const paid = publicArcBounty((await store.get(b.bountyId))!, host.world.now(), engine);
     expect(paid).toMatchObject({ status: 'paid', salt: b.salt, targetKey: b.targetKey });
+  }, 60_000);
+
+  it('pays through a Circle developer-controlled wallet: a fresh ciphertext each write, one transaction per idempotency key', async () => {
+    // A stand-in for Circle's API in front of anvil: it holds the evaluator key and sends for it.
+    const { publicKey, privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const entitySecret = randomBytes(32).toString('hex'), seen = new Set<string>(), byKey = new Map<string, string>(), txs = new Map<string, Hex>();
+    const account = privateKeyToAccount(ANVIL_KEYS.evaluator);
+    const wallet = createWalletClient({ account, transport: viemHttp(chain.url) }), reader = createPublicClient({ transport: viemHttp(chain.url) });
+    const json = (status: number, data: unknown) => new Response(JSON.stringify({ data }), { status, headers: { 'content-type': 'application/json' } });
+    const fake = (async (url: string | URL, init?: RequestInit) => {
+      const u = new URL(String(url));
+      expect(new Headers(init?.headers).get('authorization')).toBe('Bearer TEST_API_KEY:id:secret');
+      if (u.pathname === '/v1/w3s/config/entity/publicKey') return json(200, { publicKey: publicKey.export({ type: 'spki', format: 'pem' }) });
+      if (u.pathname === '/v1/w3s/developer/transactions/contractExecution') {
+        const body = JSON.parse(String(init!.body)) as { idempotencyKey: string; entitySecretCiphertext: string; contractAddress: Hex; callData: Hex; walletId: string };
+        expect(body.walletId).toBe('wallet-1');
+        // Circle refuses a ciphertext used twice, and one that does not open to the registered secret.
+        expect(seen.has(body.entitySecretCiphertext)).toBe(false); seen.add(body.entitySecretCiphertext);
+        expect(privateDecrypt({ key: privateKey, padding: constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' }, Buffer.from(body.entitySecretCiphertext, 'base64')).toString('hex')).toBe(entitySecret);
+        const again = byKey.get(body.idempotencyKey);
+        if (again) return json(200, { id: again, state: 'INITIATED' });
+        const id = `tx-${byKey.size + 1}`; byKey.set(body.idempotencyKey, id);
+        txs.set(id, await wallet.sendTransaction({ chain: null, to: body.contractAddress, data: body.callData }));
+        return json(201, { id, state: 'INITIATED' });
+      }
+      const m = /^\/v1\/w3s\/transactions\/(.+)$/.exec(u.pathname);
+      if (m) {
+        const hash = txs.get(m[1]!)!, r = await reader.getTransactionReceipt({ hash }).catch(() => null);
+        return json(200, { transaction: { id: m[1], state: r ? (r.status === 'success' ? 'COMPLETE' : 'FAILED') : 'SENT', txHash: hash } });
+      }
+      return json(404, null);
+    }) as typeof fetch;
+    setExternalPollMs(50);
+    const signer = circleSigner({ apiKey: 'TEST_API_KEY:id:secret', entitySecret, walletId: 'wallet-1', walletAddress: account.address, baseUrl: 'https://circle.test', fetch: fake });
+    const circleChain = viemBountyChain({ rpcUrl: chain.url, chainId: CHAIN_ID, contract: chain.bounties, signer });
+    const viaCircle = new ArcBountyEngine(store, circleChain, ports);
+    expect(await viaCircle.checkIdentity()).toEqual({ ok: true });
+    const r = await viaCircle.publishRandom({ amountAtomic: 5_000_000n, windowWorldSeconds: 3600 });
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.bounty.status).toBe('active');
+    // The chain hash, not Circle's reference, is kept for the explorer link.
+    expect(r.bounty.publishTx).toMatch(/^0x[0-9a-f]{64}$/);
+    const before = await usdcBalance(chain, HUNTER_WALLET);
+    await viaCircle.onHunt({ predatorId: leopard, preyId: duiker, predatorAgentId: 'hunter', killed: true });
+    expect((await store.get(r.bounty.bountyId))!.status).toBe('paid');
+    expect(await usdcBalance(chain, HUNTER_WALLET) - before).toBe(5_000_000n);
+    expect(byKey.size).toBe(2); // One publish, one settle.
+    // Sent again under the same key (a crash between Circle's answer and our record): the first transaction, not a second.
+    const [firstKey, firstId] = [...byKey][0]!;
+    expect(await signer.send(chain.bounties, '0x', firstKey)).toBe(firstId);
+    expect(byKey.size).toBe(2);
+    // A call the contract would refuse is refused by name before anything reaches Circle.
+    await expect(circleChain.submit!({ fn: 'expire', id: r.bounty.bountyId as Hex }, idempotencyUuid('refused'))).rejects.toThrow();
+    expect(byKey.size).toBe(2);
+    expect(idempotencyUuid('a')).toBe(idempotencyUuid('a'));
+    expect(idempotencyUuid('a')).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    // A refused ciphertext would show as reuse: every write carried its own.
+    expect(seen.size).toBe(3);
   }, 60_000);
 
   // Last: it moves the chain's clock past the bounty's expiry.
