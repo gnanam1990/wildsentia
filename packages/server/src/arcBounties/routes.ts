@@ -20,6 +20,8 @@ export interface ArcBountyDeps {
 }
 
 const ID = /^0x[0-9a-f]{64}$/;
+/** Bounties the operator may drop in a minute. */
+export const ADMIN_WRITES_PER_MINUTE = 6;
 /** A read shared by every caller for `ttlMs`, one at a time; a failure is shared too until it expires. */
 export function cachedRead<T>(ttlMs: number, read: () => Promise<T>, now: () => number = Date.now): () => Promise<T> {
   let last: { at: number; value: Promise<T> } | null = null;
@@ -58,7 +60,9 @@ export function publicArcBounty(b: ArcBounty, worldTime: number, engine: ArcBoun
       outcome: b.outcome, targetAnimalId: b.targetAnimalId, winnerAnimalId: b.winnerAnimalId, payeeWallet: b.payeeWallet,
       decidedWorldTime: b.decidedWorldTime, recordHash: b.recordHash, decideTx: b.decideTx, decideTxUrl: engine.txUrl(b.decideTx),
       watchPath: watchPath(b),
-      targetKey: b.targetKey, salt: b.salt,
+      // The salt opens the commit: only once the chain has settled it, never while a decision is pending
+      // (a stranded one, published under a rotated-out evaluator, could still be decided by that key).
+      ...(b.status === 'paid' || b.status === 'voided' ? { targetKey: b.targetKey, salt: b.salt } : {}),
     } : {}),
   };
 }
@@ -240,8 +244,17 @@ export function installArcBountyRoutes(scope: FastifyInstance, deps: ArcBountyDe
   });
 
   /** Drops a bounty on the animal the operator chose (any hunted, unprotected animal, wild or steered). */
+  // Admin writes skip the general rate limit (POST): their own, a few a minute.
+  const writes: number[] = [];
+  const writeAllowed = (reply: FastifyReply): boolean => {
+    const now = Date.now();
+    while (writes.length && now - writes[0]! > 60_000) writes.shift();
+    if (writes.length >= ADMIN_WRITES_PER_MINUTE) { void reply.code(429).send({ error: 'too_many_requests' }); return false; }
+    writes.push(now); return true;
+  };
+
   scope.post('/congo/admin/arc-bounties/drop', async (req, reply) => {
-    if (!admin(req, reply)) return reply;
+    if (!admin(req, reply) || !writeAllowed(reply)) return reply;
     const body = bodyOf(req), terms = termsOf(body);
     if ('error' in terms) return reply.code(400).send(terms);
     if (typeof body.animalId !== 'string' || !/^[a-z_]{1,40}_[0-9a-z]{1,16}$/.test(body.animalId)) return reply.code(400).send({ error: 'bad_animal' });
@@ -252,7 +265,7 @@ export function installArcBountyRoutes(scope: FastifyInstance, deps: ArcBountyDe
   });
 
   scope.post('/congo/admin/arc-bounties/random', async (req, reply) => {
-    if (!admin(req, reply)) return reply;
+    if (!admin(req, reply) || !writeAllowed(reply)) return reply;
     const body = bodyOf(req), terms = termsOf(body);
     if ('error' in terms) return reply.code(400).send(terms);
     const result = await engine.publishRandom({ ...terms, requireHunter: body.requireHunter !== false });

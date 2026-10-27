@@ -23,6 +23,7 @@ import { EventStore } from '../db/eventStore.js';
 import { ArcBountyStore } from '../arcBounties/store.js';
 import { ArcBountyEngine } from '../arcBounties/engine.js';
 import { viemBountyChain } from '../arcBounties/chain.js';
+import { circleSigner } from '../arcBounties/circle.js';
 import type { ArcBountyDeps } from '../arcBounties/routes.js';
 import { Notifier, arcBountyAnnouncer, describeNotify, notifyConfig } from '../notify/notify.js';
 import type { Hex } from 'viem';
@@ -117,10 +118,29 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
   const arcBounties: ArcBountyDeps | null = owned && env.VANA_ARC_BOUNTIES === '1' ? (() => {
     const required = (name: string) => { const v = env[name]?.trim(); if (!v) throw new Error(`${name} is required with VANA_ARC_BOUNTIES=1`); return v; };
     const chainId = Number(required('VANA_ARC_BOUNTIES_CHAIN_ID'));
+    // Whoever holds the admin token sees every live target: a guessable one is refused.
+    const adminToken = env.VANA_ARC_BOUNTIES_ADMIN_TOKEN?.trim() || null;
+    if (adminToken && adminToken.length < 32) throw new Error('VANA_ARC_BOUNTIES_ADMIN_TOKEN must be at least 32 characters');
+    // The collusion check compares agents' network hashes: a secret that changed with every boot would split them.
+    required('VANA_LIVE_SECRET');
+    const capUsdc = env.VANA_ARC_BOUNTIES_DAILY_CAP_USDC?.trim();
+    if (capUsdc !== undefined && capUsdc !== '' && !/^\d+(\.\d{1,6})?$/.test(capUsdc)) throw new Error('VANA_ARC_BOUNTIES_DAILY_CAP_USDC must be a USDC amount');
     // Arc Testnet only, until mainnet use is approved after the legal review.
     if (chainId !== 5042002 && env.VANA_ARC_BOUNTIES_MAINNET_APPROVED !== 'true') throw new Error('VANA_ARC_BOUNTIES_CHAIN_ID must be Arc Testnet (5042002)');
-    const chain = viemBountyChain({ rpcUrl: required('VANA_ARC_BOUNTIES_RPC_URL'), chainId, contract: required('VANA_ARC_BOUNTIES_CONTRACT') as Hex,
-      evaluatorKey: required('VANA_ARC_BOUNTIES_EVALUATOR_KEY') as Hex });
+    // The evaluator's key: a Circle developer-controlled wallet (VANA_ARC_BOUNTIES_SIGNER=circle), so no
+    // raw key sits in the environment, or a raw key (docs/2026-10-22-circle-evaluator.md).
+    const where = { rpcUrl: required('VANA_ARC_BOUNTIES_RPC_URL'), chainId, contract: required('VANA_ARC_BOUNTIES_CONTRACT') as Hex };
+    const signerKind = env.VANA_ARC_BOUNTIES_SIGNER?.trim() || 'key';
+    if (signerKind !== 'key' && signerKind !== 'circle') throw new Error('VANA_ARC_BOUNTIES_SIGNER must be key or circle');
+    const chain = signerKind === 'circle' ? (() => {
+      const apiKey = required('VANA_CIRCLE_API_KEY');
+      // Each Circle key works in one environment: a testnet key for Arc Testnet.
+      if (chainId === 5042002 && !apiKey.startsWith('TEST_API_KEY:')) throw new Error('VANA_CIRCLE_API_KEY must be a testnet key (TEST_API_KEY:…) for Arc Testnet');
+      const fee = env.VANA_CIRCLE_FEE_LEVEL?.trim();
+      if (fee && fee !== 'LOW' && fee !== 'MEDIUM' && fee !== 'HIGH') throw new Error('VANA_CIRCLE_FEE_LEVEL must be LOW, MEDIUM or HIGH');
+      return viemBountyChain({ ...where, signer: circleSigner({ apiKey, entitySecret: required('VANA_CIRCLE_ENTITY_SECRET'), walletId: required('VANA_CIRCLE_WALLET_ID'),
+        walletAddress: required('VANA_CIRCLE_WALLET_ADDRESS'), ...(fee ? { feeLevel: fee as 'LOW' | 'MEDIUM' | 'HIGH' } : {}), ...(env.VANA_CIRCLE_BASE_URL?.trim() ? { baseUrl: env.VANA_CIRCLE_BASE_URL.trim() } : {}) }) });
+    })() : viemBountyChain({ ...where, evaluatorKey: required('VANA_ARC_BOUNTIES_EVALUATOR_KEY') as Hex });
     const store = new ArcBountyStore(pool, host.worldId ?? 'unknown');
     // Alerts to Discord and Telegram when a bounty goes live and when it is decided (all optional).
     const alerts = notifyConfig(env);
@@ -137,9 +157,13 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
       sameNetworkOk: env.VANA_ARC_BOUNTIES_SAME_NETWORK_OK === '1' && chainId === 5042002,
       notify: (agentId, text) => live.notify(agentId, text), eventsOf,
       explorer: env.VANA_ARC_BOUNTIES_EXPLORER_URL?.trim() || null, ...(announce ? { announce } : {}),
+      // Default: at most 10 USDC of bounties a day; "0" turns the cap off.
+      dailyCapAtomic: capUsdc === '0' ? null : BigInt(Math.round(Number(capUsdc || '10') * 1e6)),
     });
+    // Before anything is sent: is this key the contract's evaluator, and does USDC count 6 decimals?
+    void engine.checkIdentity().then((id) => console.log(`arc bounties: ${id.ok ? `evaluator ${chain.evaluator} confirmed` : `publishing refused (${id.reason})`}`));
     const fromBlock = env.VANA_ARC_BOUNTIES_FROM_BLOCK?.trim();
-    return { store, engine, chain, adminToken: env.VANA_ARC_BOUNTIES_ADMIN_TOKEN?.trim() || null, now: played,
+    return { store, engine, chain, adminToken, now: played,
       // The public board reads the pool's flows from the contract's events since its deployment block.
       fromBlock: fromBlock && /^\d+$/.test(fromBlock) ? BigInt(fromBlock) : null, origin: env.VANA_PUBLIC_ORIGIN?.trim() || null,
       rate: () => host.worldHoursPerRealHour };
