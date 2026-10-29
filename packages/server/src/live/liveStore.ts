@@ -53,7 +53,8 @@ export class AgentStore {
 
   /** The keyed hash of the network an agent registered from (never the address itself). */
   async networkOf(id: string): Promise<string | null> {
-    return (await this.pool.query<{ network_hash: string | null }>('select network_hash from live_agents where id=$1', [id])).rows[0]?.network_hash ?? null;
+    // 'human' was once every signed-in person's: it names no network, so it relates nobody.
+    return (await this.pool.query<{ network_hash: string | null }>("select nullif(network_hash, 'human') as network_hash from live_agents where id=$1", [id])).rows[0]?.network_hash ?? null;
   }
 
   /** One agent per key and name; at most `slots` agents; a few new ones per network a day. */
@@ -92,7 +93,11 @@ export class AgentStore {
     const id = humanAgentId(p.xUserId);
     const existing = await this.byId(id);
     if (existing && existing.kind !== 'human') throw new Error('identity clash');
-    if (existing) return existing;
+    if (existing) {
+      // The network they sign in from now, so the bounty collusion check compares people as it does agents.
+      if (p.networkHash !== 'human') await this.pool.query("update live_agents set network_hash=$2 where id=$1 and kind='human' and network_hash is distinct from $2", [id, p.networkHash]);
+      return existing;
+    }
     const handle = p.handle.replace(/[^A-Za-z0-9_]/g, '').slice(0, 15) || 'player';
     const base = NAME_RE.test(handle) && !RESERVED.test(handle) ? handle : `X ${handle}`;
     for (const name of [base, ...[2, 3, 4, 5, 6, 7, 8, 9].map((n) => `${base} ${n}`), `${base} ${id.slice(3, 7)}`]) {

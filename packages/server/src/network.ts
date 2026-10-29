@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { isIPv6 } from 'node:net';
 
 /**
@@ -28,4 +29,9 @@ export function forwardedClient(remote: string, forwardedFor: string | string[] 
   const header = Array.isArray(forwardedFor) ? forwardedFor.join(',') : forwardedFor;
   const chain = [remote, ...header.split(',').map((s) => s.trim()).filter((s) => s !== '').reverse()];
   return chain[Math.min(hops, chain.length - 1)]!;
+}
+
+/** The keyed hash of a visitor's network that agents and signed-in people are both registered under (never the address itself). */
+export function liveNetworkHash(secret: string, ip: string): string {
+  return createHash('sha256').update(`live-network:${secret}:${networkKey(ip)}`).digest('hex');
 }

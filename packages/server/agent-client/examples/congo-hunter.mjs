@@ -38,7 +38,9 @@ export function isMain(moduleUrl, argv1) {
 export function mcpClient(env = process.env) {
   const bridge = beside('mcp.mjs');
   if (!bridge) throw new Error('mcp.mjs not found beside this file or one folder up');
-  const child = spawn(process.execPath, [fileURLToPath(bridge)], { env, stdio: ['pipe', 'pipe', 'inherit'] });
+  // The bridge needs no wallet key: it never reaches the child process.
+  const { WILDSENTIA_WALLET_KEY: _w, VANA_WALLET_KEY: _v, ...childEnv } = env;
+  const child = spawn(process.execPath, [fileURLToPath(bridge)], { env: childEnv, stdio: ['pipe', 'pipe', 'inherit'] });
   const pending = new Map();
   let next = 1, gone = null;
   createInterface({ input: child.stdout }).on('line', (line) => {
