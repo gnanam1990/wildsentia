@@ -21,6 +21,8 @@ export const EXPIRY_FACTOR = 3;
 const MAX_OPEN_MS = 29 * 86_400_000;
 /** A transaction not mined after this long is sent again (the contract refuses a second decision). */
 const RESEND_AFTER_MS = 120_000;
+/** The network every signed-in person once shared, before sign-in recorded theirs (accounts/store.ts). */
+export const LEGACY_HUMAN_NETWORK = 'human';
 const PREDATOR_WITHIN_M = 15_000;
 /** An external signer's transaction is checked every 3 s (Circle's own sample) for up to 30 s, then left to processPending. */
 export let EXTERNAL_POLL_MS = 3_000;
@@ -138,6 +140,9 @@ export class ArcBountyEngine {
   async #related(a: string, b: string): Promise<boolean> {
     if (this.ports.sameNetworkOk) return false;
     const [na, nb] = await Promise.all([this.ports.network(a), this.ports.network(b)]);
+    // A person who has not signed in since networks were recorded still carries the old shared
+    // placeholder: their network is unknown, so a kill involving them is never paid until they do.
+    if (na === LEGACY_HUMAN_NETWORK || nb === LEGACY_HUMAN_NETWORK) return true;
     return na !== null && na === nb;
   }
 

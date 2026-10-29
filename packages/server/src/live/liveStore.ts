@@ -53,8 +53,7 @@ export class AgentStore {
 
   /** The keyed hash of the network an agent registered from (never the address itself). */
   async networkOf(id: string): Promise<string | null> {
-    // 'human' was once every signed-in person's: it names no network, so it relates nobody.
-    return (await this.pool.query<{ network_hash: string | null }>("select nullif(network_hash, 'human') as network_hash from live_agents where id=$1", [id])).rows[0]?.network_hash ?? null;
+    return (await this.pool.query<{ network_hash: string | null }>('select network_hash from live_agents where id=$1', [id])).rows[0]?.network_hash ?? null;
   }
 
   /** One agent per key and name; at most `slots` agents; a few new ones per network a day. */
