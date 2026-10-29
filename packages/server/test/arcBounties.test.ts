@@ -12,6 +12,7 @@ import { constants, generateKeyPairSync, privateDecrypt, randomBytes } from 'nod
 import { createPublicClient, createWalletClient, http as viemHttp } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { targetCommit, viemBountyChain, type BountyChain } from '../src/arcBounties/chain.js';
+import { bountiesAbi } from '../src/challenges/bountiesAbi.js';
 import Fastify from 'fastify';
 import { agentArcBounties, installArcBountyRoutes, publicArcBounty } from '../src/arcBounties/routes.js';
 import { testDatabaseUrl } from './testDatabase.js';
@@ -121,6 +122,28 @@ maybe('Congo bounties paid on Arc', () => {
     expect(notes.at(-1)).toEqual(['prey', `The 5 USDC bounty on your ${duiker} has ended (a hunter caught it).`]);
     // Anyone can check the record against the hash on chain.
     expect(keccak256(stringToHex(canonicalJsonOf(after.record)))).toBe(after.recordHash);
+  }, 60_000);
+
+  it('holds a payment the contract refuses as too early (version 2), and pays it once the contract allows', async () => {
+    const owner = createWalletClient({ account: privateKeyToAccount(ANVIL_KEYS.owner), transport: viemHttp(chain.url), chain: null });
+    const reader = createPublicClient({ transport: viemHttp(chain.url) });
+    const setMinOpen = async (seconds: bigint) => reader.waitForTransactionReceipt({
+      hash: await owner.writeContract({ address: chain.bounties, abi: bountiesAbi, functionName: 'setMinOpenSeconds', args: [seconds] }) });
+    await setMinOpen(600n);
+    const paidBefore = await usdcBalance(chain, HUNTER_WALLET);
+    try {
+      const b = await publish();
+      await engine.onHunt({ predatorId: leopard, preyId: duiker, predatorAgentId: 'hunter', killed: true });
+      const held = (await store.get(b.bountyId))!;
+      expect(held.status).toBe('deciding');
+      expect(held.error).toMatch(/TooEarly/);
+      expect(await bountyChain.status(b.bountyId as Hex)).toBe('open');
+      // The pending-decision pass sends it again once the contract would take it.
+      await setMinOpen(0n);
+      await engine.processPending();
+      expect((await store.get(b.bountyId))!.status).toBe('paid');
+      expect(await usdcBalance(chain, HUNTER_WALLET) - paidBefore).toBe(5_000_000n);
+    } finally { await setMinOpen(0n); }
   }, 60_000);
 
   it('lets each agent read the live bounties (never which animal), the one on its own animal, and the results', async () => {

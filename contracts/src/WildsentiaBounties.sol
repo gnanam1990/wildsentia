@@ -15,6 +15,12 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 /// record; or it voids the bounty back into the pool. An unsettled bounty returns to the pool once
 /// it expires, whoever asks. Reserved money can only go to a payee or back to the pool: the owner
 /// can withdraw only what is unreserved, and neither the owner nor the evaluator can be paid.
+///
+/// Version 2 (docs/2026-10-22-security-audit.md, finding #1) bounds what a stolen evaluator key can
+/// take: payments are capped per day, a bounty can be paid only once it has been open a minimum
+/// time (so a watcher can see it and the owner can pause), the owner can revoke one evaluator for
+/// good (its open bounties can then be returned to the pool at once), and pausing stops publishing
+/// as well as paying.
 contract WildsentiaBounties is Ownable2Step, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -59,6 +65,20 @@ contract WildsentiaBounties is Ownable2Step, ReentrancyGuard {
     uint256 public reserved;
     mapping(bytes32 id => Bounty) private _bounties;
 
+    /// @notice The most that may be paid out in one UTC day (voids and expiries do not count).
+    uint256 public dailyPayoutCap;
+    /// @notice How long a bounty must have been open before it can be paid.
+    uint64 public minOpenSeconds;
+    /// @notice What has been paid on `paidDay` (days since the epoch).
+    uint256 public paidToday;
+    uint64 public paidDay;
+    /// @notice Evaluators revoked for good: they can never publish, pay or void again.
+    mapping(address evaluator => bool) public revoked;
+    /// @notice When each bounty was published.
+    mapping(bytes32 id => uint64) public publishedAt;
+
+    uint64 public constant MAX_MIN_OPEN = 1 days;
+
     event Funded(address indexed from, uint256 amount);
     event Withdrawn(address indexed to, uint256 amount);
     event BountyPublished(bytes32 indexed id, uint96 amount, uint64 expiresAt, bytes32 rulesHash, bytes32 targetCommit);
@@ -70,6 +90,9 @@ contract WildsentiaBounties is Ownable2Step, ReentrancyGuard {
     event EvaluatorChanged(address indexed previous, address indexed next);
     event SettlePausedSet(bool paused);
     event AmountLimitsSet(uint96 minAmount, uint96 maxAmount);
+    event DailyPayoutCapSet(uint256 cap);
+    event MinOpenSecondsSet(uint64 seconds_);
+    event EvaluatorRevoked(address indexed evaluator);
 
     error ZeroAddress();
     error ZeroAmount();
@@ -91,6 +114,10 @@ contract WildsentiaBounties is Ownable2Step, ReentrancyGuard {
     error BadReveal();
     error AmountMismatch();
     error RenounceDisabled();
+    error Paused();
+    error DailyCapReached();
+    error TooEarly();
+    error Revoked();
 
     constructor(IERC20 usdc_, address owner_, address evaluator_, uint96 minAmount_, uint96 maxAmount_)
         Ownable(owner_)
@@ -98,8 +125,10 @@ contract WildsentiaBounties is Ownable2Step, ReentrancyGuard {
         if (address(usdc_) == address(0) || evaluator_ == address(0)) revert ZeroAddress();
         usdc = usdc_;
         evaluator = evaluator_;
+        dailyPayoutCap = uint256(maxAmount_) * 10;
         _setLimits(minAmount_, maxAmount_);
         emit EvaluatorChanged(address(0), evaluator_);
+        emit DailyPayoutCapSet(dailyPayoutCap);
     }
 
     // ---------------------------------------------------------------- pool
@@ -132,7 +161,8 @@ contract WildsentiaBounties is Ownable2Step, ReentrancyGuard {
         external
         nonReentrant
     {
-        if (msg.sender != evaluator) revert NotEvaluator();
+        if (msg.sender != evaluator || revoked[msg.sender]) revert NotEvaluator();
+        if (settlePaused) revert Paused();
         if (id == bytes32(0)) revert EmptyId();
         if (rulesHash == bytes32(0)) revert EmptyRules();
         if (targetCommit == bytes32(0)) revert EmptyCommit();
@@ -154,23 +184,33 @@ contract WildsentiaBounties is Ownable2Step, ReentrancyGuard {
             target: bytes32(0),
             recordHash: bytes32(0)
         });
+        publishedAt[id] = uint64(block.timestamp);
         emit BountyPublished(id, amount, expiresAt, rulesHash, targetCommit);
     }
 
     /// @notice Pays the bounty to the hunter's agent (`Predator`) or the prey's agent (`Survived`),
-    /// revealing the target. Only the evaluator it was published under, before it expires.
+    /// revealing the target. Only the evaluator it was published under, before it expires, once the
+    /// bounty has been open `minOpenSeconds`, and within the day's payout cap.
     function settle(bytes32 id, Outcome outcome, address payee, bytes32 recordHash, bytes32 target, bytes32 salt)
         external
         nonReentrant
     {
         Bounty storage b = _decidable(id, target, salt);
         if (settlePaused) revert SettleIsPaused();
+        if (block.timestamp < uint256(publishedAt[id]) + minOpenSeconds) revert TooEarly();
         if (outcome != Outcome.Predator && outcome != Outcome.Survived) revert BadOutcome();
         if (
             payee == address(0) || payee == address(this) || payee == b.evaluator || payee == evaluator
                 || payee == owner()
         ) revert BadPayee();
         uint96 amount = b.amount;
+        uint64 today = uint64(block.timestamp / 1 days);
+        if (today != paidDay) {
+            paidDay = today;
+            paidToday = 0;
+        }
+        if (paidToday + amount > dailyPayoutCap) revert DailyCapReached();
+        paidToday += amount;
         b.status = Status.Paid;
         b.outcome = outcome;
         b.payee = payee;
@@ -194,12 +234,12 @@ contract WildsentiaBounties is Ownable2Step, ReentrancyGuard {
         emit BountyVoided(id, amount, target, recordHash);
     }
 
-    /// @notice Returns an unsettled bounty to the pool once it has expired. Anyone may call it, and
-    /// pausing never blocks it.
+    /// @notice Returns an unsettled bounty to the pool once it has expired, or at once if its evaluator
+    /// was revoked. Anyone may call it, and pausing never blocks it.
     function expire(bytes32 id) external nonReentrant {
         Bounty storage b = _bounties[id];
         if (b.status != Status.Open) revert NotOpen();
-        if (block.timestamp <= b.expiresAt) revert NotExpired();
+        if (block.timestamp <= b.expiresAt && !revoked[b.evaluator]) revert NotExpired();
         uint96 amount = b.amount;
         b.status = Status.Expired;
         reserved -= amount;
@@ -213,10 +253,22 @@ contract WildsentiaBounties is Ownable2Step, ReentrancyGuard {
     /// if that key is compromised, pause settlement and let them expire back into the pool.
     function setEvaluator(address next) external onlyOwner {
         if (next == address(0)) revert ZeroAddress();
+        if (revoked[next]) revert Revoked();
         emit EvaluatorChanged(evaluator, next);
         evaluator = next;
     }
 
+    /// @notice Revokes an evaluator for good, the current one or an earlier one: it can no longer
+    /// publish, pay or void, and its open bounties can be returned to the pool at once with `expire`.
+    /// Revoking the current evaluator stops publishing until a new one is appointed.
+    function revokeEvaluator(address who) external onlyOwner {
+        if (who == address(0)) revert ZeroAddress();
+        revoked[who] = true;
+        emit EvaluatorRevoked(who);
+    }
+
+    /// @notice Stops publishing and paying (voids and expiries stay open, so money can only go back
+    /// to the pool). Named for version 1, which stopped paying only.
     function setSettlePaused(bool paused) external onlyOwner {
         settlePaused = paused;
         emit SettlePausedSet(paused);
@@ -224,6 +276,19 @@ contract WildsentiaBounties is Ownable2Step, ReentrancyGuard {
 
     function setAmountLimits(uint96 minAmount_, uint96 maxAmount_) external onlyOwner {
         _setLimits(minAmount_, maxAmount_);
+    }
+
+    /// @notice At least the largest bounty, so any one bounty can be paid.
+    function setDailyPayoutCap(uint256 cap) external onlyOwner {
+        if (cap < maxAmount) revert BadLimits();
+        dailyPayoutCap = cap;
+        emit DailyPayoutCapSet(cap);
+    }
+
+    function setMinOpenSeconds(uint64 seconds_) external onlyOwner {
+        if (seconds_ > MAX_MIN_OPEN) revert BadLimits();
+        minOpenSeconds = seconds_;
+        emit MinOpenSecondsSet(seconds_);
     }
 
     /// @notice Disabled: without an owner a compromised evaluator could never be replaced.
@@ -247,13 +312,13 @@ contract WildsentiaBounties is Ownable2Step, ReentrancyGuard {
     function _decidable(bytes32 id, bytes32 target, bytes32 salt) private view returns (Bounty storage b) {
         b = _bounties[id];
         if (b.status != Status.Open) revert NotOpen();
-        if (msg.sender != b.evaluator) revert NotEvaluator();
+        if (msg.sender != b.evaluator || revoked[msg.sender]) revert NotEvaluator();
         if (block.timestamp > b.expiresAt) revert Expired();
         if (commitOf(target, salt) != b.targetCommit) revert BadReveal();
     }
 
     function _setLimits(uint96 minAmount_, uint96 maxAmount_) private {
-        if (minAmount_ == 0 || minAmount_ > maxAmount_) revert BadLimits();
+        if (minAmount_ == 0 || minAmount_ > maxAmount_ || maxAmount_ > dailyPayoutCap) revert BadLimits();
         minAmount = minAmount_;
         maxAmount = maxAmount_;
         emit AmountLimitsSet(minAmount_, maxAmount_);

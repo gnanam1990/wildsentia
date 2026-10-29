@@ -47,6 +47,19 @@ export const bountiesAbi = [
   },
   {
     "type": "function",
+    "name": "MAX_MIN_OPEN",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "acceptOwnership",
     "inputs": [],
     "outputs": [],
@@ -149,6 +162,19 @@ export const bountiesAbi = [
   },
   {
     "type": "function",
+    "name": "dailyPayoutCap",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "evaluator",
     "inputs": [],
     "outputs": [
@@ -214,6 +240,19 @@ export const bountiesAbi = [
   },
   {
     "type": "function",
+    "name": "minOpenSeconds",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "owner",
     "inputs": [],
     "outputs": [
@@ -221,6 +260,32 @@ export const bountiesAbi = [
         "name": "",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "paidDay",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "paidToday",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -286,6 +351,25 @@ export const bountiesAbi = [
   },
   {
     "type": "function",
+    "name": "publishedAt",
+    "inputs": [
+      {
+        "name": "id",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "renounceOwnership",
     "inputs": [],
     "outputs": [],
@@ -300,6 +384,38 @@ export const bountiesAbi = [
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "revokeEvaluator",
+    "inputs": [
+      {
+        "name": "who",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "revoked",
+    "inputs": [
+      {
+        "name": "evaluator",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "stateMutability": "view"
@@ -324,12 +440,38 @@ export const bountiesAbi = [
   },
   {
     "type": "function",
+    "name": "setDailyPayoutCap",
+    "inputs": [
+      {
+        "name": "cap",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setEvaluator",
     "inputs": [
       {
         "name": "next",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setMinOpenSeconds",
+    "inputs": [
+      {
+        "name": "seconds_",
+        "type": "uint64",
+        "internalType": "uint64"
       }
     ],
     "outputs": [],
@@ -622,6 +764,19 @@ export const bountiesAbi = [
   },
   {
     "type": "event",
+    "name": "DailyPayoutCapSet",
+    "inputs": [
+      {
+        "name": "cap",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "EvaluatorChanged",
     "inputs": [
       {
@@ -632,6 +787,19 @@ export const bountiesAbi = [
       },
       {
         "name": "next",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "EvaluatorRevoked",
+    "inputs": [
+      {
+        "name": "evaluator",
         "type": "address",
         "indexed": true,
         "internalType": "address"
@@ -654,6 +822,19 @@ export const bountiesAbi = [
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "MinOpenSecondsSet",
+    "inputs": [
+      {
+        "name": "seconds_",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
       }
     ],
     "anonymous": false
@@ -765,6 +946,11 @@ export const bountiesAbi = [
   },
   {
     "type": "error",
+    "name": "DailyCapReached",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "EmptyCommit",
     "inputs": []
   },
@@ -827,6 +1013,11 @@ export const bountiesAbi = [
   },
   {
     "type": "error",
+    "name": "Paused",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "PoolTooSmall",
     "inputs": []
   },
@@ -838,6 +1029,11 @@ export const bountiesAbi = [
   {
     "type": "error",
     "name": "RenounceDisabled",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "Revoked",
     "inputs": []
   },
   {
@@ -854,6 +1050,11 @@ export const bountiesAbi = [
   {
     "type": "error",
     "name": "SettleIsPaused",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TooEarly",
     "inputs": []
   },
   {
