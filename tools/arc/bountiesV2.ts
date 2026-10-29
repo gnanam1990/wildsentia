@@ -16,8 +16,11 @@ import { bountiesAbi } from '../../packages/server/src/challenges/bountiesAbi.js
 const RPC = process.env.ARC_RPC ?? 'https://rpc.testnet.arc.io';
 const arc = defineChain({ id: 5042002, name: 'Arc Testnet', nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 }, rpcUrls: { default: { http: [RPC] } } });
 const USDC = '0x3600000000000000000000000000000000000000' as const;
-/** v2's settings: v1's amount limits, at most 10 USDC paid a day (as the server's own cap), paid only after 10 minutes open. */
-const DAILY_CAP = 10_000_000n, MIN_OPEN_SECONDS = 600n;
+/**
+ * v2's settings: v1's smallest bounty, at most 5 USDC a bounty (v1 allowed 100, above the cap), at most
+ * 10 USDC paid a day (as the server's own cap), paid only after 10 minutes open.
+ */
+const MAX_AMOUNT = 5_000_000n, DAILY_CAP = 10_000_000n, MIN_OPEN_SECONDS = 600n;
 
 const readEnv = (path: string): Record<string, string> => Object.fromEntries(readFileSync(path, 'utf8').split('\n')
   .filter((l) => l.includes('=') && !l.startsWith('#')).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1).trim()]));
@@ -48,11 +51,10 @@ async function main(): Promise<void> {
     if (evaluator === owner.address) throw new Error('owner and evaluator must differ');
     if (await client.readContract({ address: USDC, abi: erc20Abi, functionName: 'decimals' }) !== 6) throw new Error('USDC does not count 6 decimals');
     const v1 = getAddress(w.ARC_BOUNTIES_CONTRACT!);
-    const [min, max] = await Promise.all([client.readContract({ address: v1, abi: bountiesAbi, functionName: 'minAmount' }),
-      client.readContract({ address: v1, abi: bountiesAbi, functionName: 'maxAmount' })]);
-    if (max > DAILY_CAP) throw new Error(`v1's largest bounty (${formatUnits(max, 6)} USDC) is above the daily cap`);
+    const min = await client.readContract({ address: v1, abi: bountiesAbi, functionName: 'minAmount' });
+    if (min > MAX_AMOUNT) throw new Error(`v1's smallest bounty (${formatUnits(min, 6)} USDC) is above ${formatUnits(MAX_AMOUNT, 6)} USDC`);
     const artifact = JSON.parse(readFileSync(new URL('../../contracts/out/WildsentiaBounties.sol/WildsentiaBounties.json', import.meta.url), 'utf8')) as { bytecode: { object: Hex } };
-    const hash = await wallet.deployContract({ abi: bountiesAbi, bytecode: artifact.bytecode.object, args: [USDC, owner.address, evaluator, min, max], ...await fees() });
+    const hash = await wallet.deployContract({ abi: bountiesAbi, bytecode: artifact.bytecode.object, args: [USDC, owner.address, evaluator, min, MAX_AMOUNT], ...await fees() });
     const deployed = await wait('deployed v2', hash);
     const address = getAddress(deployed.contractAddress!);
     appendFileSync(file, `ARC_BOUNTIES_V2_CONTRACT=${address}\nARC_BOUNTIES_V2_BLOCK=${deployed.blockNumber}\n`);
