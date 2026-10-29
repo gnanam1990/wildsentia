@@ -5,8 +5,8 @@
  *   - the contract's evaluator or owner is not the expected one, an ownership transfer is pending,
  *     settling is paused, or the pool holds less than it has reserved;
  *   - the evaluator's gas is low;
- *   - in the window it reads, the evaluator, the pause, the amount limits or the owner changed, or
- *     USDC was withdrawn;
+ *   - in the window it reads, the evaluator, the pause, the amount limits, the daily payout cap, the
+ *     minimum open time or the owner changed, an evaluator was revoked, or USDC was withdrawn;
  *   - a bounty was published, paid, voided or expired that the server does not know.
  * No dependencies and no keys: it reads the chain over JSON-RPC and the server's public API.
  *
@@ -31,10 +31,15 @@ export const TOPICS = {
   AmountLimitsSet: '0x4140e92c22042c445832c178477bbc18c5f562bbd3824600cf3554eba2bbcf14',
   OwnershipTransferStarted: '0x38d16b8cac22d99fc7c124b9cd0de2d3fa1faef420bfe791d8c362d765e22700',
   OwnershipTransferred: '0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0',
+  // Version 2 (docs/2026-10-29-bounties-v2.md).
+  DailyPayoutCapSet: '0x4995113b5be0caba8a4cdfee51cd7752af9d8be0a7aae646041e6694379e917b',
+  MinOpenSecondsSet: '0x6a34b76d3e3c32bca305c1fdca24c227960c4831aacd9080424225bae1737474',
+  EvaluatorRevoked: '0x718b73897cc8631ec09c3e42bd021b9e75bdeab3f6918333c917aeea888dfff8',
 };
 export const SELECTORS = { evaluator: '0x9cb93dd1', owner: '0x8da5cb5b', pendingOwner: '0xe30c3978', settlePaused: '0xb9301c0d', pool: '0x16f0115b', reserved: '0xfe60d12c' };
 /** Events that are always the owner's own doing, so always worth a look. */
-const OWNER_EVENTS = ['Withdrawn', 'EvaluatorChanged', 'SettlePausedSet', 'AmountLimitsSet', 'OwnershipTransferStarted', 'OwnershipTransferred'];
+const OWNER_EVENTS = ['Withdrawn', 'EvaluatorChanged', 'SettlePausedSet', 'AmountLimitsSet', 'OwnershipTransferStarted', 'OwnershipTransferred',
+  'DailyPayoutCapSet', 'MinOpenSecondsSet', 'EvaluatorRevoked'];
 const BOUNTY_EVENTS = ['BountyPublished', 'BountyPaid', 'BountyVoided', 'BountyExpired'];
 /** Arc Testnet's public RPC refuses a log range much wider than this. */
 const LOG_SPAN = 2000;

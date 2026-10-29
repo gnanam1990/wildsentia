@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { toEventSelector, toFunctionSelector } from 'viem';
+import { bountiesAbi } from '../src/challenges/bountiesAbi.js';
 // @ts-expect-error: a plain .mjs tool without types
 import { rpcOver, SELECTORS, TOPICS, watch } from '../../../tools/arc/watch.mjs';
 
@@ -39,9 +40,14 @@ describe('the Arc contract watch (tools/arc/watch.mjs)', () => {
       BountyPaid: 'BountyPaid(bytes32,uint8,address,uint96,bytes32,bytes32)', BountyVoided: 'BountyVoided(bytes32,uint96,bytes32,bytes32)',
       BountyExpired: 'BountyExpired(bytes32,uint96)', EvaluatorChanged: 'EvaluatorChanged(address,address)', SettlePausedSet: 'SettlePausedSet(bool)',
       AmountLimitsSet: 'AmountLimitsSet(uint96,uint96)', OwnershipTransferStarted: 'OwnershipTransferStarted(address,address)',
-      OwnershipTransferred: 'OwnershipTransferred(address,address)',
+      OwnershipTransferred: 'OwnershipTransferred(address,address)', DailyPayoutCapSet: 'DailyPayoutCapSet(uint256)',
+      MinOpenSecondsSet: 'MinOpenSecondsSet(uint64)', EvaluatorRevoked: 'EvaluatorRevoked(address)',
     };
     for (const [name, signature] of Object.entries(events)) expect(TOPICS[name]).toBe(toEventSelector(signature));
+    expect(Object.keys(TOPICS).sort()).toEqual(Object.keys(events).sort());
+    // Every event the contract emits is one the watch knows.
+    const emitted = bountiesAbi.filter((item) => item.type === 'event').map((item) => item.name).sort();
+    expect(emitted).toEqual([...Object.keys(events), 'Funded'].sort());
     for (const name of Object.keys(SELECTORS)) expect(SELECTORS[name]).toBe(toFunctionSelector(`${name}()`));
   });
 

@@ -208,6 +208,109 @@ contract WildsentiaBountiesTest is Test {
         bounties.renounceOwnership();
     }
 
+    function test_pausingAlsoStopsPublishing() public {
+        vm.prank(owner);
+        bounties.setSettlePaused(true);
+        vm.prank(evaluator);
+        vm.expectRevert(WildsentiaBounties.Paused.selector);
+        bounties.publish(ID, ONE, uint64(block.timestamp + 1 days), RULES, _commit());
+        vm.prank(owner);
+        bounties.setSettlePaused(false);
+        _publish(ONE);
+        assertEq(bounties.publishedAt(ID), block.timestamp);
+    }
+
+    function test_paymentsAreCappedPerDay() public {
+        // The cap starts at ten of the largest bounty; the owner lowers it.
+        assertEq(bounties.dailyPayoutCap(), 1_000 * ONE);
+        vm.prank(owner);
+        bounties.setDailyPayoutCap(100 * ONE);
+        vm.prank(owner);
+        vm.expectRevert(WildsentiaBounties.BadLimits.selector);
+        bounties.setDailyPayoutCap(99 * ONE);
+        _publish(60 * ONE);
+        bytes32 id2 = keccak256("bounty-2");
+        vm.startPrank(evaluator);
+        bounties.publish(id2, 40 * ONE, uint64(block.timestamp + 3 days), RULES, _commit());
+        bounties.settle(ID, WildsentiaBounties.Outcome.Predator, hunter, bytes32(0), TARGET, SALT);
+        vm.stopPrank();
+        vm.prank(treasury);
+        bounties.fund(100 * ONE);
+        bytes32 id3 = keccak256("bounty-3");
+        vm.startPrank(evaluator);
+        bounties.publish(id3, 50 * ONE, uint64(block.timestamp + 3 days), RULES, _commit());
+        // 60 paid today: 40 more fits, 50 does not.
+        vm.expectRevert(WildsentiaBounties.DailyCapReached.selector);
+        bounties.settle(id3, WildsentiaBounties.Outcome.Predator, hunter, bytes32(0), TARGET, SALT);
+        bounties.settle(id2, WildsentiaBounties.Outcome.Survived, prey, bytes32(0), TARGET, SALT);
+        assertEq(bounties.paidToday(), 100 * ONE);
+        // Voiding is never capped, and the next day starts afresh.
+        vm.warp(block.timestamp + 1 days);
+        bounties.settle(id3, WildsentiaBounties.Outcome.Predator, hunter, bytes32(0), TARGET, SALT);
+        vm.stopPrank();
+        assertEq(bounties.paidToday(), 50 * ONE);
+        assertEq(usdc.balanceOf(hunter), 110 * ONE);
+    }
+
+    function test_aBountyIsPaidOnlyOnceOpenTheMinimumTime() public {
+        vm.prank(owner);
+        bounties.setMinOpenSeconds(1 hours);
+        vm.prank(owner);
+        vm.expectRevert(WildsentiaBounties.BadLimits.selector);
+        bounties.setMinOpenSeconds(1 days + 1);
+        _publish(10 * ONE);
+        vm.warp(block.timestamp + 1 hours - 1);
+        vm.prank(evaluator);
+        vm.expectRevert(WildsentiaBounties.TooEarly.selector);
+        bounties.settle(ID, WildsentiaBounties.Outcome.Predator, hunter, bytes32(0), TARGET, SALT);
+        vm.warp(block.timestamp + 1);
+        vm.prank(evaluator);
+        bounties.settle(ID, WildsentiaBounties.Outcome.Predator, hunter, bytes32(0), TARGET, SALT);
+        assertEq(usdc.balanceOf(hunter), 10 * ONE);
+    }
+
+    function test_aRevokedEvaluatorCanDoNothingAndItsBountiesReturnAtOnce() public {
+        _publish(30 * ONE);
+        address next = makeAddr("next");
+        vm.prank(owner);
+        bounties.setEvaluator(next);
+        vm.prank(stranger);
+        vm.expectRevert(WildsentiaBounties.NotExpired.selector);
+        bounties.expire(ID);
+        vm.prank(stranger);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, stranger));
+        bounties.revokeEvaluator(evaluator);
+        vm.prank(owner);
+        bounties.revokeEvaluator(evaluator);
+        vm.startPrank(evaluator);
+        vm.expectRevert(WildsentiaBounties.NotEvaluator.selector);
+        bounties.settle(ID, WildsentiaBounties.Outcome.Predator, hunter, bytes32(0), TARGET, SALT);
+        vm.expectRevert(WildsentiaBounties.NotEvaluator.selector);
+        bounties.voidBounty(ID, bytes32(0), TARGET, SALT);
+        vm.stopPrank();
+        // Anyone may return its bounty before the expiry, and it can never be appointed again.
+        vm.prank(stranger);
+        bounties.expire(ID);
+        assertEq(bounties.pool(), 100 * ONE);
+        vm.prank(owner);
+        vm.expectRevert(WildsentiaBounties.Revoked.selector);
+        bounties.setEvaluator(evaluator);
+        // Revoking the current evaluator stops publishing until another is appointed.
+        vm.prank(owner);
+        bounties.revokeEvaluator(next);
+        vm.prank(next);
+        vm.expectRevert(WildsentiaBounties.NotEvaluator.selector);
+        bounties.publish(keccak256("bounty-2"), ONE, uint64(block.timestamp + 1 days), RULES, _commit());
+    }
+
+    function test_theLargestBountyNeverExceedsTheDailyCap() public {
+        vm.prank(owner);
+        bounties.setDailyPayoutCap(100 * ONE);
+        vm.prank(owner);
+        vm.expectRevert(WildsentiaBounties.BadLimits.selector);
+        bounties.setAmountLimits(ONE, 101 * ONE);
+    }
+
     /// The contract always holds exactly the pool plus what open bounties reserve.
     function testFuzz_balanceIsPoolPlusReserved(uint96 a, uint96 b, uint8 decide) public {
         a = uint96(bound(a, ONE, 50 * ONE));
