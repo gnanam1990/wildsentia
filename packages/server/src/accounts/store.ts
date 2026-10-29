@@ -21,9 +21,12 @@ const account = (r: any): Account => ({ id: r.id, xUserId: r.x_user_id, handle: 
 export class AccountStore {
   constructor(private readonly pool: Pool, readonly agents: AgentStore, private readonly clock: () => number = Date.now) {}
 
-  /** Signs a person in: their account (made the first time, with its live identity) and a new session. */
-  async signIn(user: XUser): Promise<{ account: Account; token: string }> {
-    const agent = await this.agents.ensureHuman({ xUserId: user.id, handle: user.username, networkHash: 'human' });
+  /**
+   * Signs a person in: their account (made the first time, with its live identity) and a new session.
+   * `networkHash` is the keyed hash of the network they signed in from, kept as their live identity's.
+   */
+  async signIn(user: XUser, networkHash: string | null = null): Promise<{ account: Account; token: string }> {
+    const agent = await this.agents.ensureHuman({ xUserId: user.id, handle: user.username, networkHash: networkHash ?? 'human' });
     const { rows } = await this.pool.query(`insert into accounts (id, x_user_id, x_handle, x_name, x_created_at, agent_id)
       values ($1, $2, $3, $4, $5, $6)
       on conflict (x_user_id) do update set x_handle = excluded.x_handle, x_name = excluded.x_name,

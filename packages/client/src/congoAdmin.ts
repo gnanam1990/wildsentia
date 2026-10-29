@@ -3,8 +3,9 @@ import { simAmount, timeLeft } from './congoModel.js';
 
 /** Congo 1D/1E (spec §5): the operator's bounty editor: presets, drafts, validation, publication, cancellation. */
 const $ = <T extends HTMLElement>(id: string) => document.querySelector<T>(`#${id}`)!;
+// The admin token lives in this page's memory only: a reload asks for it again, and no stored copy outlives the tab.
 let token = '';
-try { token = sessionStorage.getItem('congo.adminToken') ?? ''; } catch { /* storage blocked: ask again */ }
+try { sessionStorage.removeItem('congo.adminToken'); } catch { /* storage blocked: nothing was kept */ }
 
 interface AdminBounty {
   bountyId: string; status: string; preset: string; speciesId: string; region: string; amountAtomic: string; decimals: number;
@@ -81,7 +82,6 @@ async function refresh(): Promise<void> {
 $('admin-token-form').addEventListener('submit', (event) => {
   event.preventDefault();
   token = $<HTMLInputElement>('admin-token').value.trim();
-  try { sessionStorage.setItem('congo.adminToken', token); } catch { /* kept in memory only */ }
   void refresh();
 });
 $('admin-draft').addEventListener('submit', async (event) => {

@@ -11,8 +11,9 @@ import { WINDOWS, atomicOf, outcomeText, realTime, refusal, short, usdc, whoCanW
  * drop a bounty on it, or put one on a random prey agents steer.
  */
 const $ = <T extends HTMLElement>(id: string) => document.querySelector<T>(`#${id}`)!;
+// The admin token lives in this page's memory only: a reload asks for it again, and no stored copy outlives the tab.
 let token = '';
-try { token = sessionStorage.getItem('arc.adminToken') ?? ''; } catch { /* storage blocked: ask again */ }
+try { sessionStorage.removeItem('arc.adminToken'); } catch { /* storage blocked: nothing was kept */ }
 
 interface AdminBounty {
   bountyId: string; status: string; speciesId: string; region: string; amountAtomic: string; timeLeftWorldSeconds: number;
@@ -234,7 +235,6 @@ for (const w of WINDOWS) {
 $('arc-token-form').addEventListener('submit', (event) => {
   event.preventDefault();
   token = $<HTMLInputElement>('arc-token').value.trim();
-  try { sessionStorage.setItem('arc.adminToken', token); } catch { /* kept in memory only */ }
   void refresh();
 });
 $('arc-search').addEventListener('submit', (event) => { event.preventDefault(); void search(); });

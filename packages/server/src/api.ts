@@ -114,7 +114,7 @@ export function buildApi({ host, pool, narrator, insights: insightDeps, live, re
     } } } : {}) });
   if (live) installLiveAgents(app, live);
   if (challenges) installChallenges(app, challenges);
-  if (accounts) installAccounts(app, accounts);
+  if (accounts) installAccounts(app, { ...accounts, ...(live ? { networkSecret: live.networkSecret } : {}) });
   if (challengeSocial) installChallengeSocial(app, { social: challengeSocial, publisher: social?.xPublisher });
   installSocialOutbox(app, { pool, config: social, boundary: () => {
     const view = host.observation();

@@ -47,4 +47,19 @@ maybe('human identities', () => {
     expect(await store.reapInactive(14)).toBe(1);
     expect(await store.byId(humanAgentId('3001'))).not.toBeNull();
   });
+
+  it('are registered under the network they sign in from, so the collusion check compares people as it does agents', async () => {
+    const tara = await store.ensureHuman({ xUserId: '4001', handle: 'tara', networkHash: 'net-home' });
+    const ravi = await store.ensureHuman({ xUserId: '4002', handle: 'ravi', networkHash: 'net-cafe' });
+    expect(await store.networkOf(tara.id)).toBe('net-home');
+    expect(await store.networkOf(ravi.id)).toBe('net-cafe');
+    // Signing in again from elsewhere moves them to that network.
+    await store.ensureHuman({ xUserId: '4002', handle: 'ravi', networkHash: 'net-home' });
+    expect(await store.networkOf(ravi.id)).toBe('net-home');
+    // The old shared placeholder names no network: two people who still carry it are not related.
+    const old = await store.ensureHuman({ xUserId: '4003', handle: 'mala', networkHash: 'human' });
+    expect(await store.networkOf(old.id)).toBeNull();
+    await store.ensureHuman({ xUserId: '4003', handle: 'mala', networkHash: 'human' });
+    expect(await store.networkOf(old.id)).toBeNull();
+  });
 });

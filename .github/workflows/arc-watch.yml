@@ -1,0 +1,33 @@
+name: Watch Arc bounties
+
+# Reads the Arc Testnet bounty contract from outside Railway every hour (tools/arc/watch.mjs). A
+# failed run is the alert: GitHub emails it to whoever last changed this schedule.
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: arc-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ARC_WATCH_CONTRACT: '0x0741af75301873120BeC5cEba3c18b78a1b89050'
+      ARC_WATCH_EVALUATOR: '0x0620fAFBCbB6192C3182eA8b246Eb5723bF18101'
+      ARC_WATCH_OWNER: '0x8A46da2d0a97fFB6B299F870348117B2F14B2D55'
+      ARC_WATCH_API: https://wildsentia.lol/api
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          sparse-checkout: tools/arc/watch.mjs
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Watch the contract
+        run: node tools/arc/watch.mjs

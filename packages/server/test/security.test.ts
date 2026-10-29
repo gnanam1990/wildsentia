@@ -106,6 +106,17 @@ describe('deploy/Caddyfile', () => {
     expect(caddyfile).toMatch(/^\s*header -Server$/m);
     expect(headers).not.toMatch(/^\s*-Server$/m);
   });
+  it('lets scripts, data and workers come only from this origin, on every page', () => {
+    for (const name of ['Caddyfile', 'railway/Caddyfile']) {
+      const text = readFileSync(fileURLToPath(new URL(`../../../deploy/${name}`, import.meta.url)), 'utf8');
+      const policies = [...text.matchAll(/Content-Security-Policy "([^"]*)"/g)].map((m) => m[1]!);
+      expect(policies).toHaveLength(2);
+      for (const policy of policies) {
+        for (const directive of ["default-src 'self'", "script-src 'self';", "connect-src 'self' blob: data:;", "object-src 'none'"]) expect(policy).toContain(directive);
+        expect(policy).not.toMatch(/script-src[^;]*'unsafe-(inline|eval)'/);
+      }
+    }
+  });
   it('permits only the experience observer embed and the guide microphone', () => {
     for (const name of ['Caddyfile', 'railway/Caddyfile']) {
       const text = readFileSync(fileURLToPath(new URL(`../../../deploy/${name}`, import.meta.url)), 'utf8');

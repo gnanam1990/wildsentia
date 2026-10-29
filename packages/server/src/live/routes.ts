@@ -10,7 +10,7 @@ import { AGENT_RATE_LIMITS, NonceStore, verifySigned, type SignedHeaders } from 
 import { OPEN_RADIUS_M, type Gait, type LiveLayer, type WorldPort } from './liveLayer.js';
 import { agentIdFor, type AgentRecord, type AgentStore, type PlaceDropLedger, type RegistrationLimits } from './liveStore.js';
 import { displayAmount } from '../rewards.js';
-import { networkKey } from '../network.js';
+import { liveNetworkHash, networkKey } from '../network.js';
 import type { AcceptResult, ChallengeEngine, Player } from '../challenges/engine.js';
 import { sameOriginJson } from '../accounts/cookies.js';
 import { MIN_X_ACCOUNT_DAYS } from '../accounts/store.js';
@@ -126,7 +126,7 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
     catch { return { status: 503, error: 'holding_check_unavailable' }; }
     return { wallet: wallet.toLowerCase() };
   };
-  const networkHash = (req: FastifyRequest) => createHash('sha256').update(`live-network:${deps.networkSecret}:${networkKey(req.ip)}`).digest('hex');
+  const networkHash = (req: FastifyRequest) => liveNetworkHash(deps.networkSecret, req.ip);
 
   app.register(async (scope) => {
     // The live layer refuses a world-changing command while the world steps (Congo 1A.3).

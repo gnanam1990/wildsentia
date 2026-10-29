@@ -7,6 +7,7 @@ import { AgentStore, humanAgentId } from '../src/live/liveStore.js';
 import { accountsConfig } from '../src/accounts/config.js';
 import { AccountStore } from '../src/accounts/store.js';
 import { installAccounts } from '../src/accounts/routes.js';
+import { liveNetworkHash } from '../src/network.js';
 import { accountsRuntime } from '../src/accounts/runtime.js';
 import { xAuth, type XAuth, type XUser } from '../src/accounts/xAuth.js';
 import { privateKeyToAccount } from 'viem/accounts';
@@ -123,6 +124,16 @@ maybe('accounts', () => {
     expect(me).toEqual({ account: { handle: 'kavya_k', name: 'Kavya', xAccountDays: 647, agentId: humanAgentId('777'), playerName: 'kavya_k',
       wallet: null, canCreate: false, canPlay: false, createsLeftToday: 3, needs: ['wallet'] } });
     expect(JSON.stringify(me)).not.toMatch(/super-secret|client-id/);
+  });
+
+  it("keeps the person's live identity under the keyed hash of the network they signed in from", async () => {
+    await app.close();
+    app = Fastify();
+    installAccounts(app, { config: accountsConfig(env)!, store: accounts, x, clock: () => now, networkSecret: 'live-secret' });
+    await app.ready();
+    await signIn();
+    // Fastify's inject comes from 127.0.0.1: the same hash an agent registering from there gets.
+    expect(await accounts.agents.networkOf(humanAgentId('777'))).toBe(liveNetworkHash('live-secret', '127.0.0.1'));
   });
 
   it("refuses a callback whose state is not this browser's", async () => {

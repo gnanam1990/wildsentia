@@ -6,6 +6,7 @@ import type { AccountsConfig } from './config.js';
 import { cookie, cookieHeader, cookieName, sameOriginJson } from './cookies.js';
 import { CREATES_PER_DAY, MIN_X_ACCOUNT_DAYS, SESSION_DAYS, type Account, type AccountStore } from './store.js';
 import type { XAuth } from './xAuth.js';
+import { liveNetworkHash } from '../network.js';
 
 /** The session cookie's name for a site: __Host-ws_session on https. */
 export const sessionCookie = (config: AccountsConfig) => cookieName('ws_session', config.secure);
@@ -17,6 +18,8 @@ export interface AccountRouteDeps {
   config: AccountsConfig; store: AccountStore; x: XAuth; clock?: () => number;
   /** The chain wallets are linked on (the challenges' chain); without it, no wallet link. */
   wallet?: { chainId: number } | undefined;
+  /** The live world's network secret: a person is registered under their network's keyed hash, as an agent is. */
+  networkSecret?: string | undefined;
 }
 const bodyOf = (req: FastifyRequest): Record<string, unknown> =>
   req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body as Record<string, unknown> : {};
@@ -83,7 +86,7 @@ export function installAccounts(app: FastifyInstance, deps: AccountRouteDeps): v
     }
     try {
       const user = await x.signIn(req.query.code, entry.verifier);
-      const { token } = await store.signIn(user);
+      const { token } = await store.signIn(user, deps.networkSecret ? liveNetworkHash(deps.networkSecret, req.ip) : null);
       reply.header('set-cookie', [clear, cookieHeader(SESSION_COOKIE, token, { maxAgeSeconds: SESSION_DAYS * 86_400, secure: config.secure })]);
       return reply.redirect(done(), 302);
     } catch (error) {

@@ -105,6 +105,7 @@ handle these secrets for the owner):
 2. Fund the wallet's gas at [faucet.circle.com](https://faucet.circle.com) (Arc Testnet).
 3. Run the same command with `--appoint`. It calls `setEvaluator(wallet)` from the owner key.
 4. Set the Circle variables on Railway and remove `VANA_ARC_BOUNTIES_EVALUATOR_KEY`. Redeploy.
+5. Change `ARC_WATCH_EVALUATOR` in `.github/workflows/arc-watch.yml` to the Circle wallet's address.
 
 ## Tests
 
