@@ -56,10 +56,10 @@ maybe('human identities', () => {
     // Signing in again from elsewhere moves them to that network.
     await store.ensureHuman({ xUserId: '4002', handle: 'ravi', networkHash: 'net-home' });
     expect(await store.networkOf(ravi.id)).toBe('net-home');
-    // The old shared placeholder names no network: two people who still carry it are not related.
+    // Someone who signed in before networks were recorded keeps the old placeholder until they sign in again.
     const old = await store.ensureHuman({ xUserId: '4003', handle: 'mala', networkHash: 'human' });
-    expect(await store.networkOf(old.id)).toBeNull();
-    await store.ensureHuman({ xUserId: '4003', handle: 'mala', networkHash: 'human' });
-    expect(await store.networkOf(old.id)).toBeNull();
+    expect(await store.networkOf(old.id)).toBe('human');
+    await store.ensureHuman({ xUserId: '4003', handle: 'mala', networkHash: 'net-cafe' });
+    expect(await store.networkOf(old.id)).toBe('net-cafe');
   });
 });

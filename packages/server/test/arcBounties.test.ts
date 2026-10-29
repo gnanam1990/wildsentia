@@ -194,6 +194,14 @@ maybe('Congo bounties paid on Arc', () => {
     expect(after.status).toBe('voided');
   }, 60_000);
 
+  it('never pays a kill involving a person whose network is still the old shared placeholder', async () => {
+    networks.set('prey', 'human');
+    const r = await engine.publishRandom({ amountAtomic: 5_000_000n, windowWorldSeconds: 3600, requireHunter: false });
+    if (!r.ok) throw new Error(r.reason);
+    await engine.onHunt({ predatorId: leopard, preyId: duiker, predatorAgentId: 'hunter', killed: true });
+    expect((await store.get(r.bounty.bountyId))!.outcome).toBe('void');
+  }, 60_000);
+
   it('does not pay a kill that came a fraction of a second after the deadline', async () => {
     const b = await publish(3600);
     // The played clock is at the deadline plus half a second (see `played` above).
