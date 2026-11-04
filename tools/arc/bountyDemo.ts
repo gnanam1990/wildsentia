@@ -1,6 +1,7 @@
 /**
  * The Congo bounty flow on Arc Testnet, end to end (docs/2026-10-19-congo-arc-bounties-design.md),
- * against a running Congo server with VANA_ARC_BOUNTIES=1 and VANA_CONGO_OPEN_PLAY=1.
+ * against a running Congo server with VANA_ARC_BOUNTIES=1 and VANA_CONGO_OPEN_PLAY=1, and
+ * VANA_ARC_BOUNTIES_RANDOM_CROWD=1 (its one steered duiker is no crowd to hide in).
  *
  *   npx tsx tools/arc/bountyDemo.ts <wallets.env> <hunt|survive> [serverUrl=http://127.0.0.1:8090]
  *

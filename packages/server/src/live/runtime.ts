@@ -155,6 +155,7 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
       network: (agentId) => agentStore.networkOf(agentId),
       // Testnet only: refused with a mainnet chain.
       sameNetworkOk: env.VANA_ARC_BOUNTIES_SAME_NETWORK_OK === '1' && chainId === 5042002,
+      randomCrowd: positiveSetting(env, 'VANA_ARC_BOUNTIES_RANDOM_CROWD', 3),
       notify: (agentId, text) => live.notify(agentId, text), eventsOf,
       explorer: env.VANA_ARC_BOUNTIES_EXPLORER_URL?.trim() || null, ...(announce ? { announce } : {}),
       // Default: at most 10 USDC of bounties a day; "0" turns the cap off.

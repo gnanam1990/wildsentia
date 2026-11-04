@@ -50,6 +50,12 @@ export interface ArcBountyPorts {
   network: (agentId: string) => Promise<string | null>;
   /** Testnet demos only: both demo agents run from one machine (VANA_ARC_BOUNTIES_SAME_NETWORK_OK=1). */
   sameNetworkOk?: boolean;
+  /**
+   * A random bounty goes only on a prey with at least this many steered animals of its species in
+   * its region (itself included), since the public list of steered animals and the bounty's species
+   * and region would otherwise point at it. Default 3; 1 turns the check off.
+   */
+  randomCrowd?: number;
   notify: (agentId: string, text: string) => void;
   /** The recorded events of these animals between two world times, for the bounty's record. */
   eventsOf: (animalIds: string[], from: number, to: number) => Promise<unknown[]>;
@@ -146,13 +152,35 @@ export class ArcBountyEngine {
     return na !== null && na === nb;
   }
 
+  /**
+   * The candidates hidden among enough steered animals of their own species in their own region:
+   * a hunter who reads the steered list can never narrow a random bounty to fewer than that.
+   */
+  #hiddenInCrowd<T extends { animalId: string; speciesId: string }>(candidates: T[]): T[] {
+    const need = this.ports.randomCrowd ?? 3;
+    if (need <= 1) return candidates;
+    const world = this.ports.world(), crowd = new Map<string, number>();
+    const keyOf = (animalId: string, speciesId: string): string | null => {
+      const animal = world.animal(animalId);
+      const region = animal?.alive ? this.regionOf(animal.patchId) : null;
+      return region ? `${speciesId}@${region}` : null;
+    };
+    for (const s of this.ports.steered()) {
+      const key = keyOf(s.animalId, s.speciesId);
+      if (key) crowd.set(key, (crowd.get(key) ?? 0) + 1);
+    }
+    return candidates.filter((c) => (crowd.get(keyOf(c.animalId, c.speciesId) ?? '') ?? 0) >= need);
+  }
+
   /** Puts a bounty on a prey animal picked at random, and publishes it on chain. */
   publishRandom(p: { amountAtomic: bigint; windowWorldSeconds: number; requireHunter?: boolean }): Promise<PublishResult> {
     return this.#serial(async () => {
       const refused = await this.#terms(p);
       if (refused) return { ok: false, reason: refused };
-      const candidates = await this.candidates(p.requireHunter ?? true);
-      if (candidates.length === 0) return { ok: false, reason: 'no_candidate' };
+      const all = await this.candidates(p.requireHunter ?? true);
+      if (all.length === 0) return { ok: false, reason: 'no_candidate' };
+      const candidates = this.#hiddenInCrowd(all);
+      if (candidates.length === 0) return { ok: false, reason: 'too_few_alike' };
       const pick = candidates[randomInt(candidates.length)]!;
       return this.#create({ animalId: pick.animalId, speciesId: pick.speciesId, agentId: pick.agentId, wallet: pick.wallet, eligible: pick.eligible }, p, 'random');
     });

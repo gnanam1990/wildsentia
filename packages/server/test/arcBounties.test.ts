@@ -72,6 +72,8 @@ maybe('Congo bounties paid on Arc', () => {
       wallet: async (agentId) => wallets.get(agentId) ?? null, network: async (agentId) => networks.get(agentId) ?? null,
       notify: (agentId, text) => { notes.push([agentId, text]); },
       eventsOf: async () => [{ id: 'e1', worldTime: 1 }], explorer: 'https://explorer.example',
+      // One steered duiker: the crowd check has its own test.
+      randomCrowd: 1,
     };
     engine = new ArcBountyEngine(store, bountyChain, ports);
   }, 60_000);
@@ -223,6 +225,21 @@ maybe('Congo bounties paid on Arc', () => {
     if (!r.ok) throw new Error(r.reason);
     await engine.onHunt({ predatorId: leopard, preyId: duiker, predatorAgentId: 'hunter', killed: true });
     expect((await store.get(r.bounty.bountyId))!.outcome).toBe('void');
+  }, 60_000);
+
+  it('puts a random bounty only on a prey hidden among at least three steered animals of its species in its region', async () => {
+    // Two more blue duikers in the target's region (stand-ins: this small test world has none there),
+    // steered by agents without a wallet: never targets, but cover.
+    const world = ports.world();
+    const inCrowd = new Proxy(world, { get: (target, key) => key === 'animal'
+      ? (id: string) => world.animal(id.startsWith('cover_') ? duiker : id) : Reflect.get(target, key) });
+    engine = new ArcBountyEngine(store, bountyChain, { ...ports, world: () => inCrowd, randomCrowd: 3 });
+    steered.push({ agentId: 'cover-0', animalId: 'cover_0', speciesId: 'blue_duiker' });
+    expect(await engine.publishRandom({ amountAtomic: 5_000_000n, windowWorldSeconds: 3600 })).toEqual({ ok: false, reason: 'too_few_alike' });
+    steered.push({ agentId: 'cover-1', animalId: 'cover_1', speciesId: 'blue_duiker' });
+    const r = await engine.publishRandom({ amountAtomic: 5_000_000n, windowWorldSeconds: 3600 });
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.bounty.targetAnimalId).toBe(duiker);
   }, 60_000);
 
   it('does not pay a kill that came a fraction of a second after the deadline', async () => {
