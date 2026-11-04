@@ -51,9 +51,10 @@ export interface ArcBountyPorts {
   /** Testnet demos only: both demo agents run from one machine (VANA_ARC_BOUNTIES_SAME_NETWORK_OK=1). */
   sameNetworkOk?: boolean;
   /**
-   * A random bounty goes only on a prey with at least this many steered animals of its species in
-   * its region (itself included), since the public list of steered animals and the bounty's species
-   * and region would otherwise point at it. Default 3; 1 turns the check off.
+   * A random bounty goes only on a prey hidden among at least this many prey of its species in its
+   * region that could carry one too, from as many networks (itself included), since the public list
+   * of steered animals and the bounty's species and region would otherwise point at it. Default 3;
+   * 1 turns the check off.
    */
   randomCrowd?: number;
   notify: (agentId: string, text: string) => void;
@@ -153,23 +154,28 @@ export class ArcBountyEngine {
   }
 
   /**
-   * The candidates hidden among enough steered animals of their own species in their own region:
-   * a hunter who reads the steered list can never narrow a random bounty to fewer than that.
+   * The candidates hidden in a crowd: at least `randomCrowd` prey of their own species in their own
+   * region that could carry a bounty as well (steered with a proven wallet, unprotected, carrying
+   * none: a hunter cannot rule any of them out), counted once per network, so that one person's
+   * agents cannot make a crowd and know the target is the one that is not theirs.
    */
-  #hiddenInCrowd<T extends { animalId: string; speciesId: string }>(candidates: T[]): T[] {
+  async #hiddenInCrowd<T extends { animalId: string; speciesId: string }>(candidates: T[]): Promise<T[]> {
     const need = this.ports.randomCrowd ?? 3;
     if (need <= 1) return candidates;
-    const world = this.ports.world(), crowd = new Map<string, number>();
+    const world = this.ports.world(), crowd = new Map<string, Set<string>>();
     const keyOf = (animalId: string, speciesId: string): string | null => {
       const animal = world.animal(animalId);
       const region = animal?.alive ? this.regionOf(animal.patchId) : null;
       return region ? `${speciesId}@${region}` : null;
     };
-    for (const s of this.ports.steered()) {
-      const key = keyOf(s.animalId, s.speciesId);
-      if (key) crowd.set(key, (crowd.get(key) ?? 0) + 1);
+    for (const c of await this.candidates(false)) {
+      const key = keyOf(c.animalId, c.speciesId), network = await this.ports.network(c.agentId);
+      if (!key) continue;
+      const networks = crowd.get(key) ?? new Set<string>();
+      networks.add(network && network !== LEGACY_HUMAN_NETWORK ? `net:${network}` : `agent:${c.agentId}`);
+      crowd.set(key, networks);
     }
-    return candidates.filter((c) => (crowd.get(keyOf(c.animalId, c.speciesId) ?? '') ?? 0) >= need);
+    return candidates.filter((c) => (crowd.get(keyOf(c.animalId, c.speciesId) ?? '')?.size ?? 0) >= need);
   }
 
   /** Puts a bounty on a prey animal picked at random, and publishes it on chain. */
@@ -179,7 +185,7 @@ export class ArcBountyEngine {
       if (refused) return { ok: false, reason: refused };
       const all = await this.candidates(p.requireHunter ?? true);
       if (all.length === 0) return { ok: false, reason: 'no_candidate' };
-      const candidates = this.#hiddenInCrowd(all);
+      const candidates = await this.#hiddenInCrowd(all);
       if (candidates.length === 0) return { ok: false, reason: 'too_few_alike' };
       const pick = candidates[randomInt(candidates.length)]!;
       return this.#create({ animalId: pick.animalId, speciesId: pick.speciesId, agentId: pick.agentId, wallet: pick.wallet, eligible: pick.eligible }, p, 'random');
