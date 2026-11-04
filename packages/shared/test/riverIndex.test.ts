@@ -22,11 +22,10 @@ describe('river index', () => {
   it('is local: a lookup is at least five times cheaper than the brute force', () => {
     const rivers = congoRivers(7, CONGO_GRID), nearest = riverIndex(rivers);
     for (let i = 0; i < 2_000; i++) { nearestRiver(rivers, i * 23, i * 11); nearest(i * 23, i * 11); } // warm both
-    let t = performance.now();
-    for (let i = 0; i < 20_000; i++) nearestRiver(rivers, (i * 2.3) % 48_000, (i * 7.1) % 48_000);
-    const brute = performance.now() - t;
-    t = performance.now();
-    for (let i = 0; i < 20_000; i++) nearest((i * 2.3) % 48_000, (i * 7.1) % 48_000);
-    expect(performance.now() - t).toBeLessThan(brute / 5);
+    // The best of three timings each, so one noisy moment on a shared CI runner cannot decide it.
+    const best = (run: () => void) => Math.min(...[0, 1, 2].map(() => { const t = performance.now(); run(); return performance.now() - t; }));
+    const brute = best(() => { for (let i = 0; i < 20_000; i++) nearestRiver(rivers, (i * 2.3) % 48_000, (i * 7.1) % 48_000); });
+    const indexed = best(() => { for (let i = 0; i < 20_000; i++) nearest((i * 2.3) % 48_000, (i * 7.1) % 48_000); });
+    expect(indexed).toBeLessThan(brute / 5);
   });
 });

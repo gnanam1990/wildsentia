@@ -25,8 +25,9 @@ describe('a step in slices', () => {
     for (const _ of world.stepSlices(2)) { const now = performance.now(); gaps.push(now - at); at = now; }
     const p99 = [...gaps].sort((a, b) => a - b)[Math.floor(gaps.length * 0.99)]!, longest = Math.max(...gaps);
     console.log(`congo slices: ${gaps.length} yields, p99 ${p99.toFixed(1)} ms, longest ${longest.toFixed(1)} ms`);
-    // A garbage-collection pause can land in any slice; the slicing itself is held to 60 ms.
+    // A garbage-collection pause can land in any slice; the slicing itself is held to 60 ms. Both
+    // limits are scaled on the slower GitHub runner, as in snapshotSlices (the pause measured 280 ms there).
     expect(p99).toBeLessThan(Number(process.env.VANA_CONGO_SLICE_MAX_MS ?? 60));
-    expect(longest).toBeLessThan(250);
+    expect(longest).toBeLessThan(Number(process.env.VANA_CONGO_SLICE_PAUSE_MS ?? 250));
   }, 300_000);
 });
