@@ -33,6 +33,22 @@ describe('observer camera input', () => {
     }
     expect(renderBaseY({ x: 10, z: 20 }, follow.groundHeightAt)).toBe(12);
   });
+  it('leaves the camera ready to project after each move, so labels over animals do not trail it by a frame', () => {
+    const camera = new THREE.PerspectiveCamera(50, 16 / 9, .1, 1000), follow = new FollowCamera(camera, surface());
+    follow.groundHeightAt = () => 0;
+    const head = new THREE.Vector3();
+    // The camera glides after an animal that walks and turns; the label is projected straight after,
+    // with no render in between (the HUD runs before the frame is drawn).
+    for (let i = 0; i < 30; i++) {
+      const pose = { x: i * .7, z: Math.sin(i / 4) * 5, heading: i / 6, moving: true, y: 0, focusHeight: .5 };
+      follow.rotateBy(.02);
+      follow.follow(pose, 1 / 60);
+      const shown = head.set(pose.x, 1.2, pose.z).clone().project(camera);
+      camera.updateMatrixWorld();
+      const fresh = head.set(pose.x, 1.2, pose.z).clone().project(camera);
+      expect(shown.x).toBeCloseTo(fresh.x, 6); expect(shown.y).toBeCloseTo(fresh.y, 6);
+    }
+  });
   it('does not consume browser shortcuts or auto-rotate in reduced-motion mode', () => {
     const target = surface();
     const follow = new FollowCamera(new THREE.PerspectiveCamera(), target);

@@ -359,6 +359,9 @@ export class FollowCamera {
       this.camera.position.y += this.#terrainLift;
     }
     this.camera.lookAt(this.target);
+    // The labels over animals are projected before the frame is drawn; without this they used the
+    // last frame's camera and shook against a moving view.
+    this.camera.updateMatrixWorld();
   }
 }
 
