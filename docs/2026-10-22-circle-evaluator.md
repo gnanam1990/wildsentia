@@ -107,6 +107,23 @@ handle these secrets for the owner):
 4. Set the Circle variables on Railway and remove `VANA_ARC_BOUNTIES_EVALUATOR_KEY`. Redeploy.
 5. Change `ARC_WATCH_EVALUATOR` in `.github/workflows/arc-watch.yml` to the Circle wallet's address.
 
+## Done (4 November)
+
+- **Console:** a restricted testnet API key, `wildsentia-evaluator-testnet`, with Wallets read and
+  write only and no other product. The entity secret was generated locally and registered through
+  `POST /v1/w3s/config/entity/entitySecret`. Both are in `~/.wildsentia/circle-arc.env` (mode 600).
+  Circle's recovery file is `~/.wildsentia/circle-entity-recovery.dat`; the owner should move it
+  offline, apart from the secret.
+- **Wallet:** `ARC-TESTNET` EOA `0x73349f3386F8871acddB42eD66A7f48E647c6778`, funded with 20 USDC
+  of gas from faucet.circle.com.
+- **Appointed:** `setEvaluator` on the v2 contract, tx
+  `0x3c67c47db6f2a7dc8ca926eca68da201bd8b07d637ea9a5c0cbe4c5176be02e0`.
+- **Railway:** `VANA_ARC_BOUNTIES_SIGNER=circle` and the four `VANA_CIRCLE_*` variables set;
+  `VANA_ARC_BOUNTIES_EVALUATOR_KEY` removed. After the redeploy the server logged the evaluator as
+  the Circle wallet, confirmed.
+- **Watch:** `ARC_WATCH_EVALUATOR` is now the Circle wallet.
+- **Local demo:** it signs through the same Circle wallet.
+
 ## Tests
 
 `packages/server/test/arcBounties.test.ts` runs a stand-in for Circle's API in front of anvil. It
