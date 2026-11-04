@@ -51,6 +51,7 @@ export function short(hex: string | null | undefined): string {
 export function refusal(code: string): string {
   return ({
     no_candidate: 'No prey to put it on: it needs an agent with a proven wallet steering a hunted, unprotected prey, with another agent\'s predator within 15 km.',
+    too_few_alike: 'No prey hidden well enough: a random bounty needs at least three prey of the same species in the same region that could carry it, from three networks, so hunters cannot tell which one does. Drop one on an animal you choose instead.',
     pool_too_small: 'The pool on Arc does not hold that much: fund it first.',
     amount_out_of_range: 'The contract does not allow that amount.',
     bad_window: 'That window is not allowed.',

@@ -72,6 +72,8 @@ maybe('Congo bounties paid on Arc', () => {
       wallet: async (agentId) => wallets.get(agentId) ?? null, network: async (agentId) => networks.get(agentId) ?? null,
       notify: (agentId, text) => { notes.push([agentId, text]); },
       eventsOf: async () => [{ id: 'e1', worldTime: 1 }], explorer: 'https://explorer.example',
+      // One steered duiker: the crowd check has its own test.
+      randomCrowd: 1,
     };
     engine = new ArcBountyEngine(store, bountyChain, ports);
   }, 60_000);
@@ -223,6 +225,35 @@ maybe('Congo bounties paid on Arc', () => {
     if (!r.ok) throw new Error(r.reason);
     await engine.onHunt({ predatorId: leopard, preyId: duiker, predatorAgentId: 'hunter', killed: true });
     expect((await store.get(r.bounty.bountyId))!.outcome).toBe('void');
+  }, 60_000);
+
+  it('puts a random bounty only on a prey hidden among three alike that could carry it too, from three networks', async () => {
+    // Blue duikers in the target's region (stand-ins: this small test world has none there).
+    const world = ports.world();
+    const inCrowd = new Proxy(world, { get: (target, key) => key === 'animal'
+      ? (id: string) => world.animal(id.startsWith('cover_') ? duiker : id) : Reflect.get(target, key) });
+    engine = new ArcBountyEngine(store, bountyChain, { ...ports, world: () => inCrowd, randomCrowd: 3 });
+    const tooFew = async () => expect(await engine.publishRandom({ amountAtomic: 5_000_000n, windowWorldSeconds: 3600, requireHunter: false }))
+      .toEqual({ ok: false, reason: 'too_few_alike' });
+    const cover = (n: number, network: string, wallet: string | null) => {
+      steered.push({ agentId: `cover-${n}`, animalId: `cover_${n}`, speciesId: 'blue_duiker' });
+      networks.set(`cover-${n}`, network);
+      if (wallet) wallets.set(`cover-${n}`, wallet);
+    };
+    // Steered without a wallet: a hunter can rule it out (it could never carry a bounty), so no cover.
+    cover(0, 'net-c', null);
+    cover(1, 'net-d', null);
+    await tooFew();
+    // With wallets, but from one network: one person's agents count once.
+    cover(2, 'net-c', '0x00000000000000000000000000000000000000c3');
+    cover(3, 'net-c', '0x00000000000000000000000000000000000000c4');
+    await tooFew();
+    // A third network: a crowd of three.
+    cover(4, 'net-e', '0x00000000000000000000000000000000000000c5');
+    const r = await engine.publishRandom({ amountAtomic: 5_000_000n, windowWorldSeconds: 3600 });
+    if (!r.ok) throw new Error(r.reason);
+    // Any of the prey that could carry it, never one ruled out.
+    expect([duiker, 'cover_2', 'cover_3', 'cover_4']).toContain(r.bounty.targetAnimalId);
   }, 60_000);
 
   it('does not pay a kill that came a fraction of a second after the deadline', async () => {

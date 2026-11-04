@@ -50,6 +50,13 @@ export interface ArcBountyPorts {
   network: (agentId: string) => Promise<string | null>;
   /** Testnet demos only: both demo agents run from one machine (VANA_ARC_BOUNTIES_SAME_NETWORK_OK=1). */
   sameNetworkOk?: boolean;
+  /**
+   * A random bounty goes only on a prey hidden among at least this many prey of its species in its
+   * region that could carry one too, from as many networks (itself included), since the public list
+   * of steered animals and the bounty's species and region would otherwise point at it. Default 3;
+   * 1 turns the check off.
+   */
+  randomCrowd?: number;
   notify: (agentId: string, text: string) => void;
   /** The recorded events of these animals between two world times, for the bounty's record. */
   eventsOf: (animalIds: string[], from: number, to: number) => Promise<unknown[]>;
@@ -146,13 +153,40 @@ export class ArcBountyEngine {
     return na !== null && na === nb;
   }
 
+  /**
+   * The candidates hidden in a crowd: at least `randomCrowd` prey of their own species in their own
+   * region that could carry a bounty as well (steered with a proven wallet, unprotected, carrying
+   * none: a hunter cannot rule any of them out), counted once per network, so that one person's
+   * agents cannot make a crowd and know the target is the one that is not theirs.
+   */
+  async #hiddenInCrowd<T extends { animalId: string; speciesId: string }>(candidates: T[]): Promise<T[]> {
+    const need = this.ports.randomCrowd ?? 3;
+    if (need <= 1) return candidates;
+    const world = this.ports.world(), crowd = new Map<string, Set<string>>();
+    const keyOf = (animalId: string, speciesId: string): string | null => {
+      const animal = world.animal(animalId);
+      const region = animal?.alive ? this.regionOf(animal.patchId) : null;
+      return region ? `${speciesId}@${region}` : null;
+    };
+    for (const c of await this.candidates(false)) {
+      const key = keyOf(c.animalId, c.speciesId), network = await this.ports.network(c.agentId);
+      if (!key) continue;
+      const networks = crowd.get(key) ?? new Set<string>();
+      networks.add(network && network !== LEGACY_HUMAN_NETWORK ? `net:${network}` : `agent:${c.agentId}`);
+      crowd.set(key, networks);
+    }
+    return candidates.filter((c) => (crowd.get(keyOf(c.animalId, c.speciesId) ?? '')?.size ?? 0) >= need);
+  }
+
   /** Puts a bounty on a prey animal picked at random, and publishes it on chain. */
   publishRandom(p: { amountAtomic: bigint; windowWorldSeconds: number; requireHunter?: boolean }): Promise<PublishResult> {
     return this.#serial(async () => {
       const refused = await this.#terms(p);
       if (refused) return { ok: false, reason: refused };
-      const candidates = await this.candidates(p.requireHunter ?? true);
-      if (candidates.length === 0) return { ok: false, reason: 'no_candidate' };
+      const all = await this.candidates(p.requireHunter ?? true);
+      if (all.length === 0) return { ok: false, reason: 'no_candidate' };
+      const candidates = await this.#hiddenInCrowd(all);
+      if (candidates.length === 0) return { ok: false, reason: 'too_few_alike' };
       const pick = candidates[randomInt(candidates.length)]!;
       return this.#create({ animalId: pick.animalId, speciesId: pick.speciesId, agentId: pick.agentId, wallet: pick.wallet, eligible: pick.eligible }, p, 'random');
     });
