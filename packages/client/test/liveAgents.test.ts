@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { LiveAgents, activityOf, isLiveMessage, isRosterMessage, rosterActivity, usdc, type LiveMessage } from '../src/liveAgents.js';
+import { LiveAgents, activityOf, playoutDelay, isLiveMessage, isRosterMessage, rosterActivity, usdc, type LiveMessage } from '../src/liveAgents.js';
 import type { AnimalState } from '../src/protocol.js';
 
 const avatar = (x: number, extra = {}) => ({ agentId: 'ag_1', name: 'Sora', animalId: 'chital_0001', speciesId: 'chital', x, z: 0, heading: 0,
@@ -22,11 +22,53 @@ describe('live agents in the observer', () => {
     expect(isLiveMessage({ ...message(1, 5), avatars: [avatar(5, { said: { html: '<b>' } })] })).toBe(false);
   });
 
+  it('runs at an even pace when the 10 Hz updates arrive unevenly, so a running animal and the camera on it do not shake', () => {
+    // A running agent at 8 m/s, sent every 100 ms of server time, arriving up to 45 ms late.
+    const live = new LiveAgents(() => 0);
+    const late = (i: number) => [0, 45, 5, 30, 0, 40, 10, 0, 25, 45, 0, 15][i % 12]!;
+    const sent = Array.from({ length: 40 }, (_, i) => ({ at: 10_000 + i * 100, x: i * 0.8, recv: i * 100 + late(i) }));
+    const steps: number[] = [];
+    let last: number | null = null, next = 0;
+    for (let now = 600; now < 3500; now += 1000 / 60) {
+      while (next < sent.length && sent[next]!.recv <= now) { live.apply(message(sent[next]!.at, sent[next]!.x), sent[next]!.recv); next++; }
+      const x = live.positions(now).get('chital_0001')!.x;
+      if (last !== null) steps.push(x - last);
+      last = x;
+    }
+    // Every frame moves 8 m/s × 1/60 s, within the 5% the delay may ease by; the old drawing jumped ahead or stood still.
+    for (const step of steps) expect(Math.abs(step - 0.8 / 6) / (0.8 / 6)).toBeLessThan(0.06);
+  });
+
+  it('runs at an even pace at the server\'s own 4 Hz, however late each update arrives', () => {
+    // What the server sends: every 250 ms. On the old drawing the animal stood still in 28% of the
+    // frames of a real local run while it waited for the next update.
+    const live = new LiveAgents(() => 0);
+    const late = (i: number) => [0, 60, 10, 90, 0, 30, 70, 0, 20, 80][i % 10]!;
+    const sent = Array.from({ length: 30 }, (_, i) => ({ at: 50_000 + i * 250, x: i * 2, recv: i * 250 + late(i) }));
+    const steps: number[] = [];
+    let last: number | null = null, next = 0;
+    for (let now = 2000; now < 6500; now += 1000 / 60) {
+      while (next < sent.length && sent[next]!.recv <= now) { live.apply(message(sent[next]!.at, sent[next]!.x), sent[next]!.recv); next++; }
+      const x = live.positions(now).get('chital_0001')!.x;
+      if (last !== null) steps.push(x - last);
+      last = x;
+    }
+    for (const step of steps) expect(Math.abs(step - 2 / 15) / (2 / 15)).toBeLessThan(0.06);
+  });
+
+  it('waits one and a half send intervals plus the arrival spread, within bounds', () => {
+    expect(playoutDelay([], [])).toBe(375);
+    expect(playoutDelay([250, 250, 251], [-1000, -990, -930])).toBe(375 + 70);
+    expect(playoutDelay([100, 100], [5, 5])).toBe(150);
+    expect(playoutDelay([2000], [0, 9000])).toBe(1500);
+  });
+
   it('draws an agent between its last two updates, so it glides rather than jumps', () => {
     const live = new LiveAgents(() => 0);
     live.apply(message(1000, 0), 0);
     live.apply(message(1250, 10), 250);
-    const halfway = live.positions(375).get('chital_0001')!;
+    // 375 ms behind the server (1.5 × 250 ms), halfway between the two updates.
+    const halfway = live.positions(500).get('chital_0001')!;
     expect(halfway.x).toBeCloseTo(5);
     expect(live.positions(10_000).get('chital_0001')!.x).toBe(10);
   });
@@ -84,8 +126,8 @@ describe('live agents in the observer', () => {
     expect(pose.animal.state).toBe('fleeing');
     expect(pose.hurried).toBe(true);
     live.apply({ ...message(1250, 0), avatars: [], wild: [{ ...wild[0], x: 10, mode: 'stalk' }] }, 250);
-    expect(live.poses(375, animals).get('chital_0001')!.position.x).toBeCloseTo(5);
-    expect(live.poses(375, animals).get('chital_0001')!.animal.state).toBe('stalking');
+    expect(live.poses(500, animals).get('chital_0001')!.position.x).toBeCloseTo(5);
+    expect(live.poses(500, animals).get('chital_0001')!.animal.state).toBe('stalking');
     expect(activityOf(avatar(0, { action: 'hunt', gait: 'run' }))).toBe('charging');
   });
 });

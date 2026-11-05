@@ -85,11 +85,35 @@ export function activityOf(a: LiveAvatar): string {
 const lerpAngle = (a: number, b: number, t: number) => a + (((b - a + Math.PI * 3) % (Math.PI * 2)) - Math.PI) * t;
 export const usdc = (micro: string) => (Number(micro) / 1e6).toLocaleString('en-US', { maximumFractionDigits: 2 });
 
+/** The server sends the live state every 250 ms (packages/server/src/live/runtime.ts). */
+const LIVE_SEND_MS = 250;
+/** Updates kept to draw between: four seconds of them. */
+const LIVE_BUFFER = 16;
+
+/**
+ * How far behind the server's clock avatars are drawn: one and a half send intervals, plus how much
+ * later than the quickest the recent updates arrived. Then the next update is nearly always in hand
+ * before it is needed, so the drawn motion never stands still waiting for it.
+ */
+export function playoutDelay(sendGapsMs: readonly number[], offsetsMs: readonly number[]): number {
+  const sorted = (values: readonly number[]) => [...values].sort((a, b) => a - b);
+  const gaps = sorted(sendGapsMs.filter((g) => g > 0));
+  const gap = gaps.length ? gaps[Math.floor(gaps.length / 2)]! : LIVE_SEND_MS;
+  const offsets = sorted(offsetsMs);
+  const jitter = offsets.length ? offsets[Math.max(0, Math.ceil(offsets.length * 0.9) - 1)]! - offsets[0]! : 0;
+  return Math.min(1500, Math.max(150, gap * 1.5 + jitter));
+}
+
 export class LiveAgents {
   readonly root = new THREE.Group();
-  #previous: LiveMessage | null = null;
   #latest: LiveMessage | null = null;
-  #receivedAt = 0;
+  /** Recent updates by server time, oldest first. */
+  #buffer: LiveMessage[] = [];
+  /** Local time minus server time for the quickest recent arrival: the transit with no queueing in it. */
+  #offsets: number[] = [];
+  /** The delay drawn at, eased toward playoutDelay() so a change in it never shows as a lurch. */
+  #delay: number | null = null;
+  #delayAt = 0;
   #roster: RosterEntry[] = [];
   readonly #drops = new Map<string, { group: THREE.Group; ring: THREE.Mesh; beam: THREE.Mesh; crate: THREE.Mesh; progress: THREE.Mesh }>();
   readonly #ringGeometry = new THREE.RingGeometry(0.97, 1, 96).rotateX(-Math.PI / 2);
@@ -105,49 +129,85 @@ export class LiveAgents {
   }
 
   apply(message: LiveMessage, nowMs: number): void {
-    this.#previous = this.#latest; this.#latest = message; this.#receivedAt = nowMs;
+    // An update no newer than one already held (a late or repeated one) adds nothing.
+    if (this.#latest && message.at <= this.#latest.at) return;
+    this.#latest = message;
+    this.#buffer.push(message);
+    if (this.#buffer.length > LIVE_BUFFER) this.#buffer.shift();
+    this.#offsets.push(nowMs - message.at);
+    if (this.#offsets.length > LIVE_BUFFER * 4) this.#offsets.shift();
     this.#syncDrops(message.drops);
+  }
+
+  /**
+   * The two held updates around the moment drawn now, and how far between them it is. That moment
+   * runs on the server's clock, playoutDelay() behind, so the drawn motion keeps the pace
+   * it was sent at however unevenly the updates arrive. Past the newest update, it holds there.
+   */
+  #bracket(nowMs: number): { from: LiveMessage; to: LiveMessage; t: number } | null {
+    const buffer = this.#buffer;
+    if (buffer.length === 0) return null;
+    const gaps = buffer.slice(1).map((m, i) => m.at - buffer[i]!.at);
+    const target = playoutDelay(gaps, this.#offsets);
+    if (this.#delay === null) this.#delay = target;
+    else {
+      // At most 5% faster or slower than real time while it settles: too little to see.
+      const most = Math.max(0, nowMs - this.#delayAt) * 0.05;
+      this.#delay += Math.min(most, Math.max(-most, target - this.#delay));
+    }
+    this.#delayAt = nowMs;
+    const at = nowMs - Math.min(...this.#offsets) - this.#delay;
+    const newest = buffer[buffer.length - 1]!;
+    if (at >= newest.at || buffer.length === 1) return { from: newest, to: newest, t: 1 };
+    if (at <= buffer[0]!.at) return { from: buffer[0]!, to: buffer[0]!, t: 1 };
+    let i = buffer.length - 1;
+    while (i > 0 && buffer[i - 1]!.at > at) i--;
+    const from = buffer[i - 1]!, to = buffer[i]!;
+    return { from, to, t: (at - from.at) / Math.max(1, to.at - from.at) };
   }
 
   applyRoster(message: RosterMessage): void { this.#roster = message.agents; }
   /** Everyone playing, near the camera or not. */
   get roster(): RosterEntry[] { return this.#roster; }
 
-  clear(): void { this.#previous = this.#latest = null; this.#roster = []; this.#syncDrops([]); }
+  clear(): void { this.#latest = null; this.#buffer = []; this.#offsets = []; this.#delay = null; this.#roster = []; this.#syncDrops([]); }
 
   get avatars(): LiveAvatar[] { return this.#latest?.avatars ?? []; }
   get drops(): LiveDrop[] { return this.#latest?.drops ?? []; }
   avatarForAnimal(animalId: string): LiveAvatar | undefined { return this.avatars.find((a) => a.animalId === animalId); }
 
-  /** Where each avatar is drawn now: a quarter second behind, between the last two updates. */
+  /**
+   * Where each avatar is drawn now: a little behind the server (playoutDelay), between the two updates
+   * around that moment. Who is shown, and what they do, comes from the newest update.
+   */
   positions(nowMs: number): Map<string, { avatar: LiveAvatar; x: number; z: number; heading: number }> {
     const result = new Map<string, { avatar: LiveAvatar; x: number; z: number; heading: number }>();
-    const latest = this.#latest;
-    if (!latest) return result;
-    const previous = new Map((this.#previous?.avatars ?? []).map((a) => [a.agentId, a]));
-    const span = Math.max(1, latest.at - (this.#previous?.at ?? latest.at));
-    const t = Math.min(1, Math.max(0, (nowMs - this.#receivedAt) / span));
+    const latest = this.#latest, span = this.#bracket(nowMs);
+    if (!latest || !span) return result;
+    const from = new Map(span.from.avatars.map((a) => [a.agentId, a])), to = new Map(span.to.avatars.map((a) => [a.agentId, a]));
     for (const a of latest.avatars) {
-      const p = previous.get(a.agentId);
-      result.set(a.animalId, p && p.animalId === a.animalId
-        ? { avatar: a, x: p.x + (a.x - p.x) * t, z: p.z + (a.z - p.z) * t, heading: lerpAngle(p.heading, a.heading, t) }
-        : { avatar: a, x: a.x, z: a.z, heading: a.heading });
+      const p = from.get(a.agentId), q = to.get(a.agentId);
+      if (p && q && p.animalId === a.animalId && q.animalId === a.animalId) {
+        result.set(a.animalId, { avatar: a, x: p.x + (q.x - p.x) * span.t, z: p.z + (q.z - p.z) * span.t, heading: lerpAngle(p.heading, q.heading, span.t) });
+      } else {
+        // Not in both updates around the drawn moment: show it where it was last placed there, or as it is now.
+        const at = q ?? p;
+        result.set(a.animalId, at && at.animalId === a.animalId ? { avatar: a, x: at.x, z: at.z, heading: at.heading } : { avatar: a, x: a.x, z: a.z, heading: a.heading });
+      }
     }
     return result;
   }
 
-  /** Wild animals in a live chase, drawn between the last two updates like agents' animals. */
+  /** Wild animals in a live chase, drawn a little behind the server like agents' animals. */
   wildPositions(nowMs: number): Map<string, { wild: LiveWild; x: number; z: number; heading: number }> {
     const result = new Map<string, { wild: LiveWild; x: number; z: number; heading: number }>();
-    const latest = this.#latest;
-    if (!latest?.wild) return result;
-    const previous = new Map((this.#previous?.wild ?? []).map((w) => [w.animalId, w]));
-    const span = Math.max(1, latest.at - (this.#previous?.at ?? latest.at));
-    const t = Math.min(1, Math.max(0, (nowMs - this.#receivedAt) / span));
+    const latest = this.#latest, span = this.#bracket(nowMs);
+    if (!latest?.wild || !span) return result;
+    const from = new Map((span.from.wild ?? []).map((w) => [w.animalId, w])), to = new Map((span.to.wild ?? []).map((w) => [w.animalId, w]));
     for (const w of latest.wild) {
-      const p = previous.get(w.animalId);
-      result.set(w.animalId, p ? { wild: w, x: p.x + (w.x - p.x) * t, z: p.z + (w.z - p.z) * t, heading: lerpAngle(p.heading, w.heading, t) }
-        : { wild: w, x: w.x, z: w.z, heading: w.heading });
+      const p = from.get(w.animalId), q = to.get(w.animalId);
+      if (p && q) result.set(w.animalId, { wild: w, x: p.x + (q.x - p.x) * span.t, z: p.z + (q.z - p.z) * span.t, heading: lerpAngle(p.heading, q.heading, span.t) });
+      else { const at = q ?? p ?? w; result.set(w.animalId, { wild: w, x: at.x, z: at.z, heading: at.heading }); }
     }
     return result;
   }
