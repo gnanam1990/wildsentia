@@ -15,6 +15,7 @@ import { targetCommit, viemBountyChain, type BountyChain } from '../src/arcBount
 import { bountiesAbi } from '../src/challenges/bountiesAbi.js';
 import Fastify from 'fastify';
 import { agentArcBounties, installArcBountyRoutes, publicArcBounty } from '../src/arcBounties/routes.js';
+import type { Link } from '../src/arcBounties/funding.js';
 import { testDatabaseUrl } from './testDatabase.js';
 import { ANVIL_KEYS, CHAIN_ID, anvilAvailable, startLocalChain, usdcBalance, type LocalChain } from './anvil.js';
 
@@ -217,6 +218,46 @@ maybe('Congo bounties paid on Arc', () => {
     const after = (await store.get(r.bounty.bountyId))!;
     expect(after.outcome).toBe('void');
     expect(after.status).toBe('voided');
+  }, 60_000);
+
+  it('never pays a hunter whose wallet money links to the prey\'s, nor counts it as the hunter near; waits while the explorer is down', async () => {
+    const OWNER = '0x00000000000000000000000000000000000000c3';
+    let link: Link | 'down' = { linked: true, via: OWNER, how: 'funder' };
+    const asked: string[][] = [];
+    ports.fundingLinked = async (a, b) => { asked.push([a, b]); if (link === 'down') throw new Error('explorer 503'); return link; };
+    // Linked by money: no hunter from someone else is near, though their networks differ.
+    expect(await engine.publishRandom({ amountAtomic: 5_000_000n, windowWorldSeconds: 3600 })).toEqual({ ok: false, reason: 'no_candidate' });
+    expect(asked).toContainEqual([HUNTER_WALLET, PREY_WALLET]);
+    const r = await engine.publishRandom({ amountAtomic: 5_000_000n, windowWorldSeconds: 3600, requireHunter: false });
+    if (!r.ok) throw new Error(r.reason);
+    // The explorer cannot be read at the kill: nothing is decided, nothing paid.
+    const paidBefore = await usdcBalance(chain, HUNTER_WALLET);
+    link = 'down';
+    await engine.onHunt({ predatorId: leopard, preyId: duiker, predatorAgentId: 'hunter', killed: true });
+    expect((await store.get(r.bounty.bountyId))!.status).toBe('active');
+    // It answers: linked, so the money goes back to the pool, and the record says why.
+    link = { linked: true, via: OWNER, how: 'funder' };
+    await engine.adjudicate();
+    const after = (await store.get(r.bounty.bountyId))!;
+    expect(after.outcome).toBe('void');
+    expect(after.status).toBe('voided');
+    expect(after.record).toMatchObject({ refused: { reason: 'funding_linked', how: 'funder', via: OWNER } });
+    expect(await usdcBalance(chain, HUNTER_WALLET)).toBe(paidBefore);
+  }, 60_000);
+
+  it('pays a hunter the funding graph finds no link to, once the explorer answers', async () => {
+    let up = false;
+    ports.fundingLinked = async () => { if (!up) throw new Error('explorer 503'); return { linked: false }; };
+    const r = await engine.publishRandom({ amountAtomic: 5_000_000n, windowWorldSeconds: 3600, requireHunter: false });
+    if (!r.ok) throw new Error(r.reason);
+    await engine.onHunt({ predatorId: leopard, preyId: duiker, predatorAgentId: 'hunter', killed: true });
+    expect((await store.get(r.bounty.bountyId))!.status).toBe('active');
+    up = true;
+    await engine.adjudicate();
+    const after = (await store.get(r.bounty.bountyId))!;
+    expect(after.status).toBe('paid');
+    expect(after.payeeWallet).toBe(HUNTER_WALLET);
+    expect(after.record).not.toHaveProperty('refused');
   }, 60_000);
 
   it('never pays a kill involving a person whose network is still the old shared placeholder', async () => {

@@ -24,6 +24,7 @@ import { ArcBountyStore } from '../arcBounties/store.js';
 import { ArcBountyEngine } from '../arcBounties/engine.js';
 import { viemBountyChain } from '../arcBounties/chain.js';
 import { circleSigner } from '../arcBounties/circle.js';
+import { blockscoutFunding, FundingGraph } from '../arcBounties/funding.js';
 import type { ArcBountyDeps } from '../arcBounties/routes.js';
 import { Notifier, arcBountyAnnouncer, describeNotify, notifyConfig } from '../notify/notify.js';
 import type { Hex } from 'viem';
@@ -142,6 +143,19 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
         walletAddress: required('VANA_CIRCLE_WALLET_ADDRESS'), ...(fee ? { feeLevel: fee as 'LOW' | 'MEDIUM' | 'HIGH' } : {}), ...(env.VANA_CIRCLE_BASE_URL?.trim() ? { baseUrl: env.VANA_CIRCLE_BASE_URL.trim() } : {}) }) });
     })() : viemBountyChain({ ...where, evaluatorKey: required('VANA_ARC_BOUNTIES_EVALUATOR_KEY') as Hex });
     const store = new ArcBountyStore(pool, host.worldId ?? 'unknown');
+    // The funding-graph check (docs/2026-11-14-funding-graph.md): on unless VANA_ARC_BOUNTIES_FUNDING_CHECK=off.
+    // It reads Arc Testnet's explorer by default; another chain must name its Blockscout API v2.
+    const funding = env.VANA_ARC_BOUNTIES_FUNDING_CHECK?.trim() === 'off' ? null : (() => {
+      const api = env.VANA_ARC_BOUNTIES_FUNDING_API?.trim() || (chainId === 5042002 ? 'https://explorer.testnet.arc.io/api/v2' : '');
+      if (!/^https:\/\/[^\s/]+(\/[^\s]*)?$/.test(api)) throw new Error('VANA_ARC_BOUNTIES_FUNDING_API must be an https Blockscout API v2 URL (or VANA_ARC_BOUNTIES_FUNDING_CHECK=off)');
+      const ignore = (env.VANA_ARC_BOUNTIES_FUNDING_IGNORE ?? '').split(',').map((a) => a.trim()).filter(Boolean);
+      if (ignore.some((a) => !/^0x[0-9a-fA-F]{40}$/.test(a))) throw new Error('VANA_ARC_BOUNTIES_FUNDING_IGNORE must be comma-separated addresses');
+      // The bounty contract pays every winner, the evaluator sends every transaction, USDC is the token itself: none links anybody.
+      const graph = new FundingGraph(blockscoutFunding(api), { ignore: [where.contract, chain.evaluator, '0x3600000000000000000000000000000000000000', ...ignore],
+        hubTransfers: positiveSetting(env, 'VANA_ARC_BOUNTIES_FUNDING_HUB_TRANSFERS', 1000) });
+      console.log(`arc bounties: funding-graph check on (${api})`);
+      return graph;
+    })();
     // Alerts to Discord and Telegram when a bounty goes live and when it is decided (all optional).
     const alerts = notifyConfig(env);
     if (alerts) console.log(`arc bounty alerts: ${describeNotify(alerts)}`);
@@ -155,6 +169,7 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
       network: (agentId) => agentStore.networkOf(agentId),
       // Testnet only: refused with a mainnet chain.
       sameNetworkOk: env.VANA_ARC_BOUNTIES_SAME_NETWORK_OK === '1' && chainId === 5042002,
+      ...(funding ? { fundingLinked: (a: string, b: string) => funding.linked(a, b) } : {}),
       randomCrowd: positiveSetting(env, 'VANA_ARC_BOUNTIES_RANDOM_CROWD', 3),
       notify: (agentId, text) => live.notify(agentId, text), eventsOf,
       explorer: env.VANA_ARC_BOUNTIES_EXPLORER_URL?.trim() || null, ...(announce ? { announce } : {}),
