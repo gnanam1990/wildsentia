@@ -4,25 +4,28 @@
  * between wallets is not. After Circle Research's Anduin paper (3 November 2026), which ranks agent
  * services by the payment graph instead of by ratings.
  *
- * Two wallets are linked when, among their USDC transfers of at least `minUsdc`:
+ * The hunter's wallet is linked to the prey's when, among their USDC transfers:
  * - one sent to the other;
  * - one address sent to both (a shared funder); or
  * - both sent to one address (a shared cash-out).
+ * A flow counts when the hunter's wallet sent it (nobody else can), or when all that one address
+ * sent the other comes to at least `minUsdc` (default 0.5): summed, so funding split into small
+ * transfers still counts, and dust from a griefer does not.
  * A public hub joins strangers and links nobody: a contract (the bounty contract pays every winner),
  * an address the operator lists, or one with more transfers than `hubTransfers` (a faucet: Arc
  * Testnet's sends to millions).
  *
  * Only USDC counts: any contract can log a Transfer event naming any sender, so another token's
  * transfers could be forged to link an honest hunter to a prey. USDC is the chain's own system
- * contract. Below `minUsdc` (default 0.5) a transfer does not count, so linking a stranger to a prey
- * costs the griefer real money, paid to the people they would link.
+ * contract. Linking a stranger to a prey costs a griefer at least `minUsdc` per flow, paid to the
+ * people they would link.
  *
  * A fresh wallet has no history and so no links: this raises the cost of self-dealing (a second
  * wallet must never meet the first), it does not end it.
  */
 
-/** A USDC transfer, in whole USDC. */
-export interface Transfer { from: string; to: string; usdc: number }
+/** A USDC transfer, in whole USDC; `id` (transaction and log index) tells one seen from both ends. */
+export interface Transfer { id: string; from: string; to: string; usdc: number }
 
 /** Where the transfers come from: an explorer's index (Blockscout's API v2 serves Arc's). */
 export interface FundingSource {
@@ -39,7 +42,7 @@ export interface FundingGraphOptions {
   ignore?: Iterable<string>;
   /** More token transfers than this make an address a public hub (default 1000). */
   hubTransfers?: number;
-  /** Smaller transfers do not count (default 0.5 USDC). */
+  /** A flow from one address to another counts at this total (default 0.5 USDC), unless the hunter sent it. */
   minUsdc?: number;
   /** How long a wallet's transfers and an address's profile are kept (default 10 minutes). */
   ttlMs?: number;
@@ -64,26 +67,38 @@ export class FundingGraph {
   }
 
   /**
-   * Whether two wallets are linked, and through which address. Throws when the source cannot be
-   * read: the caller decides later, it never pays on an unread graph.
+   * Whether the hunter's wallet is linked to the prey's, and through which address. Not symmetric:
+   * the hunter's own transfers count whatever their size, the prey side's only from `minUsdc` up,
+   * so a prey's owner cannot void a hunter's kill by sending it a cent. Throws when the source
+   * cannot be read: the caller decides later, it never pays on an unread graph.
    */
-  async linked(a: string, b: string): Promise<Link> {
-    const [x, y] = [a.toLowerCase(), b.toLowerCase()];
+  async linked(hunter: string, prey: string): Promise<Link> {
+    const [x, y] = [hunter.toLowerCase(), prey.toLowerCase()];
     if (x === y) return { linked: true, via: x, how: 'direct' };
     const [tx, ty] = await Promise.all([this.#transfersOf(x), this.#transfersOf(y)]);
-    if (tx.some((t) => t.from === y || t.to === y) || ty.some((t) => t.from === x || t.to === x)) return { linked: true, via: x, how: 'direct' };
-    const shared = async (pick: (t: Transfer) => string, own: string, other: string, how: 'funder' | 'cash-out'): Promise<Link | null> => {
-      const theirs = new Set(ty.filter((t) => (how === 'funder' ? t.to : t.from) === other).map(pick));
-      const common = new Set(tx.filter((t) => (how === 'funder' ? t.to : t.from) === own).map(pick).filter((addr) => theirs.has(addr)));
-      for (const addr of common) if (!(await this.#hub(addr))) return { linked: true, via: addr, how };
-      return null;
-    };
-    return (await shared((t) => t.from, x, y, 'funder')) ?? (await shared((t) => t.to, x, y, 'cash-out')) ?? { linked: false };
+    // What each address sent each other one, summed; a transfer between the two is in both lists, counted once.
+    const flows = new Map<string, number>(), seen = new Set<string>();
+    for (const t of [...tx, ...ty]) {
+      if (seen.has(t.id)) continue;
+      seen.add(t.id);
+      flows.set(`${t.from}>${t.to}`, (flows.get(`${t.from}>${t.to}`) ?? 0) + t.usdc);
+    }
+    const counts = (from: string, to: string) => flows.has(`${from}>${to}`) && (from === x || flows.get(`${from}>${to}`)! >= this.#minUsdc);
+    if (counts(x, y) || counts(y, x)) return { linked: true, via: x, how: 'direct' };
+    const others = new Set<string>();
+    for (const t of [...tx, ...ty]) for (const a of [t.from, t.to]) if (a !== x && a !== y) others.add(a);
+    for (const how of ['funder', 'cash-out'] as const) {
+      for (const a of others) {
+        const both = how === 'funder' ? counts(a, x) && counts(a, y) : counts(x, a) && counts(y, a);
+        if (both && !(await this.#hub(a))) return { linked: true, via: a, how };
+      }
+    }
+    return { linked: false };
   }
 
   async #transfersOf(wallet: string): Promise<Transfer[]> {
     return this.#cached(this.#transfers, wallet, async () => (await this.source.transfers(wallet))
-      .filter((t) => t.usdc >= this.#minUsdc).map((t) => ({ from: t.from.toLowerCase(), to: t.to.toLowerCase(), usdc: t.usdc })));
+      .map((t) => ({ id: t.id, from: t.from.toLowerCase(), to: t.to.toLowerCase(), usdc: t.usdc })));
   }
 
   async #hub(address: string): Promise<boolean> {
@@ -136,12 +151,14 @@ export function blockscoutFunding(api: string, options: { token?: string; pages?
       for (let page = 0; page < pages; page++) {
         const body = await read(`/addresses/${wallet}/token-transfers${query}`);
         for (const raw of (body.items as unknown[] | undefined) ?? []) {
-          const item = raw as { from?: unknown; to?: unknown; token?: { address_hash?: unknown; address?: unknown }; total?: { value?: unknown; decimals?: unknown } };
+          const item = raw as { from?: unknown; to?: unknown; token?: { address_hash?: unknown; address?: unknown }; total?: { value?: unknown; decimals?: unknown };
+            transaction_hash?: unknown; log_index?: unknown };
           // The filter is asked for, and checked again here: an explorer that ignored it must not let another token through.
           if (String(item.token?.address_hash ?? item.token?.address ?? '').toLowerCase() !== token) continue;
           const from = hashOf(item.from), to = hashOf(item.to);
           const usdc = Number(item.total?.value) / 10 ** Number(item.total?.decimals ?? 6);
-          if (from && to && Number.isFinite(usdc) && from.toLowerCase() !== ZERO && to.toLowerCase() !== ZERO) out.push({ from, to, usdc });
+          const id = `${String(item.transaction_hash ?? '')}:${String(item.log_index ?? '')}`;
+          if (from && to && Number.isFinite(usdc) && from.toLowerCase() !== ZERO && to.toLowerCase() !== ZERO) out.push({ id, from, to, usdc });
         }
         const next = body.next_page_params as Record<string, unknown> | null | undefined;
         if (!next) break;

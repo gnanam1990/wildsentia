@@ -10,7 +10,8 @@ const OWNER = '0x00000000000000000000000000000000000000c3', FAUCET = '0x00000000
 const CONTRACT = '0x00000000000000000000000000000000000000d5', STRANGER = '0x00000000000000000000000000000000000000e6';
 
 /** An explorer over a fixed list of transfers, counting its reads. */
-function source(transfers: Transfer[], profiles: Record<string, { contract: boolean; transfers: number }> = {}) {
+function source(list: Array<Omit<Transfer, 'id'>>, profiles: Record<string, { contract: boolean; transfers: number }> = {}) {
+  const transfers: Transfer[] = list.map((t, i) => ({ id: `tx${i}`, ...t }));
   const reads = { transfers: 0, profiles: 0 };
   let down = false;
   const s: FundingSource & { reads: typeof reads; down: (v: boolean) => void } = {
@@ -58,6 +59,23 @@ describe('the funding graph', () => {
       .toEqual({ linked: false });
   });
 
+  it('sums what one address sent another, so funding split into small transfers still counts', async () => {
+    const split = Array.from({ length: 6 }, () => [{ from: OWNER, to: HUNTER, usdc: 0.1 }, { from: OWNER, to: PREY, usdc: 0.1 }]).flat();
+    expect(await new FundingGraph(source(split)).linked(HUNTER, PREY)).toEqual({ linked: true, via: OWNER, how: 'funder' });
+    // A transfer between the two wallets is in both their lists: counted once, not twice.
+    expect(await new FundingGraph(source([{ from: PREY, to: HUNTER, usdc: 0.3 }])).linked(HUNTER, PREY)).toEqual({ linked: false });
+  });
+
+  it('counts whatever the hunter itself sent, but not a cent the prey side sends it', async () => {
+    expect((await new FundingGraph(source([{ from: HUNTER, to: PREY, usdc: 0.01 }])).linked(HUNTER, PREY)).linked).toBe(true);
+    expect((await new FundingGraph(source([{ from: HUNTER, to: OWNER, usdc: 0.01 }, { from: PREY, to: OWNER, usdc: 1 }])).linked(HUNTER, PREY)))
+      .toEqual({ linked: true, via: OWNER, how: 'cash-out' });
+    // The prey's owner sends the hunter a cent, or a cent to an address the hunter once paid: no link.
+    expect(await new FundingGraph(source([{ from: PREY, to: HUNTER, usdc: 0.01 }])).linked(HUNTER, PREY)).toEqual({ linked: false });
+    expect(await new FundingGraph(source([{ from: HUNTER, to: OWNER, usdc: 2 }, { from: PREY, to: OWNER, usdc: 0.01 }])).linked(HUNTER, PREY))
+      .toEqual({ linked: false });
+  });
+
   it('does not count dust: linking a stranger to a prey costs the griefer real money, paid to them', async () => {
     const dust = [{ from: PREY, to: HUNTER, usdc: 0.01 }, { from: OWNER, to: HUNTER, usdc: 0.49 }, { from: OWNER, to: PREY, usdc: 5 }];
     expect(await new FundingGraph(source(dust)).linked(HUNTER, PREY)).toEqual({ linked: false });
@@ -96,14 +114,14 @@ describe('Blockscout as the source', () => {
   it('reads every page of a wallet\'s USDC transfers (native USDC included), leaving out other tokens, mints and burns', async () => {
     const seen: string[] = [];
     const s = blockscoutFunding(api, { fetch: fake([
-      { items: [{ from: { hash: OWNER }, to: { hash: HUNTER }, token: usdc, total: amount('5000000') },
+      { items: [{ from: { hash: OWNER }, to: { hash: HUNTER }, token: usdc, total: amount('5000000'), transaction_hash: '0xaa', log_index: 2 },
         { from: { hash: '0x0000000000000000000000000000000000000000' }, to: { hash: HUNTER }, token: usdc, total: amount('1000000') },
         // Any contract can log a Transfer naming any sender: a forged "prey paid the hunter" in another token.
         { from: { hash: PREY }, to: { hash: HUNTER }, token: { address_hash: CONTRACT }, total: amount('9000000') }],
         next_page_params: { block_number: 70687710, index: 3 } },
-      { items: [{ from: { hash: HUNTER }, to: { hash: STRANGER }, token: usdc, total: amount('500000') }], next_page_params: null },
+      { items: [{ from: { hash: HUNTER }, to: { hash: STRANGER }, token: usdc, total: amount('500000'), transaction_hash: '0xbb', log_index: 0 }], next_page_params: null },
     ], seen) });
-    expect(await s.transfers(HUNTER)).toEqual([{ from: OWNER, to: HUNTER, usdc: 5 }, { from: HUNTER, to: STRANGER, usdc: 0.5 }]);
+    expect(await s.transfers(HUNTER)).toEqual([{ id: '0xaa:2', from: OWNER, to: HUNTER, usdc: 5 }, { id: '0xbb:0', from: HUNTER, to: STRANGER, usdc: 0.5 }]);
     expect(seen).toEqual([`/addresses/${HUNTER}/token-transfers?token=${ARC_USDC}`,
       `/addresses/${HUNTER}/token-transfers?token=${ARC_USDC}&block_number=70687710&index=3`]);
     expect(await s.profile(FAUCET)).toEqual({ contract: false, transfers: 3_992_582 });
