@@ -29,12 +29,17 @@ The hunter's wallet is linked to the prey's wallet when, among their USDC transf
 
 The prey's wallet means the one it held at publication, and the wallet of whoever held it at the kill.
 
-**Which flows count.** A flow is everything one address sent another, summed. It counts when:
-- **the hunter's wallet sent it**, at any amount, since nobody else can make the hunter send; or
-- **it adds up to at least `VANA_ARC_BOUNTIES_FUNDING_MIN_USDC`** (default 0.5). Because it is a
-  total, funding split into many small transfers still counts.
+**Which flows count.** A flow is everything one address sent another, summed.
+- **Most flows** count once they add up to at least `VANA_ARC_BOUNTIES_FUNDING_MIN_USDC` (default
+  0.5). Because it is a total, funding split into many small transfers still counts.
+- **A payment from the hunter's wallet to the prey's** counts at any amount, since nobody else
+  can make the hunter send.
+- **Through a third address**, a shared funder or cash-out, both sides need the minimum. Otherwise
+  a hunter's small payment to some service could be paired by the prey's owner paying it too.
 
-A transfer between the two wallets appears in both their lists and is counted once.
+A transfer between the two wallets appears in both their lists and is counted once. It is told
+apart by its transaction hash and log index. If the explorer gives an item without them, the whole
+read fails and the decision waits; two transfers are never guessed to be one.
 
 **What does not count as a link.** A public hub joins strangers, so it links nobody:
 - **A contract.** The bounty contract pays every winner.
@@ -55,8 +60,8 @@ hunter.
 - **Dust does not count, unless the hunter sent it.** Without a minimum, anyone could send dust from
   one address to both a hunter and a prey and void the hunter's kills. The prey's owner could do
   the same by sending the hunter a cent. With the minimum, each false link costs the griefer at
-  least 0.5 USDC per flow, and the money goes to the people they meant to harm. The hunter's own
-  sends need no minimum, since only the hunter can make them.
+  least 0.5 USDC per flow, and the money goes to the people they meant to harm. Only the hunter's
+  own payment to the prey needs no minimum, since only the hunter can make it.
 
 **What happens when a link is found:**
 - **A linked kill is never paid.** The bounty goes back to the pool. Its record (hashed and
@@ -76,7 +81,7 @@ hunter.
 | `VANA_ARC_BOUNTIES_FUNDING_API` | `https://explorer.testnet.arc.io/api/v2` on Arc Testnet | A Blockscout API v2 base. Any other chain must name its own. |
 | `VANA_ARC_BOUNTIES_FUNDING_IGNORE` | none | More hub addresses, comma-separated. |
 | `VANA_ARC_BOUNTIES_FUNDING_HUB_TRANSFERS` | 1000 | Above this many token transfers, an address is a hub. |
-| `VANA_ARC_BOUNTIES_FUNDING_MIN_USDC` | 0.5 | A flow that the hunter did not send counts from this total. |
+| `VANA_ARC_BOUNTIES_FUNDING_MIN_USDC` | 0.5 | Every flow counts from this total, except the hunter's payment to the prey. |
 
 **Reads and caching:**
 - A wallet's transfers come from up to four pages of 50, newest first.
@@ -101,13 +106,13 @@ Run on 14 November 2026 against the live explorer, with this project's own walle
   followed. Only direct transfers and one shared address count.
 - **Laundering through a hub.** A deposit to an exchange and a withdrawal to both wallets passes.
 - **Old history.** USDC transfers past the first 200 are not read.
-- **Small funding to both sides.** A colluder who keeps the total they send each wallet under the
-  minimum, and never has the hunter send anything, passes. Agent wallets need no gas to be paid,
+- **Small funding to both sides.** A colluder who keeps each flow under the minimum, and never has
+  the hunter pay the prey, passes. Agent wallets need no gas to be paid,
   so colluding wallets meet chiefly when winnings are gathered. Winnings are at least 1 USDC, and
   the prey side's cash-out then counts.
 - **Paid griefing.** Someone can still link a hunter to a prey by paying both wallets the minimum,
-  or by sending the minimum from the prey's wallet to an address the hunter once paid. Each such
-  link is costly, is visible on chain, and gives money to the people linked.
+  or by pairing, with the prey's wallet, an address the hunter once paid at least the minimum. Each
+  such link is costly, is visible on chain, and gives money away.
 
 **Before mainnet,** the design's other identity limits still apply:
 - a cap on what one owner can win;

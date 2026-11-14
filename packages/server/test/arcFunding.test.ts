@@ -66,12 +66,16 @@ describe('the funding graph', () => {
     expect(await new FundingGraph(source([{ from: PREY, to: HUNTER, usdc: 0.3 }])).linked(HUNTER, PREY)).toEqual({ linked: false });
   });
 
-  it('counts whatever the hunter itself sent, but not a cent the prey side sends it', async () => {
+  it('counts whatever the hunter paid the prey, but not a cent the prey sends it, nor a hunter\'s small payment the prey pairs', async () => {
     expect((await new FundingGraph(source([{ from: HUNTER, to: PREY, usdc: 0.01 }])).linked(HUNTER, PREY)).linked).toBe(true);
-    expect((await new FundingGraph(source([{ from: HUNTER, to: OWNER, usdc: 0.01 }, { from: PREY, to: OWNER, usdc: 1 }])).linked(HUNTER, PREY)))
-      .toEqual({ linked: true, via: OWNER, how: 'cash-out' });
-    // The prey's owner sends the hunter a cent, or a cent to an address the hunter once paid: no link.
+    // The prey's owner sends the hunter a cent: no link.
     expect(await new FundingGraph(source([{ from: PREY, to: HUNTER, usdc: 0.01 }])).linked(HUNTER, PREY)).toEqual({ linked: false });
+    // The hunter paid some service a little; the prey's owner pays it 1 USDC to pair them: no link.
+    expect(await new FundingGraph(source([{ from: HUNTER, to: OWNER, usdc: 0.01 }, { from: PREY, to: OWNER, usdc: 1 }])).linked(HUNTER, PREY))
+      .toEqual({ linked: false });
+    // Both cashed out real money to one address: linked.
+    expect(await new FundingGraph(source([{ from: HUNTER, to: OWNER, usdc: 0.3 }, { from: HUNTER, to: OWNER, usdc: 0.3 }, { from: PREY, to: OWNER, usdc: 1 }]))
+      .linked(HUNTER, PREY)).toEqual({ linked: true, via: OWNER, how: 'cash-out' });
     expect(await new FundingGraph(source([{ from: HUNTER, to: OWNER, usdc: 2 }, { from: PREY, to: OWNER, usdc: 0.01 }])).linked(HUNTER, PREY))
       .toEqual({ linked: false });
   });
@@ -114,17 +118,23 @@ describe('Blockscout as the source', () => {
   it('reads every page of a wallet\'s USDC transfers (native USDC included), leaving out other tokens, mints and burns', async () => {
     const seen: string[] = [];
     const s = blockscoutFunding(api, { fetch: fake([
-      { items: [{ from: { hash: OWNER }, to: { hash: HUNTER }, token: usdc, total: amount('5000000'), transaction_hash: '0xaa', log_index: 2 },
-        { from: { hash: '0x0000000000000000000000000000000000000000' }, to: { hash: HUNTER }, token: usdc, total: amount('1000000') },
+      { items: [{ from: { hash: OWNER }, to: { hash: HUNTER }, token: usdc, total: amount('5000000'), transaction_hash: `0x${'a'.repeat(64)}`, log_index: 2 },
+        { from: { hash: '0x0000000000000000000000000000000000000000' }, to: { hash: HUNTER }, token: usdc, total: amount('1000000'), transaction_hash: `0x${'c'.repeat(64)}`, log_index: 0 },
         // Any contract can log a Transfer naming any sender: a forged "prey paid the hunter" in another token.
         { from: { hash: PREY }, to: { hash: HUNTER }, token: { address_hash: CONTRACT }, total: amount('9000000') }],
         next_page_params: { block_number: 70687710, index: 3 } },
-      { items: [{ from: { hash: HUNTER }, to: { hash: STRANGER }, token: usdc, total: amount('500000'), transaction_hash: '0xbb', log_index: 0 }], next_page_params: null },
+      { items: [{ from: { hash: HUNTER }, to: { hash: STRANGER }, token: usdc, total: amount('500000'), transaction_hash: `0x${'b'.repeat(64)}`, log_index: 0 }], next_page_params: null },
     ], seen) });
-    expect(await s.transfers(HUNTER)).toEqual([{ id: '0xaa:2', from: OWNER, to: HUNTER, usdc: 5 }, { id: '0xbb:0', from: HUNTER, to: STRANGER, usdc: 0.5 }]);
+    expect(await s.transfers(HUNTER)).toEqual([{ id: `0x${'a'.repeat(64)}:2`, from: OWNER, to: HUNTER, usdc: 5 }, { id: `0x${'b'.repeat(64)}:0`, from: HUNTER, to: STRANGER, usdc: 0.5 }]);
     expect(seen).toEqual([`/addresses/${HUNTER}/token-transfers?token=${ARC_USDC}`,
       `/addresses/${HUNTER}/token-transfers?token=${ARC_USDC}&block_number=70687710&index=3`]);
     expect(await s.profile(FAUCET)).toEqual({ contract: false, transfers: 3_992_582 });
+  });
+
+  it('fails rather than guess when a transfer comes without a transaction hash and log index', async () => {
+    const bare = blockscoutFunding(api, { fetch: fake([{ items: [{ from: { hash: OWNER }, to: { hash: HUNTER }, token: usdc, total: amount('5000000') }],
+      next_page_params: null }], []) });
+    await expect(bare.transfers(HUNTER)).rejects.toThrow('without a transaction hash');
   });
 
   it('fails on an explorer error and refuses anything but an address', async () => {

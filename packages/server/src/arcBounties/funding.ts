@@ -8,9 +8,10 @@
  * - one sent to the other;
  * - one address sent to both (a shared funder); or
  * - both sent to one address (a shared cash-out).
- * A flow counts when the hunter's wallet sent it (nobody else can), or when all that one address
- * sent the other comes to at least `minUsdc` (default 0.5): summed, so funding split into small
- * transfers still counts, and dust from a griefer does not.
+ * A flow (all one address sent another, summed, so funding split into small transfers still counts)
+ * counts from `minUsdc` (default 0.5), so dust from a griefer does not; the hunter's own payment to
+ * the prey counts at any amount, since nobody else can make it. Through a third address both sides
+ * need the minimum: a hunter's small payment to some service cannot be paired by the prey's owner.
  * A public hub joins strangers and links nobody: a contract (the bounty contract pays every winner),
  * an address the operator lists, or one with more transfers than `hubTransfers` (a faucet: Arc
  * Testnet's sends to millions).
@@ -68,8 +69,8 @@ export class FundingGraph {
 
   /**
    * Whether the hunter's wallet is linked to the prey's, and through which address. Not symmetric:
-   * the hunter's own transfers count whatever their size, the prey side's only from `minUsdc` up,
-   * so a prey's owner cannot void a hunter's kill by sending it a cent. Throws when the source
+   * the hunter's own payment to the prey counts whatever its size, the prey's to the hunter only
+   * from `minUsdc` up, so a prey's owner cannot void a hunter's kill by sending it a cent. Throws when the source
    * cannot be read: the caller decides later, it never pays on an unread graph.
    */
   async linked(hunter: string, prey: string): Promise<Link> {
@@ -83,8 +84,8 @@ export class FundingGraph {
       seen.add(t.id);
       flows.set(`${t.from}>${t.to}`, (flows.get(`${t.from}>${t.to}`) ?? 0) + t.usdc);
     }
-    const counts = (from: string, to: string) => flows.has(`${from}>${to}`) && (from === x || flows.get(`${from}>${to}`)! >= this.#minUsdc);
-    if (counts(x, y) || counts(y, x)) return { linked: true, via: x, how: 'direct' };
+    const counts = (from: string, to: string) => (flows.get(`${from}>${to}`) ?? 0) >= this.#minUsdc;
+    if (flows.has(`${x}>${y}`) || counts(y, x)) return { linked: true, via: x, how: 'direct' };
     const others = new Set<string>();
     for (const t of [...tx, ...ty]) for (const a of [t.from, t.to]) if (a !== x && a !== y) others.add(a);
     for (const how of ['funder', 'cash-out'] as const) {
@@ -157,7 +158,13 @@ export function blockscoutFunding(api: string, options: { token?: string; pages?
           if (String(item.token?.address_hash ?? item.token?.address ?? '').toLowerCase() !== token) continue;
           const from = hashOf(item.from), to = hashOf(item.to);
           const usdc = Number(item.total?.value) / 10 ** Number(item.total?.decimals ?? 6);
-          const id = `${String(item.transaction_hash ?? '')}:${String(item.log_index ?? '')}`;
+          // The id tells a transfer seen from both wallets: without one, two different transfers could
+          // count as one, so the whole read fails (the caller decides later) rather than guess.
+          if (typeof item.transaction_hash !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(item.transaction_hash)
+            || !Number.isSafeInteger(Number(item.log_index)) || item.log_index === null || item.log_index === '') {
+            throw new Error('explorer transfer without a transaction hash and log index');
+          }
+          const id = `${item.transaction_hash.toLowerCase()}:${Number(item.log_index)}`;
           if (from && to && Number.isFinite(usdc) && from.toLowerCase() !== ZERO && to.toLowerCase() !== ZERO) out.push({ id, from, to, usdc });
         }
         const next = body.next_page_params as Record<string, unknown> | null | undefined;
