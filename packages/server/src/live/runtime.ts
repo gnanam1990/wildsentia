@@ -24,7 +24,7 @@ import { ArcBountyStore } from '../arcBounties/store.js';
 import { ArcBountyEngine } from '../arcBounties/engine.js';
 import { viemBountyChain } from '../arcBounties/chain.js';
 import { circleSigner } from '../arcBounties/circle.js';
-import { blockscoutFunding, FundingGraph } from '../arcBounties/funding.js';
+import { ARC_USDC, blockscoutFunding, FundingGraph } from '../arcBounties/funding.js';
 import type { ArcBountyDeps } from '../arcBounties/routes.js';
 import { Notifier, arcBountyAnnouncer, describeNotify, notifyConfig } from '../notify/notify.js';
 import type { Hex } from 'viem';
@@ -150,9 +150,11 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
       if (!/^https:\/\/[^\s/]+(\/[^\s]*)?$/.test(api)) throw new Error('VANA_ARC_BOUNTIES_FUNDING_API must be an https Blockscout API v2 URL (or VANA_ARC_BOUNTIES_FUNDING_CHECK=off)');
       const ignore = (env.VANA_ARC_BOUNTIES_FUNDING_IGNORE ?? '').split(',').map((a) => a.trim()).filter(Boolean);
       if (ignore.some((a) => !/^0x[0-9a-fA-F]{40}$/.test(a))) throw new Error('VANA_ARC_BOUNTIES_FUNDING_IGNORE must be comma-separated addresses');
+      const minUsdc = env.VANA_ARC_BOUNTIES_FUNDING_MIN_USDC?.trim() || '0.5';
+      if (!/^\d+(\.\d{1,6})?$/.test(minUsdc) || Number(minUsdc) <= 0) throw new Error('VANA_ARC_BOUNTIES_FUNDING_MIN_USDC must be a USDC amount above 0');
       // The bounty contract pays every winner, the evaluator sends every transaction, USDC is the token itself: none links anybody.
-      const graph = new FundingGraph(blockscoutFunding(api), { ignore: [where.contract, chain.evaluator, '0x3600000000000000000000000000000000000000', ...ignore],
-        hubTransfers: positiveSetting(env, 'VANA_ARC_BOUNTIES_FUNDING_HUB_TRANSFERS', 1000) });
+      const graph = new FundingGraph(blockscoutFunding(api), { ignore: [where.contract, chain.evaluator, ARC_USDC, ...ignore],
+        hubTransfers: positiveSetting(env, 'VANA_ARC_BOUNTIES_FUNDING_HUB_TRANSFERS', 1000), minUsdc: Number(minUsdc) });
       console.log(`arc bounties: funding-graph check on (${api})`);
       return graph;
     })();

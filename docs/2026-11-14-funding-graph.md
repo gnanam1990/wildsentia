@@ -19,7 +19,8 @@ idea to bounties: money that moved between wallets says more about who owns them
 
 ## The rule
 
-The hunter's wallet is linked to the prey's wallet when, among their token transfers on chain:
+The hunter's wallet is linked to the prey's wallet when, among their USDC transfers on chain of at
+least `VANA_ARC_BOUNTIES_FUNDING_MIN_USDC` (default 0.5):
 
 | Link | Meaning |
 |---|---|
@@ -37,7 +38,17 @@ The prey's wallet means the one it held at publication, and the wallet of whoeve
   (default 1000). Arc Testnet's faucet `0x70E3…Af8e` has made about 4 million.
 
 On Arc a native USDC payment is listed by the explorer as a token transfer of `0x3600…0000`. So
-the token-transfer list covers both native USDC and ERC-20 USDC.
+the USDC transfer list covers both native USDC and ERC-20 USDC.
+
+**Why only USDC, and only above the minimum.** The check must not be turned against an honest
+hunter.
+- **Other tokens can be forged.** Any contract can log a Transfer event that names any sender. A
+  spam token could "show" the prey paying the hunter, so other tokens are never read. The explorer
+  is asked for USDC only, and each item is checked again. USDC is the chain's own system contract,
+  so its transfers cannot be forged.
+- **Dust does not count.** Without a minimum, anyone could send dust from one address to both a
+  hunter and a prey, and void the hunter's kills. With it, each false link costs the griefer at
+  least 0.5 USDC per wallet, and the money goes to the people they meant to harm.
 
 **What happens when a link is found:**
 - **A linked kill is never paid.** The bounty goes back to the pool. Its record (hashed and
@@ -57,6 +68,7 @@ the token-transfer list covers both native USDC and ERC-20 USDC.
 | `VANA_ARC_BOUNTIES_FUNDING_API` | `https://explorer.testnet.arc.io/api/v2` on Arc Testnet | A Blockscout API v2 base. Any other chain must name its own. |
 | `VANA_ARC_BOUNTIES_FUNDING_IGNORE` | none | More hub addresses, comma-separated. |
 | `VANA_ARC_BOUNTIES_FUNDING_HUB_TRANSFERS` | 1000 | Above this many token transfers, an address is a hub. |
+| `VANA_ARC_BOUNTIES_FUNDING_MIN_USDC` | 0.5 | Smaller USDC transfers do not count. |
 
 **Reads and caching:**
 - A wallet's transfers come from up to four pages of 50, newest first.
@@ -80,7 +92,13 @@ Run on 14 November 2026 against the live explorer, with this project's own walle
 - **Paths of two hops or more.** A pays B, B pays the prey, A funded the hunter: this is not
   followed. Only direct transfers and one shared address count.
 - **Laundering through a hub.** A deposit to an exchange and a withdrawal to both wallets passes.
-- **Old history.** Transfers past the first 200 are not read.
+- **Old history.** USDC transfers past the first 200 are not read.
+- **Small funding.** Transfers under the minimum are not read. Agent wallets need no gas to be
+  paid, so two colluding wallets meet chiefly when winnings are gathered, and winnings are at least
+  1 USDC.
+- **Paid griefing.** Someone willing to pay the minimum to both wallets, or to send from the prey's
+  wallet to an address the hunter once paid, can still link them. Each such link is costly, is
+  visible on chain, and gives money to the people linked.
 
 **Before mainnet,** the design's other identity limits still apply:
 - a cap on what one owner can win;
