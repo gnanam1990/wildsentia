@@ -14,7 +14,9 @@ import { FundingUnavailable, type FundingSource, type Transfer } from './funding
  * holds up the others' answers. A wallet is answered only once read to the head the index last saw;
  * before that, or while the RPC cannot be reached, it throws and the caller decides later. A wallet
  * the RPC will not return even one block and one wallet at a time (flooded in a block) is set aside,
- * and its links stay unknown, so nothing involving it is paid.
+ * and its links stay unknown, so nothing involving it is paid; it is tried again each hour and
+ * cleared once read. Only a refusal for size sets a wallet aside: throttling is the node being
+ * unavailable for now.
  *
  * Each wallet's history is summed per pair of addresses: however many transfers a griefer sends, a
  * wallet's list grows by one entry per address that sent it, and nothing is cut off.
@@ -51,7 +53,14 @@ export function rpcLogReader(url: string, options: { timeoutMs?: number; fetch?:
     if (!body) throw new FundingUnavailable(`rpc gave no JSON for ${method}`);
     if (body.error) {
       const message = String(body.error.message ?? '');
-      if (/range too large|too many|limit exceeded|query returned more than|block range/i.test(message)) throw new RangeTooLarge(message);
+      // Throttling first: a node asking us to slow down is unavailable for now, never a range to shrink.
+      if (body.error.code === -32011 || /rate.?limit|too many requests|request limit|throttl|capacity|try again/i.test(message)) {
+        throw new FundingUnavailable(`rpc throttled ${method}: ${message.slice(0, 120)}`);
+      }
+      // Only a refusal for the size of the range or of its answer is a range to shrink.
+      if (body.error.code === -32012 || /range too large|block range|query returned more than \d+ results|too many results|response size|log response size/i.test(message)) {
+        throw new RangeTooLarge(message);
+      }
       throw new FundingUnavailable(`rpc error ${body.error.code ?? ''} for ${method}: ${message.slice(0, 120)}`);
     }
     return body.result as T;
@@ -80,6 +89,9 @@ export interface UsdcIndexOptions {
   staleMs?: number;
   now?: () => number;
 }
+
+/** A wallet set aside is tried again after this long. */
+const STUCK_RETRY_MS = 3_600_000;
 
 const pad = (wallet: string) => `0x${wallet.slice(2).toLowerCase().padStart(64, '0')}`;
 const fromTopic = (topic: string | undefined): string | null => topic && /^0x0{24}[0-9a-fA-F]{40}$/.test(topic) ? `0x${topic.slice(26).toLowerCase()}` : null;
@@ -136,8 +148,10 @@ export class UsdcIndex implements FundingSource {
     for (const near of [true, false]) {
       while (this.#now() - started < budgetMs) {
         const { rows } = await this.pool.query<{ scanned_to: string; wallets: string[] }>(`select scanned_to, array_agg(wallet order by wallet) as wallets
-          from arc_usdc_watch where chain_id = $1 and scanned_to < $2 and stuck_at is null and ($3::bigint is null or scanned_to >= $3)
-          group by scanned_to order by scanned_to limit 1`, [this.chainId, head.toString(), near ? (head - this.#near).toString() : null]);
+          from arc_usdc_watch where chain_id = $1 and scanned_to < $2 and ($3::bigint is null or scanned_to >= $3)
+            and (stuck_at is null or stuck_since < $4)
+          group by scanned_to order by scanned_to limit 1`, [this.chainId, head.toString(), near ? (head - this.#near).toString() : null,
+          new Date(this.#now() - STUCK_RETRY_MS)]);
         const group = rows[0];
         if (!group) break;
         const scannedTo = BigInt(group.scanned_to), from = scannedTo + 1n;
@@ -196,10 +210,12 @@ export class UsdcIndex implements FundingSource {
           select $1, * from unnest($2::text[], $3::int[], $4::bigint[], $5::text[], $6::text[], $7::numeric[]) on conflict do nothing`,
         [this.chainId, ...[0, 1, 2, 3, 4, 5].map((k) => chunk.map((r) => r[k]))]);
       }
-      await db.query('update arc_usdc_watch set scanned_to = $4 where chain_id = $1 and wallet = any($2) and scanned_to = $3',
+      // Read past where it was set aside: no longer stuck.
+      await db.query('update arc_usdc_watch set scanned_to = $4, stuck_at = null, stuck_since = null where chain_id = $1 and wallet = any($2) and scanned_to = $3',
         [this.chainId, wallets, scannedTo.toString(), to.toString()]);
       if (stuck.length > 0) {
-        await db.query('update arc_usdc_watch set stuck_at = $3 where chain_id = $1 and wallet = any($2)', [this.chainId, stuck, (scannedTo + 1n).toString()]);
+        await db.query('update arc_usdc_watch set stuck_at = $3, stuck_since = $4 where chain_id = $1 and wallet = any($2)',
+          [this.chainId, stuck, (scannedTo + 1n).toString(), new Date(this.#now())]);
         console.error(`[arc-bounty] USDC index: ${stuck.join(', ')} unreadable at block ${scannedTo + 1n}: set aside, its links unknown`);
       }
       await db.query('commit');

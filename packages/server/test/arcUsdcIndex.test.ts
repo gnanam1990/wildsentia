@@ -24,8 +24,8 @@ const usdc = (n: number) => `0x${(BigInt(Math.round(n * 1e6)) * 1_000_000_000_00
 function node(limit = 5000n, maxResults = Infinity, onRequest: () => void = () => undefined) {
   const logs: RawLog[] = [];
   let head = 0n, n = 0;
-  const reader: LogReader & { requests: number; add: (block: bigint, from: string, to: string, amount: number, extra?: Partial<RawLog>) => void; setHead: (b: bigint) => void } = {
-    requests: 0,
+  const reader: LogReader & { requests: number; maxResults: number; add: (block: bigint, from: string, to: string, amount: number, extra?: Partial<RawLog>) => void; setHead: (b: bigint) => void } = {
+    requests: 0, maxResults,
     add: (block, from, to, amount, extra = {}) => { logs.push({ address: ARC_USDC_EMITTER, topics: [TRANSFER, topic(from), topic(to)], data: usdc(amount),
       blockNumber: `0x${block.toString(16)}`, transactionHash: `0x${(++n).toString(16).padStart(64, '0')}`, logIndex: '0x0', ...extra }); },
     setHead: (b) => { head = b; },
@@ -36,7 +36,7 @@ function node(limit = 5000n, maxResults = Infinity, onRequest: () => void = () =
       const [, senders, recipients] = f.topics as [string, string[] | null, string[] | undefined];
       const found = logs.filter((l) => BigInt(l.blockNumber) >= f.fromBlock && BigInt(l.blockNumber) <= f.toBlock
         && (!senders || senders.includes(l.topics[1]!)) && (!recipients || recipients.includes(l.topics[2]!)));
-      if (found.length > maxResults) throw new RangeTooLarge('query returned more than 1000 results');
+      if (found.length > reader.maxResults) throw new RangeTooLarge('query returned more than 1000 results');
       return found;
     },
   };
@@ -145,6 +145,13 @@ maybe('the Arc USDC index', () => {
     // Its links stay unknown: the graph throws, and nothing involving it is paid.
     await expect(index.transfers(PREY)).rejects.toThrow('wallet history unreadable at block 100');
     await expect(new FundingGraph(index).linked(HUNTER, PREY)).rejects.toThrow('unreadable');
+    // Not for good: an hour on it is tried again, and once the node answers it is read and cleared.
+    chain.maxResults = 5000;
+    await catchUp(index);
+    await expect(index.transfers(PREY)).rejects.toThrow('unreadable');
+    now += 3_600_001;
+    await catchUp(index);
+    expect(await index.transfers(PREY)).toEqual([{ id: `${GRIEFER}>${PREY}`, from: GRIEFER, to: PREY, usdc: 0.0015 }]);
   });
 
   it('feeds the funding graph: a funder found past any amount of dust, a griefer\'s dust one entry, nothing cut off', async () => {
@@ -175,8 +182,14 @@ describe('the RPC log reader', () => {
     expect(asked[1]).toMatchObject({ method: 'eth_getLogs', params: [{ address: ARC_USDC_EMITTER, fromBlock: '0x1', toBlock: '0x1388', topics: [TRANSFER, null, [topic(PREY)]] }] });
     await expect(rpcLogReader('https://rpc.example', { fetch: answer({ error: { code: -32012, message: 'requested range too large' } }) })
       .logs({ fromBlock: 0n, toBlock: 1n, topics: [] })).rejects.toBeInstanceOf(RangeTooLarge);
-    await expect(rpcLogReader('https://rpc.example', { fetch: answer({ error: { code: -32011, message: 'request limit reached' } }) }).head())
-      .rejects.toBeInstanceOf(FundingUnavailable);
+    await expect(rpcLogReader('https://rpc.example', { fetch: answer({ error: { code: -32005, message: 'query returned more than 10000 results' } }) })
+      .logs({ fromBlock: 0n, toBlock: 1n, topics: [] })).rejects.toBeInstanceOf(RangeTooLarge);
+    // Throttling is the node unavailable for now, never a range to shrink nor a wallet to set aside.
+    for (const error of [{ code: -32011, message: 'request limit reached' }, { code: -32005, message: 'Too Many Requests' },
+      { code: -32000, message: 'rate limit exceeded, try again later' }, { code: -32603, message: 'limit exceeded' }]) {
+      await expect(rpcLogReader('https://rpc.example', { fetch: answer({ error }) }).logs({ fromBlock: 0n, toBlock: 1n, topics: [] }), error.message)
+        .rejects.toBeInstanceOf(FundingUnavailable);
+    }
     await expect(rpcLogReader('https://rpc.example', { fetch: answer({}, 429) }).head()).rejects.toBeInstanceOf(FundingUnavailable);
   });
 });
