@@ -28,6 +28,7 @@ import { ARC_TESTNET_FAUCET, ARC_USDC, blockscoutFunding, FundingGraph } from '.
 import type { ArcBountyDeps } from '../arcBounties/routes.js';
 import { xOwnerOf } from '../accounts/store.js';
 import { payoutPolicy } from '../arcBounties/policy.js';
+import { rpcLogReader, UsdcIndex } from '../arcBounties/usdcIndex.js';
 import { Notifier, arcBountyAnnouncer, describeNotify, notifyConfig } from '../notify/notify.js';
 import type { Hex } from 'viem';
 
@@ -150,10 +151,26 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
     })() : viemBountyChain({ ...where, evaluatorKey: required('VANA_ARC_BOUNTIES_EVALUATOR_KEY') as Hex });
     const store = new ArcBountyStore(pool, host.worldId ?? 'unknown');
     // The funding-graph check (docs/2026-11-14-funding-graph.md): on unless VANA_ARC_BOUNTIES_FUNDING_CHECK=off.
-    // It reads Arc Testnet's explorer by default; another chain must name its Blockscout API v2.
+    // Its source (VANA_ARC_BOUNTIES_FUNDING_SOURCE): Arc Testnet's explorer by default there; on Arc
+    // Mainnet, whose explorer refuses servers, the server's own index of USDC transfers read from the RPC.
     const funding = env.VANA_ARC_BOUNTIES_FUNDING_CHECK?.trim() === 'off' ? null : (() => {
-      const api = env.VANA_ARC_BOUNTIES_FUNDING_API?.trim() || (!mainnet ? 'https://explorer.testnet.arc.io/api/v2' : '');
-      if (!/^https:\/\/[^\s/]+(\/[^\s]*)?$/.test(api)) throw new Error('VANA_ARC_BOUNTIES_FUNDING_API must be an https Blockscout API v2 URL (or VANA_ARC_BOUNTIES_FUNDING_CHECK=off)');
+      const sourceKind = env.VANA_ARC_BOUNTIES_FUNDING_SOURCE?.trim() || (mainnet ? 'rpc' : 'explorer');
+      if (sourceKind !== 'rpc' && sourceKind !== 'explorer') throw new Error('VANA_ARC_BOUNTIES_FUNDING_SOURCE must be rpc or explorer');
+      const source = sourceKind === 'rpc' ? (() => {
+        const rpc = env.VANA_ARC_BOUNTIES_FUNDING_RPC_URL?.trim() || where.rpcUrl;
+        if (!/^https:\/\/[^\s/]+(\/[^\s]*)?$/.test(rpc)) throw new Error('VANA_ARC_BOUNTIES_FUNDING_RPC_URL must be an https URL');
+        const fromBlock = env.VANA_ARC_BOUNTIES_FUNDING_FROM_BLOCK?.trim() || '0';
+        if (!/^\d{1,12}$/.test(fromBlock)) throw new Error('VANA_ARC_BOUNTIES_FUNDING_FROM_BLOCK must be a block number');
+        const index = new UsdcIndex(pool, chainId, rpcLogReader(rpc), { fromBlock: BigInt(fromBlock) });
+        index.start();
+        console.log(`arc bounties: funding-graph check on (USDC index from the RPC, block ${fromBlock} on)`);
+        return index;
+      })() : (() => {
+        const api = env.VANA_ARC_BOUNTIES_FUNDING_API?.trim() || (!mainnet ? 'https://explorer.testnet.arc.io/api/v2' : '');
+        if (!/^https:\/\/[^\s/]+(\/[^\s]*)?$/.test(api)) throw new Error('VANA_ARC_BOUNTIES_FUNDING_API must be an https Blockscout API v2 URL (or VANA_ARC_BOUNTIES_FUNDING_SOURCE=rpc)');
+        console.log(`arc bounties: funding-graph check on (${api})`);
+        return blockscoutFunding(api, { maxTransfers: positiveSetting(env, 'VANA_ARC_BOUNTIES_FUNDING_MAX_TRANSFERS', 2000) });
+      })();
       const ignore = (env.VANA_ARC_BOUNTIES_FUNDING_IGNORE ?? '').split(',').map((a) => a.trim()).filter(Boolean);
       if (ignore.some((a) => !/^0x[0-9a-fA-F]{40}$/.test(a))) throw new Error('VANA_ARC_BOUNTIES_FUNDING_IGNORE must be comma-separated addresses');
       const minUsdc = env.VANA_ARC_BOUNTIES_FUNDING_MIN_USDC?.trim() || '0.5';
@@ -163,10 +180,7 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
       // and version 1 of the bounty contract (docs/2026-10-29-bounties-v2.md), which paid the first
       // winners. Only listed addresses are hubs (a colluder's own contract or busy address is not one).
       const hubs = [where.contract, chain.evaluator, ARC_USDC, ...(!mainnet ? [ARC_TESTNET_FAUCET, ARC_TESTNET_BOUNTIES_V1] : []), ...ignore];
-      const graph = new FundingGraph(blockscoutFunding(api, { maxTransfers: positiveSetting(env, 'VANA_ARC_BOUNTIES_FUNDING_MAX_TRANSFERS', 2000) }),
-        { ignore: hubs, minUsdc: Number(minUsdc) });
-      console.log(`arc bounties: funding-graph check on (${api})`);
-      return graph;
+      return new FundingGraph(source, { ignore: hubs, minUsdc: Number(minUsdc) });
     })();
     // Alerts to Discord and Telegram when a bounty goes live and when it is decided (all optional).
     const alerts = notifyConfig(env);
