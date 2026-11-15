@@ -89,6 +89,13 @@ the bounty returns to the pool rather than going to anyone, and the operator can
 
 **One-machine demos.** `VANA_ARC_BOUNTIES_SAME_NETWORK_OK=1` (Arc Testnet only) also lifts this check.
 
+## Where it reads
+
+- **On Arc Testnet,** from the explorer, as below.
+- **On Arc Mainnet,** whose explorer refuses servers, from the server's own index of USDC transfers
+  read from the RPC (docs/2026-11-15-arc-mainnet-readiness.md). That index keeps a wallet's whole
+  history, summed per pair of addresses, so the 2000-transfer cap below does not apply there.
+
 ## Settings
 
 | Variable | Default | Meaning |
