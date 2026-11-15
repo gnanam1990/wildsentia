@@ -10,7 +10,7 @@ export interface ArcBounty {
   publishedWorldTime: number; deadlineWorldTime: number; expiresAt: Date; eligiblePredators: string[];
   rules: Record<string, unknown>; rulesHash: string; notified: boolean;
   killAgentId: string | null; killAnimalId: string | null; killWorldTime: number | null; killPreyAgentId: string | null;
-  outcome: ArcOutcome | null; payeeWallet: string | null; winnerAgentId: string | null; winnerAnimalId: string | null;
+  outcome: ArcOutcome | null; payeeWallet: string | null; winnerAgentId: string | null; winnerAnimalId: string | null; winnerOwner: string | null;
   decidedWorldTime: number | null; record: unknown; recordHash: string | null;
   publishTx: string | null; publishSentAt: Date | null; decideTx: string | null; decideSentAt: Date | null; error: string | null;
   createdAt: Date; decidedAt: Date | null; settledAt: Date | null;
@@ -22,6 +22,8 @@ export interface NewArcBounty {
 }
 export interface ArcDecision {
   outcome: ArcOutcome; payeeWallet: string | null; winnerAgentId: string | null; winnerAnimalId: string | null;
+  /** Who owns the paid agent (for the owner's daily cap); null when nobody is paid. */
+  winnerOwner?: string | null;
   decidedWorldTime: number; record: unknown; recordHash: string;
 }
 
@@ -35,7 +37,8 @@ const row = (r: Record<string, unknown>): ArcBounty => ({
   eligiblePredators: r.eligible_predators as string[], rules: r.rules as Record<string, unknown>, rulesHash: r.rules_hash as string,
   notified: r.notified as boolean, killAgentId: r.kill_agent_id as string | null, killAnimalId: r.kill_animal_id as string | null,
   killWorldTime: n(r.kill_world_time), killPreyAgentId: r.kill_prey_agent_id as string | null, outcome: r.outcome as ArcOutcome | null, payeeWallet: r.payee_wallet as string | null,
-  winnerAgentId: r.winner_agent_id as string | null, winnerAnimalId: r.winner_animal_id as string | null, decidedWorldTime: n(r.decided_world_time),
+  winnerAgentId: r.winner_agent_id as string | null, winnerAnimalId: r.winner_animal_id as string | null, winnerOwner: (r.winner_owner as string | null) ?? null,
+  decidedWorldTime: n(r.decided_world_time),
   record: r.record, recordHash: r.record_hash as string | null, publishTx: r.publish_tx as string | null, publishSentAt: r.publish_sent_at as Date | null,
   decideTx: r.decide_tx as string | null, decideSentAt: r.decide_sent_at as Date | null, error: r.error as string | null,
   createdAt: r.created_at as Date, decidedAt: r.decided_at as Date | null, settledAt: r.settled_at as Date | null,
@@ -105,9 +108,10 @@ export class ArcBountyStore {
   /** The bounty's one decision. False if it was already decided. */
   async decide(bountyId: string, d: ArcDecision): Promise<boolean> {
     const r = await this.pool.query(`update arc_bounties set status = 'deciding', outcome = $2, payee_wallet = $3, winner_agent_id = $4,
-        winner_animal_id = $5, decided_world_time = $6, record = $7, record_hash = $8, decided_at = now()
+        winner_animal_id = $5, decided_world_time = $6, record = $7, record_hash = $8, winner_owner = $9, decided_at = now()
       where bounty_id = $1 and status = 'active'`,
-    [bountyId, d.outcome, d.payeeWallet?.toLowerCase() ?? null, d.winnerAgentId, d.winnerAnimalId, d.decidedWorldTime, JSON.stringify(d.record), d.recordHash]);
+    [bountyId, d.outcome, d.payeeWallet?.toLowerCase() ?? null, d.winnerAgentId, d.winnerAnimalId, d.decidedWorldTime, JSON.stringify(d.record), d.recordHash,
+      d.outcome === 'void' ? null : d.winnerOwner ?? null]);
     return r.rowCount === 1;
   }
 
@@ -123,6 +127,16 @@ export class ArcBountyStore {
   async publishedSince(since: Date): Promise<bigint> {
     const r = await this.pool.query<{ amount: string | null }>(
       `select sum(amount_atomic) as amount from arc_bounties where world_id = $1 and created_at >= $2 and status <> 'failed'`, [this.worldId, since]);
+    return BigInt(r.rows[0]?.amount ?? 0);
+  }
+
+  /**
+   * USDC decided for one owner since a time, in every world, paid or on its way (a decision the
+   * chain returned to the pool counts nothing): for the owner's daily cap.
+   */
+  async wonSince(owner: string, since: Date): Promise<bigint> {
+    const r = await this.pool.query<{ amount: string | null }>(`select sum(amount_atomic) as amount from arc_bounties
+      where winner_owner = $1 and decided_at >= $2 and status in ('deciding', 'paid') and outcome in ('predator', 'survived')`, [owner, since]);
     return BigInt(r.rows[0]?.amount ?? 0);
   }
 

@@ -5,7 +5,7 @@ import { createPool } from '../src/db/pool.js';
 import { migrate } from '../src/db/migrate.js';
 import { AgentStore, humanAgentId } from '../src/live/liveStore.js';
 import { accountsConfig } from '../src/accounts/config.js';
-import { AccountStore } from '../src/accounts/store.js';
+import { AccountStore, xOwnerOf } from '../src/accounts/store.js';
 import { installAccounts } from '../src/accounts/routes.js';
 import { liveNetworkHash } from '../src/network.js';
 import { accountsRuntime } from '../src/accounts/runtime.js';
@@ -176,6 +176,17 @@ maybe('accounts', () => {
     const fresh = await signIn();
     const me = (await app.inject({ url: '/accounts/me', headers: { cookie: `__Host-ws_session=${fresh.session}` } })).json();
     expect(me.account).toMatchObject({ xAccountDays: 29, canPlay: false, canCreate: false, needs: ['x_account_30_days', 'wallet'] });
+  });
+
+  it('names the owner a prize may be paid to: the X account playing an agent, once it is 30 days old', async () => {
+    const { account } = await accounts.signIn(user);
+    expect(await xOwnerOf(pool!, account.agentId, now)).toBe('x:777');
+    // An account made 29 days ago is too new; an outside agent, or nobody, has no X owner.
+    user = { ...user, id: '778', username: 'new_one', createdAt: new Date(now - 29 * 86_400_000) };
+    const fresh = await accounts.signIn(user);
+    expect(await xOwnerOf(pool!, fresh.account.agentId, now)).toBeNull();
+    expect(await xOwnerOf(pool!, fresh.account.agentId, now + 86_400_000)).toBe('x:778');
+    expect(await xOwnerOf(pool!, 'ag_outside', now)).toBeNull();
   });
 
   it('signs out, and refuses expired or unknown sessions', async () => {

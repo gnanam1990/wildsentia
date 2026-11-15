@@ -26,6 +26,8 @@ import { viemBountyChain } from '../arcBounties/chain.js';
 import { circleSigner } from '../arcBounties/circle.js';
 import { ARC_TESTNET_FAUCET, ARC_USDC, blockscoutFunding, FundingGraph } from '../arcBounties/funding.js';
 import type { ArcBountyDeps } from '../arcBounties/routes.js';
+import { xOwnerOf } from '../accounts/store.js';
+import { payoutPolicy } from '../arcBounties/policy.js';
 import { Notifier, arcBountyAnnouncer, describeNotify, notifyConfig } from '../notify/notify.js';
 import type { Hex } from 'viem';
 
@@ -129,8 +131,8 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
     required('VANA_LIVE_SECRET');
     const capUsdc = env.VANA_ARC_BOUNTIES_DAILY_CAP_USDC?.trim();
     if (capUsdc !== undefined && capUsdc !== '' && !/^\d+(\.\d{1,6})?$/.test(capUsdc)) throw new Error('VANA_ARC_BOUNTIES_DAILY_CAP_USDC must be a USDC amount');
-    // Arc Testnet only, until mainnet use is approved after the legal review.
-    if (chainId !== 5042002 && env.VANA_ARC_BOUNTIES_MAINNET_APPROVED !== 'true') throw new Error('VANA_ARC_BOUNTIES_CHAIN_ID must be Arc Testnet (5042002)');
+    // Testnet, or mainnet after the legal review, with no loosened guard there (arcBounties/policy.ts).
+    const policy = payoutPolicy(env, chainId), mainnet = policy.mainnet;
     // The evaluator's key: a Circle developer-controlled wallet (VANA_ARC_BOUNTIES_SIGNER=circle), so no
     // raw key sits in the environment, or a raw key (docs/2026-10-22-circle-evaluator.md).
     const where = { rpcUrl: required('VANA_ARC_BOUNTIES_RPC_URL'), chainId, contract: required('VANA_ARC_BOUNTIES_CONTRACT') as Hex };
@@ -139,7 +141,8 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
     const chain = signerKind === 'circle' ? (() => {
       const apiKey = required('VANA_CIRCLE_API_KEY');
       // Each Circle key works in one environment: a testnet key for Arc Testnet.
-      if (chainId === 5042002 && !apiKey.startsWith('TEST_API_KEY:')) throw new Error('VANA_CIRCLE_API_KEY must be a testnet key (TEST_API_KEY:…) for Arc Testnet');
+      if (!mainnet && !apiKey.startsWith('TEST_API_KEY:')) throw new Error('VANA_CIRCLE_API_KEY must be a testnet key (TEST_API_KEY:…) for Arc Testnet');
+      if (mainnet && !apiKey.startsWith('LIVE_API_KEY:')) throw new Error('VANA_CIRCLE_API_KEY must be a live key (LIVE_API_KEY:…) for Arc Mainnet');
       const fee = env.VANA_CIRCLE_FEE_LEVEL?.trim();
       if (fee && fee !== 'LOW' && fee !== 'MEDIUM' && fee !== 'HIGH') throw new Error('VANA_CIRCLE_FEE_LEVEL must be LOW, MEDIUM or HIGH');
       return viemBountyChain({ ...where, signer: circleSigner({ apiKey, entitySecret: required('VANA_CIRCLE_ENTITY_SECRET'), walletId: required('VANA_CIRCLE_WALLET_ID'),
@@ -149,7 +152,7 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
     // The funding-graph check (docs/2026-11-14-funding-graph.md): on unless VANA_ARC_BOUNTIES_FUNDING_CHECK=off.
     // It reads Arc Testnet's explorer by default; another chain must name its Blockscout API v2.
     const funding = env.VANA_ARC_BOUNTIES_FUNDING_CHECK?.trim() === 'off' ? null : (() => {
-      const api = env.VANA_ARC_BOUNTIES_FUNDING_API?.trim() || (chainId === 5042002 ? 'https://explorer.testnet.arc.io/api/v2' : '');
+      const api = env.VANA_ARC_BOUNTIES_FUNDING_API?.trim() || (!mainnet ? 'https://explorer.testnet.arc.io/api/v2' : '');
       if (!/^https:\/\/[^\s/]+(\/[^\s]*)?$/.test(api)) throw new Error('VANA_ARC_BOUNTIES_FUNDING_API must be an https Blockscout API v2 URL (or VANA_ARC_BOUNTIES_FUNDING_CHECK=off)');
       const ignore = (env.VANA_ARC_BOUNTIES_FUNDING_IGNORE ?? '').split(',').map((a) => a.trim()).filter(Boolean);
       if (ignore.some((a) => !/^0x[0-9a-fA-F]{40}$/.test(a))) throw new Error('VANA_ARC_BOUNTIES_FUNDING_IGNORE must be comma-separated addresses');
@@ -159,7 +162,7 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
       // transaction, USDC is the token itself. On Arc Testnet also its faucet, which has paid millions,
       // and version 1 of the bounty contract (docs/2026-10-29-bounties-v2.md), which paid the first
       // winners. Only listed addresses are hubs (a colluder's own contract or busy address is not one).
-      const hubs = [where.contract, chain.evaluator, ARC_USDC, ...(chainId === 5042002 ? [ARC_TESTNET_FAUCET, ARC_TESTNET_BOUNTIES_V1] : []), ...ignore];
+      const hubs = [where.contract, chain.evaluator, ARC_USDC, ...(!mainnet ? [ARC_TESTNET_FAUCET, ARC_TESTNET_BOUNTIES_V1] : []), ...ignore];
       const graph = new FundingGraph(blockscoutFunding(api, { maxTransfers: positiveSetting(env, 'VANA_ARC_BOUNTIES_FUNDING_MAX_TRANSFERS', 2000) }),
         { ignore: hubs, minUsdc: Number(minUsdc) });
       console.log(`arc bounties: funding-graph check on (${api})`);
@@ -177,8 +180,10 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
       wallet: async (agentId) => { const a = await agentStore.byId(agentId); return a?.wallet && a.walletProven ? a.wallet : null; },
       network: (agentId) => agentStore.networkOf(agentId),
       // Testnet only: refused with a mainnet chain.
-      sameNetworkOk: env.VANA_ARC_BOUNTIES_SAME_NETWORK_OK === '1' && chainId === 5042002,
+      sameNetworkOk: env.VANA_ARC_BOUNTIES_SAME_NETWORK_OK === '1' && !mainnet,
       ...(funding ? { fundingLinked: (a: string, b: string) => funding.linked(a, b) } : {}),
+      owner: policy.identity === 'x' ? (agentId: string) => xOwnerOf(pool, agentId) : async (agentId: string) => `agent:${agentId}`,
+      ownerDailyCapAtomic: policy.ownerDailyCapAtomic,
       randomCrowd: positiveSetting(env, 'VANA_ARC_BOUNTIES_RANDOM_CROWD', 3),
       notify: (agentId, text) => live.notify(agentId, text), eventsOf,
       explorer: env.VANA_ARC_BOUNTIES_EXPLORER_URL?.trim() || null, ...(announce ? { announce } : {}),
