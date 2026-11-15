@@ -180,7 +180,9 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
       // and version 1 of the bounty contract (docs/2026-10-29-bounties-v2.md), which paid the first
       // winners. Only listed addresses are hubs (a colluder's own contract or busy address is not one).
       const hubs = [where.contract, chain.evaluator, ARC_USDC, ...(!mainnet ? [ARC_TESTNET_FAUCET, ARC_TESTNET_BOUNTIES_V1] : []), ...ignore];
-      return new FundingGraph(source, { ignore: hubs, minUsdc: Number(minUsdc) });
+      // A wallet's transfers are kept briefly, so funding sent just before a kill is still seen: 15 s
+      // from the index (a database read), a minute from the explorer (a rate-limited service).
+      return new FundingGraph(source, { ignore: hubs, minUsdc: Number(minUsdc), ttlMs: source instanceof UsdcIndex ? 15_000 : 60_000 });
     })();
     // Alerts to Discord and Telegram when a bounty goes live and when it is decided (all optional).
     const alerts = notifyConfig(env);
