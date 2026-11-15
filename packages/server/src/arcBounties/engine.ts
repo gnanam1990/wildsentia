@@ -59,6 +59,14 @@ export interface ArcBountyPorts {
    */
   fundingLinked?: (a: string, b: string) => Promise<Link>;
   /**
+   * Who owns an agent, for payouts: one person (on mainnet, their X account, at least 30 days old),
+   * or null when the agent may not be paid. Agents of one owner never win each other's bounties, and
+   * an owner's winnings are capped (`ownerDailyCapAtomic`). None: every agent is its own owner.
+   */
+  owner?: (agentId: string) => Promise<string | null>;
+  /** The most USDC (6-decimal units) one owner may win in any 24 hours; a win past it goes back to the pool. None: no cap. */
+  ownerDailyCapAtomic?: bigint | null;
+  /**
    * A random bounty goes only on a prey hidden among at least this many prey of its species in its
    * region that could carry one too, from as many networks (itself included), since the public list
    * of steered animals and the bounty's species and region would otherwise point at it. Default 3;
@@ -80,6 +88,9 @@ export interface ArcBountyPorts {
    */
   announce?: (event: { kind: 'published' | 'settled'; bounty: ArcBounty }) => void;
 }
+
+/** Why a decision paid nobody though someone met its terms (in the record, hashed on chain). */
+export type Refusal = { reason: 'funding_linked'; how: string; via: string } | { reason: 'identity' | 'same_owner' | 'owner_cap' };
 
 export type PublishResult = { ok: true; bounty: ArcBounty } | { ok: false; reason: string };
 
@@ -119,6 +130,9 @@ export class ArcBountyEngine {
       if (!animal?.alive || !animal.position || taken.has(s.animalId) || PROTECTED_SPECIES.has(s.speciesId)) continue;
       const eligible = this.eligiblePredators(s.speciesId);
       if (eligible.length === 0) continue;
+      // A prey whose owner may not be paid here could never win its survival half.
+      const owner = await this.#ownerOf(s.agentId);
+      if (!owner) continue;
       if (requireHunter) {
         let hunter = false;
         for (const h of steered) {
@@ -126,6 +140,8 @@ export class ArcBountyEngine {
           const p = world.animal(h.animalId)?.position;
           if (!p || Math.hypot(p.x - animal.position.x, p.z - animal.position.z) > PREDATOR_WITHIN_M) continue;
           if (await this.#related(h.agentId, s.agentId)) continue;
+          const hunterOwner = await this.#ownerOf(h.agentId);
+          if (!hunterOwner || hunterOwner === owner) continue;
           // Linked by money, or not known yet: not a hunter from someone else.
           const [hw, pw] = await Promise.all([this.ports.wallet(h.agentId), this.ports.wallet(s.agentId)]);
           const money = await this.#moneyLink(hw, pw);
@@ -171,6 +187,28 @@ export class ArcBountyEngine {
       if (money === 'unknown' || money.linked) return money;
     }
     return { linked: false };
+  }
+
+  /** An agent's owner, or null when it may not be paid here. */
+  async #ownerOf(agentId: string): Promise<string | null> {
+    return this.ports.owner ? this.ports.owner(agentId) : `agent:${agentId}`;
+  }
+
+  /**
+   * Why this agent may not be paid this bounty, or its owner: an owner who may not be paid here, the
+   * owner of an agent that held the prey (a hunter only), or one past the daily cap with it.
+   */
+  async #payableOwner(b: ArcBounty, agentId: string, hunter: boolean): Promise<{ owner: string } | { refused: Refusal }> {
+    const owner = await this.#ownerOf(agentId);
+    if (!owner) return { refused: { reason: 'identity' } };
+    if (hunter) {
+      for (const holder of new Set([b.targetAgentId, b.killPreyAgentId].filter((a): a is string => !!a))) {
+        if (await this.#ownerOf(holder) === owner) return { refused: { reason: 'same_owner' } };
+      }
+    }
+    const cap = this.ports.ownerDailyCapAtomic;
+    if (cap != null && (await this.store.wonSince(owner, new Date(Date.now() - 86_400_000))) + b.amountAtomic > cap) return { refused: { reason: 'owner_cap' } };
+    return { owner };
   }
 
   /** Whether two wallets are linked by money (never, with the check off or in a one-machine testnet demo). */
@@ -245,8 +283,10 @@ export class ArcBountyEngine {
     const eligible = this.eligiblePredators(animal.speciesId);
     if (eligible.length === 0) return { ok: false, reason: 'not_hunted' };
     if ((await this.store.liveTargets()).has(animalId)) return { ok: false, reason: 'target_taken' };
-    const agentId = this.ports.steererOf(animalId), wallet = agentId ? await this.ports.wallet(agentId) : null;
-    return { ok: true, speciesId: animal.speciesId, eligible, agentId: wallet ? agentId : null, wallet };
+    const steerer = this.ports.steererOf(animalId);
+    // Its agent can win the survival half only with a proven wallet and an owner who may be paid here.
+    const wallet = steerer && await this.#ownerOf(steerer) ? await this.ports.wallet(steerer) : null;
+    return { ok: true, speciesId: animal.speciesId, eligible, agentId: wallet ? steerer : null, wallet };
   }
 
   /** Every animal agents steer now, and whether the operator could drop a bounty on it (and who would win its survival). */
@@ -481,13 +521,13 @@ export class ArcBountyEngine {
   async #decision(b: ArcBounty): Promise<ArcDecision | null> {
     const world = this.ports.world(), animal = world.animal(b.targetAnimalId), deadline = b.deadlineWorldTime;
     const close = async (outcome: ArcDecision['outcome'], payeeWallet: string | null, winnerAgentId: string | null, winnerAnimalId: string | null, at: number,
-      refused?: { reason: 'funding_linked'; how: string; via: string }) => {
+      refused?: Refusal, winnerOwner: string | null = null) => {
       const actors = [b.targetAnimalId, ...(winnerAnimalId && winnerAnimalId !== b.targetAnimalId ? [winnerAnimalId] : [])];
       const events = await this.ports.eventsOf(actors, b.publishedWorldTime, at).catch(() => []);
       const record = { bountyId: b.bountyId, rulesHash: b.rulesHash, target: { animalId: b.targetAnimalId, speciesId: b.targetSpeciesId, key: b.targetKey, salt: b.salt },
         publishedWorldTime: b.publishedWorldTime, deadlineWorldTime: deadline, outcome, winnerAnimalId, decidedWorldTime: at,
         kill: b.killAnimalId ? { animalId: b.killAnimalId, worldTime: b.killWorldTime } : null, ...(refused ? { refused } : {}), events };
-      return { outcome, payeeWallet, winnerAgentId, winnerAnimalId, decidedWorldTime: at, record, recordHash: keccak256(stringToHex(canonicalJsonOf(record))) };
+      return { outcome, payeeWallet, winnerAgentId, winnerAnimalId, winnerOwner, decidedWorldTime: at, record, recordHash: keccak256(stringToHex(canonicalJsonOf(record))) };
     };
     // A live kill: the hunter's agent wins if it steered an eligible predator, was not the prey's
     // agent, proved a wallet, and the kill came at or before the deadline.
@@ -499,7 +539,14 @@ export class ArcBountyEngine {
         const money = await this.#fundedTogether(b, wallet);
         // The explorer cannot be read: decided on a later pass (or returned to the pool at expiry), never paid unread.
         if (money === 'unknown') return null;
-        if (!money.linked) return close('predator', wallet, b.killAgentId, b.killAnimalId, b.killWorldTime);
+        if (!money.linked) {
+          const payable = await this.#payableOwner(b, b.killAgentId!, true);
+          if ('refused' in payable) {
+            console.error(`[arc-bounty] ${b.bountyId.slice(0, 10)}: hunter not paid (${payable.refused.reason}): void`);
+            return close('void', null, null, null, b.killWorldTime, payable.refused);
+          }
+          return close('predator', wallet, b.killAgentId, b.killAnimalId, b.killWorldTime, undefined, payable.owner);
+        }
         console.error(`[arc-bounty] ${b.bountyId.slice(0, 10)}: hunter linked to the prey by money (${money.how} via ${money.via}): void`);
         return close('void', null, null, null, b.killWorldTime, { reason: 'funding_linked', how: money.how, via: money.via });
       }
@@ -510,9 +557,13 @@ export class ArcBountyEngine {
     if (world.now() < deadline || this.ports.played() < deadline) return null;
     // Alive at the deadline: paid to the prey's agent if it still steers it, else back to the pool.
     // A wild animal's bounty (no agent held it at publication) has no survival payee.
-    return b.targetAgentId && b.targetWallet && this.ports.steererOf(b.targetAnimalId) === b.targetAgentId
-      ? close('survived', b.targetWallet, b.targetAgentId, b.targetAnimalId, deadline)
-      : close('void', null, null, null, deadline);
+    if (!b.targetAgentId || !b.targetWallet || this.ports.steererOf(b.targetAnimalId) !== b.targetAgentId) return close('void', null, null, null, deadline);
+    const payable = await this.#payableOwner(b, b.targetAgentId, false);
+    if ('refused' in payable) {
+      console.error(`[arc-bounty] ${b.bountyId.slice(0, 10)}: prey not paid (${payable.refused.reason}): void`);
+      return close('void', null, null, null, deadline, payable.refused);
+    }
+    return close('survived', b.targetWallet, b.targetAgentId, b.targetAnimalId, deadline, undefined, payable.owner);
   }
 
   /**

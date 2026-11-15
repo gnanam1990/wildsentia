@@ -260,6 +260,45 @@ maybe('Congo bounties paid on Arc', () => {
     expect(after.record).not.toHaveProperty('refused');
   }, 60_000);
 
+  it('pays only an owner who may be paid here, never one owner\'s hunter for its own prey, and caps what an owner wins in a day', async () => {
+    const owners = new Map<string, string | null>([['hunter', 'x:1'], ['prey', null]]);
+    ports.owner = async (agentId) => owners.get(agentId) ?? null;
+    // A prey whose owner may not be paid here could never win its half: no bounty goes on it.
+    expect(await engine.publishRandom({ amountAtomic: 5_000_000n, windowWorldSeconds: 3600, requireHunter: false })).toEqual({ ok: false, reason: 'no_candidate' });
+    // One owner on both sides: no hunter from someone else is near; a kill goes back to the pool.
+    owners.set('prey', 'x:1');
+    expect(await engine.publishRandom({ amountAtomic: 5_000_000n, windowWorldSeconds: 3600 })).toEqual({ ok: false, reason: 'no_candidate' });
+    let r = await engine.publishRandom({ amountAtomic: 5_000_000n, windowWorldSeconds: 3600, requireHunter: false });
+    if (!r.ok) throw new Error(r.reason);
+    const paidBefore = await usdcBalance(chain, HUNTER_WALLET);
+    await engine.onHunt({ predatorId: leopard, preyId: duiker, predatorAgentId: 'hunter', killed: true });
+    let after = (await store.get(r.bounty.bountyId))!;
+    expect([after.status, after.record]).toEqual(['voided', expect.objectContaining({ refused: { reason: 'same_owner' } })]);
+    // A hunter whose owner may not be paid (an outside agent on mainnet, or a new X account): back to the pool.
+    owners.set('prey', 'x:2'); owners.set('hunter', null);
+    r = await engine.publishRandom({ amountAtomic: 5_000_000n, windowWorldSeconds: 3600, requireHunter: false });
+    if (!r.ok) throw new Error(r.reason);
+    await engine.onHunt({ predatorId: leopard, preyId: duiker, predatorAgentId: 'hunter', killed: true });
+    after = (await store.get(r.bounty.bountyId))!;
+    expect([after.status, after.record]).toEqual(['voided', expect.objectContaining({ refused: { reason: 'identity' } })]);
+    expect(await usdcBalance(chain, HUNTER_WALLET)).toBe(paidBefore);
+    // 8 USDC an owner a day: the first 5 USDC win is paid, a second would pass the cap and goes back to the pool.
+    owners.set('hunter', 'x:1');
+    ports.ownerDailyCapAtomic = 8_000_000n;
+    r = await engine.publishRandom({ amountAtomic: 5_000_000n, windowWorldSeconds: 3600 });
+    if (!r.ok) throw new Error(r.reason);
+    await engine.onHunt({ predatorId: leopard, preyId: duiker, predatorAgentId: 'hunter', killed: true });
+    after = (await store.get(r.bounty.bountyId))!;
+    expect([after.status, after.winnerOwner]).toEqual(['paid', 'x:1']);
+    expect(await store.wonSince('x:1', new Date(Date.now() - 86_400_000))).toBe(5_000_000n);
+    r = await engine.publishRandom({ amountAtomic: 5_000_000n, windowWorldSeconds: 3600 });
+    if (!r.ok) throw new Error(r.reason);
+    await engine.onHunt({ predatorId: leopard, preyId: duiker, predatorAgentId: 'hunter', killed: true });
+    after = (await store.get(r.bounty.bountyId))!;
+    expect([after.status, after.record]).toEqual(['voided', expect.objectContaining({ refused: { reason: 'owner_cap' } })]);
+    expect(await usdcBalance(chain, HUNTER_WALLET) - paidBefore).toBe(5_000_000n);
+  }, 60_000);
+
   it('never pays a kill involving a person whose network is still the old shared placeholder', async () => {
     networks.set('prey', 'human');
     const r = await engine.publishRandom({ amountAtomic: 5_000_000n, windowWorldSeconds: 3600, requireHunter: false });

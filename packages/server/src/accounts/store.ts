@@ -17,6 +17,16 @@ const hash = (token: string) => createHash('sha256').update(token).digest('hex')
 const account = (r: any): Account => ({ id: r.id, xUserId: r.x_user_id, handle: r.x_handle, name: r.x_name, xCreatedAt: r.x_created_at, agentId: r.agent_id });
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
+/**
+ * Who owns an agent for prize payouts: the person whose X account plays it, when that account is at
+ * least MIN_X_ACCOUNT_DAYS old (`x:<X user id>`); otherwise null (an outside agent, or a new account).
+ */
+export async function xOwnerOf(pool: Pool, agentId: string, now = Date.now()): Promise<string | null> {
+  const { rows } = await pool.query<{ x_user_id: string; x_created_at: Date }>('select x_user_id, x_created_at from accounts where agent_id = $1', [agentId]);
+  const a = rows[0];
+  return a && Math.floor((now - a.x_created_at.getTime()) / 86_400_000) >= MIN_X_ACCOUNT_DAYS ? `x:${a.x_user_id}` : null;
+}
+
 /** People's accounts and their sessions. Only a session token's hash is ever stored. */
 export class AccountStore {
   constructor(private readonly pool: Pool, readonly agents: AgentStore, private readonly clock: () => number = Date.now) {}
