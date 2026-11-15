@@ -107,7 +107,8 @@ the bounty returns to the pool rather than going to anyone, and the operator can
 | `VANA_ARC_BOUNTIES_FUNDING_MIN_USDC` | 0.5 | Every flow counts from this total, except the hunter's payment to the prey. |
 
 **Reads and caching:**
-- A wallet's transfers are kept for 10 minutes.
+- A wallet's transfers are kept for a minute (15 s from the mainnet index), so funding sent just
+  before a kill is still seen.
 - A wallet whose read failed is not asked again for a minute.
 - If the explorer is down (unreachable, slow past 10 s, or answering with an error), every read
   fails at once for a minute. A bounty pass then does not wait on the explorer for each wallet in

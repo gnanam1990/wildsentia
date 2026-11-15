@@ -10,8 +10,11 @@ import { FundingUnavailable, type FundingSource, type Transfer } from './funding
  * system emitter, in native 18 decimals; no contract can log from that address. The index reads those
  * logs for the wallets it watches (as sender, then as recipient, by indexed topic), a range of blocks
  * at a time, from `fromBlock` to the head less `confirmations`, and keeps each transfer once by
- * transaction and log index. A wallet is answered only once read to within `maxLagBlocks` of the
- * head; before that, or while the RPC cannot be reached, it throws and the caller decides later.
+ * transaction and log index. Wallets near the head are read first, so a new wallet's backfill never
+ * holds up the others' answers. A wallet is answered only once read to the head the index last saw;
+ * before that, or while the RPC cannot be reached, it throws and the caller decides later. A wallet
+ * the RPC will not return even one block and one wallet at a time (flooded in a block) is set aside,
+ * and its links stay unknown, so nothing involving it is paid.
  *
  * Each wallet's history is summed per pair of addresses: however many transfers a griefer sends, a
  * wallet's list grows by one entry per address that sent it, and nothing is cut off.
@@ -67,8 +70,10 @@ export interface UsdcIndexOptions {
   span?: bigint;
   /** Blocks left behind the head, against reorganisations (default 2; Arc's finality is immediate). */
   confirmations?: bigint;
-  /** A wallet is answered once read to within this many blocks of the head (default 1200). */
+  /** A wallet is answered once read to within this many blocks of the head last seen (default 0: to it). */
   maxLagBlocks?: bigint;
+  /** Wallets read to within this many blocks of the head are read on first, before any backfill (default 50000). */
+  nearBlocks?: bigint;
   /** Wallets in one request's topic list (default 50). */
   batch?: number;
   /** The head is current for this long; past it every answer waits (default 2 minutes). */
@@ -84,6 +89,7 @@ export class UsdcIndex implements FundingSource {
   readonly #maxSpan: bigint;
   readonly #confirmations: bigint;
   readonly #maxLag: bigint;
+  readonly #near: bigint;
   readonly #batch: number;
   readonly #staleMs: number;
   readonly #now: () => number;
@@ -96,7 +102,8 @@ export class UsdcIndex implements FundingSource {
     this.#fromBlock = options.fromBlock ?? 0n;
     this.#maxSpan = this.#span = options.span ?? 5000n;
     this.#confirmations = options.confirmations ?? 2n;
-    this.#maxLag = options.maxLagBlocks ?? 1200n;
+    this.#maxLag = options.maxLagBlocks ?? 0n;
+    this.#near = options.nearBlocks ?? 50_000n;
     this.#batch = options.batch ?? 50;
     this.#staleMs = options.staleMs ?? 120_000;
     this.#now = options.now ?? Date.now;
@@ -117,42 +124,61 @@ export class UsdcIndex implements FundingSource {
   }
 
   /**
-   * Reads on for up to `budgetMs`: the wallets furthest behind first, all those at the same block
-   * together, so a new wallet catches up and then joins the rest. Returns the ranges read.
+   * Reads on for up to `budgetMs`: first the wallets near the head, then those furthest behind, all
+   * those at the same block together, so a new wallet catches up and then joins the rest. Returns
+   * the ranges read.
    */
   async step(budgetMs = 4000): Promise<number> {
     const started = this.#now();
     const head = (await this.reader.head()) - this.#confirmations;
     this.#head = { block: head, at: this.#now() };
     let ranges = 0;
-    while (this.#now() - started < budgetMs) {
-      const { rows } = await this.pool.query<{ scanned_to: string; wallets: string[] }>(`select scanned_to, array_agg(wallet order by wallet) as wallets
-        from arc_usdc_watch where chain_id = $1 and scanned_to < $2 group by scanned_to order by scanned_to limit 1`, [this.chainId, head.toString()]);
-      const group = rows[0];
-      if (!group) break;
-      const scannedTo = BigInt(group.scanned_to), from = scannedTo + 1n;
-      const to = from + this.#span - 1n < head ? from + this.#span - 1n : head;
-      let logs: RawLog[];
-      try {
-        logs = [];
-        for (let i = 0; i < group.wallets.length; i += this.#batch) {
-          const topics = group.wallets.slice(i, i + this.#batch).map(pad);
-          logs.push(...await this.reader.logs({ fromBlock: from, toBlock: to, topics: [TRANSFER, topics] }));
-          logs.push(...await this.reader.logs({ fromBlock: from, toBlock: to, topics: [TRANSFER, null, topics] }));
+    for (const near of [true, false]) {
+      while (this.#now() - started < budgetMs) {
+        const { rows } = await this.pool.query<{ scanned_to: string; wallets: string[] }>(`select scanned_to, array_agg(wallet order by wallet) as wallets
+          from arc_usdc_watch where chain_id = $1 and scanned_to < $2 and stuck_at is null and ($3::bigint is null or scanned_to >= $3)
+          group by scanned_to order by scanned_to limit 1`, [this.chainId, head.toString(), near ? (head - this.#near).toString() : null]);
+        const group = rows[0];
+        if (!group) break;
+        const scannedTo = BigInt(group.scanned_to), from = scannedTo + 1n;
+        const to = from + this.#span - 1n < head ? from + this.#span - 1n : head;
+        let read: { logs: RawLog[]; stuck: string[] };
+        try { read = await this.#read(group.wallets, from, to); } catch (error) {
+          if (error instanceof RangeTooLarge && this.#span > 1n) { this.#span /= 2n; continue; }
+          throw error;
         }
-      } catch (error) {
-        if (error instanceof RangeTooLarge && this.#span > 1n) { this.#span /= 2n; continue; }
-        throw error;
+        await this.#record(read.logs, group.wallets.filter((w) => !read.stuck.includes(w)), read.stuck, scannedTo, to);
+        ranges++;
+        if (this.#span < this.#maxSpan) this.#span = this.#span * 2n > this.#maxSpan ? this.#maxSpan : this.#span * 2n;
       }
-      await this.#record(logs, group.wallets, scannedTo, to);
-      ranges++;
-      if (this.#span < this.#maxSpan) this.#span = this.#span * 2n > this.#maxSpan ? this.#maxSpan : this.#span * 2n;
     }
     return ranges;
   }
 
+  /**
+   * The wallets' transfers in a range. A one-block range the node still refuses is read again for
+   * half the wallets at a time, down to one: a wallet refused alone is stuck, the rest read on.
+   */
+  async #read(wallets: string[], from: bigint, to: bigint): Promise<{ logs: RawLog[]; stuck: string[] }> {
+    try {
+      const logs: RawLog[] = [];
+      for (let i = 0; i < wallets.length; i += this.#batch) {
+        const topics = wallets.slice(i, i + this.#batch).map(pad);
+        logs.push(...await this.reader.logs({ fromBlock: from, toBlock: to, topics: [TRANSFER, topics] }));
+        logs.push(...await this.reader.logs({ fromBlock: from, toBlock: to, topics: [TRANSFER, null, topics] }));
+      }
+      return { logs, stuck: [] };
+    } catch (error) {
+      if (!(error instanceof RangeTooLarge) || from < to) throw error;
+      if (wallets.length === 1) return { logs: [], stuck: wallets };
+      const half = Math.ceil(wallets.length / 2);
+      const [a, b] = [await this.#read(wallets.slice(0, half), from, to), await this.#read(wallets.slice(half), from, to)];
+      return { logs: [...a.logs, ...b.logs], stuck: [...a.stuck, ...b.stuck] };
+    }
+  }
+
   /** One range's transfers and the wallets' new mark, together: a range is never half kept. */
-  async #record(logs: RawLog[], wallets: string[], scannedTo: bigint, to: bigint): Promise<void> {
+  async #record(logs: RawLog[], wallets: string[], stuck: string[], scannedTo: bigint, to: bigint): Promise<void> {
     const rows: Array<[string, number, string, string, string, string]> = [];
     for (const log of logs) {
       if (log.address.toLowerCase() !== ARC_USDC_EMITTER || log.topics[0] !== TRANSFER || log.topics.length !== 3) continue;
@@ -172,6 +198,10 @@ export class UsdcIndex implements FundingSource {
       }
       await db.query('update arc_usdc_watch set scanned_to = $4 where chain_id = $1 and wallet = any($2) and scanned_to = $3',
         [this.chainId, wallets, scannedTo.toString(), to.toString()]);
+      if (stuck.length > 0) {
+        await db.query('update arc_usdc_watch set stuck_at = $3 where chain_id = $1 and wallet = any($2)', [this.chainId, stuck, (scannedTo + 1n).toString()]);
+        console.error(`[arc-bounty] USDC index: ${stuck.join(', ')} unreadable at block ${scannedTo + 1n}: set aside, its links unknown`);
+      }
       await db.query('commit');
     } catch (error) {
       await db.query('rollback').catch(() => undefined);
@@ -185,8 +215,10 @@ export class UsdcIndex implements FundingSource {
     const w = wallet.toLowerCase();
     await this.watch(w);
     if (!this.#head || this.#now() - this.#head.at > this.#staleMs) throw new FundingUnavailable('the USDC index is not current');
-    const mark = await this.pool.query<{ scanned_to: string }>('select scanned_to from arc_usdc_watch where chain_id = $1 and wallet = $2', [this.chainId, w]);
-    if (BigInt(mark.rows[0]!.scanned_to) < this.#head.block - this.#maxLag) throw new Error('wallet not indexed yet');
+    const mark = (await this.pool.query<{ scanned_to: string; stuck_at: string | null }>('select scanned_to, stuck_at from arc_usdc_watch where chain_id = $1 and wallet = $2',
+      [this.chainId, w])).rows[0]!;
+    if (mark.stuck_at !== null) throw new Error(`wallet history unreadable at block ${mark.stuck_at}`);
+    if (BigInt(mark.scanned_to) < this.#head.block - this.#maxLag) throw new Error('wallet not indexed yet');
     const { rows } = await this.pool.query<{ from_addr: string; to_addr: string; value: string }>(`select from_addr, to_addr, sum(value_wei)::text as value
       from arc_usdc_transfers where chain_id = $1 and (from_addr = $2 or to_addr = $2) group by from_addr, to_addr`, [this.chainId, w]);
     // One entry a pair: the same id from both wallets' lists, so the graph counts it once.

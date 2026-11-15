@@ -20,8 +20,8 @@ const OWNER = '0x00000000000000000000000000000000000000c3', GRIEFER = '0x0000000
 const topic = (a: string) => `0x${a.slice(2).padStart(64, '0')}`;
 const usdc = (n: number) => `0x${(BigInt(Math.round(n * 1e6)) * 1_000_000_000_000n).toString(16).padStart(64, '0')}`;
 
-/** A node over a fixed chain of transfers: filters as eth_getLogs does, refuses ranges above `limit`, counts requests. */
-function node(limit = 5000n) {
+/** A node over a fixed chain of transfers: filters as eth_getLogs does, refuses ranges above `limit` or answers above `maxResults`, counts requests. */
+function node(limit = 5000n, maxResults = Infinity, onRequest: () => void = () => undefined) {
   const logs: RawLog[] = [];
   let head = 0n, n = 0;
   const reader: LogReader & { requests: number; add: (block: bigint, from: string, to: string, amount: number, extra?: Partial<RawLog>) => void; setHead: (b: bigint) => void } = {
@@ -31,11 +31,13 @@ function node(limit = 5000n) {
     setHead: (b) => { head = b; },
     head: async () => head,
     async logs(f) {
-      reader.requests++;
+      reader.requests++; onRequest();
       if (f.toBlock - f.fromBlock + 1n > limit) throw new RangeTooLarge('requested range too large');
       const [, senders, recipients] = f.topics as [string, string[] | null, string[] | undefined];
-      return logs.filter((l) => BigInt(l.blockNumber) >= f.fromBlock && BigInt(l.blockNumber) <= f.toBlock
+      const found = logs.filter((l) => BigInt(l.blockNumber) >= f.fromBlock && BigInt(l.blockNumber) <= f.toBlock
         && (!senders || senders.includes(l.topics[1]!)) && (!recipients || recipients.includes(l.topics[2]!)));
+      if (found.length > maxResults) throw new RangeTooLarge('query returned more than 1000 results');
+      return found;
     },
   };
   return reader;
@@ -112,6 +114,37 @@ maybe('the Arc USDC index', () => {
     await catchUp(index);
     expect(chain.requests - before).toBe(2);
     expect(await index.transfers(PREY)).toEqual([{ id: `${OWNER}>${PREY}`, from: OWNER, to: PREY, usdc: 4 }]);
+  });
+
+  it('reads the wallets near the head before any backfill, so a new wallet never holds up the others\' answers', async () => {
+    let calls = 0;
+    const chain = node(5000n, Infinity, () => { calls++; now += 100; });
+    chain.setHead(100_000n);
+    const index = indexOf(chain);
+    await index.watch(HUNTER);
+    await catchUp(index);
+    // A new wallet, from block 0, and the chain moves on: one short step reads the hunter to the new head first.
+    await index.watch(PREY);
+    chain.setHead(105_000n);
+    calls = 0;
+    await index.step(300);
+    expect(calls).toBeLessThanOrEqual(4);
+    expect(await index.transfers(HUNTER)).toEqual([]);
+    await expect(index.transfers(PREY)).rejects.toThrow('wallet not indexed yet');
+  });
+
+  it('sets aside a wallet flooded past what the node returns for one block, and reads the others on', async () => {
+    const chain = node(5000n, 1000);
+    chain.add(3n, OWNER, HUNTER, 5);
+    for (let i = 0; i < 1500; i++) chain.add(100n, GRIEFER, PREY, 0.000001);
+    chain.setHead(20_000n);
+    const index = indexOf(chain);
+    await index.watch(HUNTER); await index.watch(PREY);
+    await catchUp(index);
+    expect(await index.transfers(HUNTER)).toEqual([{ id: `${OWNER}>${HUNTER}`, from: OWNER, to: HUNTER, usdc: 5 }]);
+    // Its links stay unknown: the graph throws, and nothing involving it is paid.
+    await expect(index.transfers(PREY)).rejects.toThrow('wallet history unreadable at block 100');
+    await expect(new FundingGraph(index).linked(HUNTER, PREY)).rejects.toThrow('unreadable');
   });
 
   it('feeds the funding graph: a funder found past any amount of dust, a griefer\'s dust one entry, nothing cut off', async () => {
