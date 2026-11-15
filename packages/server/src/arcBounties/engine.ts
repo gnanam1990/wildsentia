@@ -202,8 +202,11 @@ export class ArcBountyEngine {
     const owner = await this.#ownerOf(agentId);
     if (!owner) return { refused: { reason: 'identity' } };
     if (hunter) {
+      // An agent that held the prey and has no owner who may be paid here (an outside agent on
+      // mainnet) cannot be told apart from the hunter's own: never paid.
       for (const holder of new Set([b.targetAgentId, b.killPreyAgentId].filter((a): a is string => !!a))) {
-        if (await this.#ownerOf(holder) === owner) return { refused: { reason: 'same_owner' } };
+        const held = await this.#ownerOf(holder);
+        if (!held || held === owner) return { refused: { reason: 'same_owner' } };
       }
     }
     const cap = this.ports.ownerDailyCapAtomic;

@@ -282,6 +282,15 @@ maybe('Congo bounties paid on Arc', () => {
     after = (await store.get(r.bounty.bountyId))!;
     expect([after.status, after.record]).toEqual(['voided', expect.objectContaining({ refused: { reason: 'identity' } })]);
     expect(await usdcBalance(chain, HUNTER_WALLET)).toBe(paidBefore);
+    // The prey held at the kill by an agent with no owner who may be paid (an outside agent): not told apart from the hunter's own.
+    owners.set('hunter', 'x:1');
+    networks.set('outsider', 'net-c');
+    r = await engine.publishRandom({ amountAtomic: 5_000_000n, windowWorldSeconds: 3600 });
+    if (!r.ok) throw new Error(r.reason);
+    await engine.onHunt({ predatorId: leopard, preyId: duiker, predatorAgentId: 'hunter', preyAgentId: 'outsider', killed: true });
+    after = (await store.get(r.bounty.bountyId))!;
+    expect([after.status, after.record]).toEqual(['voided', expect.objectContaining({ refused: { reason: 'same_owner' } })]);
+    expect(await usdcBalance(chain, HUNTER_WALLET)).toBe(paidBefore);
     // 8 USDC an owner a day: the first 5 USDC win is paid, a second would pass the cap and goes back to the pool.
     owners.set('hunter', 'x:1');
     ports.ownerDailyCapAtomic = 8_000_000n;
