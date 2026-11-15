@@ -12,9 +12,11 @@
  * counts from `minUsdc` (default 0.5), so dust from a griefer does not; the hunter's own payment to
  * the prey counts at any amount, since nobody else can make it. Through a third address both sides
  * need the minimum: a hunter's small payment to some service cannot be paired by the prey's owner.
- * A public hub joins strangers and links nobody: a contract (the bounty contract pays every winner),
- * an address the operator lists, or one with more transfers than `hubTransfers` (a faucet: Arc
- * Testnet's sends to millions).
+ *
+ * A public hub joins strangers and links nobody, but only an address the operator names is one (the
+ * bounty contract, the evaluator, a faucet). Nothing an address does on chain makes it a hub: a
+ * colluder could deploy a contract to fund both wallets through, or pad their own address with spam
+ * transfers, and their link would vanish.
  *
  * Only USDC counts: any contract can log a Transfer event naming any sender, so another token's
  * transfers could be forged to link an honest hunter to a prey. USDC is the chain's own system
@@ -30,48 +32,52 @@ export interface Transfer { id: string; from: string; to: string; usdc: number }
 
 /** Where the transfers come from: an explorer's index (Blockscout's API v2 serves Arc's). */
 export interface FundingSource {
-  /** Transfers into and out of a wallet, newest first, up to the source's own limit. */
+  /** Every transfer into and out of a wallet; throws rather than return part of its history. */
   transfers(wallet: string): Promise<Transfer[]>;
-  /** Whether an address is a contract, and how many token transfers it has made or taken. */
-  profile(address: string): Promise<{ contract: boolean; transfers: number }>;
+}
+
+/** The source cannot be reached (down, slow, refusing): every read waits, not only this wallet's. */
+export class FundingUnavailable extends Error {
+  readonly unavailable = true;
 }
 
 export type Link = { linked: true; via: string; how: 'direct' | 'funder' | 'cash-out' } | { linked: false };
 
 export interface FundingGraphOptions {
-  /** Addresses that link nobody: the bounty contract, the evaluator, a faucet the operator names. */
+  /** The hubs, which link nobody: the bounty contract, the evaluator, a faucet. No other address is one. */
   ignore?: Iterable<string>;
-  /** More token transfers than this make an address a public hub (default 1000). */
-  hubTransfers?: number;
   /** A flow from one address to another counts at this total (default 0.5 USDC), unless the hunter sent it. */
   minUsdc?: number;
-  /** How long a wallet's transfers and an address's profile are kept (default 10 minutes). */
+  /** How long a wallet's transfers are kept (default 10 minutes). */
   ttlMs?: number;
+  /** How long a failure is kept: a wallet that could not be read, or the source while it is unavailable (default 1 minute). */
+  failTtlMs?: number;
   now?: () => number;
 }
 
 export class FundingGraph {
   readonly #ignore: Set<string>;
-  readonly #hubTransfers: number;
   readonly #minUsdc: number;
   readonly #ttlMs: number;
+  readonly #failTtlMs: number;
   readonly #now: () => number;
-  readonly #transfers = new Map<string, { at: number; value: Promise<Transfer[]> }>();
-  readonly #hubs = new Map<string, { at: number; value: Promise<boolean> }>();
+  readonly #transfers = new Map<string, { until: number; value: Promise<Transfer[]> }>();
+  /** While the source is unavailable, every read fails at once instead of waiting on it again. */
+  #down: { until: number; error: unknown } | null = null;
 
   constructor(private readonly source: FundingSource, options: FundingGraphOptions = {}) {
     this.#ignore = new Set([...(options.ignore ?? [])].map((a) => a.toLowerCase()));
-    this.#hubTransfers = options.hubTransfers ?? 1000;
     this.#minUsdc = options.minUsdc ?? 0.5;
     this.#ttlMs = options.ttlMs ?? 600_000;
+    this.#failTtlMs = options.failTtlMs ?? 60_000;
     this.#now = options.now ?? Date.now;
   }
 
   /**
    * Whether the hunter's wallet is linked to the prey's, and through which address. Not symmetric:
    * the hunter's own payment to the prey counts whatever its size, the prey's to the hunter only
-   * from `minUsdc` up, so a prey's owner cannot void a hunter's kill by sending it a cent. Throws when the source
-   * cannot be read: the caller decides later, it never pays on an unread graph.
+   * from `minUsdc` up, so a prey's owner cannot void a hunter's kill by sending it a cent. Throws when
+   * the source cannot be read: the caller decides later, it never pays on an unread graph.
    */
   async linked(hunter: string, prey: string): Promise<Link> {
     const [x, y] = [hunter.toLowerCase(), prey.toLowerCase()];
@@ -87,37 +93,33 @@ export class FundingGraph {
     const counts = (from: string, to: string) => (flows.get(`${from}>${to}`) ?? 0) >= this.#minUsdc;
     if (flows.has(`${x}>${y}`) || counts(y, x)) return { linked: true, via: x, how: 'direct' };
     const others = new Set<string>();
-    for (const t of [...tx, ...ty]) for (const a of [t.from, t.to]) if (a !== x && a !== y) others.add(a);
+    for (const t of [...tx, ...ty]) for (const a of [t.from, t.to]) if (a !== x && a !== y && !this.#ignore.has(a)) others.add(a);
     for (const how of ['funder', 'cash-out'] as const) {
       for (const a of others) {
-        const both = how === 'funder' ? counts(a, x) && counts(a, y) : counts(x, a) && counts(y, a);
-        if (both && !(await this.#hub(a))) return { linked: true, via: a, how };
+        if (how === 'funder' ? counts(a, x) && counts(a, y) : counts(x, a) && counts(y, a)) return { linked: true, via: a, how };
       }
     }
     return { linked: false };
   }
 
-  async #transfersOf(wallet: string): Promise<Transfer[]> {
-    return this.#cached(this.#transfers, wallet, async () => (await this.source.transfers(wallet))
-      .map((t) => ({ id: t.id, from: t.from.toLowerCase(), to: t.to.toLowerCase(), usdc: t.usdc })));
-  }
-
-  async #hub(address: string): Promise<boolean> {
-    if (this.#ignore.has(address)) return true;
-    return this.#cached(this.#hubs, address, async () => {
-      const p = await this.source.profile(address);
-      return p.contract || p.transfers > this.#hubTransfers;
+  /**
+   * A wallet's transfers, kept for `ttlMs`. A failed read is kept for `failTtlMs`, so the same
+   * wallet is not asked again at once; a source that is unavailable fails every read for as long.
+   */
+  #transfersOf(wallet: string): Promise<Transfer[]> {
+    const now = this.#now();
+    const hit = this.#transfers.get(wallet);
+    if (hit && now < hit.until) return hit.value;
+    if (this.#down && now < this.#down.until) return Promise.reject(this.#down.error);
+    const value = this.source.transfers(wallet)
+      .then((list) => list.map((t) => ({ id: t.id, from: t.from.toLowerCase(), to: t.to.toLowerCase(), usdc: t.usdc })));
+    this.#transfers.set(wallet, { until: now + this.#ttlMs, value });
+    value.catch((error: unknown) => {
+      const at = this.#now();
+      if (this.#transfers.get(wallet)?.value === value) this.#transfers.set(wallet, { until: at + this.#failTtlMs, value });
+      if ((error as { unavailable?: unknown } | null)?.unavailable === true) this.#down = { until: at + this.#failTtlMs, error };
     });
-  }
-
-  /** A cached read; a failed one is forgotten at once, so the next asks the source again. */
-  #cached<T>(cache: Map<string, { at: number; value: Promise<T> }>, key: string, read: () => Promise<T>): Promise<T> {
-    const hit = cache.get(key);
-    if (hit && this.#now() - hit.at < this.#ttlMs) return hit.value;
-    const value = read();
-    cache.set(key, { at: this.#now(), value });
-    value.catch(() => { if (cache.get(key)?.value === value) cache.delete(key); });
-    if (cache.size > 5000) cache.delete(cache.keys().next().value!);
+    if (this.#transfers.size > 5000) this.#transfers.delete(this.#transfers.keys().next().value!);
     return value;
   }
 }
@@ -126,19 +128,30 @@ export class FundingGraph {
 const ZERO = '0x0000000000000000000000000000000000000000';
 /** USDC on Arc: the chain's own system contract, whose transfers cannot be forged. */
 export const ARC_USDC = '0x3600000000000000000000000000000000000000';
+/** Arc Testnet's public faucet (faucet.circle.com), which has paid millions of wallets: a hub. */
+export const ARC_TESTNET_FAUCET = '0x70e3fb28e1794bb91d5bceb7d66b731d0c61af8e';
 
 /**
  * USDC transfers from a Blockscout explorer's API v2 (Arc Testnet: https://explorer.testnet.arc.io/api/v2).
  * On Arc a native USDC payment is listed as a token transfer of the USDC system contract, so these
- * cover both. Every other token is left out. Reads up to `pages` pages of 50, newest first.
+ * cover both. Every other token is left out. Reads a wallet's whole history, page by page; a wallet
+ * with more than `maxTransfers` (default 2000) is not read in part, since an old funding transfer
+ * could be pushed out of a partial read by newer dust: the read fails and the decision waits.
  */
-export function blockscoutFunding(api: string, options: { token?: string; pages?: number; timeoutMs?: number; fetch?: typeof fetch } = {}): FundingSource {
-  const base = api.replace(/\/$/, ''), pages = options.pages ?? 4, timeoutMs = options.timeoutMs ?? 10_000, get = options.fetch ?? fetch;
+export function blockscoutFunding(api: string, options: { token?: string; maxTransfers?: number; timeoutMs?: number; fetch?: typeof fetch } = {}): FundingSource {
+  const base = api.replace(/\/$/, ''), maxTransfers = options.maxTransfers ?? 2000, timeoutMs = options.timeoutMs ?? 10_000, get = options.fetch ?? fetch;
   const token = (options.token ?? ARC_USDC).toLowerCase();
   const read = async (path: string): Promise<Record<string, unknown>> => {
-    const response = await get(`${base}${path}`, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: 'application/json' } });
-    if (!response.ok) throw new Error(`explorer ${response.status} for ${path.split('?')[0]}`);
-    return await response.json() as Record<string, unknown>;
+    let response: Response;
+    try {
+      response = await get(`${base}${path}`, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: 'application/json' } });
+    } catch (error) {
+      throw new FundingUnavailable(`explorer unreachable: ${String((error as Error).message ?? error).split('\n')[0]}`);
+    }
+    if (!response.ok) throw new FundingUnavailable(`explorer ${response.status} for ${path.split('?')[0]}`);
+    try { return await response.json() as Record<string, unknown>; } catch {
+      throw new FundingUnavailable(`explorer gave no JSON for ${path.split('?')[0]}`);
+    }
   };
   const hashOf = (side: unknown): string | null => {
     const hash = (side as { hash?: unknown } | null)?.hash;
@@ -148,10 +161,11 @@ export function blockscoutFunding(api: string, options: { token?: string; pages?
     async transfers(wallet) {
       if (!/^0x[0-9a-fA-F]{40}$/.test(wallet)) throw new Error('not a wallet address');
       const out: Transfer[] = [];
-      let query = `?token=${token}`;
-      for (let page = 0; page < pages; page++) {
+      let query = `?token=${token}`, listed = 0;
+      for (;;) {
         const body = await read(`/addresses/${wallet}/token-transfers${query}`);
         for (const raw of (body.items as unknown[] | undefined) ?? []) {
+          listed++;
           const item = raw as { from?: unknown; to?: unknown; token?: { address_hash?: unknown; address?: unknown }; total?: { value?: unknown; decimals?: unknown };
             transaction_hash?: unknown; log_index?: unknown };
           // The filter is asked for, and checked again here: an explorer that ignored it must not let another token through.
@@ -168,14 +182,10 @@ export function blockscoutFunding(api: string, options: { token?: string; pages?
           if (from && to && Number.isFinite(usdc) && from.toLowerCase() !== ZERO && to.toLowerCase() !== ZERO) out.push({ id, from, to, usdc });
         }
         const next = body.next_page_params as Record<string, unknown> | null | undefined;
-        if (!next) break;
+        if (!next) return out;
+        if (listed >= maxTransfers) throw new Error(`wallet history longer than ${maxTransfers} transfers`);
         query = `?${new URLSearchParams([['token', token], ...Object.entries(next).map(([k, v]): [string, string] => [k, String(v)])]).toString()}`;
       }
-      return out;
-    },
-    async profile(address) {
-      const [info, counters] = await Promise.all([read(`/addresses/${address}`), read(`/addresses/${address}/counters`)]);
-      return { contract: info.is_contract === true, transfers: Number(counters.token_transfers_count ?? 0) || 0 };
     },
   };
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ARC_USDC, blockscoutFunding, FundingGraph, type FundingSource, type Transfer } from '../src/arcBounties/funding.js';
+import { ARC_USDC, blockscoutFunding, FundingGraph, FundingUnavailable, type FundingSource, type Transfer } from '../src/arcBounties/funding.js';
 
 /**
  * The funding-graph check (docs/2026-11-14-funding-graph.md): a bounty's hunter and its prey are one
@@ -10,22 +10,17 @@ const OWNER = '0x00000000000000000000000000000000000000c3', FAUCET = '0x00000000
 const CONTRACT = '0x00000000000000000000000000000000000000d5', STRANGER = '0x00000000000000000000000000000000000000e6';
 
 /** An explorer over a fixed list of transfers, counting its reads. */
-function source(list: Array<Omit<Transfer, 'id'>>, profiles: Record<string, { contract: boolean; transfers: number }> = {}) {
+function source(list: Array<Omit<Transfer, 'id'>>) {
   const transfers: Transfer[] = list.map((t, i) => ({ id: `tx${i}`, ...t }));
-  const reads = { transfers: 0, profiles: 0 };
-  let down = false;
-  const s: FundingSource & { reads: typeof reads; down: (v: boolean) => void } = {
-    reads, down: (v) => { down = v; },
+  const reads = { transfers: 0 };
+  let down: Error | null = null;
+  const s: FundingSource & { reads: typeof reads; down: (e: Error | null) => void } = {
+    reads, down: (e) => { down = e; },
     async transfers(wallet) {
       reads.transfers++;
-      if (down) throw new Error('explorer 503');
+      if (down) throw down;
       const w = wallet.toLowerCase();
       return transfers.filter((t) => t.from.toLowerCase() === w || t.to.toLowerCase() === w);
-    },
-    async profile(address) {
-      reads.profiles++;
-      if (down) throw new Error('explorer 503');
-      return profiles[address.toLowerCase()] ?? { contract: false, transfers: 3 };
     },
   };
   return s;
@@ -45,13 +40,13 @@ describe('the funding graph', () => {
     expect(await cashedOut.linked(HUNTER, PREY)).toEqual({ linked: true, via: OWNER, how: 'cash-out' });
   });
 
-  it('does not link strangers through a faucet, a contract or an address the operator names', async () => {
+  it('does not link strangers through a hub the operator lists, and counts no other address a hub', async () => {
     const transfers = [{ from: FAUCET, to: HUNTER, usdc: 5 }, { from: FAUCET, to: PREY, usdc: 5 }, { from: CONTRACT, to: HUNTER, usdc: 5 }, { from: CONTRACT, to: PREY, usdc: 5 },
-      { from: OWNER, to: HUNTER, usdc: 5 }, { from: OWNER, to: PREY, usdc: 5 }];
-    const profiles = { [FAUCET]: { contract: false, transfers: 3_992_582 }, [CONTRACT]: { contract: true, transfers: 7 } };
-    expect(await new FundingGraph(source(transfers, profiles), { ignore: [OWNER] }).linked(HUNTER, PREY)).toEqual({ linked: false });
-    // Without the operator's word the owner still links them.
-    expect((await new FundingGraph(source(transfers, profiles)).linked(HUNTER, PREY)).linked).toBe(true);
+      { from: HUNTER, to: OWNER, usdc: 5 }, { from: PREY, to: OWNER, usdc: 5 }];
+    expect(await new FundingGraph(source(transfers), { ignore: [FAUCET, CONTRACT, OWNER.toUpperCase().replace('0X', '0x')] }).linked(HUNTER, PREY)).toEqual({ linked: false });
+    // A colluder's own contract, or an address padded with spam transfers, is not listed: it still links them.
+    expect(await new FundingGraph(source(transfers), { ignore: [FAUCET, OWNER] }).linked(HUNTER, PREY)).toEqual({ linked: true, via: CONTRACT, how: 'funder' });
+    expect(await new FundingGraph(source(transfers), { ignore: [FAUCET, CONTRACT] }).linked(HUNTER, PREY)).toEqual({ linked: true, via: OWNER, how: 'cash-out' });
     // Funded by different people, or by one only one of them knows: no link.
     expect(await new FundingGraph(source([{ from: OWNER, to: HUNTER, usdc: 5 }, { from: STRANGER, to: PREY, usdc: 5 }])).linked(HUNTER, PREY)).toEqual({ linked: false });
     // A transfer between the funder and a third wallet is not the prey's.
@@ -92,25 +87,48 @@ describe('the funding graph', () => {
     const g = new FundingGraph(s, { now: () => now });
     await g.linked(HUNTER, PREY);
     await g.linked(PREY, HUNTER);
-    expect(s.reads).toEqual({ transfers: 2, profiles: 1 });
-    now = 600_001; s.down(true);
+    expect(s.reads).toEqual({ transfers: 2 });
+    now = 600_001; s.down(new FundingUnavailable('explorer 503'));
     await expect(g.linked(HUNTER, PREY)).rejects.toThrow('explorer 503');
-    // A failed read is not kept: the next asks again.
-    s.down(false);
+    expect(s.reads.transfers).toBe(4);
+    // While it is down every read fails at once, a wallet never asked included: nothing waits on it again.
+    await expect(g.linked(HUNTER, STRANGER)).rejects.toThrow('explorer 503');
+    s.down(null);
+    await expect(g.linked(HUNTER, PREY)).rejects.toThrow('explorer 503');
+    expect(s.reads.transfers).toBe(4);
+    // A minute on, it is asked again.
+    now += 60_001;
     expect((await g.linked(HUNTER, PREY)).linked).toBe(true);
+    expect(s.reads.transfers).toBe(6);
+  });
+
+  it('keeps one wallet\'s failed read for a minute without stopping the others', async () => {
+    let now = 0;
+    const s = source([{ from: OWNER, to: HUNTER, usdc: 5 }, { from: OWNER, to: PREY, usdc: 5 }]);
+    const g = new FundingGraph(s, { now: () => now });
+    s.down(new Error('wallet history longer than 2000 transfers'));
+    await expect(g.linked(HUNTER, PREY)).rejects.toThrow('longer than');
+    s.down(null);
+    // The hunter's own read is kept failed for a minute; other wallets are still read.
+    await expect(g.linked(HUNTER, STRANGER)).rejects.toThrow('longer than');
+    const before = s.reads.transfers;
+    expect(await g.linked(OWNER, STRANGER)).toEqual({ linked: false });
+    expect(s.reads.transfers).toBe(before + 1);
+    now += 60_001;
+    expect(await g.linked(HUNTER, PREY)).toEqual({ linked: true, via: OWNER, how: 'funder' });
   });
 });
 
 describe('Blockscout as the source', () => {
   const api = 'https://explorer.example/api/v2';
-  /** Answers like Arc Testnet's explorer: two pages of transfers, then the counters. */
+  /** Answers like Arc Testnet's explorer: page n+1 is asked for with `index=n` (page 0 without). */
   const fake = (pages: Record<string, unknown>[], seen: string[]): typeof fetch => (async (input: string | URL | Request) => {
     const url = String(input);
     seen.push(url.replace(api, ''));
-    if (url.endsWith('/counters')) return new Response(JSON.stringify({ token_transfers_count: '3992582' }));
-    if (/\/addresses\/0x[0-9a-fA-F]{40}$/.test(url)) return new Response(JSON.stringify({ is_contract: false }));
     if (url.includes('fail')) return new Response('', { status: 503 });
-    return new Response(JSON.stringify(pages[url.includes('block_number=') ? 1 : 0]));
+    if (url.includes('down')) throw new TypeError('fetch failed');
+    const index = /[?&]index=(\d+)/.exec(url);
+    return new Response(JSON.stringify(pages[index ? Number(index[1]) + 1 : 0]));
   }) as typeof fetch;
 
   const usdc = { address_hash: ARC_USDC }, amount = (value: string) => ({ value, decimals: '6' });
@@ -122,13 +140,30 @@ describe('Blockscout as the source', () => {
         { from: { hash: '0x0000000000000000000000000000000000000000' }, to: { hash: HUNTER }, token: usdc, total: amount('1000000'), transaction_hash: `0x${'c'.repeat(64)}`, log_index: 0 },
         // Any contract can log a Transfer naming any sender: a forged "prey paid the hunter" in another token.
         { from: { hash: PREY }, to: { hash: HUNTER }, token: { address_hash: CONTRACT }, total: amount('9000000') }],
-        next_page_params: { block_number: 70687710, index: 3 } },
+        next_page_params: { block_number: 70687710, index: 0 } },
       { items: [{ from: { hash: HUNTER }, to: { hash: STRANGER }, token: usdc, total: amount('500000'), transaction_hash: `0x${'b'.repeat(64)}`, log_index: 0 }], next_page_params: null },
     ], seen) });
     expect(await s.transfers(HUNTER)).toEqual([{ id: `0x${'a'.repeat(64)}:2`, from: OWNER, to: HUNTER, usdc: 5 }, { id: `0x${'b'.repeat(64)}:0`, from: HUNTER, to: STRANGER, usdc: 0.5 }]);
     expect(seen).toEqual([`/addresses/${HUNTER}/token-transfers?token=${ARC_USDC}`,
-      `/addresses/${HUNTER}/token-transfers?token=${ARC_USDC}&block_number=70687710&index=3`]);
-    expect(await s.profile(FAUCET)).toEqual({ contract: false, transfers: 3_992_582 });
+      `/addresses/${HUNTER}/token-transfers?token=${ARC_USDC}&block_number=70687710&index=0`]);
+  });
+
+  it('reads past newer dust to an old funding transfer, and fails rather than read a longer history in part', async () => {
+    // 200 dust transfers sent to the prey after its owner funded it: four pages of 50, the funding on the fifth.
+    const dust = (page: number) => Array.from({ length: 50 }, (_, i) => ({ from: { hash: STRANGER }, to: { hash: PREY }, token: usdc, total: amount('1'),
+      transaction_hash: `0x${(page * 50 + i + 1).toString(16).padStart(64, '0')}`, log_index: 0 }));
+    const pages = [0, 1, 2, 3].map((n) => ({ items: dust(n), next_page_params: { block_number: 1, index: n } }));
+    pages.push({ items: [{ from: { hash: OWNER }, to: { hash: PREY }, token: usdc, total: amount('5000000'), transaction_hash: `0x${'f'.repeat(64)}`, log_index: 1 }] as never,
+      next_page_params: null as never });
+    const funded = await blockscoutFunding(api, { fetch: fake(pages, []) }).transfers(PREY);
+    expect(funded).toHaveLength(201);
+    expect(funded.at(-1)).toEqual({ id: `0x${'f'.repeat(64)}:1`, from: OWNER, to: PREY, usdc: 5 });
+    // With a cap below the history, the read fails: the decision waits, it is never paid on part of the history.
+    await expect(blockscoutFunding(api, { maxTransfers: 150, fetch: fake(pages, []) }).transfers(PREY)).rejects.toThrow('longer than 150 transfers');
+    // A history that ends at the cap is read whole.
+    const seen: string[] = [];
+    expect(await blockscoutFunding(api, { maxTransfers: 201, fetch: fake(pages, seen) }).transfers(PREY)).toHaveLength(201);
+    expect(seen).toHaveLength(5);
   });
 
   it('fails rather than guess when a transfer comes without a transaction hash and log index', async () => {
@@ -137,9 +172,13 @@ describe('Blockscout as the source', () => {
     await expect(bare.transfers(HUNTER)).rejects.toThrow('without a transaction hash');
   });
 
-  it('fails on an explorer error and refuses anything but an address', async () => {
+  it('fails on an explorer error, as unavailable when it is down, and refuses anything but an address', async () => {
     const s = blockscoutFunding(`${api}/fail`, { fetch: fake([], []) });
-    await expect(s.transfers(HUNTER)).rejects.toThrow('explorer 503');
+    await expect(s.transfers(HUNTER)).rejects.toThrow(new FundingUnavailable(`explorer 503 for /addresses/${HUNTER}/token-transfers`));
+    await expect(blockscoutFunding(`${api}/down`, { fetch: fake([], []) }).transfers(HUNTER)).rejects.toBeInstanceOf(FundingUnavailable);
     await expect(s.transfers('0x12/../../admin')).rejects.toThrow('not a wallet address');
+    // A wallet the explorer cannot list is that wallet's failure, not the explorer's.
+    const bare = blockscoutFunding(api, { fetch: fake([{ items: [{ from: { hash: OWNER }, to: { hash: HUNTER }, token: usdc, total: amount('5') }], next_page_params: null }], []) });
+    await expect(bare.transfers(HUNTER)).rejects.not.toBeInstanceOf(FundingUnavailable);
   });
 });

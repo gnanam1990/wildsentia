@@ -41,12 +41,21 @@ A transfer between the two wallets appears in both their lists and is counted on
 apart by its transaction hash and log index. If the explorer gives an item without them, the whole
 read fails and the decision waits; two transfers are never guessed to be one.
 
-**What does not count as a link.** A public hub joins strangers, so it links nobody:
-- **A contract.** The bounty contract pays every winner.
-- **An address the operator lists.** The bounty contract, the evaluator and the USDC system contract
-  are always listed.
-- **A busy address.** One with more than `VANA_ARC_BOUNTIES_FUNDING_HUB_TRANSFERS` token transfers
-  (default 1000). Arc Testnet's faucet `0x70E3…Af8e` has made about 4 million.
+**What does not count as a link.** A public hub joins strangers, so it links nobody. Only an
+address on the list is a hub:
+- **Always:** the bounty contract, which pays every winner; the evaluator; the USDC system contract.
+- **On Arc Testnet:** the faucet `0x70E3…Af8e`, which has paid millions of wallets, and version 1 of
+  the bounty contract `0x0741…9050`, which paid the first winners.
+- **Any address the operator adds** with `VANA_ARC_BOUNTIES_FUNDING_IGNORE`.
+
+Nothing an address does on chain makes it a hub. A review on 15 November found that a colluder
+could otherwise hide their link:
+- by funding both wallets through a contract they deploy, when every contract counted as a hub; or
+- by padding their own address past 1000 token transfers with spam, when a busy address counted.
+
+The cost of a list is that an unlisted public address, say another app that pays many people, can
+link two honest wallets. Then a kill is voided, not paid wrongly: its record names the address
+(`via`), and the operator can list it.
 
 On Arc a native USDC payment is listed by the explorer as a token transfer of `0x3600…0000`. So
 the USDC transfer list covers both native USDC and ERC-20 USDC.
@@ -62,6 +71,13 @@ hunter.
   the same by sending the hunter a cent. With the minimum, each false link costs the griefer at
   least 0.5 USDC per flow, and the money goes to the people they meant to harm. Only the hunter's
   own payment to the prey needs no minimum, since only the hunter can make it.
+
+**A wallet's whole history is read.** The explorer gives transfers newest first, 50 a page. Reading
+only the first pages would let a colluder push the old funding transfer out of sight with newer
+dust, so every page is read. A wallet with more than `VANA_ARC_BOUNTIES_FUNDING_MAX_TRANSFERS`
+(default 2000) USDC transfers is not read in part: the read fails, and the decision waits as below.
+Someone who sends a hunter 2000 transfers can so hold back its kills; that costs 2000 transactions,
+the bounty returns to the pool rather than going to anyone, and the operator can raise the cap.
 
 **What happens when a link is found:**
 - **A linked kill is never paid.** The bounty goes back to the pool. Its record (hashed and
@@ -80,13 +96,15 @@ hunter.
 | `VANA_ARC_BOUNTIES_FUNDING_CHECK` | on | `off` turns the check off. |
 | `VANA_ARC_BOUNTIES_FUNDING_API` | `https://explorer.testnet.arc.io/api/v2` on Arc Testnet | A Blockscout API v2 base. Any other chain must name its own. |
 | `VANA_ARC_BOUNTIES_FUNDING_IGNORE` | none | More hub addresses, comma-separated. |
-| `VANA_ARC_BOUNTIES_FUNDING_HUB_TRANSFERS` | 1000 | Above this many token transfers, an address is a hub. |
+| `VANA_ARC_BOUNTIES_FUNDING_MAX_TRANSFERS` | 2000 | A wallet with more USDC transfers is not read, and its decisions wait. |
 | `VANA_ARC_BOUNTIES_FUNDING_MIN_USDC` | 0.5 | Every flow counts from this total, except the hunter's payment to the prey. |
 
 **Reads and caching:**
-- A wallet's transfers come from up to four pages of 50, newest first.
-- They are kept for 10 minutes, as is an address's hub status.
-- A failed read is not kept.
+- A wallet's transfers are kept for 10 minutes.
+- A wallet whose read failed is not asked again for a minute.
+- If the explorer is down (unreachable, slow past 10 s, or answering with an error), every read
+  fails at once for a minute. A bounty pass then does not wait on the explorer for each wallet in
+  turn and hold up the other decisions.
 
 ## Checked against Arc Testnet
 
@@ -94,9 +112,13 @@ Run on 14 November 2026 against the live explorer, with this project's own walle
 
 | Wallets | Result | Why |
 |---|---|---|
-| Demo hunter and demo prey | not linked | Both were paid only by the bounty contracts. |
+| Demo hunter and demo prey | not linked | Both were paid only by the bounty contracts (both versions are listed). |
 | Owner and treasury | linked, direct | The treasury funded the owner. |
 | Treasury and the Circle evaluator wallet | not linked | Both took 20 USDC from the faucet, a hub. |
+
+Run again on 15 November with the explicit hub list, with the same results. Without version 1 of the
+bounty contract on the list, the demo hunter and prey were linked through it, which is why it is
+listed.
 
 ## What it does not stop
 
@@ -105,7 +127,6 @@ Run on 14 November 2026 against the live explorer, with this project's own walle
 - **Paths of two hops or more.** A pays B, B pays the prey, A funded the hunter: this is not
   followed. Only direct transfers and one shared address count.
 - **Laundering through a hub.** A deposit to an exchange and a withdrawal to both wallets passes.
-- **Old history.** USDC transfers past the first 200 are not read.
 - **Small funding to both sides.** A colluder who keeps each flow under the minimum, and never has
   the hunter pay the prey, passes. Agent wallets need no gas to be paid,
   so colluding wallets meet chiefly when winnings are gathered. Winnings are at least 1 USDC, and
