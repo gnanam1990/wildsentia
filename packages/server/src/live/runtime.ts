@@ -24,9 +24,13 @@ import { ArcBountyStore } from '../arcBounties/store.js';
 import { ArcBountyEngine } from '../arcBounties/engine.js';
 import { viemBountyChain } from '../arcBounties/chain.js';
 import { circleSigner } from '../arcBounties/circle.js';
+import { ARC_TESTNET_FAUCET, ARC_USDC, blockscoutFunding, FundingGraph } from '../arcBounties/funding.js';
 import type { ArcBountyDeps } from '../arcBounties/routes.js';
 import { Notifier, arcBountyAnnouncer, describeNotify, notifyConfig } from '../notify/notify.js';
 import type { Hex } from 'viem';
+
+/** Version 1 of WildsentiaBounties on Arc Testnet (19 October 2026), before version 2 took over. */
+const ARC_TESTNET_BOUNTIES_V1 = '0x0741af75301873120bec5ceba3c18b78a1b89050';
 
 /**
  * Starts and stops the live layer beside the SimHost (docs/2026-09-26-live-agents-design.md).
@@ -142,6 +146,25 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
         walletAddress: required('VANA_CIRCLE_WALLET_ADDRESS'), ...(fee ? { feeLevel: fee as 'LOW' | 'MEDIUM' | 'HIGH' } : {}), ...(env.VANA_CIRCLE_BASE_URL?.trim() ? { baseUrl: env.VANA_CIRCLE_BASE_URL.trim() } : {}) }) });
     })() : viemBountyChain({ ...where, evaluatorKey: required('VANA_ARC_BOUNTIES_EVALUATOR_KEY') as Hex });
     const store = new ArcBountyStore(pool, host.worldId ?? 'unknown');
+    // The funding-graph check (docs/2026-11-14-funding-graph.md): on unless VANA_ARC_BOUNTIES_FUNDING_CHECK=off.
+    // It reads Arc Testnet's explorer by default; another chain must name its Blockscout API v2.
+    const funding = env.VANA_ARC_BOUNTIES_FUNDING_CHECK?.trim() === 'off' ? null : (() => {
+      const api = env.VANA_ARC_BOUNTIES_FUNDING_API?.trim() || (chainId === 5042002 ? 'https://explorer.testnet.arc.io/api/v2' : '');
+      if (!/^https:\/\/[^\s/]+(\/[^\s]*)?$/.test(api)) throw new Error('VANA_ARC_BOUNTIES_FUNDING_API must be an https Blockscout API v2 URL (or VANA_ARC_BOUNTIES_FUNDING_CHECK=off)');
+      const ignore = (env.VANA_ARC_BOUNTIES_FUNDING_IGNORE ?? '').split(',').map((a) => a.trim()).filter(Boolean);
+      if (ignore.some((a) => !/^0x[0-9a-fA-F]{40}$/.test(a))) throw new Error('VANA_ARC_BOUNTIES_FUNDING_IGNORE must be comma-separated addresses');
+      const minUsdc = env.VANA_ARC_BOUNTIES_FUNDING_MIN_USDC?.trim() || '0.5';
+      if (!/^\d+(\.\d{1,6})?$/.test(minUsdc) || Number(minUsdc) <= 0) throw new Error('VANA_ARC_BOUNTIES_FUNDING_MIN_USDC must be a USDC amount above 0');
+      // The hubs, which link nobody: the bounty contract pays every winner, the evaluator sends every
+      // transaction, USDC is the token itself. On Arc Testnet also its faucet, which has paid millions,
+      // and version 1 of the bounty contract (docs/2026-10-29-bounties-v2.md), which paid the first
+      // winners. Only listed addresses are hubs (a colluder's own contract or busy address is not one).
+      const hubs = [where.contract, chain.evaluator, ARC_USDC, ...(chainId === 5042002 ? [ARC_TESTNET_FAUCET, ARC_TESTNET_BOUNTIES_V1] : []), ...ignore];
+      const graph = new FundingGraph(blockscoutFunding(api, { maxTransfers: positiveSetting(env, 'VANA_ARC_BOUNTIES_FUNDING_MAX_TRANSFERS', 2000) }),
+        { ignore: hubs, minUsdc: Number(minUsdc) });
+      console.log(`arc bounties: funding-graph check on (${api})`);
+      return graph;
+    })();
     // Alerts to Discord and Telegram when a bounty goes live and when it is decided (all optional).
     const alerts = notifyConfig(env);
     if (alerts) console.log(`arc bounty alerts: ${describeNotify(alerts)}`);
@@ -155,6 +178,7 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
       network: (agentId) => agentStore.networkOf(agentId),
       // Testnet only: refused with a mainnet chain.
       sameNetworkOk: env.VANA_ARC_BOUNTIES_SAME_NETWORK_OK === '1' && chainId === 5042002,
+      ...(funding ? { fundingLinked: (a: string, b: string) => funding.linked(a, b) } : {}),
       randomCrowd: positiveSetting(env, 'VANA_ARC_BOUNTIES_RANDOM_CROWD', 3),
       notify: (agentId, text) => live.notify(agentId, text), eventsOf,
       explorer: env.VANA_ARC_BOUNTIES_EXPLORER_URL?.trim() || null, ...(announce ? { announce } : {}),

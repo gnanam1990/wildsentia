@@ -5,6 +5,7 @@ import { getAddress, type Hex, keccak256, stringToHex } from 'viem';
 import { PROTECTED_SPECIES } from '../bounties/engine.js';
 import { type BountyCall, type BountyChain, EXTERNAL_REF, targetCommit } from './chain.js';
 import { idempotencyUuid } from './circle.js';
+import type { Link } from './funding.js';
 import type { ArcBounty, ArcBountyStore, ArcDecision } from './store.js';
 
 /**
@@ -50,6 +51,13 @@ export interface ArcBountyPorts {
   network: (agentId: string) => Promise<string | null>;
   /** Testnet demos only: both demo agents run from one machine (VANA_ARC_BOUNTIES_SAME_NETWORK_OK=1). */
   sameNetworkOk?: boolean;
+  /**
+   * Whether two wallets are linked by money on chain (funding.ts): one paid the other, or one
+   * address funded both, or both cashed out to one. A hunter linked so to the prey's wallet is never
+   * paid, and does not count as the hunter near a random bounty. Throws when it cannot tell yet.
+   * None: the check is off.
+   */
+  fundingLinked?: (a: string, b: string) => Promise<Link>;
   /**
    * A random bounty goes only on a prey hidden among at least this many prey of its species in its
    * region that could carry one too, from as many networks (itself included), since the public list
@@ -118,6 +126,10 @@ export class ArcBountyEngine {
           const p = world.animal(h.animalId)?.position;
           if (!p || Math.hypot(p.x - animal.position.x, p.z - animal.position.z) > PREDATOR_WITHIN_M) continue;
           if (await this.#related(h.agentId, s.agentId)) continue;
+          // Linked by money, or not known yet: not a hunter from someone else.
+          const [hw, pw] = await Promise.all([this.ports.wallet(h.agentId), this.ports.wallet(s.agentId)]);
+          const money = await this.#moneyLink(hw, pw);
+          if (money === 'unknown' || money.linked) continue;
           hunter = true; break;
         }
         if (!hunter) continue;
@@ -141,6 +153,33 @@ export class ArcBountyEngine {
       if (holderWallet && holderWallet.toLowerCase() === killerWallet.toLowerCase()) return true;
     }
     return !!b.targetWallet && b.targetWallet.toLowerCase() === killerWallet.toLowerCase();
+  }
+
+  /**
+   * Whether the hunter's wallet is linked by money to a wallet that held the prey (at publication or
+   * at the kill): 'unknown' while the explorer cannot be read.
+   */
+  async #fundedTogether(b: ArcBounty, killerWallet: string): Promise<Link | 'unknown'> {
+    const holders = new Set<string>();
+    if (b.targetWallet) holders.add(b.targetWallet.toLowerCase());
+    if (b.killPreyAgentId && b.killPreyAgentId !== b.targetAgentId) {
+      const w = await this.ports.wallet(b.killPreyAgentId);
+      if (w) holders.add(w.toLowerCase());
+    }
+    for (const holder of holders) {
+      const money = await this.#moneyLink(killerWallet, holder);
+      if (money === 'unknown' || money.linked) return money;
+    }
+    return { linked: false };
+  }
+
+  /** Whether two wallets are linked by money (never, with the check off or in a one-machine testnet demo). */
+  async #moneyLink(a: string | null, b: string | null): Promise<Link | 'unknown'> {
+    if (!a || !b || !this.ports.fundingLinked || this.ports.sameNetworkOk) return { linked: false };
+    try { return await this.ports.fundingLinked(a, b); } catch (error) {
+      console.error(`[arc-bounty] funding check unavailable: ${String((error as Error).message ?? error).split('\n')[0]}`);
+      return 'unknown';
+    }
   }
 
   /** Whether two agents registered from the same network (unless a testnet demo allows it). */
@@ -441,12 +480,13 @@ export class ArcBountyEngine {
 
   async #decision(b: ArcBounty): Promise<ArcDecision | null> {
     const world = this.ports.world(), animal = world.animal(b.targetAnimalId), deadline = b.deadlineWorldTime;
-    const close = async (outcome: ArcDecision['outcome'], payeeWallet: string | null, winnerAgentId: string | null, winnerAnimalId: string | null, at: number) => {
+    const close = async (outcome: ArcDecision['outcome'], payeeWallet: string | null, winnerAgentId: string | null, winnerAnimalId: string | null, at: number,
+      refused?: { reason: 'funding_linked'; how: string; via: string }) => {
       const actors = [b.targetAnimalId, ...(winnerAnimalId && winnerAnimalId !== b.targetAnimalId ? [winnerAnimalId] : [])];
       const events = await this.ports.eventsOf(actors, b.publishedWorldTime, at).catch(() => []);
       const record = { bountyId: b.bountyId, rulesHash: b.rulesHash, target: { animalId: b.targetAnimalId, speciesId: b.targetSpeciesId, key: b.targetKey, salt: b.salt },
         publishedWorldTime: b.publishedWorldTime, deadlineWorldTime: deadline, outcome, winnerAnimalId, decidedWorldTime: at,
-        kill: b.killAnimalId ? { animalId: b.killAnimalId, worldTime: b.killWorldTime } : null, events };
+        kill: b.killAnimalId ? { animalId: b.killAnimalId, worldTime: b.killWorldTime } : null, ...(refused ? { refused } : {}), events };
       return { outcome, payeeWallet, winnerAgentId, winnerAnimalId, decidedWorldTime: at, record, recordHash: keccak256(stringToHex(canonicalJsonOf(record))) };
     };
     // A live kill: the hunter's agent wins if it steered an eligible predator, was not the prey's
@@ -455,7 +495,14 @@ export class ArcBountyEngine {
       const species = world.animal(b.killAnimalId)?.speciesId;
       const wallet = b.killAgentId && b.killAgentId !== b.targetAgentId && species && b.eligiblePredators.includes(species) && b.killWorldTime <= deadline
         ? await this.ports.wallet(b.killAgentId) : null;
-      if (wallet && !(await this.#colluded(b, b.killAgentId!, wallet))) return close('predator', wallet, b.killAgentId, b.killAnimalId, b.killWorldTime);
+      if (wallet && !(await this.#colluded(b, b.killAgentId!, wallet))) {
+        const money = await this.#fundedTogether(b, wallet);
+        // The explorer cannot be read: decided on a later pass (or returned to the pool at expiry), never paid unread.
+        if (money === 'unknown') return null;
+        if (!money.linked) return close('predator', wallet, b.killAgentId, b.killAnimalId, b.killWorldTime);
+        console.error(`[arc-bounty] ${b.bountyId.slice(0, 10)}: hunter linked to the prey by money (${money.how} via ${money.via}): void`);
+        return close('void', null, null, null, b.killWorldTime, { reason: 'funding_linked', how: money.how, via: money.via });
+      }
       return close('void', null, null, null, b.killWorldTime);
     }
     // Dead another way (a wild predator, illness, hunger): nobody won it.

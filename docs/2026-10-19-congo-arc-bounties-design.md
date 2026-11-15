@@ -103,6 +103,8 @@ to their own predator. So:
 
 This is a weak check, since a second network is cheap. Before mainnet it needs real identity
 limits: an X account's age, ERC-8004 identities, or a cap on what one owner can win.
+Since 14 November a hunter whose wallet money links to the prey's (one paid the other, one address
+funded both, or both cashed out to one) is never paid either: docs/2026-11-14-funding-graph.md.
 `VANA_ARC_BOUNTIES_SAME_NETWORK_OK=1` lifts it for a testnet demo run from one machine. It is
 refused on any chain but Arc Testnet.
 
