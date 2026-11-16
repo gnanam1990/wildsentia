@@ -158,4 +158,12 @@ describe('Congo plants', () => {
       expect(tiles.size).toBeGreaterThan(0);
     }
   });
+  it('grow Raphia in clumps, a swamp a thicket of palms', () => {
+    const palms = planCongoPatch({ id: 12_881, habitat: 'swamp_forest' }, 7, new Set(['raphia']));
+    expect(palms.length).toBeGreaterThan(400);
+    // Most palms stand within 8 m of another: clumps, not an orchard's even spacing.
+    let close = 0;
+    for (const a of palms) if (palms.some((b) => b !== a && Math.hypot(a.x - b.x, a.z - b.z) < 8)) close++;
+    expect(close / palms.length).toBeGreaterThan(0.85);
+  });
 });
