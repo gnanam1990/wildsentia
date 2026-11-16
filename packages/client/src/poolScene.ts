@@ -6,6 +6,7 @@
  */
 import * as THREE from 'three';
 import { congoTexture } from './congoTextures.js';
+import { registerWater, waterLook } from './waterLook.js';
 import { fromLocal, poolFrame, shoreFactor, type Pool } from './pools.js';
 
 type HeightSampler = (x: number, z: number) => number;
@@ -43,6 +44,9 @@ export function poolPlane(pool: Pool, groundAt: HeightSampler, out = new THREE.M
     new THREE.Vector3(r * stretch, 1, r / stretch));
 }
 
+/** A pool's ripples repeat every this many metres (a river's every 24 m: a pool is sheltered, its ripples small). */
+const RIPPLE_TILE_M = 7;
+
 function surface(pools: readonly Pool[], groundAt: HeightSampler): THREE.Mesh {
   const positions: number[] = [], colors: number[] = [], index: number[] = [];
   const v = new THREE.Vector3(), c = new THREE.Color(), m = new THREE.Matrix4();
@@ -68,9 +72,14 @@ function surface(pools: readonly Pool[], groundAt: HeightSampler): THREE.Mesh {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 4));
+  const uv = new Float32Array(positions.length / 3 * 2);
+  for (let i = 0; i < positions.length / 3; i++) { uv[i * 2] = positions[i * 3]! / RIPPLE_TILE_M; uv[i * 2 + 1] = positions[i * 3 + 2]! / RIPPLE_TILE_M; }
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   geometry.setIndex(index); geometry.computeVertexNormals();
-  const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
-    vertexColors: true, roughness: 0.08, metalness: 0.3, transparent: true, depthWrite: false }));
+  // Still forest water: it mirrors the canopy and the sky through slow ripples (waterLook.ts). Under
+  // the trees most of what is overhead is leaves, so a pool mirrors half what an open river does.
+  const mesh = new THREE.Mesh(geometry, registerWater(new THREE.MeshStandardMaterial({
+    vertexColors: true, roughness: 0.12, metalness: 0, transparent: true, depthWrite: false, ...waterLook(0.45, 0.22) })));
   mesh.name = 'water-surface'; mesh.renderOrder = 2;
   return mesh;
 }

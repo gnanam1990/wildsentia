@@ -12,6 +12,7 @@ import { LiveAgents, activityOf, isLiveMessage, isRosterMessage, rosterActivity,
 import { COVER_RADIUS_M, GroundCover } from './groundCover.js';
 import { CongoForest } from './congoForest.js';
 import { congoWaterSurface } from './congoWater.js';
+import { animateWater } from './waterLook.js';
 import { congoCrownMaterials, congoFloorPlantMaterials, congoPlantMaterials } from './congoPlants.js';
 import { AnimalLayer } from './animals.js';
 import { FollowCamera, followDistanceFor, viewMessage } from './camera.js';
@@ -1010,7 +1011,9 @@ function frame(): void {
   if (store.world !== null) {
     const shownTime = litTime(liveWorldTime(now)!);
     atmosphere.update(shownTime, store.world.season, now / 1000, follow.target, reducedMotion.matches, follow.distance, camera.position);
-    renderer.toneMappingExposure = observerExposure(atmosphereAt(shownTime, store.world.season).daylight, follow.distance, atmosphere.underCanopy);
+    const daylight = atmosphereAt(shownTime, store.world.season).daylight;
+    renderer.toneMappingExposure = observerExposure(daylight, follow.distance, atmosphere.underCanopy);
+    animateWater(reducedMotion.matches ? 0 : now / 1000, daylight);
   }
 
   // Grass, leaves, branches and the wind channel share one presentation-only wind (wind.ts).

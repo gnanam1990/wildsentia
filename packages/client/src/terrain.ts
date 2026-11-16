@@ -394,6 +394,11 @@ float litterNoise(vec2 p) { vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 
       vec4 litterA = texture2D(map, vMapUv);
       vec4 litterB = texture2D(map, mat2(0.8, -0.6, 0.6, 0.8) * vMapUv * 0.63 + 0.29);
       vec4 litterTex = mix(litterA, litterB, smoothstep(0.3, 0.7, litterNoise(vMapUv * 0.073)));
+      // Past a few metres the 1.07 m repeat would show as a woven carpet: there a turned copy at
+      // nearly the same size is laid over it, so the leaves keep their size and no grid repeats.
+      float litterReach = smoothstep(5.0, 22.0, distance(vGroundWorld.xyz, cameraPosition));
+      vec4 litterOver = texture2D(map, mat2(0.6, 0.8, -0.8, 0.6) * vMapUv * 0.87 + 0.61);
+      litterTex = mix(litterTex, litterOver, litterReach * 0.5);
       // Damp litter: a little less red than the photograph's dry leaves, but kept bright enough that
       // the floor reads in colour under the canopy (the owner found it too dark).
       litterTex.rgb = mix(vec3(dot(litterTex.rgb, vec3(0.3, 0.55, 0.15))), litterTex.rgb, 0.8) * 1.0;
@@ -411,7 +416,7 @@ float litterNoise(vec2 p) { vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 
       diffuseColor.rgb = mix(diffuseColor.rgb, understorey, floorFar * 0.75);
       #endif`);
   };
-  material.customProgramCacheKey = () => `${key.call(material)}:congo-litter-v8`;
+  material.customProgramCacheKey = () => `${key.call(material)}:congo-litter-v10`;
 }
 
 function buildGroundMesh(patches: readonly PatchView[]): THREE.Mesh {

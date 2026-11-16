@@ -24,7 +24,8 @@ export interface PlantParts { wood?: THREE.BufferGeometry; leaves?: THREE.Buffer
 const PER_PATCH: Record<string, Partial<Record<CongoKind, number>>> = {
   terra_firme: { emergent: 12, canopy: 190, midstory: 280, sapling: 600, marantaceae: 3500, herb: 14000, groundcover: 40000, log: 6 },
   flooded_forest: { canopy: 150, midstory: 200, raphia: 20, sapling: 260, marantaceae: 900, herb: 3000, groundcover: 30000, log: 4 },
-  swamp_forest: { raphia: 200, canopy: 50, midstory: 100, sapling: 160, marantaceae: 1200, herb: 6000, groundcover: 22000 },
+  // A Raphia swamp is a thicket of palms in clumps (each from one root's suckers) under a few trees.
+  swamp_forest: { raphia: 500, canopy: 110, midstory: 180, sapling: 300, marantaceae: 1200, herb: 6000, groundcover: 22000 },
   bai: { sedge: 9000, log: 2 },
 };
 /** Bank rocks tried per patch beside a river; kept only within this distance of the channel's edge. */
@@ -66,8 +67,17 @@ export function planCongoPatch(patch: Pick<PatchView, 'id' | 'habitat'> & Partia
     if (n === 0 || (kinds && !kinds.has(kind))) continue;
     const random = rng(spatialHash(`congo-plants:${seed}:${patch.id}:${kind}`));
     const tree = kind === 'emergent' || kind === 'canopy' || kind === 'midstory';
+    // Raphia grows in clumps: 2-6 stems within a few metres of their root, then the next clump.
+    let clumpLeft = 0, clumpX = 0, clumpZ = 0;
     for (let i = 0; i < n; i++) {
-      const x = centre.x + (random() * 2 - 1) * half, z = centre.z + (random() * 2 - 1) * half;
+      let x: number, z: number;
+      if (kind === 'raphia') {
+        if (clumpLeft === 0) { clumpLeft = 2 + Math.floor(random() * 5); clumpX = centre.x + (random() * 2 - 1) * half; clumpZ = centre.z + (random() * 2 - 1) * half; }
+        clumpLeft--;
+        const a = random() * Math.PI * 2, r = 1 + random() * 3.5;
+        x = Math.max(centre.x - half, Math.min(centre.x + half, clumpX + Math.cos(a) * r));
+        z = Math.max(centre.z - half, Math.min(centre.z + half, clumpZ + Math.sin(a) * r));
+      } else { x = centre.x + (random() * 2 - 1) * half; z = centre.z + (random() * 2 - 1) * half; }
       const scale = tree ? 0.8 + random() * 0.35 : 0.7 + random() * 0.6, rotY = random() * Math.PI * 2;
       if (!inChannel(x, z)) out.push({ kind, x, z, scale, rotY });
     }
@@ -203,10 +213,6 @@ function crown(cards: number, size: number, centreY: number, rx: number, ry: num
 }
 
 /**
- * A textured leaf on a stalk's tip: a plane cut by its leaf's alpha, cupped along its length.
- * `aspect` is the leaf image's width over its height.
- */
-/**
  * One upright card showing tile 0-3 of a 2 x 2 atlas (0 top left, 1 top right, 2 bottom left, 3
  * bottom right), `h` tall and wide, its base on the ground at (x, z), turned by `turn`. A slight
  * random tint keeps neighbours from matching.
@@ -219,6 +225,10 @@ function atlasCard(h: number, tile: number, turn: number, x: number, z: number, 
   return finish(card, () => new THREE.Color(0.86 + v * 0.18, 0.88 + v * 0.16, 0.84 + v * 0.16));
 }
 
+/**
+ * A textured leaf on a stalk's tip: a plane cut by its leaf's alpha, cupped along its length.
+ * `aspect` is the leaf image's width over its height.
+ */
 function leafCard(length: number, aspect: number, cup: number): THREE.BufferGeometry {
   const g = new THREE.PlaneGeometry(length * aspect, length, 2, 4).translate(0, length / 2, 0);
   const p = g.getAttribute('position');
@@ -251,7 +261,8 @@ function plantParts(kind: CongoKind): PlantParts {
       const fronds: THREE.BufferGeometry[] = [];
       for (let f = 0; f < 16; f++) {
         const yaw = (f / 16) * Math.PI * 2 + random() * 0.3, lift = 0.45 + random() * 0.55, length = 8.5 + random() * 2.5;
-        const strip = new THREE.PlaneGeometry(length * 0.3, length, 4, 10).translate(0, length / 2, 0), p = strip.getAttribute('position');
+        // Two across and eight along: the arch stays smooth, at a third of the triangles, so a swamp can be dense.
+        const strip = new THREE.PlaneGeometry(length * 0.3, length, 2, 8).translate(0, length / 2, 0), p = strip.getAttribute('position');
         for (let i = 0; i < p.count; i++) {
           const along = p.getY(i), across = p.getX(i);
           p.setXYZ(i, along * Math.cos(lift), Math.sin(lift) * along - 0.045 * along * along - 0.35 * Math.abs(across), across);
