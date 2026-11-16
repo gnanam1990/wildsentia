@@ -1,17 +1,23 @@
 /**
  * Island waterholes as they look in a forest, not blue discs: an irregular shoreline (pools.ts),
- * water darker over the middle and lighter in the shallows, a band of bare, trampled mud round
+ * water darker over the middle and silty in the shallows, a band of bare, trampled mud (photographed) round
  * the edge that fades into the grass, and clumps of reeds along part of the shore.
  * Presentation only: the pool's centre and size are the simulation's water stock (islandPool).
  */
 import * as THREE from 'three';
+import { congoTexture } from './congoTextures.js';
 import { fromLocal, poolFrame, shoreFactor, type Pool } from './pools.js';
 
 type HeightSampler = (x: number, z: number) => number;
 
 const SEGMENTS = 64;
-const DEEP = new THREE.Color(0x1d3a35), SHALLOW = new THREE.Color(0x4a5236);
+// Shallows a silty brown-olive, so the textured mud bed under them shows (an olive band read as a rim).
+const DEEP = new THREE.Color(0x1d3a35), SHALLOW = new THREE.Color(0x40392a);
 const WET_MUD = new THREE.Color(0x3b3024), DRY_MUD = new THREE.Color(0x6c5a40);
+/** Tints over the photographed mud: wet darkens it, dry leaves it almost as photographed. */
+const WET_TINT = new THREE.Color(0.62, 0.58, 0.52), DRY_TINT = new THREE.Color(0.95, 0.9, 0.84);
+/** The bank's mud photograph repeats every this many metres. */
+const MUD_TILE_M = 3.2;
 
 /** The pool's water plane: centred, tilted to the slope, turned and stretched to its own frame. */
 export function poolPlane(pool: Pool, groundAt: HeightSampler, out = new THREE.Matrix4()): THREE.Matrix4 {
@@ -48,7 +54,7 @@ function surface(pools: readonly Pool[], groundAt: HeightSampler): THREE.Mesh {
       const a = k / SEGMENTS * Math.PI * 2, f = shoreFactor(a, pool.seed);
       // Deep over the middle; toward the shore the shallows turn muddy and clear, so the bank shows
       // through and the water meets it without a rim.
-      for (const [t, mix, alpha] of [[0.7, 0.3, 0.9], [1, 1, 0.35]] as const) {
+      for (const [t, mix, alpha] of [[0.7, 0.35, 0.86], [1, 1, 0.18]] as const) {
         v.set(Math.cos(a) * f * t, 0, Math.sin(a) * f * t).applyMatrix4(m);
         positions.push(v.x, v.y, v.z);
         c.copy(DEEP).lerp(SHALLOW, mix); colors.push(c.r, c.g, c.b, alpha);
@@ -70,17 +76,21 @@ function surface(pools: readonly Pool[], groundAt: HeightSampler): THREE.Mesh {
 }
 
 function bank(pools: readonly Pool[], groundAt: HeightSampler): THREE.Mesh {
-  const positions: number[] = [], colors: number[] = [], index: number[] = [];
+  const positions: number[] = [], colors: number[] = [], uvs: number[] = [], index: number[] = [];
+  // A photographed bai floor (trampled mud, puddles, sedge) when it is loaded; plain mud colours otherwise.
+  const mud = congoTexture('bai_marsh');
+  const wet = mud ? WET_TINT : WET_MUD, dry = mud ? DRY_TINT : DRY_MUD;
   for (const pool of pools) {
     const base = positions.length / 3;
     for (let k = 0; k < SEGMENTS; k++) {
       const a = k / SEGMENTS * Math.PI * 2, f = shoreFactor(a, pool.seed);
       // Wider where animals come down to drink: an uneven trampled band, not a neat ring.
       const outer = f * (1.18 + 0.1 * (Math.sin(a * 3 + (pool.seed ?? 0)) * 0.5 + 0.5)) + 1.2 / pool.radius;
-      for (const [t, colour, alpha] of [[0.9, WET_MUD, 1], [1.02, WET_MUD, 1], [outer / f, DRY_MUD, 0]] as const) {
+      for (const [t, colour, alpha] of [[0.9, wet, 1], [1.02, wet, 1], [outer / f, dry, 0]] as const) {
         const p = fromLocal(pool, Math.cos(a) * f * t, Math.sin(a) * f * t);
         positions.push(p.x, groundAt(p.x, p.z) + 0.05, p.z);
         colors.push(colour.r, colour.g, colour.b, alpha);
+        uvs.push(p.x / MUD_TILE_M, p.z / MUD_TILE_M);
       }
     }
     for (let k = 0; k < SEGMENTS; k++) {
@@ -94,9 +104,10 @@ function bank(pools: readonly Pool[], groundAt: HeightSampler): THREE.Mesh {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 4));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   geometry.setIndex(index); geometry.computeVertexNormals();
   const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
-    vertexColors: true, transparent: true, depthWrite: false, roughness: 1,
+    vertexColors: true, transparent: true, depthWrite: false, roughness: 0.92, ...(mud ? { map: mud } : {}),
     polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
   mesh.name = 'water-bank'; mesh.renderOrder = 1;
   return mesh;

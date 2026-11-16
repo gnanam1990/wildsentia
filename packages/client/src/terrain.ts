@@ -363,10 +363,11 @@ function buildCongoGround(patches: readonly PatchView[], seed: number): THREE.Me
   for (let i = 0; i < position.count; i++) uv.setXY(i, position.getX(i) / 3.2, position.getZ(i) / 3.2);
   geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(position.count * 3).fill(1), 3));
   geometry.computeVertexNormals();
-  // The Congo floor: a photographed leaf litter, a tile every 1.6 m, over the scanned soil's relief.
+  // The Congo floor: a photographed leaf litter, a tile every 1.07 m (its leaves a hand long beside a
+  // 36 cm duiker; at 1.6 m they read as paving stones), over the scanned soil's relief.
   // Its own copy, as the terrain's textures are disposed with it.
   const litter = congoTexture('floor_litter')?.clone() ?? null;
-  if (litter) litter.repeat.set(2, 2);
+  if (litter) litter.repeat.set(3, 3);
   const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, ...scannedGroundMaps([1, 1]), ...(litter ? { map: litter } : {}) });
   groundTint.apply(material);
   if (litter && congoTexture('bai_marsh')) crossLitter(material);
@@ -392,15 +393,16 @@ float litterNoise(vec2 p) { vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 
 ` + shader.fragmentShader.replace('#include <map_fragment>', `#ifdef USE_MAP
       vec4 litterA = texture2D(map, vMapUv);
       vec4 litterB = texture2D(map, mat2(0.8, -0.6, 0.6, 0.8) * vMapUv * 0.63 + 0.29);
-      vec4 litterTex = mix(litterA, litterB, smoothstep(0.3, 0.7, litterNoise(vMapUv * 0.11)));
+      vec4 litterTex = mix(litterA, litterB, smoothstep(0.3, 0.7, litterNoise(vMapUv * 0.073)));
       // Damp litter: a little less red than the photograph's dry leaves, but kept bright enough that
       // the floor reads in colour under the canopy (the owner found it too dark).
       litterTex.rgb = mix(vec3(dot(litterTex.rgb, vec3(0.3, 0.55, 0.15))), litterTex.rgb, 0.8) * 1.0;
       // Drifts of fresher and older, wetter litter a few metres across, so no grid shows from above.
-      litterTex.rgb *= 0.86 + 0.4 * litterNoise(vMapUv * 0.37 + 3.1) * litterNoise(vMapUv * 0.9 + 7.7);
+      litterTex.rgb *= 0.86 + 0.4 * litterNoise(vMapUv * 0.247 + 3.1) * litterNoise(vMapUv * 0.6 + 7.7);
       // Where a patch carries no litter (a bai), sedge tufts, trampled mud and puddles (a 3.2 m tile).
+      // (Noise and the bai are scaled to the litter's 1.07 m tile, so drifts keep their size in metres.)
       float litterShare = texture2D(groundLayers, (vGroundWorld.xz + ${(worldGrid().patchM / 2).toFixed(1)}) / ${span.toFixed(1)}).r;
-      vec4 baiTex = texture2D(baiMap, vMapUv * 0.5) * 0.85;
+      vec4 baiTex = texture2D(baiMap, vMapUv * 0.333) * 0.85;
       diffuseColor *= mix(baiTex, litterTex, smoothstep(0.05, 0.35, litterShare));
       // Past the drawn undergrowth (herbs to 70 m, Marantaceae to 140 m) the floor reads as the
       // seedlings and low leaves that cover it, not bare litter: the far trunks stand in green.
@@ -409,7 +411,7 @@ float litterNoise(vec2 p) { vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 
       diffuseColor.rgb = mix(diffuseColor.rgb, understorey, floorFar * 0.75);
       #endif`);
   };
-  material.customProgramCacheKey = () => `${key.call(material)}:congo-litter-v7`;
+  material.customProgramCacheKey = () => `${key.call(material)}:congo-litter-v8`;
 }
 
 function buildGroundMesh(patches: readonly PatchView[]): THREE.Mesh {

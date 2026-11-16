@@ -142,8 +142,7 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
 - Generated for this project with Higgsfield under the owner's paid plan (Pro): GPT Image 2.5, high
   quality, 1k (leaf sprays 9ac1d293, f6b9a06e, 37b9f281; barks 05a86265, d0aa1b52, feae9a20; leaf litter
   c766cb2e; Marantaceae leaf 507ec5e2; Raphia frond 33b3d4c9; canopy 6d57a72b; a bai's sedge and mud
-  f9033435; sedge clump 72a9733d; forest-floor grass e7176458 and fern with seedlings 134a2d66, packed side by
-  side in `groundcover.webp`). Leaf, leaf-card and frond
+  f9033435; sedge clump 72a9733d). Leaf, leaf-card and frond
   images were made with transparent backgrounds.
 - Processed locally (Pillow): bark, litter and canopy made tileable by blending each with its own
   half-offset copy; leaf colours bled into the transparent pixels so cut edges show no dark rim; the
@@ -160,6 +159,18 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
   - `congo/groundcover.webp`: `41898865cf7ab041`
   - `congo/floor_litter.webp`: `55d3030f1257c562`
   - `congo/canopy_aerial.webp`: `058ea249b6a5efb4`
+## VANA — Congo floor plants (16 November 2026)
+- Used for: the forest floor's seedlings (`congo/seedlings.webp`: a tree seedling, a ragged herb, a fern
+  sprout, a bronze-flushed seedling) and its low clumps (`congo/groundcover.webp`: broad-leaved forest
+  grass, young ferns, a Marantaceae shoot among seedlings, herbs with drying leaves), each a 2 x 2 atlas
+  drawn on crossed cards. They replace the earlier two-tile `groundcover.webp` (e7176458, 134a2d66) and
+  the seedlings that were the Marantaceae leaf repeated.
+- Generated for this project with Higgsfield under the owner's paid plan (Pro): GPT Image 2.6, high
+  quality, 2k, transparent background (seedlings b9217033, floor clumps 47f9c07b; the variants 12014acb
+  and 2f67c354 were made and set aside).
+- Processed locally (Pillow): each quadrant cropped to its plant, fitted to a 512 px cell with its base
+  on the cell's bottom edge, colour bled into the transparent pixels; WebP.
+
 ## VANA — generated wild boar (WildBoar)
 - Used for: boar (WildBoar), from 5 October 2026.
 - Surface: generated for this project with Higgsfield under the owner's paid plan (Pro). Three

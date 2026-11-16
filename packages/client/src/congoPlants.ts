@@ -206,6 +206,19 @@ function crown(cards: number, size: number, centreY: number, rx: number, ry: num
  * A textured leaf on a stalk's tip: a plane cut by its leaf's alpha, cupped along its length.
  * `aspect` is the leaf image's width over its height.
  */
+/**
+ * One upright card showing tile 0-3 of a 2 x 2 atlas (0 top left, 1 top right, 2 bottom left, 3
+ * bottom right), `h` tall and wide, its base on the ground at (x, z), turned by `turn`. A slight
+ * random tint keeps neighbours from matching.
+ */
+function atlasCard(h: number, tile: number, turn: number, x: number, z: number, v: number): THREE.BufferGeometry {
+  const card = new THREE.PlaneGeometry(h, h).translate(0, h / 2, 0).rotateY(turn).translate(x, 0, z), uv = card.getAttribute('uv');
+  const col = tile % 2, row = Math.floor(tile / 2);
+  // Textures load flipped, so the image's top row is v 0.5-1.
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) + col) / 2, (uv.getY(i) + 1 - row) / 2);
+  return finish(card, () => new THREE.Color(0.86 + v * 0.18, 0.88 + v * 0.16, 0.84 + v * 0.16));
+}
+
 function leafCard(length: number, aspect: number, cup: number): THREE.BufferGeometry {
   const g = new THREE.PlaneGeometry(length * aspect, length, 2, 4).translate(0, length / 2, 0);
   const p = g.getAttribute('position');
@@ -262,28 +275,24 @@ function plantParts(kind: CongoKind): PlantParts {
       return { wood: merge(stalks), blades: merge(leaves) };
     }
     case 'herb': {
-      // Seedlings and small herbs carpeting the floor between the larger plants: ankle high, their
-      // leaves a hand long (a blue duiker stands 36 cm at the shoulder).
-      const leaves: THREE.BufferGeometry[] = [];
-      for (let k = 0; k < 6; k++) {
-        const yaw = random() * Math.PI * 2, h = 0.03 + random() * 0.2, v = random(), tint = new THREE.Color(0.75 + v * 0.3, 0.85 + v * 0.2, 0.7 + v * 0.2);
-        leaves.push(finish(leafCard(0.12 + random() * 0.1, 0.67, 0.12).rotateX(-0.9 + random() * 0.6).rotateY(yaw)
-          .translate((random() - 0.5) * 0.25, h, (random() - 0.5) * 0.25), () => tint));
+      // Seedlings and small herbs carpeting the floor between the larger plants: ankle to shin high
+      // (a blue duiker stands 36 cm at the shoulder). Each is a photographed seedling on two crossed
+      // cards, from a 2 x 2 atlas (a tree seedling, a ragged herb, a fern sprout, a bronze-flushed one).
+      const cards: THREE.BufferGeometry[] = [];
+      for (let s = 0; s < 3; s++) {
+        const h = 0.14 + random() * 0.24, tile = Math.floor(random() * 4), x = (random() - 0.5) * 0.5, z = (random() - 0.5) * 0.5, turn = random() * Math.PI;
+        for (let k = 0; k < 2; k++) cards.push(atlasCard(h, tile, turn + k * Math.PI / 2, x, z, random()));
       }
-      return { blades: merge(leaves) };
+      return { blades: merge(cards) };
     }
     case 'groundcover': {
-      // The forest floor's carpet: tufts of broad-leaved forest grass (as Olyra) and young ferns
-      // with seedlings, 0.3-0.55 m, four clumps a metre or so apart on crossed cards.
+      // The forest floor's carpet: tufts of broad-leaved forest grass (as Olyra), young ferns, a
+      // Marantaceae shoot among seedlings, and herbs with drying leaves, 0.3-0.6 m, four clumps a
+      // metre or so apart, each from a 2 x 2 atlas on crossed cards.
       const cards: THREE.BufferGeometry[] = [];
       for (let c = 0; c < 4; c++) {
-        const h = 0.3 + random() * 0.25, tile = random() < 0.55 ? 0 : 1, x = (random() - 0.5) * 1.4, z = (random() - 0.5) * 1.4, turn = random() * Math.PI;
-        for (let k = 0; k < 2; k++) {
-          const v = random(), card = new THREE.PlaneGeometry(h, h).translate(0, h / 2, 0).rotateY(turn + k * Math.PI / 2).translate(x, 0, z);
-          const uv = card.getAttribute('uv');
-          for (let i = 0; i < uv.count; i++) uv.setX(i, (uv.getX(i) + tile) / 2);
-          cards.push(finish(card, () => new THREE.Color(0.8 + v * 0.25, 0.85 + v * 0.2, 0.75 + v * 0.2)));
-        }
+        const h = 0.3 + random() * 0.3, tile = Math.floor(random() * 4), x = (random() - 0.5) * 1.4, z = (random() - 0.5) * 1.4, turn = random() * Math.PI;
+        for (let k = 0; k < 2; k++) cards.push(atlasCard(h, tile, turn + k * Math.PI / 2, x, z, random()));
       }
       return { blades: merge(cards) };
     }
@@ -402,17 +411,23 @@ export function congoPartMaterial(kind: CongoKind, part: keyof PlantParts): THRE
     }
     return wood;
   }
-  // Blades: the Marantaceae's photographed leaf for the understory, the frond for Raphia, the clump for sedge.
-  const image = kind === 'marantaceae' || kind === 'herb' ? 'marantaceae' : kind === 'raphia' ? 'raphia_frond' : kind === 'sedge' ? 'sedge_clump' : kind === 'groundcover' ? 'groundcover' : null,
+  // Blades: the Marantaceae's photographed leaf for the understory, the seedlings and floor clumps from
+  // their atlases, the frond for Raphia, the clump for sedge. Matte: a forest-floor leaf is not plastic.
+  const image = kind === 'marantaceae' ? 'marantaceae' : kind === 'herb' ? 'seedlings' : kind === 'raphia' ? 'raphia_frond' : kind === 'sedge' ? 'sedge_clump' : kind === 'groundcover' ? 'groundcover' : null,
     key = image ?? 'plain';
   let blade = bladeMaterials.get(key);
   if (!blade) {
     const map = image ? congoTexture(image) : null;
-    blade = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, side: THREE.DoubleSide, emissive: 0x0a1a06,
+    blade = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.78, side: THREE.DoubleSide, emissive: 0x0a1a06,
       ...(map ? { map, alphaTest: 0.5 } : {}) });
     bladeMaterials.set(key, blade);
   }
   return blade;
+}
+
+/** The ankle- to shin-high floor plants' materials: too low to hide an animal, so never cut away. */
+export function congoFloorPlantMaterials(): THREE.Material[] {
+  return [congoPartMaterial('herb', 'blades'), congoPartMaterial('groundcover', 'blades')];
 }
 
 /** Every material the Congo's plants are drawn with (one each, shared by all instances). */

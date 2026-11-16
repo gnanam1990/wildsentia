@@ -7,7 +7,7 @@ import * as THREE from 'three';
  * (tests) there are none.
  */
 export type CongoTexture = 'bark_pale' | 'bark_brown' | 'bark_raphia' | 'leaves_atlas' | 'marantaceae' | 'raphia_frond'
-  | 'floor_litter' | 'canopy_aerial' | 'bai_marsh' | 'sedge_clump' | 'groundcover';
+  | 'floor_litter' | 'canopy_aerial' | 'bai_marsh' | 'sedge_clump' | 'groundcover' | 'seedlings';
 
 /** The leaf atlas is 2 x 2 sprays: dark glossy, bronze-flushed, feathery compound, dark turned. */
 export const LEAF_ATLAS_TILES = 4;

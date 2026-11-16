@@ -5,6 +5,9 @@ export interface ScreenSubject { x: number; y: number; radius: number; depth: nu
 const KEEP = 0.08;
 /** Decoration nearer the lens than the first distance (metres) is open, beyond the second whole. */
 const LENS_OPEN_M = 0.8, LENS_WHOLE_M = 3.2;
+/** Floor plants (patched without the cutaway) open only this share of the lens reach: an ankle-high
+ * seedling a metre or two away does not fill the view, and dithered it drew as a net. */
+const FLOOR_LENS = 0.4;
 
 /** Same as the shader: how much of a decorative surface this far in front of the lens is drawn
  * (`whole`: the reach beyond which it is whole; the open reach is a quarter of it). */
@@ -117,7 +120,12 @@ export class ObserverVisibility {
     });
   }
 
-  patch(material: THREE.Material): void {
+  /**
+   * `cutaway: false` keeps only the lens fade, at 40% of its reach: for ankle-high floor plants,
+   * which hide little of an animal and drew as a dithered net over the ground in front of it.
+   */
+  patch(material: THREE.Material, options: { cutaway?: boolean } = {}): void {
+    const cutaway = options.cutaway ?? true;
     if (this.#attached.has(material)) return;
     this.#attached.add(material);
     const previous = material.onBeforeCompile.bind(material);
@@ -138,7 +146,7 @@ export class ObserverVisibility {
       shader.fragmentShader = shader.fragmentShader.replace('#include <alphatest_fragment>', `
         #include <alphatest_fragment>
         float observerKeep = 1.0;
-        for (int subjectIndex = 0; subjectIndex < 2; subjectIndex++) {
+        for (int subjectIndex = 0; subjectIndex < ${cutaway ? 2 : 0}; subjectIndex++) {
           if (subjectIndex >= observerSubjectCount) break;
           vec4 subject = observerSubjects[subjectIndex];
           if (gl_FragCoord.z < subject.w) {
@@ -150,11 +158,11 @@ export class ObserverVisibility {
         // overlapping branches. No animated noise, transparent sorting or extra draw pass.
         float observerNoise = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
         if (observerNoise >= observerKeep) discard;
-        ${lens ? `float observerLensKeep = smoothstep(observerLens.x, observerLens.y, vObserverLens);
+        ${lens ? `float observerLensKeep = smoothstep(observerLens.x * ${cutaway ? '1.0' : FLOOR_LENS.toFixed(2)}, observerLens.y * ${cutaway ? '1.0' : FLOOR_LENS.toFixed(2)}, vObserverLens);
         if (observerNoise >= observerLensKeep) discard;` : ''}
       `);
     };
-    material.customProgramCacheKey = () => `${key}:observer-cutaway-v3`;
+    material.customProgramCacheKey = () => `${key}:observer-cutaway-v3${cutaway ? '' : '-lens-only'}`;
     material.needsUpdate = true;
   }
 }

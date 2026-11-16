@@ -12,7 +12,7 @@ import { LiveAgents, activityOf, isLiveMessage, isRosterMessage, rosterActivity,
 import { COVER_RADIUS_M, GroundCover } from './groundCover.js';
 import { CongoForest } from './congoForest.js';
 import { congoWaterSurface } from './congoWater.js';
-import { congoCrownMaterials, congoPlantMaterials } from './congoPlants.js';
+import { congoCrownMaterials, congoFloorPlantMaterials, congoPlantMaterials } from './congoPlants.js';
 import { AnimalLayer } from './animals.js';
 import { FollowCamera, followDistanceFor, viewMessage } from './camera.js';
 import { nearestOnScreen } from './picking.js';
@@ -589,7 +589,9 @@ const sceneUpdates = new SceneUpdates<{
         if (congoForest === null) {
           congoForest = new CongoForest(); scene.add(congoForest.root);
           // Plants between the camera and a followed animal are cut away, as the island's trees are.
-          for (const material of [...congoPlantMaterials(), congoCrownMaterials().leaves]) observerVisibility.patch(material);
+          // Floor plants only open at the lens: cut away, they drew a dithered net over the ground.
+          const floor = new Set(congoFloorPlantMaterials());
+          for (const material of [...congoPlantMaterials(), congoCrownMaterials().leaves]) observerVisibility.patch(material, { cutaway: !floor.has(material) });
         }
         const flooded = update.environment.patches.some((p) => p.flooded === true);
         congoForest.setScene(update.environment.patches, congoSeed, flooded);
