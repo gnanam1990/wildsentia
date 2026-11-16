@@ -119,9 +119,29 @@ function hidingKey(url: string, transport: Transport): Transport {
   }) as Transport;
 }
 
-/** The error and each cause, with every text naming `url` rewritten to name `shown`. */
+/**
+ * The error and each cause, with every text naming `url` rewritten to name `shown`. viem may write
+ * the URL normalised (its credentials stripped, its host lower-cased), so each form of it is
+ * replaced, and then the secret pieces themselves (path with query, password) wherever they remain.
+ */
 export function redactUrl<T>(error: T, url: string, shown: string): T {
-  const scrub = (v: unknown) => (typeof v === 'string' && v.includes(url) ? v.split(url).join(shown) : v);
+  const forms = new Set<string>([url]);
+  try {
+    const u = new URL(url);
+    forms.add(u.href);
+    const raw = url.replace(/^[a-z][a-z0-9+.-]*:\/\/[^/?#]*/i, '');
+    if (raw && raw !== '/') forms.add(raw);
+    if (u.pathname !== '/' || u.search) forms.add(`${u.pathname}${u.search}`);
+    if (u.password) forms.add(u.password);
+    if (u.username || u.password) { u.username = ''; u.password = ''; forms.add(u.href); }
+  } catch { /* not a URL: the string as given */ }
+  const pieces = [...forms].filter((f) => f.length >= 4).sort((a, b) => b.length - a.length);
+  const scrub = (v: unknown) => {
+    if (typeof v !== 'string') return v;
+    let out = v;
+    for (const f of pieces) if (out.includes(f)) out = out.split(f).join(f.includes('://') ? shown : '/…');
+    return out;
+  };
   for (let e: unknown = error, depth = 0; e && typeof e === 'object' && depth < 8; e = (e as { cause?: unknown }).cause, depth++) {
     const o = e as Record<string, unknown>;
     for (const key of Object.getOwnPropertyNames(o)) {
