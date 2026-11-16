@@ -1,4 +1,4 @@
-import { BaseError, createPublicClient, decodeErrorResult, encodeAbiParameters, encodeFunctionData, erc20Abi, fallback, getAddress, type Hex, http, keccak256, parseEventLogs } from 'viem';
+import { BaseError, createPublicClient, decodeErrorResult, encodeAbiParameters, encodeFunctionData, erc20Abi, fallback, getAddress, type Hex, http, type Transport, keccak256, parseEventLogs } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { bountiesAbi } from '../challenges/bountiesAbi.js';
 import { ARC_MIN_FEE_PER_GAS, PRIORITY_FEE_PER_GAS } from '../challenges/chain.js';
@@ -95,8 +95,45 @@ const LOG_CHUNK = 9_000n;
 export function rpcTransport(rpcUrl: string) {
   const urls = rpcUrl.split(',').map((u) => u.trim()).filter(Boolean);
   if (!urls.length) throw new Error('no RPC URL');
-  const one = (url: string) => http(url, { timeout: 15_000, retryCount: 2 });
+  const one = (url: string) => hidingKey(url, http(url, { timeout: 15_000, retryCount: 2 }));
   return urls.length === 1 ? one(urls[0]!) : fallback(urls.map(one));
+}
+
+/**
+ * A managed RPC carries its key in the URL's path (Alchemy's `/v2/<key>`), and viem writes the URL
+ * into its errors, which the server logs. Each error from this transport has the URL's path and
+ * query replaced, so a log shows the host and never the key.
+ */
+function hidingKey(url: string, transport: Transport): Transport {
+  let shown: string;
+  try {
+    const u = new URL(url);
+    if (u.pathname === '/' && !u.search && !u.username && !u.password) return transport;
+    shown = `${u.protocol}//${u.host}/…`;
+  } catch { return transport; }
+  return ((options: Parameters<Transport>[0]) => {
+    const inner = transport(options);
+    return { ...inner, request: (async (args: Parameters<typeof inner.request>[0]) => {
+      try { return await inner.request(args); } catch (error) { throw redactUrl(error, url, shown); }
+    }) as typeof inner.request };
+  }) as Transport;
+}
+
+/** The error and each cause, with every text naming `url` rewritten to name `shown`. */
+export function redactUrl<T>(error: T, url: string, shown: string): T {
+  const scrub = (v: unknown) => (typeof v === 'string' && v.includes(url) ? v.split(url).join(shown) : v);
+  for (let e: unknown = error, depth = 0; e && typeof e === 'object' && depth < 8; e = (e as { cause?: unknown }).cause, depth++) {
+    const o = e as Record<string, unknown>;
+    for (const key of Object.getOwnPropertyNames(o)) {
+      if (key === 'cause') continue;
+      const v = o[key];
+      try {
+        if (typeof v === 'string') o[key] = scrub(v);
+        else if (Array.isArray(v)) o[key] = v.map(scrub);
+      } catch { /* a read-only field */ }
+    }
+  }
+  return error;
 }
 
 export function viemBountyChain(config: { rpcUrl: string; chainId: number; contract: Hex } & ({ evaluatorKey: Hex; signer?: undefined } | { signer: ExternalSigner; evaluatorKey?: undefined })): BountyChain {

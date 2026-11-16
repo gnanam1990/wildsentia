@@ -47,22 +47,23 @@ export function rpcLogReader(url: string, options: { timeoutMs?: number; fetch?:
     try {
       response = await get(url, { method: 'POST', signal: AbortSignal.timeout(timeoutMs), headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ jsonrpc: '2.0', id: ++id, method, params }) });
-    } catch (error) { throw new FundingUnavailable(`rpc unreachable: ${String((error as Error).message ?? error).split('\n')[0]}`); }
-    if (!response.ok) throw new FundingUnavailable(`rpc ${response.status} for ${method}`);
+    } catch (error) { throw new FundingUnavailable(`rpc unreachable: ${String((error as Error).message ?? error).split('\n')[0]!.split(url).join('<rpc>')}`); }
+    // A JSON-RPC error is read whatever the HTTP status: Alchemy refuses a range too wide with a 400.
     const body = await response.json().catch(() => null) as { result?: T; error?: { code?: number; message?: string } } | null;
-    if (!body) throw new FundingUnavailable(`rpc gave no JSON for ${method}`);
-    if (body.error) {
+    if (body?.error) {
       const message = String(body.error.message ?? '');
       // Throttling first: a node asking us to slow down is unavailable for now, never a range to shrink.
       if (body.error.code === -32011 || /rate.?limit|too many requests|request limit|throttl|capacity|try again/i.test(message)) {
         throw new FundingUnavailable(`rpc throttled ${method}: ${message.slice(0, 120)}`);
       }
       // Only a refusal for the size of the range or of its answer is a range to shrink.
-      if (body.error.code === -32012 || /range too large|block range|query returned more than \d+ results|too many results|response size|log response size/i.test(message)) {
+      if (body.error.code === -32012 || /range too large|block range|query returned more than \d+ results|exceeds max results|too many results|response size|log response size/i.test(message)) {
         throw new RangeTooLarge(message);
       }
       throw new FundingUnavailable(`rpc error ${body.error.code ?? ''} for ${method}: ${message.slice(0, 120)}`);
     }
+    if (!response.ok) throw new FundingUnavailable(`rpc ${response.status} for ${method}`);
+    if (!body) throw new FundingUnavailable(`rpc gave no JSON for ${method}`);
     return body.result as T;
   };
   const hex = (n: bigint) => `0x${n.toString(16)}`;
