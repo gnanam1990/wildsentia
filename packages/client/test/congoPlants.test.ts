@@ -136,7 +136,26 @@ describe('Congo plants', () => {
     expect(congoPartMaterial('emergent', 'wood')).not.toBe(congoPartMaterial('canopy', 'wood'));
     expect(congoPartMaterial('canopy', 'wood')).toBe(congoPartMaterial('midstory', 'wood'));
     expect(congoPartMaterial('raphia', 'wood')).not.toBe(congoPartMaterial('canopy', 'wood'));
-    expect(congoPartMaterial('marantaceae', 'blades')).toBe(congoPartMaterial('herb', 'blades'));
+    expect(congoPartMaterial('herb', 'blades')).not.toBe(congoPartMaterial('marantaceae', 'blades'));
+    expect(congoPartMaterial('herb', 'blades')).not.toBe(congoPartMaterial('groundcover', 'blades'));
     expect(congoPartMaterial('raphia', 'blades')).not.toBe(congoPartMaterial('marantaceae', 'blades'));
+  });
+  it('cut each seedling and floor clump from one tile of its 2 x 2 atlas, standing on the ground', () => {
+    for (const kind of ['herb', 'groundcover'] as const) {
+      const blades = congoPlantParts(kind).blades!, uv = blades.getAttribute('uv'), p = blades.getAttribute('position');
+      const tiles = new Set<string>();
+      // Each card is two triangles (six vertices): its UVs sit inside one quarter of the atlas.
+      for (let c = 0; c < uv.count; c += 6) {
+        const us = [0, 1, 2, 3, 4, 5].map((k) => uv.getX(c + k)), vs = [0, 1, 2, 3, 4, 5].map((k) => uv.getY(c + k));
+        const col = Math.floor(Math.min(...us) * 2 + 1e-6), row = Math.floor(Math.min(...vs) * 2 + 1e-6);
+        expect(Math.max(...us) - col / 2).toBeLessThanOrEqual(0.5 + 1e-6);
+        expect(Math.max(...vs) - row / 2).toBeLessThanOrEqual(0.5 + 1e-6);
+        tiles.add(`${col},${row}`);
+      }
+      let lowest = Infinity;
+      for (let i = 0; i < p.count; i++) lowest = Math.min(lowest, p.getY(i));
+      expect(lowest).toBeCloseTo(0, 5);
+      expect(tiles.size).toBeGreaterThan(0);
+    }
   });
 });

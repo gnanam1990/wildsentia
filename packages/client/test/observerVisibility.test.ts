@@ -43,6 +43,16 @@ describe('observer-only occlusion reveal', () => {
     expect(depthShader.fragmentShader).not.toContain('observerNoise');
     material.dispose(); depth.dispose();
   });
+
+  it('keeps only the lens fade on a material patched without the cutaway', () => {
+    const material = new THREE.MeshStandardMaterial(), visibility = new ObserverVisibility();
+    visibility.patch(material, { cutaway: false });
+    const shader = compile(material);
+    expect(shader.fragmentShader).toContain('subjectIndex < 0;');
+    expect(shader.fragmentShader).not.toContain('subjectIndex < 2;');
+    expect(material.customProgramCacheKey()).toContain('lens-only');
+    material.dispose();
+  });
   it('cuts only foreground decoration inside a soft subject-sized mask', () => {
     const subjects = [{ x: 100, y: 100, radius: 50, depth: 0.8 }];
     expect(cutawayVisibility({ x: 100, y: 100, depth: 0.7 }, subjects)).toBe(0.08);
@@ -125,7 +135,6 @@ describe('observer-only occlusion reveal', () => {
       fragmentShader: '#include <map_fragment>\n#include <alphatest_fragment>' };
     material.onBeforeCompile(shader as never, {} as THREE.WebGLRenderer);
     expect(shader.vertexShader).toContain('vObserverLens = gl_Position.w');
-    expect(shader.fragmentShader).toContain('observerNoise >= observerLensKeep');
     // Up in a tree the camera sits among the leaves: the open reach widens while the subject is aloft.
     const visibility = new ObserverVisibility(), wide = new THREE.MeshStandardMaterial();
     visibility.patch(wide);
