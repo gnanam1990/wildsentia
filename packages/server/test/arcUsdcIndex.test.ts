@@ -184,6 +184,11 @@ describe('the RPC log reader', () => {
       .logs({ fromBlock: 0n, toBlock: 1n, topics: [] })).rejects.toBeInstanceOf(RangeTooLarge);
     await expect(rpcLogReader('https://rpc.example', { fetch: answer({ error: { code: -32005, message: 'query returned more than 10000 results' } }) })
       .logs({ fromBlock: 0n, toBlock: 1n, topics: [] })).rejects.toBeInstanceOf(RangeTooLarge);
+    // Alchemy's words for the same refusals, the second with an HTTP 400 (both as Arc Testnet answered, 16 November).
+    await expect(rpcLogReader('https://rpc.example', { fetch: answer({ error: { code: -32602, message: 'query exceeds max results 20000, retry with the range 72499316-72503399' } }) })
+      .logs({ fromBlock: 0n, toBlock: 1n, topics: [] })).rejects.toBeInstanceOf(RangeTooLarge);
+    await expect(rpcLogReader('https://rpc.example', { fetch: answer({ error: { code: -32600, message: 'You can make eth_getLogs requests with up to a 10000 block range.' } }, 400) })
+      .logs({ fromBlock: 0n, toBlock: 1n, topics: [] })).rejects.toBeInstanceOf(RangeTooLarge);
     // Throttling is the node unavailable for now, never a range to shrink nor a wallet to set aside.
     for (const error of [{ code: -32011, message: 'request limit reached' }, { code: -32005, message: 'Too Many Requests' },
       { code: -32000, message: 'rate limit exceeded, try again later' }, { code: -32603, message: 'limit exceeded' }]) {
@@ -191,5 +196,10 @@ describe('the RPC log reader', () => {
         .rejects.toBeInstanceOf(FundingUnavailable);
     }
     await expect(rpcLogReader('https://rpc.example', { fetch: answer({}, 429) }).head()).rejects.toBeInstanceOf(FundingUnavailable);
+    await expect(rpcLogReader('https://rpc.example', { fetch: answer({ error: { code: 429, message: 'Your app has exceeded its compute units per second capacity.' } }, 429) })
+      .logs({ fromBlock: 0n, toBlock: 1n, topics: [] })).rejects.toBeInstanceOf(FundingUnavailable);
+    await expect(rpcLogReader('https://rpc.example', { fetch: answer({ error: { code: -32600, message: 'You can make eth_getLogs requests with up to a 10000 block range.' } }, 400) })
+      .logs({ fromBlock: 0n, toBlock: 1n, topics: [] })).rejects.not.toBeInstanceOf(FundingUnavailable);
+    await expect(rpcLogReader('https://rpc.example', { fetch: answer({}, 502) }).head()).rejects.toBeInstanceOf(FundingUnavailable);
   });
 });

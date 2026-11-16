@@ -157,7 +157,8 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
       const sourceKind = env.VANA_ARC_BOUNTIES_FUNDING_SOURCE?.trim() || (mainnet ? 'rpc' : 'explorer');
       if (sourceKind !== 'rpc' && sourceKind !== 'explorer') throw new Error('VANA_ARC_BOUNTIES_FUNDING_SOURCE must be rpc or explorer');
       const source = sourceKind === 'rpc' ? (() => {
-        const rpc = env.VANA_ARC_BOUNTIES_FUNDING_RPC_URL?.trim() || where.rpcUrl;
+        // The bounty RPC may list fallbacks, comma-separated; the index reads the first.
+        const rpc = env.VANA_ARC_BOUNTIES_FUNDING_RPC_URL?.trim() || where.rpcUrl.split(',')[0]!.trim();
         if (!/^https:\/\/[^\s/]+(\/[^\s]*)?$/.test(rpc)) throw new Error('VANA_ARC_BOUNTIES_FUNDING_RPC_URL must be an https URL');
         const fromBlock = env.VANA_ARC_BOUNTIES_FUNDING_FROM_BLOCK?.trim() || '0';
         if (!/^\d{1,12}$/.test(fromBlock)) throw new Error('VANA_ARC_BOUNTIES_FUNDING_FROM_BLOCK must be a block number');
