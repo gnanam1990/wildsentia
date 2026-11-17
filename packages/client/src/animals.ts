@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { ContactShadows, type ContactSpot } from './contactShadows.js';
 import { applyFurLook } from './furLook.js';
+import { stabilizeSkinning } from './stableSkinning.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { bankAngle, leapingClip, actClipTime, climbs, clipForObservedMotion, clipForState, clipPhase, elephantTrunkReach, renderStateFor, replayClipTime, struggleClip, vigilance,
   type ClimbVisualPhase, type FlightVisualPhase, climbPose, flies, swimmingClip } from './animation.js';
@@ -246,10 +247,12 @@ export class AnimalLayer {
           };
           mesh.material = Array.isArray(mesh.material) ? mesh.material.map(own) : own(mesh.material);
         });
+        stabilizeSkinning(visual); // the same shader the drawn rig gets
         stage.add(visual);
         await renderer.compileAsync(stage, camera, lit);
         for (const texture of textures) renderer.initTexture(texture);
         for (const material of owned) material.dispose();
+        visual.traverse((o) => { (o as THREE.Mesh).customDepthMaterial?.dispose(); });
         this.#warmed.add(key); warmed++;
       } catch { /* that species loads when it is first needed instead */ }
       await new Promise((resolve) => setTimeout(resolve, 150));
@@ -325,6 +328,8 @@ export class AnimalLayer {
     // survive Material.clone(), so grade the owned copy rather than the template.
     if (visualForAnimal(animal).model?.file?.startsWith('/assets/animals/AsianElephant'))
       elephantSurface(visual, false);
+    // Far from the world's origin a skinned body is drawn from mesh-relative bones, so it does not shimmer (stableSkinning.ts).
+    stabilizeSkinning(visual);
 
     const group = new THREE.Group();
     group.visible = false; // The next sync places it at a validated pose before showing it.
@@ -709,7 +714,7 @@ export class AnimalLayer {
     rig.mixer?.uncacheRoot(rig.visual);
     for (const { material } of rig.materials) material.dispose();
     rig.visual.traverse((o) => {
-      if ((o as THREE.SkinnedMesh).isSkinnedMesh) (o as THREE.SkinnedMesh).skeleton.dispose();
+      if ((o as THREE.SkinnedMesh).isSkinnedMesh) { (o as THREE.SkinnedMesh).skeleton.dispose(); (o as THREE.Mesh).customDepthMaterial?.dispose(); }
     });
     this.root.remove(rig.group);
     this.#rigs.delete(id);
