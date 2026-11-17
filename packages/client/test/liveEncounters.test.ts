@@ -164,8 +164,10 @@ describe('checkpointed live encounter playback', () => {
   it('shows drinking only after arrival, inside the recorded half-open window', () => {
     const f = drinkingFrame(), player = new LiveEncounterPlayer();
     expect(player.apply(f, 0)).toBe(true);
+    // On its way it is drawn near the recorded line (naturalPath.ts wanders it a little), not on it.
     expect(player.poses(5000).get('s')).toMatchObject({ eventId: 'approach',
-      position: { x: 5.75, moving: true }, animal: { state: 'travelling' } });
+      position: { moving: true }, animal: { state: 'travelling' } });
+    expect(Math.abs(player.poses(5000).get('s')!.position.x - 5.75)).toBeLessThan(4);
     expect(player.poses(10_000).get('s')).toMatchObject({ eventId: 'drink',
       position: { x: 1.5, moving: false, heading: -Math.PI / 2 }, animal: { state: 'drinking' } });
     const late = new LiveEncounterPlayer(); late.apply({ ...f, elapsedWorldSeconds: 120 }, 99_000);
@@ -213,15 +215,18 @@ describe('checkpointed live encounter playback', () => {
     // Each 60 m leg is shown at a sambar's walking pace, 1.4 m/s, not 12x its recorded speed.
     const leg = 60 / 1.4 * 1000;
     const mid = a.poses(leg * 1.5).get('s')!;
-    expect(mid).toMatchObject({ kind: 'movement', position: { x: 60, moving: true },
+    expect(mid).toMatchObject({ kind: 'movement', position: { moving: true },
       animal: { state: 'travelling', sizeRatio: 0.25 } });
-    expect(mid.position.z).toBeCloseTo(30);
-    expect(a.poses(leg * 1.5 + 1000).get('s')!.position.z - mid.position.z).toBeCloseTo(1.4);
+    // Mid-leg it is drawn near the recorded line, wandering a little (naturalPath.ts), at walking pace.
+    expect(Math.abs(mid.position.x - 60)).toBeLessThan(4);
+    expect(Math.abs(mid.position.z - 30)).toBeLessThan(4);
+    const next = a.poses(leg * 1.5 + 1000).get('s')!.position;
+    expect(Math.hypot(next.x - mid.position.x, next.z - mid.position.z)).toBeCloseTo(1.4, 0);
     expect(a.poses(leg * 1.5, true).size).toBe(0);
     a.apply(f, leg * 1.5); // No rewind on duplicate.
-    expect(a.poses(leg * 1.5).get('s')!.position.z).toBeCloseTo(30);
+    expect(a.poses(leg * 1.5).get('s')!.position.z).toBeCloseTo(mid.position.z);
     const b = new LiveEncounterPlayer(); b.apply({ ...f, elapsedWorldSeconds: leg * 1.5 / 1000 * 12 }, 20_000);
-    expect(b.poses(20_000).get('s')!.position.z).toBeCloseTo(30);
+    expect(b.poses(20_000).get('s')!.position.z).toBeCloseTo(mid.position.z);
     expect(a.poses(leg * 2 + 1000).get('s')).toMatchObject({ position: { x: 60, z: 60, moving: false }, animal: { state: 'resting' } });
     expect(a.poses(300_000).size).toBe(0);
     const conflict = frame(); conflict.movements = f.movements;
