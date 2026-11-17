@@ -209,10 +209,11 @@ describe('bounded live encounter collection', () => {
     expect(isLiveEncounterFrame(wire)).toBe(true);
     const player = new LiveEncounterPlayer(); player.apply(wire, 100);
     const corner = player.poses(100).get('s')!.position;
-    expect(corner.x).toBeCloseTo(100); expect(corner.z).toBeCloseTo(50);
-    // Half-way through the first leg it is on the recorded leg, not a diagonal shortcut.
+    // Near the recorded legs (the observer wanders a route a few metres, naturalPath.ts) ...
+    expect(Math.abs(corner.x - 100)).toBeLessThan(6); expect(Math.abs(corner.z - 50)).toBeLessThan(6);
+    // ... and half-way through the first leg near it, not on a diagonal shortcut (25 m off it).
     const early = new LiveEncounterPlayer(); early.apply({ ...wire, elapsedWorldSeconds: displaySecondAt(pacing, 5) }, 100);
-    expect(early.poses(100).get('s')!.position.z).toBeCloseTo(0);
+    expect(Math.abs(early.poses(100).get('s')!.position.z)).toBeLessThan(6);
     moved.movement!.samples[0]!.position.x = 77;
     expect(movements[0]!.trace.samples[0]!.position.x).toBe(0);
     expect(collectLiveMovements(ISLAND_GRID, [moved, event], actors, 0, [end])).toEqual([]);

@@ -126,8 +126,12 @@ maybe('SimHost', () => {
       expect(agent.position).toEqual(trace.samples.at(-1)!.position);
       expect(frame.movements!.find((m) => m.eventId === event.id)!.trace).toEqual(trace);
       const first = trace.samples[0]!.position, next = trace.samples[1]!.position;
-      expect(player.poses(0).get(agent.id)!.position).toMatchObject({ x: first.x, z: first.z,
-        heading: Math.atan2(next.x - first.x, next.z - first.z), moving: true });
+      // At its first recorded point; facing along its first leg, give or take the gentle wander
+      // the observer draws routes with (packages/client/src/naturalPath.ts).
+      const shown = player.poses(0).get(agent.id)!.position;
+      expect(shown).toMatchObject({ x: first.x, z: first.z, moving: true });
+      const along = Math.atan2(next.x - first.x, next.z - first.z);
+      expect(Math.abs(Math.atan2(Math.sin(shown.heading - along), Math.cos(shown.heading - along)))).toBeLessThan(0.25);
     }
     const before = takeSnapshot(host.world);
     await host.stop();
