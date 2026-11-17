@@ -438,7 +438,7 @@ export class Hud {
   #skills(p: Passport): string {
     if (p.skills.length === 0) return '';
     return `<h3>What it knows</h3>${p.skills.map((s) => `
-      ${bar(SKILL_LABEL[s.skill] ?? s.skill, s.confidence, 'var(--moss, #7fa35a)')}
+      ${bar(escape(SKILL_LABEL[s.skill] ?? s.skill), s.confidence, 'var(--moss, #7fa35a)')}
       <div class="taught">${s.taughtBy === null ? 'self-taught or innate' : `taught by ${kinLink({ id: s.taughtBy, alive: true })}`}</div>`).join('')}`;
   }
 

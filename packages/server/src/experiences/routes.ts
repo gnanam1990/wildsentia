@@ -15,7 +15,7 @@ import {
 } from "@vana/shared";
 import { cookie, cookieHeader, cookieName } from "../accounts/cookies.js";
 import { networkKey } from "../network.js";
-import { NetworkRateLimit } from "../limits.js";
+import { NetworkRateLimit, WindowRateLimit } from "../limits.js";
 import { EventStore, eventSequence } from "../db/eventStore.js";
 import type { ExperienceService } from "./service.js";
 import { forestMoment, MOMENT_TYPES, safariAnswer } from "./moments.js";
@@ -36,6 +36,11 @@ export function installExperiences(
   const mutations = new NetworkRateLimit(120),
     voices = new NetworkRateLimit(2),
     queries = new NetworkRateLimit(30);
+  // The profile cookie is the visitor's own to mint, so its limits alone let one client spend
+  // the forest's shared allowance (docs/2026-11-17-security-audit.md L4): new jobs and voice
+  // rooms are counted per visitor network too, as many as one profile may start.
+  const jobsPerNetwork = new WindowRateLimit(4, 5000, 3_600_000),
+    voiceRoomsPerNetwork = new WindowRateLimit(3, 5000, 86_400_000);
   const voicePending = new Set<string>();
   const voiceCancelled = new Set<string>();
   let closing = false;
@@ -175,6 +180,8 @@ export function installExperiences(
           service.leagueWorld(),
         );
         if (!request) return reply.code(400).send({ error: "invalid_match" });
+        if (!jobsPerNetwork.take(networkKey(req.ip)))
+          return reply.code(429).send({ error: "arena_busy_or_hourly_limit" });
         const job = await service.create(owner(req, reply), request, "league");
         return job
           ? reply.code(202).send(job)
@@ -185,6 +192,8 @@ export function installExperiences(
       const request = labRequest(req.body);
       if (!request)
         return reply.code(400).send({ error: "invalid_experiment" });
+      if (!jobsPerNetwork.take(networkKey(req.ip)))
+        return reply.code(429).send({ error: "lab_busy_or_hourly_limit" });
       const job = await service.create(owner(req, reply), request, "lab");
       return job
         ? reply.code(202).send(job)
@@ -305,7 +314,8 @@ export function installExperiences(
         rooms.has(key) ||
         voicePending.has(key) ||
         rooms.size + voicePending.size >= 5 ||
-        !voices.take(networkKey(req.ip)).ok
+        !voices.take(networkKey(req.ip)).ok ||
+        !voiceRoomsPerNetwork.take(networkKey(req.ip))
       )
         return reply.code(429).send({ error: "voice_limit" });
       voicePending.add(key);

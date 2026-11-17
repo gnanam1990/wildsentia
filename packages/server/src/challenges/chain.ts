@@ -1,6 +1,7 @@
-import { BaseError, createPublicClient, decodeErrorResult, encodeFunctionData, getAddress, type Hex, http, keccak256, parseAbi, stringToHex,
+import { BaseError, createPublicClient, decodeErrorResult, encodeFunctionData, getAddress, type Hex, keccak256, parseAbi, stringToHex,
   parseEventLogs } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
+import { rpcTransport } from '../rpcTransport.js';
 import { attemptsAbi } from './attemptsAbi.js';
 import { challengesAbi } from './challengesAbi.js';
 import type { CreatedEvent, SettledEvent } from './store.js';
@@ -123,7 +124,7 @@ export function memoCall(target: Hex, data: Hex, call: Extract<ChainCall, { fn: 
 
 export function viemChallengeChain(config: ChainConfig): ChallengeChain {
   // No cached block number: the indexer and the fee check must see the chain as it is now.
-  const client = createPublicClient({ cacheTime: 0, transport: http(config.rpcUrl, { timeout: 15_000, retryCount: 2 }) });
+  const client = createPublicClient({ cacheTime: 0, transport: rpcTransport(config.rpcUrl) });
   const account = privateKeyToAccount(config.evaluatorKey);
   const contract = getAddress(config.contract);
   const attempts = config.attemptsContract ? getAddress(config.attemptsContract) : null;

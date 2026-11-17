@@ -533,7 +533,7 @@ export function buildApi({ host, pool, narrator, insights: insightDeps, live, re
     if (!agent) return reply.code(404).send({ error: 'not_found' });
     const patch = view.patches().find((p) => p.id === agent.patchId);
     const result = await insights.outlook(agent, speciesFacts(agent.speciesId), view.worldTime,
-      patch && { habitat: patch.habitat, waterVolume: patch.waterVolume, grass: patch.plant.grass });
+      patch && { habitat: patch.habitat, waterVolume: patch.waterVolume, grass: patch.plant.grass }, networkKey(request.ip));
     return result.ok ? { available: true, ...result.value, notice: INSIGHT_NOTICE } : { available: false, reason: result.reason };
   });
   app.get('/insights/highlights', async (request) => {

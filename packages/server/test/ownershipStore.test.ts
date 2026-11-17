@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createPool } from '../src/db/pool.js';
 import { migrate } from '../src/db/migrate.js';
 import { OwnershipStore } from '../src/ownership/store.js';
+import { AgentStore } from '../src/live/liveStore.js';
 import { testDatabaseUrl } from './testDatabase.js';
 import { ownedAsset, person } from './ownershipFixtures.js';
 
@@ -82,5 +83,18 @@ maybe('OwnershipStore (Congo 1C)', () => {
     expect(await store.granted(assetId, agent.agentId)).toBe(true);
     expect(await store.revoke(assetId, agent.agentId)).toBe(true);
     expect(await store.granted(assetId, agent.agentId)).toBe(false);
+  });
+
+  it('still reaps idle agents once one of them was ever granted an asset, its grants going with it', async () => {
+    const owner = await person(pool!, 1), assetId = await ownedAsset(store, owner);
+    const bot = (id: string, key: string) => pool!.query(`insert into live_agents (id, kind, public_key, name, name_key, network_hash, last_seen_at)
+      values ($1, 'agent', $2, $1, $1, 'n', now() - interval '30 days')`, [id, key]);
+    await bot('ag_00000000000000b1', 'B'.repeat(43)); await bot('ag_00000000000000b2', 'C'.repeat(43));
+    await store.grant(assetId, 'ag_00000000000000b1');
+    await store.revoke(assetId, 'ag_00000000000000b1');
+    await store.grant(assetId, 'ag_00000000000000b1');
+    expect(await new AgentStore(pool!).reapInactive(14)).toBe(2);
+    expect(await store.granted(assetId, 'ag_00000000000000b1')).toBe(false);
+    expect((await pool!.query('select count(*)::int as n from asset_agent_grants')).rows[0].n).toBe(0);
   });
 });

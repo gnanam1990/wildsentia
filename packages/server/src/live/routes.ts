@@ -100,7 +100,9 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
   const llmScript = existsSync(llmPath) ? readFileSync(llmPath, 'utf8') : null;
   const llmHash = llmScript ? createHash('sha256').update(llmScript).digest('hex') : null;
   const examples = loadExamples(join(dirname(deps.clientScriptPath), 'examples'));
-  const nonces = new NonceStore();
+  // Registered agents' nonces, and apart from them those of keys registering for the first time
+  // (docs/2026-11-17-security-audit.md L3): a flood of fresh keys can never fill the first.
+  const nonces = new NonceStore(), newcomers = new NonceStore(undefined, undefined, undefined, 'evict_oldest');
   const commands = new Bucket(AGENT_RATE_LIMITS.commandsPerSecond, 10), observes = new Bucket(AGENT_RATE_LIMITS.observesPerSecond, 4), registrations = new Bucket(10 / 60, 10);
   const audience = (): string | null => { const id = world.worldId(); return id ? `vana:${id}` : null; };
   // A balance is read from the chain at most every ten minutes per wallet.
@@ -148,8 +150,9 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
       const headers: SignedHeaders = { key: req.headers['x-vana-key'] as string | undefined, timestamp: req.headers['x-vana-timestamp'] as string | undefined,
         nonce: req.headers['x-vana-nonce'] as string | undefined, signature: req.headers['x-vana-signature'] as string | undefined };
       // An unknown key is turned away before any signature work, except to register.
-      if (!registering && headers.key && !(await store.byKey(headers.key))) { reply.code(403).send({ error: 'not_registered' }); return null; }
-      const result = verifySigned(headers, { audience: aud, method: req.method, path: req.url, body: body.raw ?? '' }, nonces);
+      const known = headers.key ? await store.byKey(headers.key) : null;
+      if (!registering && headers.key && !known) { reply.code(403).send({ error: 'not_registered' }); return null; }
+      const result = verifySigned(headers, { audience: aud, method: req.method, path: req.url, body: body.raw ?? '' }, known ? nonces : newcomers);
       if (!result.ok) { reply.code(result.error === 'too_many_requests' ? 429 : 401).send({ error: result.error }); return null; }
       const json = body.json && typeof body.json === 'object' && !Array.isArray(body.json) ? body.json as Record<string, unknown> : {};
       return { key: result.key, json };

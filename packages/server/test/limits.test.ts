@@ -33,6 +33,15 @@ describe('WindowRateLimit', () => {
   });
 });
 
+describe('WindowRateLimit as a quota', () => {
+  it('counts over a longer window, such as so many a day per network', () => {
+    const day = new WindowRateLimit(2, 5000, 86_400_000);
+    expect([day.take('a', 0), day.take('a', 3_600_000), day.take('a', 7_200_000)]).toEqual([true, true, false]);
+    expect(day.take('b', 7_200_000)).toBe(true);
+    expect(day.take('a', 86_400_000)).toBe(true);
+  });
+});
+
 describe('NetworkRateLimit', () => {
   it('allows a burst of a quarter minute, then refills at the per-minute rate', () => {
     const limit = new NetworkRateLimit(60); // One a second, bursts of 15.

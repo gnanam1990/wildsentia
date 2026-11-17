@@ -514,9 +514,14 @@ export class ArcBountyEngine {
   /** Decides every active bounty whose target died or whose deadline passed, then settles on chain. */
   adjudicate(): Promise<void> {
     return this.#serial(async () => {
-      for (const b of await this.store.inStatus('active')) {
+      for (const listed of await this.store.inStatus('active')) {
+        // Read again: an earlier decision in this pass can wait on the chain while a live kill
+        // lands on this one (recorded outside this queue), and the list is from before it.
+        const b = await this.store.get(listed.bountyId);
+        if (b?.status !== 'active') continue;
         const d = await this.#decision(b);
-        if (d && await this.store.decide(b.bountyId, d)) await this.#sendDecision((await this.store.get(b.bountyId))!);
+        // Decided only on the kill it was read with: one recorded meanwhile is the next pass's.
+        if (d && await this.store.decide(b.bountyId, d, b.killAnimalId)) await this.#sendDecision((await this.store.get(b.bountyId))!);
       }
     });
   }

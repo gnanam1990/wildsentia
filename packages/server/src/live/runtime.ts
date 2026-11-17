@@ -281,7 +281,7 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
         huntPending = false; checkpointedAt = now;
         void host.snapshotNow().catch((e) => console.error('[live] checkpoint failed', e));
       }, 10_000));
-      timers.push(setInterval(() => { void store.reapInactive().catch(() => undefined); }, 6 * 3_600_000));
+      timers.push(setInterval(() => { void store.reapInactive().catch((e) => console.error('[live] reaping idle agents failed', e)); }, 6 * 3_600_000));
       // Owned lives follow their animals: deaths in the hourly step end their lives within seconds.
       if (owned) timers.push(setInterval(() => { void owned.lives.reconcile().catch((e) => console.error('[owned] reconcile failed', e)); }, 10_000));
       if (bounties) {

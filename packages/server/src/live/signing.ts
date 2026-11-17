@@ -41,7 +41,15 @@ const NONCES_PER_KEY = Math.ceil((AGENT_RATE_LIMITS.commandsPerSecond + AGENT_RA
  */
 export class NonceStore {
   readonly #seen = new Map<string, Map<string, number>>();
-  constructor(private readonly perKey = NONCES_PER_KEY, private readonly maxKeys = 20_000, readonly since = Date.now()) {}
+  /**
+   * `whenFull`: 'refuse' turns a new key away while every slot is fresh (the store registered
+   * agents sign with: only known keys reach it). 'evict_oldest' forgets the oldest key instead,
+   * for the store unregistered keys register through: anyone can mint fresh keys, so refusing
+   * there would let a flood of them lock everyone out, and replaying a registration only
+   * registers the same key again.
+   */
+  constructor(private readonly perKey = NONCES_PER_KEY, private readonly maxKeys = 20_000, readonly since = Date.now(),
+    private readonly whenFull: 'refuse' | 'evict_oldest' = 'refuse') {}
 
   /**
    * False if this nonce was used, or the key has made too many requests in the window. `until`
@@ -52,7 +60,10 @@ export class NonceStore {
     if (nonces) for (const [n, until] of nonces) if (until < now) nonces.delete(n);
     if (!nonces) {
       if (this.#seen.size >= this.maxKeys) this.prune(now);
-      if (this.#seen.size >= this.maxKeys) return 'too_many_requests';
+      if (this.#seen.size >= this.maxKeys) {
+        if (this.whenFull === 'refuse') return 'too_many_requests';
+        this.#seen.delete(this.#seen.keys().next().value!);
+      }
       nonces = new Map(); this.#seen.set(key, nonces);
     }
     if (nonces.has(nonce)) return 'replayed_nonce';

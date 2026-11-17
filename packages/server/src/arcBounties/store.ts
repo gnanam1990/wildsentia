@@ -105,13 +105,16 @@ export class ArcBountyStore {
     return r.rowCount === 1;
   }
 
-  /** The bounty's one decision. False if it was already decided. */
-  async decide(bountyId: string, d: ArcDecision): Promise<boolean> {
+  /**
+   * The bounty's one decision. False if it was already decided, or if `seenKill` is given and the
+   * kill on the row is no longer the one the decision was made from (one recorded meanwhile).
+   */
+  async decide(bountyId: string, d: ArcDecision, seenKill?: string | null): Promise<boolean> {
     const r = await this.pool.query(`update arc_bounties set status = 'deciding', outcome = $2, payee_wallet = $3, winner_agent_id = $4,
         winner_animal_id = $5, decided_world_time = $6, record = $7, record_hash = $8, winner_owner = $9, decided_at = now()
-      where bounty_id = $1 and status = 'active'`,
+      where bounty_id = $1 and status = 'active' and ($10::boolean or kill_animal_id is not distinct from $11)`,
     [bountyId, d.outcome, d.payeeWallet?.toLowerCase() ?? null, d.winnerAgentId, d.winnerAnimalId, d.decidedWorldTime, JSON.stringify(d.record), d.recordHash,
-      d.outcome === 'void' ? null : d.winnerOwner ?? null]);
+      d.outcome === 'void' ? null : d.winnerOwner ?? null, seenKill === undefined, seenKill ?? null]);
     return r.rowCount === 1;
   }
 

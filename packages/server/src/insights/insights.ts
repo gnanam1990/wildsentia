@@ -1,5 +1,6 @@
 import { formatWorldTime, seasonAt, type Agent, type WorldEvent } from '@vana/shared';
 import type { Question, SystemOne } from './typesafe.js';
+import { WindowRateLimit } from '../limits.js';
 
 /**
  * Observer insights from TypeSafe AI's Jev: estimates for viewers, never inputs to nature.
@@ -125,8 +126,16 @@ export class Insights {
   #day = '';
   #calls = 0;
 
+  /**
+   * One visitor network's share of the day's calls (docs/2026-11-17-security-audit.md L4): a
+   * twentieth of the budget, so one network asking after every animal cannot spend it all.
+   */
+  readonly #perNetwork: WindowRateLimit;
+
   constructor(private readonly systemOne: SystemOne | null, private readonly dailyCalls = 1000,
-    private readonly now: () => number = Date.now) {}
+    private readonly now: () => number = Date.now) {
+    this.#perNetwork = new WindowRateLimit(Math.max(20, Math.floor(dailyCalls / 20)), 5000, 86_400_000);
+  }
 
   /** The world's terrain profile (its calendar and its description); set by the server (Congo 1B). */
   profile: string | undefined;
@@ -139,13 +148,15 @@ export class Insights {
     if (day !== this.#day) { this.#day = day; this.#calls = 0; }
   }
 
-  async #ask<T>(key: string, work: (ask: SystemOne) => Promise<T>): Promise<InsightResult<T>> {
+  async #ask<T>(key: string, work: (ask: SystemOne) => Promise<T>, network?: string): Promise<InsightResult<T>> {
     if (!this.systemOne) return { ok: false, reason: 'not_configured' };
     if (this.#cache.has(key)) return { ok: true, value: this.#cache.get(key) as T };
     const pending = this.#inflight.get(key);
     if (pending) return pending as Promise<InsightResult<T>>;
     this.#rollDay();
     if (this.#calls >= this.dailyCalls) return { ok: false, reason: 'budget_exhausted' };
+    // Only a new question counts against the network: cached and in-flight answers are free.
+    if (network !== undefined && !this.#perNetwork.take(network, this.now())) return { ok: false, reason: 'budget_exhausted' };
     this.#calls++;
     const ask = this.systemOne;
     const promise = (async (): Promise<InsightResult<T>> => {
@@ -166,7 +177,7 @@ export class Insights {
   }
 
   outlook(agent: Agent, species: SpeciesFacts, worldTime: number,
-    patch: { habitat: string; waterVolume: number; grass: number } | undefined): Promise<InsightResult<Outlook>> {
+    patch: { habitat: string; waterVolume: number; grass: number } | undefined, network?: string): Promise<InsightResult<Outlook>> {
     return this.#ask(`outlook:${agent.id}@${worldTime}`, async (ask) => {
       const goals = outlookGoals(agent, species);
       const question: Question = {
@@ -180,7 +191,7 @@ export class Insights {
       const choices = goals.map((goal) => ({ goal, label: GOAL_LABELS[goal]!, probability: answer.probabilities[goal] ?? 0 }))
         .sort((a, b) => b.probability - a.probability);
       return { asOfWorldTime: worldTime, model: result.model, confidence: answer.confidence, choices };
-    });
+    }, network);
   }
 
   highlights(events: readonly WorldEvent[], worldTime: number, nextSequence: number,
