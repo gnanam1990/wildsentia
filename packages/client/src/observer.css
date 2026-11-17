@@ -498,3 +498,30 @@
 /* Fitness: one wide meter above the drives (docs/2026-10-21-congo-fitness.md). */
 .observer-app .fitness { padding: 0 0 14px; }
 .observer-app .fitness .meter em { margin-left: 6px; font-style: normal; font-weight: 700; text-transform: capitalize; color: var(--ink-2); }
+
+/* First-visit veil (forestVeil.ts): the canopy from above while the forest loads, then a fade into it. */
+#forest-veil { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; overflow: hidden;
+  background: #2f4a2c; color: #f4f3ef; transition: opacity .7s cubic-bezier(.2,.7,.2,1), visibility 0s linear .7s; }
+#forest-veil.is-lifting { opacity: 0; visibility: hidden; pointer-events: none; }
+#forest-veil .veil-photo { position: absolute; inset: -4%; background: url('/assets/congo/canopy_aerial.webp') center / 640px 640px repeat;
+  filter: saturate(1.05) brightness(1.02); animation: veil-drift 40s linear infinite alternate; }
+#forest-veil .veil-photo::after { content: ''; position: absolute; inset: 0;
+  background: radial-gradient(ellipse at 50% 55%, rgb(14 26 16 / .18), rgb(14 26 16 / .5) 80%); }
+@keyframes veil-drift { from { transform: scale(1) translate3d(0, 0, 0); } to { transform: scale(1.06) translate3d(-1.5%, -1%, 0); } }
+#forest-veil .veil-card { position: relative; width: min(420px, 100%); padding: 28px 28px 22px; border: 1px solid rgb(255 255 255 / .32);
+  border-radius: 22px; background: rgb(16 24 18 / .38); backdrop-filter: blur(14px) saturate(1.1); -webkit-backdrop-filter: blur(14px) saturate(1.1);
+  box-shadow: 0 24px 60px rgb(5 12 6 / .28), inset 0 1px 0 rgb(255 255 255 / .25); }
+#forest-veil .veil-brand { display: flex; flex-direction: column; margin: 0; font: 650 40px/.9 'Manrope Variable', sans-serif; letter-spacing: -.04em; }
+#forest-veil .veil-brand small { margin-top: 10px; font: 500 8px/1 'Manrope Variable', sans-serif; letter-spacing: .18em; text-transform: uppercase; color: #e4e7e5; }
+#forest-veil .veil-lede { margin: 18px 0 22px; max-width: 32ch; font: 450 14px/1.5 'Manrope Variable', sans-serif; color: #eef0ea; }
+#forest-veil .veil-bar { height: 3px; border-radius: 3px; background: rgb(255 255 255 / .2); overflow: hidden; }
+#forest-veil .veil-bar i { display: block; height: 100%; background: #f4f3ef; transform: scaleX(0); transform-origin: left; transition: transform .45s cubic-bezier(.2,.7,.2,1); }
+#forest-veil .veil-text { margin: 10px 0 0; min-height: 1.5em; font: 500 12px/1.5 'Manrope Variable', sans-serif; color: #dfe3dd; }
+@media (prefers-reduced-motion: reduce) {
+  #forest-veil, #forest-veil .veil-bar i { transition: none; }
+  #forest-veil .veil-photo { animation: none; }
+}
+@media (max-width: 480px) {
+  #forest-veil .veil-card { padding: 22px 20px 18px; border-radius: 18px; }
+  #forest-veil .veil-brand { font-size: 34px; }
+}

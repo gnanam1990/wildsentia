@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { ContactShadows, type ContactSpot } from './contactShadows.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { actClipTime, climbs, clipForObservedMotion, clipForState, clipPhase, elephantTrunkReach, renderStateFor, replayClipTime, struggleClip, vigilance,
   type ClimbVisualPhase, type FlightVisualPhase, climbPose, flies, swimmingClip } from './animation.js';
@@ -156,9 +157,13 @@ export class AnimalLayer {
     return object === this.#dots;
   }
 
+  /** Soft patches where standing animals meet the floor (contactShadows.ts). */
+  readonly #contact = new ContactShadows();
+  readonly #spots: ContactSpot[] = [];
+
   constructor() {
     this.#dotLayer = new AnimalDots(AnimalLayer.MAX_DOTS); this.#dots = this.#dotLayer.mesh;
-    this.root.add(this.#dots, this.#limbs.mesh);
+    this.root.add(this.#dots, this.#limbs.mesh, this.#contact.mesh);
   }
 
   async #template(animal: AnimalState): Promise<THREE.Group> {
@@ -516,6 +521,20 @@ export class AnimalLayer {
   update(deltaSeconds: number): void {
     this.#clockSeconds += deltaSeconds;
     for (const rig of this.#rigs.values()) rig?.mixer?.update(deltaSeconds);
+    this.#layContactShadows();
+  }
+
+  /** One floor patch under each drawn animal standing on the ground: not aloft, climbing or swimming. */
+  #layContactShadows(): void {
+    const spots = this.#spots; spots.length = 0;
+    for (const rig of this.#rigs.values()) {
+      if (!rig || !rig.group.visible || rig.group.parent === null || rig.climbRest !== null || rig.swimming) continue;
+      const { x, y, z } = rig.group.position;
+      const ground = this.groundHeightAt(x, z);
+      if (y - ground > 0.3) continue;
+      spots.push({ x, y: ground, z, lengthM: rig.bodyLengthM, heading: rig.group.rotation.y });
+    }
+    this.#contact.update(spots);
   }
 
   /** Upright against the trunk while a recorded climb plays; back on its feet otherwise. */

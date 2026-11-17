@@ -431,6 +431,9 @@ textures), and run a licence review over anything added later.
   - `forest_ground_04_diff_1k.jpg`: `6ad9df4d731a238299806f739a26af83`
   - `forest_ground_04_nor_gl_1k.jpg`: `a010a0802c2d9a930c6f00d3b1f196d2`
   - `forest_ground_04_rough_1k.jpg`: `b5c7ba5c16f00261e9a765d52cf7e0ac`
+- Served copies (17 November 2026): the same 1K images re-encoded as lossy WebP with Pillow
+  (method 6; albedo quality 82, normal 90, roughness 80), 965,796 bytes in all, so a first visit
+  downloads a third of the JPEGs. The JPEGs stay as the verified publisher originals.
 - Tree distance atlases are generated locally at runtime from the credited natural broadleaf
   derivatives and Quaternius dead tree, not downloaded artwork or species-accuracy evidence.
 ## Human character assemblies — 25 September 2026

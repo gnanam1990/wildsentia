@@ -7,9 +7,23 @@
   <script src="/theme-init.js"></script>
   <link rel="stylesheet" href="/src/style.css" />
   <link rel="stylesheet" href="/src/observer.css" />
+  <!-- The veil's photograph and the floor every first view stands on: fetched with the scripts, not after them. -->
+  <link rel="preload" as="image" href="/assets/congo/canopy_aerial.webp" crossorigin="anonymous" fetchpriority="high" />
+  <link rel="preload" as="image" href="/assets/congo/floor_litter.webp" crossorigin="anonymous" />
+  <link rel="preload" as="image" href="/assets/ground/forest_ground_04_diff_1k.webp" crossorigin="anonymous" />
+  <link rel="preload" as="image" href="/assets/ground/forest_ground_04_nor_gl_1k.webp" crossorigin="anonymous" />
 </head>
 <body class="observer-app">
   <canvas id="view" tabindex="0" aria-label="Live forest observer. Drag or W A S D to explore the forest, arrow keys or Q and E to rotate, plus and minus to zoom. Tap an animal to track it."></canvas>
+  <div id="forest-veil" role="status" aria-live="polite" aria-busy="true">
+    <div class="veil-photo" aria-hidden="true"></div>
+    <div class="veil-card">
+      <p class="veil-brand">Wildsentia<small>the living wild</small></p>
+      <p class="veil-lede">A Congo forest that keeps living whether or not anyone watches.</p>
+      <div class="veil-bar" aria-hidden="true"><i></i></div>
+      <p class="veil-text">Finding the forest…</p>
+    </div>
+  </div>
 
   <header class="bar">
     <div class="brand"><span>Wildsentia<small>the living wild</small></span></div>

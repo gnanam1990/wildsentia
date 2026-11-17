@@ -10,6 +10,9 @@ import { NEAR_RADIUS_M, TREE_DETAIL_RADIUS_M, NearVegetation } from './vegetatio
 import { InsightPanel } from './insights.js';
 import { LiveAgents, activityOf, isLiveMessage, isRosterMessage, rosterActivity, usdc } from './liveAgents.js';
 import { COVER_RADIUS_M, GroundCover } from './groundCover.js';
+import { ForestVeil } from './forestVeil.js';
+import { CanopyLight } from './canopyLight.js';
+import { PostFx } from './postFx.js';
 import { CongoForest } from './congoForest.js';
 import { congoWaterSurface } from './congoWater.js';
 import { animateWater } from './waterLook.js';
@@ -68,10 +71,21 @@ const bubbleHeight = (animal: AnimalState | undefined): number => {
 };
 
 const canvas = document.querySelector<HTMLCanvasElement>('#view')!;
+// The first-visit veil counts every texture and model three loads, from the first request on.
+const veilRoot = document.querySelector<HTMLElement>('#forest-veil');
+const veil = new ForestVeil(veilRoot ? { root: veilRoot, bar: veilRoot.querySelector<HTMLElement>('.veil-bar i')!,
+  text: veilRoot.querySelector<HTMLElement>('.veil-text')! } : null);
+THREE.DefaultLoadingManager.onProgress = (_url, loaded, total) => veil.assets(loaded, total);
 const { renderer, scene, camera, sun, setQuality, prepareShadows, setObserverCenter } = createScene(canvas);
+// Bloom and the documentary grade, by graphics tier (postFx.ts).
+const postFx = new PostFx(renderer, scene, camera);
 let experienceViewPaused = false;
 const observerChrome = initObserverChrome(setObserverCenter);
 const atmosphere = new Atmosphere(scene, sun);
+// Sun shafts and drifting motes among the Congo's trees (canopyLight.ts).
+const canopyLight = new CanopyLight();
+scene.add(canopyLight.root);
+const toSun = new THREE.Vector3();
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const ambientAudio = new AmbientAudio();
 const ambientToggle = document.querySelector<HTMLButtonElement>('#ambient-toggle')!;
@@ -255,7 +269,7 @@ function connect(): void {
   const connection = socket = new WebSocket(`${protocol}://${location.host}/live`);
   restoreFollowOnOpen(connection, () => followedId);
   // A new connection has no view yet: say where the camera looks straight away.
-  connection.addEventListener('open', () => { viewSent = null; sendView(true); }, { once: true });
+  connection.addEventListener('open', () => { viewSent = null; sendView(true); veil.connected(); }, { once: true });
   connection.addEventListener('message', (event) => {
     if (socket !== connection) return;
     try {
@@ -527,7 +541,7 @@ try { savedQuality = storage?.getItem('vana.graphics'); } catch { /* optional pr
 const quality = new AdaptiveQuality(qualityMode(savedQuality));
 graphics.value = quality.mode;
 function applyQuality(): void {
-  setQuality(quality.tier); animals.quality = quality.tier; wind.setTier(quality.tier);
+  setQuality(quality.tier); animals.quality = quality.tier; wind.setTier(quality.tier); canopyLight.setTier(quality.tier); postFx.setTier(quality.tier);
   groundCover?.setQuality(quality.tier); nature?.setQuality(quality.tier);
   graphicsStatus.textContent = `${quality.mode === 'auto' ? 'Auto · ' : ''}${quality.tier} graphics`;
 }
@@ -620,6 +634,7 @@ const sceneUpdates = new SceneUpdates<{
   },
   status(state) {
     canvas.setAttribute('aria-busy', String(state === 'loading'));
+    if (state === 'ready') veil.sceneReady();
     const text = state === 'ready' ? '' : state === 'loading'
       ? 'Preparing saved forest scene…' : 'Scene update unavailable. Keeping the last complete scene; retrying automatically.';
     if (sceneStatus.textContent !== text) sceneStatus.textContent = text;
@@ -987,7 +1002,8 @@ function renderFrame(dt: number, now: number): void {
   observerVisibility.setLensReach(aloft ? 5 : 0);
   observerVisibility.update(camera, renderer.getDrawingBufferSize(drawingSize), revealAnimal.checked ? observerSubjects : []);
   prepareShadows(performance.now());
-  renderer.render(scene, camera);
+  postFx.render();
+  veil.frameDrawn();
   if (renderStats.hidden) return;
   statsFrames++;
   const elapsed = performance.now() - statsStarted;
@@ -1014,6 +1030,9 @@ function frame(): void {
     const daylight = atmosphereAt(shownTime, store.world.season).daylight;
     renderer.toneMappingExposure = observerExposure(daylight, follow.distance, atmosphere.underCanopy);
     animateWater(reducedMotion.matches ? 0 : now / 1000, daylight);
+    toSun.subVectors(sun.position, sun.target.position).normalize();
+    canopyLight.update(camera.position, toSun, sun.color, daylight, atmosphere.underCanopy, now / 1000, reducedMotion.matches,
+      renderer.getDrawingBufferSize(drawingSize).y, animals.groundHeightAt);
   }
 
   // Grass, leaves, branches and the wind channel share one presentation-only wind (wind.ts).

@@ -16,11 +16,22 @@ describe('locally owned scanned ground', () => {
       expect(createHash('md5').update(bytes).digest('hex')).toBe(hash);
     }
   });
+  it('serves WebP copies of the scanned ground, a third of the JPEGs\' weight', () => {
+    let webp = 0, jpeg = 0;
+    for (const suffix of ['diff', 'nor_gl', 'rough']) {
+      const bytes = readFileSync(new URL(`../public/assets/ground/forest_ground_04_${suffix}_1k.webp`, import.meta.url));
+      expect(bytes.toString('ascii', 0, 4)).toBe('RIFF');
+      expect(bytes.toString('ascii', 8, 12)).toBe('WEBP');
+      webp += bytes.length;
+      jpeg += readFileSync(new URL(`../public/assets/ground/forest_ground_04_${suffix}_1k.jpg`, import.meta.url)).length;
+    }
+    expect(webp).toBeLessThan(jpeg / 3 + 1);
+  });
   it('uses colour/data spaces correctly and disposes each owned map once', () => {
     vi.stubGlobal('document', {});
     const loader = vi.spyOn(THREE.TextureLoader.prototype, 'load').mockImplementation(() => new THREE.Texture());
     const maps = scannedGroundMaps();
-    expect(loader.mock.calls.every(([url]) => url.startsWith('/assets/ground/'))).toBe(true);
+    expect(loader.mock.calls.every(([url]) => url.startsWith('/assets/ground/') && url.endsWith('.webp'))).toBe(true);
     expect(maps.map!.colorSpace).toBe(THREE.SRGBColorSpace);
     expect(maps.normalMap!.colorSpace).toBe(THREE.NoColorSpace);
     expect(maps.roughnessMap!.colorSpace).toBe(THREE.NoColorSpace);
