@@ -93,7 +93,16 @@ export interface Body {
   id: string; x: number; z: number; radius: number; heading: number;
   /** The other animal of a recorded encounter: they are meant to meet, so they may touch. */
   partnerId?: string;
+  /** A hunter (pools.ts HUNTERS): other animals keep HUNTER_BERTH_M from it unless they are its quarry. */
+  hunter?: boolean;
 }
+
+/**
+ * How far an animal is drawn from a hunter that is not hunting it, metres. The simulation places
+ * animals by patch and water point, so a resting leopard and grazing duikers could be drawn side by
+ * side; prey keep about a flight-initiation distance from a predator they have seen (duiker 15 m).
+ */
+export const HUNTER_BERTH_M = 8;
 
 const pairAngle = (a: string, b: string): number => {
   let h = 2166136261;
@@ -117,7 +126,9 @@ export function separateBodies(bodies: readonly Body[], people: readonly Obstacl
       for (let j = i + 1; j < at.length; j++) {
         const b = at[j]!;
         if (a.partnerId === b.id || b.partnerId === a.id) continue;
-        const clear = a.radius + b.radius, dx = b.x - a.x, dz = b.z - a.z;
+        // A hunter and an animal it is not hunting keep a berth, the other giving most of the way.
+        const wary = !!a.hunter !== !!b.hunter;
+        const clear = wary ? Math.max(a.radius + b.radius, HUNTER_BERTH_M) : a.radius + b.radius, dx = b.x - a.x, dz = b.z - a.z;
         if (Math.abs(dx) >= clear || Math.abs(dz) >= clear) continue;
         const d = Math.hypot(dx, dz);
         if (d >= clear) continue;
@@ -125,7 +136,8 @@ export function separateBodies(bodies: readonly Body[], people: readonly Obstacl
         const ux = d > 1e-6 ? dx / d : Math.sin(angle), uz = d > 1e-6 ? dz / d : Math.cos(angle);
         // Each gives way in proportion to the other's size: a hare steps aside for an elephant.
         const wa = a.radius ** 2, wb = b.radius ** 2, overlap = clear - d;
-        const moveA = overlap * wb / (wa + wb), moveB = overlap * wa / (wa + wb);
+        const shareA = wary ? (a.hunter ? 0.3 : 0.7) : wb / (wa + wb);
+        const moveA = overlap * shareA, moveB = overlap * (1 - shareA);
         a.x -= ux * moveA; a.z -= uz * moveA; b.x += ux * moveB; b.z += uz * moveB;
       }
       for (const p of people) {

@@ -512,7 +512,7 @@ export class AnimalLayer {
       // A carcass lies where it fell; scavengers gather round it rather than nudging it.
       if (shown.state === 'dead') { fixed.push({ x: ashore.x, z: ashore.z, radius: radius * 0.8 }); continue; }
       bodies.push({ id, x: ashore.x, z: ashore.z, heading: ashore.heading, radius,
-        ...(pose?.partnerId ? { partnerId: pose.partnerId } : {}) });
+        ...(pose?.partnerId ? { partnerId: pose.partnerId } : {}), ...(HUNTERS.has(animal.speciesId) ? { hunter: true } : {}) });
     }
     if (bodies.length === 0) return;
     const sizes = new Map(bodies.map((b) => [b.id, b.radius]));

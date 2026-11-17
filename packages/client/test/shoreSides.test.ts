@@ -26,3 +26,21 @@ describe('a hunter drinking with its prey', () => {
     expect(HUNTERS.has('blue_duiker')).toBe(false);
   });
 });
+
+describe('a hunter that is not hunting', async () => {
+  const { separateBodies, HUNTER_BERTH_M } = await import('../src/obstacles.js');
+  it('is drawn a berth away from other animals, the other giving most of the way', () => {
+    const moved = separateBodies([{ id: 'cat', x: 0, z: 0, radius: 0.25, heading: 0, hunter: true },
+      { id: 'duiker', x: 1, z: 0, radius: 0.22, heading: 0 }]);
+    const cat = moved.get('cat')!, duiker = moved.get('duiker')!;
+    expect(Math.hypot(duiker.x - cat.x, duiker.z - cat.z)).toBeGreaterThan(HUNTER_BERTH_M * 0.95);
+    expect(Math.abs(duiker.x - 1)).toBeGreaterThan(Math.abs(cat.x));
+  });
+  it('still meets the animal it is hunting, and two of a kind only keep from touching', () => {
+    const hunt = separateBodies([{ id: 'cat', x: 0, z: 0, radius: 0.25, heading: 0, hunter: true, partnerId: 'duiker' },
+      { id: 'duiker', x: 1, z: 0, radius: 0.22, heading: 0, partnerId: 'cat' }]);
+    expect(hunt.get('duiker')!.x).toBeCloseTo(1);
+    const herd = separateBodies([{ id: 'a', x: 0, z: 0, radius: 0.22, heading: 0 }, { id: 'b', x: 1, z: 0, radius: 0.22, heading: 0 }]);
+    expect(herd.get('b')!.x).toBeCloseTo(1);
+  });
+});
