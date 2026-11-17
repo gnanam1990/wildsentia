@@ -86,6 +86,12 @@ const atmosphere = new Atmosphere(scene, sun);
 const canopyLight = new CanopyLight();
 scene.add(canopyLight.root);
 const toSun = new THREE.Vector3();
+/** Open ground (a bai, a river) has no crowns overhead for the sun to break through. */
+let openPatches = new Set<number>();
+function underCrowns(x: number, z: number): boolean {
+  const at = { x, z };
+  return !isWorldPosition(worldGrid(), at) || !openPatches.has(patchAtPosition(worldGrid(), at));
+}
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const ambientAudio = new AmbientAudio();
 const ambientToggle = document.querySelector<HTMLButtonElement>('#ambient-toggle')!;
@@ -622,6 +628,7 @@ const sceneUpdates = new SceneUpdates<{
       communityLayer.sync(update.environment.community, prepared.terrain.height);
       communityLayer.setReplay(replay !== null);
       mapPatches = update.environment.patches;
+      openPatches = new Set(mapPatches.filter((p) => p.habitat === 'bai' || p.habitat === 'water').map((p) => p.id));
       if (store.world) groundTint.update(update.environment.patches, store.world.season);
       eventMap?.setPatches(mapPatches);
       animalMap?.setPatches(mapPatches);
@@ -1032,7 +1039,7 @@ function frame(): void {
     animateWater(reducedMotion.matches ? 0 : now / 1000, daylight);
     toSun.subVectors(sun.position, sun.target.position).normalize();
     canopyLight.update(camera.position, toSun, sun.color, daylight, atmosphere.underCanopy, now / 1000, reducedMotion.matches,
-      renderer.getDrawingBufferSize(drawingSize).y, animals.groundHeightAt);
+      renderer.getDrawingBufferSize(drawingSize).y, animals.groundHeightAt, underCrowns);
   }
 
   // Grass, leaves, branches and the wind channel share one presentation-only wind (wind.ts).

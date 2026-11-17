@@ -78,3 +78,24 @@ describe('contact shadows', () => {
     shadows.dispose();
   });
 });
+
+describe('fur edge light', async () => {
+  const { applyFurLook } = await import('../src/furLook.js');
+  it('adds the edge light once, after any hook the material already had', () => {
+    const material = new THREE.MeshStandardMaterial();
+    const calls: string[] = [];
+    material.onBeforeCompile = () => { calls.push('own'); };
+    applyFurLook(material); applyFurLook(material);
+    const shader = { fragmentShader: 'a\n#include <opaque_fragment>\nb' } as unknown as THREE.WebGLProgramParametersWithUniforms;
+    material.onBeforeCompile(shader, {} as THREE.WebGLRenderer);
+    expect(calls).toEqual(['own']);
+    expect(shader.fragmentShader.match(/furEdge/g)?.length).toBe(2);
+    expect(shader.fragmentShader).toContain('#include <opaque_fragment>');
+    expect(material.customProgramCacheKey()).toMatch(/\|fur$/);
+  });
+  it('leaves materials that are not standard alone', () => {
+    const basic = new THREE.MeshBasicMaterial();
+    applyFurLook(basic);
+    expect(basic.userData.furLook).toBeUndefined();
+  });
+});

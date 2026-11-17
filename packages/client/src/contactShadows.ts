@@ -15,16 +15,18 @@ export interface ContactSpot {
 }
 
 /** How dark the centre of a patch is, and how far past the body it reaches. */
-export const CONTACT_OPACITY = 0.42;
+export const CONTACT_OPACITY = 0.55;
 const WIDTH_OF_LENGTH = 0.55, REACH = 1.25;
 
 function gradientTexture(): THREE.Texture {
   const size = 64;
-  if (typeof document === 'undefined') return new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+  if (typeof document === 'undefined') return new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
   const canvas = document.createElement('canvas'); canvas.width = canvas.height = size;
   const g = canvas.getContext('2d')!;
   const fill = g.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-  fill.addColorStop(0, 'rgba(0,0,0,1)'); fill.addColorStop(0.45, 'rgba(0,0,0,.55)'); fill.addColorStop(1, 'rgba(0,0,0,0)');
+  // An alpha map is read from the green channel: white where the patch is darkest, black where it fades out.
+  g.fillStyle = '#000'; g.fillRect(0, 0, size, size);
+  fill.addColorStop(0, 'rgb(255,255,255)'); fill.addColorStop(0.45, 'rgb(140,140,140)'); fill.addColorStop(1, 'rgb(0,0,0)');
   g.fillStyle = fill; g.fillRect(0, 0, size, size);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.NoColorSpace;

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { ContactShadows, type ContactSpot } from './contactShadows.js';
+import { applyFurLook } from './furLook.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { actClipTime, climbs, clipForObservedMotion, clipForState, clipPhase, elephantTrunkReach, renderStateFor, replayClipTime, struggleClip, vigilance,
   type ClimbVisualPhase, type FlightVisualPhase, climbPose, flies, swimmingClip } from './animation.js';
@@ -274,6 +275,7 @@ export class AnimalLayer {
         const own = (source: THREE.Material): THREE.Material => {
           const material = source.clone() as THREE.MeshStandardMaterial;
           if (material.color) materials.push({ material, base: material.color.clone() });
+          applyFurLook(material);
           return material;
         };
         mesh.material = Array.isArray(mesh.material) ? mesh.material.map(own) : own(mesh.material);

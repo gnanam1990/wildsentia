@@ -147,7 +147,9 @@ export class CanopyLight {
    * @param viewportHeight drawing buffer height in pixels, so motes keep their size on any screen
    */
   update(eye: THREE.Vector3, toSun: THREE.Vector3, sunColour: THREE.Color, daylight: number,
-    underCanopy: number, seconds: number, reducedMotion: boolean, viewportHeight: number, groundAt: (x: number, z: number) => number): void {
+    underCanopy: number, seconds: number, reducedMotion: boolean, viewportHeight: number, groundAt: (x: number, z: number) => number,
+    /** Whether crowns close overhead there: no shaft stands in an open clearing or over a river. */
+    underCrowns: (x: number, z: number) => boolean = () => true): void {
     const strength = shaftStrength(daylight, underCanopy), budget = CANOPY_LIGHT_BUDGET[this.#tier];
     this.root.visible = strength > 0.01 && (budget.shafts > 0 || budget.motes > 0);
     if (!this.root.visible) return;
@@ -156,7 +158,7 @@ export class CanopyLight {
     const axis = this.#basis.y.copy(toSun);
     if (axis.y < 0.57) { axis.y = 0.57; }
     axis.normalize();
-    const cells = shaftCells(eye.x, eye.z, budget.shafts);
+    const cells = shaftCells(eye.x, eye.z, budget.shafts * 2).filter((c) => underCrowns(c.x, c.z)).slice(0, budget.shafts);
     this.#shaftMaterial.opacity = 0.42 * strength;
     this.#colour.copy(sunColour);
     let i = 0;
