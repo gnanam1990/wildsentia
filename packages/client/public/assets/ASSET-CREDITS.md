@@ -455,3 +455,14 @@ of any real tribal community**, and these models are not claimed to be photoreal
 Work poses are illustrative and have no authority over simulation success/failure. Sleeping
 and deceased people use a held lying pose derived from the terminal clip; they do not replay
 a new death each frame. Fine contact/IK, exact work props and browser visual acceptance remain open.
+
+# Forest sound beds — 17 November 2026
+
+- `audio/congo_day.mp3`, `audio/congo_night.mp3`, `audio/congo_rain.mp3`: three 30 s soundscapes
+  generated with Higgsfield (Mirelo text-to-audio, on the project owner's account) from text
+  prompts only: a rainforest interior by day (insects, distant birds), by night (frogs,
+  crickets), and steady rain on a canopy. Generated, not field recordings, and not recordings
+  of any species in the simulation; the observer's settings say they are a soundscape.
+- Each was cut to a 28 s seamless loop (2 s equal-power crossfade of its end into its start),
+  loudness-normalised to -20 LUFS (true peak -2 dB) and encoded as 64 kbit/s mono MP3 with
+  FFmpeg; 224,488 bytes each. Fetched only after the viewer turns ambient audio on.

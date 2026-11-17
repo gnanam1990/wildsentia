@@ -122,7 +122,7 @@ ambientToggle.addEventListener('click', async () => {
   const started = await ambientAudio.start();
   if (document.hidden && started) ambientAudio.stop();
   ambientToggle.disabled = false;
-  setAmbientUi(ambientAudio.enabled ? 'Sound on: current rain, wind and nearby visible water; calls only from visible animals recorded fleeing or hunting.'
+  setAmbientUi(ambientAudio.enabled ? 'Sound on: the forest by day or night, the current rain, wind and nearby visible water; calls only from visible animals recorded fleeing or hunting.'
     : 'Sound unavailable or tab hidden. It remains off; try again after returning.');
 });
 
@@ -1013,7 +1013,8 @@ function audibleAnimals(): AudioAnimal[] {
   return result;
 }
 function renderFrame(dt: number, now: number): void {
-  if (store.world) ambientAudio.sample(store.world.season, mapPatches, camera, animals.groundHeightAt, now, wind.state, audibleAnimals);
+  if (store.world) ambientAudio.sample(store.world.season, mapPatches, camera, animals.groundHeightAt, now, wind.state, audibleAnimals,
+    atmosphereAt(litTime(liveWorldTime(now)!), store.world.season).daylight);
   // A season can turn without a patch change; the update is a cheap no-op otherwise.
   if (store.world && store.world.season !== tintSeason) { tintSeason = store.world.season; groundTint.update(mapPatches, tintSeason); }
   // Use the settled camera, not the followed animal or the previous frame's target.

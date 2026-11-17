@@ -202,3 +202,32 @@ describe('user-enabled ambient audio contract', () => {
     audio.stop();
   });
 });
+
+describe('forest sound beds', async () => {
+  const { bedLevels, BED_FILES } = await import('../src/ambientAudio.js');
+  const { readFileSync } = await import('node:fs');
+  it('plays insects and birds by day, frogs and crickets by night, and crossfades through dusk', () => {
+    expect(bedLevels(1, 0, 5)).toMatchObject({ day: 1, night: 0, rain: 0 });
+    expect(bedLevels(0, 0, 5)).toMatchObject({ day: 0, night: 1 });
+    const dusk = bedLevels(0.5, 0, 5);
+    expect(dusk.day).toBeCloseTo(0.5); expect(dusk.night).toBeCloseTo(0.5);
+  });
+  it('brings rain on the leaves in with the season\'s rain, a little over the creatures', () => {
+    const wet = bedLevels(1, 1, 5);
+    expect(wet.rain).toBe(1);
+    expect(wet.day).toBeCloseTo(0.5);
+  });
+  it('softens everything as the eye rises over the forest, never to nothing', () => {
+    const high = bedLevels(1, 1, 1000);
+    expect(high.day).toBeCloseTo(0.25 * 0.5);
+    expect(high.rain).toBeCloseTo(0.4 + 0.6 * 0.25);
+    expect(bedLevels(1, 0, 40).day).toBe(1);
+  });
+  it('ships each bed as a small MP3 in the public assets', () => {
+    for (const file of Object.values(BED_FILES)) {
+      const bytes = readFileSync(new URL(`../public${file}`, import.meta.url));
+      expect(bytes.length).toBeLessThan(300_000);
+      expect(bytes.toString('latin1', 0, 3) === 'ID3' || (bytes[0] === 0xff && (bytes[1]! & 0xe0) === 0xe0)).toBe(true);
+    }
+  });
+});
