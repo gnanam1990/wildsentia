@@ -106,6 +106,13 @@ describe('deploy/Caddyfile', () => {
     expect(caddyfile).toMatch(/^\s*header -Server$/m);
     expect(headers).not.toMatch(/^\s*-Server$/m);
   });
+  it('keeps X-Forwarded-For only from the proxies it is told to trust (Cloudflare), none by default', () => {
+    expect(caddyfile).toMatch(/trusted_proxies static \{\$VANA_TRUSTED_PROXIES:127\.0\.0\.1\/32\}/);
+    for (const name of ['compose.yml', 'vultr/compose.yml']) {
+      const compose = readFileSync(fileURLToPath(new URL(`../../../deploy/${name}`, import.meta.url)), 'utf8');
+      expect(compose).toContain('VANA_TRUSTED_PROXIES: ${VANA_TRUSTED_PROXIES:-127.0.0.1/32}');
+    }
+  });
   it('lets scripts, data and workers come only from this origin, on every page', () => {
     for (const name of ['Caddyfile', 'railway/Caddyfile']) {
       const text = readFileSync(fileURLToPath(new URL(`../../../deploy/${name}`, import.meta.url)), 'utf8');
