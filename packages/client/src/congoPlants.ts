@@ -298,21 +298,24 @@ function plantParts(kind: CongoKind): PlantParts {
     }
     case 'groundcover': {
       // The forest floor's carpet: tufts of broad-leaved forest grass (as Olyra), young ferns, a
-      // Marantaceae shoot among seedlings, and herbs with drying leaves, 0.3-0.6 m, four clumps a
+      // Marantaceae shoot among seedlings, and herbs with drying leaves, 0.2-0.5 m (at most a duiker's
+      // head height, as it browses them), four clumps a
       // metre or so apart, each from a 2 x 2 atlas on crossed cards.
       const cards: THREE.BufferGeometry[] = [];
       for (let c = 0; c < 4; c++) {
-        const h = 0.3 + random() * 0.3, tile = Math.floor(random() * 4), x = (random() - 0.5) * 1.4, z = (random() - 0.5) * 1.4, turn = random() * Math.PI;
+        const h = 0.22 + random() * 0.16, tile = Math.floor(random() * 4), x = (random() - 0.5) * 1.4, z = (random() - 0.5) * 1.4, turn = random() * Math.PI;
         for (let k = 0; k < 2; k++) cards.push(atlasCard(h, tile, turn + k * Math.PI / 2, x, z, random()));
       }
       return { blades: merge(cards) };
     }
     case 'sedge': {
-      // A bai's sedge tuft: the photographed clump on three crossed cards, about knee to waist high.
-      const cards: THREE.BufferGeometry[] = [], h = 1.1;
+      // A bai's sedge tuft: the photographed clump on three crossed cards, low and spread. A bai is
+      // a grazing lawn: buffalo, sitatunga and elephants keep its sedges and grasses short, so a
+      // tuft stands about knee high on a buffalo (0.35-0.65 m), not over its back.
+      const cards: THREE.BufferGeometry[] = [], h = 0.5, w = 0.9;
       for (let k = 0; k < 3; k++) {
         const v = random(), tint = new THREE.Color(0.85 + v * 0.2, 0.9 + v * 0.15, 0.8 + v * 0.15);
-        cards.push(finish(new THREE.PlaneGeometry(h, h).translate(0, h / 2, 0).rotateY((k / 3) * Math.PI + random() * 0.3), () => tint));
+        cards.push(finish(new THREE.PlaneGeometry(w, h).translate(0, h / 2, 0).rotateY((k / 3) * Math.PI + random() * 0.3), () => tint));
       }
       return { blades: merge(cards) };
     }

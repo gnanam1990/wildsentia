@@ -167,3 +167,22 @@ describe('Congo plants', () => {
     expect(close / palms.length).toBeGreaterThan(0.85);
   });
 });
+
+describe('plants at the size of the animals that eat them', async () => {
+  const THREE = await import('three');
+  const { congoPlantParts } = await import('../src/congoPlants.js');
+  const { visualFor } = await import('../src/species.js');
+  const tallest = (kind: Parameters<typeof congoPlantParts>[0]) => {
+    const box = new THREE.Box3();
+    for (const g of Object.values(congoPlantParts(kind))) if (g) { g.computeBoundingBox(); box.union(g.boundingBox!); }
+    return box.max.y * 1.3; // the largest a planted non-tree is drawn
+  };
+  it('keeps the floor\'s tufts within a duiker\'s browsing reach', () => {
+    expect(tallest('groundcover')).toBeLessThanOrEqual(0.5);
+    expect(tallest('herb')).toBeLessThanOrEqual(visualFor('blue_duiker').heightM * 1.2);
+  });
+  it('keeps a bai a grazing lawn, its tufts well under a buffalo\'s back', () => {
+    expect(tallest('sedge')).toBeLessThanOrEqual(0.7);
+    expect(tallest('sedge')).toBeLessThan(visualFor('forest_buffalo').heightM * 0.6);
+  });
+});
