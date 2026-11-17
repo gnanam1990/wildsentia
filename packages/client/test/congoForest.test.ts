@@ -143,13 +143,18 @@ describe('the Congo forest layer', () => {
     const box = distant.geometry.boundingBox!, span = CONGO_GRID.cols * CONGO_GRID.patchM;
     expect(box.max.x - box.min.x).toBeGreaterThan(span - 400);
     expect(box.max.z - box.min.z).toBeGreaterThan(span - 400);
-    // Nothing of it inside the loaded region, where the near canopy and the plants stand.
-    const loaded = { min: -150 + 6000, max: -150 + 12000 };
+    // Inside the loaded region, where the near canopy and the plants stand, only a ring one 200 m
+    // cell deep, which the near surface overlaps so no seam of sky shows between them from above.
+    const loaded = { min: -150 + 6000, max: -150 + 12000 }, ring = 200;
+    let overlap = 0;
     for (let t = 0; t < index.count; t += 3) {
       let cx = 0, cz = 0;
       for (let k = 0; k < 3; k++) { cx += p.getX(index.getX(t + k)) / 3; cz += p.getZ(index.getX(t + k)) / 3; }
-      expect(cx > loaded.min && cx < loaded.max && cz > loaded.min && cz < loaded.max).toBe(false);
+      const inside = (min: number, max: number) => cx > min && cx < max && cz > min && cz < max;
+      expect(inside(loaded.min + ring, loaded.max - ring)).toBe(false);
+      if (inside(loaded.min, loaded.max)) overlap++;
     }
+    expect(overlap).toBeGreaterThan(0);
     // A forest at canopy height away from the rivers, down at the water over a river.
     const near = riverIndex(congoRivers(7, CONGO_GRID));
     let canopy = 0, river = 0;
@@ -185,7 +190,7 @@ describe('the Congo forest layer', () => {
       let cx = 0, cz = 0;
       for (let k = 0; k < 3; k++) { cx += q.getX(j.getX(t + k)) / 3; cz += q.getZ(j.getX(t + k)) / 3; }
       if (cx > loaded.min && cx < loaded.max && cz > loaded.min && cz < loaded.max) insideOld++;
-      expect(cx > loaded.max && cx < loaded.max + 6000 && cz > loaded.min && cz < loaded.max).toBe(false);
+      expect(cx > loaded.max + ring && cx < loaded.max + 6000 - ring && cz > loaded.min + ring && cz < loaded.max - ring).toBe(false);
     }
     expect(insideOld).toBeGreaterThan(0);
   });

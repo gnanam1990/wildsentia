@@ -13,6 +13,7 @@ import { COVER_RADIUS_M, GroundCover } from './groundCover.js';
 import { ForestVeil } from './forestVeil.js';
 import { CanopyLight } from './canopyLight.js';
 import { PostFx } from './postFx.js';
+import { TravelCurtain } from './travelCurtain.js';
 import { CongoForest } from './congoForest.js';
 import { congoWaterSurface } from './congoWater.js';
 import { animateWater } from './waterLook.js';
@@ -76,6 +77,8 @@ const veilRoot = document.querySelector<HTMLElement>('#forest-veil');
 const veil = new ForestVeil(veilRoot ? { root: veilRoot, bar: veilRoot.querySelector<HTMLElement>('.veil-bar i')!,
   text: veilRoot.querySelector<HTMLElement>('.veil-text')! } : null);
 THREE.DefaultLoadingManager.onProgress = (_url, loaded, total) => veil.assets(loaded, total);
+// Covers the moment of a cut to an animal elsewhere in the forest, until it is drawn there.
+const curtain = new TravelCurtain(document.querySelector<HTMLElement>('#travel-curtain'));
 const { renderer, scene, camera, sun, setQuality, prepareShadows, setObserverCenter } = createScene(canvas);
 // Bloom and the documentary grade, by graphics tier (postFx.ts).
 const postFx = new PostFx(renderer, scene, camera);
@@ -86,8 +89,19 @@ const atmosphere = new Atmosphere(scene, sun);
 const canopyLight = new CanopyLight();
 scene.add(canopyLight.root);
 const toSun = new THREE.Vector3();
+let prewarmStarted = false;
 /** Open ground (a bai, a river) has no crowns overhead for the sun to break through. */
 let openPatches = new Set<number>();
+/** The region (its column and row of regions) a patch or a point lies in. */
+function regionOfPatch(patchId: number): string {
+  const g = worldGrid();
+  return `${Math.floor((patchId % g.cols) / g.regionPatches)},${Math.floor(Math.floor(patchId / g.cols) / g.regionPatches)}`;
+}
+function regionAt(at: { x: number; z: number }): string | null {
+  return isWorldPosition(worldGrid(), at) ? regionOfPatch(patchAtPosition(worldGrid(), at)) : null;
+}
+/** The patches of the regions built around the view. */
+let loadedPatchIds = new Set<number>();
 function underCrowns(x: number, z: number): boolean {
   const at = { x, z };
   return !isWorldPosition(worldGrid(), at) || !openPatches.has(patchAtPosition(worldGrid(), at));
@@ -445,6 +459,8 @@ let followRevision = 0;
 
 /** Where a followed animal outside the loaded regions was last reported, until it is loaded. */
 let farFollow: { id: string; x: number; z: number } | null = null;
+/** A far animal followed from where it was reported: the camera cuts to it when it is first drawn. */
+let cutWhenPlaced: string | null = null;
 async function locateFar(id: string, revision: number): Promise<void> {
   try {
     const response = await fetch(`/api/animals/${encodeURIComponent(id)}`);
@@ -463,6 +479,9 @@ function watch(id: string | null): void {
   followRevision++; recapLoading = false; recapRetryAt = 0;
   livePairFrame.checked = false;
   if (!banner.hidden) stopReplay();
+  // A newly chosen animal is shown at once: the camera cuts to it rather than tracing a path there.
+  if (id !== null && id !== followedId) follow.cutToNext();
+  cutWhenPlaced = null;
   followedId = id;
   rewards.watch(id);
   const subject = id === null ? undefined : store.animals.get(id) ?? liveEncounters.poses(performance.now()).get(id)?.animal;
@@ -472,6 +491,12 @@ function watch(id: string | null): void {
   if (id !== null && !subject) void locateFar(id, followRevision);
   // A far animal is not loaded yet: its id names its species (`blue_duiker_00ab`).
   const named = id?.slice(0, Math.max(0, id.lastIndexOf('_'))) ?? '';
+  // Cutting to an animal whose part of the forest is not built yet: cover it until it is.
+  const finding = `Finding the ${speciesName(subject?.speciesId ?? (named || 'animal')).toLowerCase()}…`;
+  if (id !== null && (!subject || !loadedPatchIds.has(subject.patchId))) curtain.show(finding, subject?.patchId ?? null);
+  // In a loaded region but another one than the view's: the regions round it are rebuilt as the camera arrives.
+  else if (id !== null && subject && regionOfPatch(subject.patchId) !== regionAt(follow.target)) curtain.show(finding, null, true, 1_500);
+  else curtain.lift();
   speciesPicker.value = subject?.speciesId ?? ([...speciesPicker.options].some((o) => o.value === named) ? named : '');
   // A far one is framed by its named species, so it is seen close up when its regions load.
   const framed = subject?.speciesId ?? (named in SPECIES_VISUALS ? named : null);
@@ -629,6 +654,8 @@ const sceneUpdates = new SceneUpdates<{
       communityLayer.setReplay(replay !== null);
       mapPatches = update.environment.patches;
       openPatches = new Set(mapPatches.filter((p) => p.habitat === 'bai' || p.habitat === 'water').map((p) => p.id));
+      loadedPatchIds = new Set(mapPatches.map((p) => p.id));
+      curtain.sceneBuilt((patch) => loadedPatchIds.has(patch));
       if (store.world) groundTint.update(update.environment.patches, store.world.season);
       eventMap?.setPatches(mapPatches);
       animalMap?.setPatches(mapPatches);
@@ -952,7 +979,8 @@ function litTime(worldTime: number): number {
 
 // Dev-only handle so the running world can be inspected from the console.
 if (import.meta.env.DEV) {
-  (window as unknown as Record<string, unknown>).__vana = { scene, camera, follow, animals, store, liveEncounters, startReplay };
+  (window as unknown as Record<string, unknown>).__vana = { scene, camera, follow, animals, store, liveEncounters, startReplay,
+    get congoForest() { return congoForest; }, sceneUpdates, terrainCheckpoints };
 }
 
 const renderStats = document.querySelector<HTMLOutputElement>('#render-stats')!;
@@ -1011,6 +1039,12 @@ function renderFrame(dt: number, now: number): void {
   prepareShadows(performance.now());
   postFx.render();
   veil.frameDrawn();
+  // Once the forest is showing, every species' model is readied in the background (animals.prewarm).
+  if (veil.lifted && !prewarmStarted && quality.tier !== 'smooth' && store.animals.size > 0) {
+    prewarmStarted = true;
+    setTimeout(() => { void animals.prewarm(store.animals.values(), renderer, camera, scene); }, 1500);
+  }
+  curtain.frameDrawn();
   if (renderStats.hidden) return;
   statsFrames++;
   const elapsed = performance.now() - statsStarted;
@@ -1160,10 +1194,14 @@ function frame(): void {
   animals.update(dt);
 
   viewFocus = null;
+  const cutting = follow.cutPending;
   if (followedId !== null) {
     const position = animals.positionOf(followedId, now);
     if (position !== null) {
       viewFocus = { x: position.x, z: position.z };
+      // A far animal was shown where it was reported; once it is drawn, cut to it rather than glide the last stretch.
+      if (cutWhenPlaced === followedId) { cutWhenPlaced = null; follow.cutToNext(); }
+      curtain.drawn();
       const speciesId = store.animals.get(followedId)?.speciesId ?? carcasses.get(followedId)?.speciesId ?? '';
       observerSubjects = [observerSubject(speciesId, position, characterScale(visibleAnimals.get(followedId) ?? {}))];
       const partner = followedEncounter && livePairFrame.checked ? poses.get(followedEncounter.partnerId)?.position : undefined;
@@ -1181,8 +1219,11 @@ function frame(): void {
     } else if (farFollow?.id === followedId) {
       // Not loaded yet: fly toward where it was reported, so its regions are sent.
       viewFocus = { x: farFollow.x, z: farFollow.z };
+      cutWhenPlaced = followedId;
       follow.follow({ x: farFollow.x, z: farFollow.z, heading: 0, moving: false, y: animals.groundHeightAt(farFollow.x, farFollow.z) }, dt);
     } else follow.hold(dt); // Not placed this frame: keep the last framing, but zoom and turns still work.
+    // Just cut to it: tell the server where the camera now looks at once, not on the next second's tick.
+    if (cutting && !follow.cutPending) sendView(true);
     // The bubble floats over the animal's head, projected into screen space.
     const head = position === null ? null
       : new THREE.Vector3(

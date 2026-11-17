@@ -217,6 +217,45 @@ export class AnimalLayer {
     return pending;
   }
 
+  readonly #warmed = new Set<string>();
+
+  /**
+   * Loads each species' model ahead of need, compiles its shaders and uploads its textures, one
+   * species at a time with a pause between, so an animal walking into view (or chosen from the
+   * list) does not stall a frame the first time its kind is drawn. Costs memory, not frames.
+   */
+  async prewarm(animals: Iterable<AnimalState>, renderer: THREE.WebGLRenderer, camera: THREE.Camera, lit: THREE.Scene): Promise<number> {
+    const representatives = new Map<string, AnimalState>();
+    for (const animal of animals) {
+      const key = variantKey(animal, false);
+      if (!representatives.has(key) && !this.#warmed.has(key)) representatives.set(key, animal);
+    }
+    let warmed = 0;
+    for (const [key, animal] of representatives) {
+      try {
+        const template = await this.#template(animal);
+        const visual = cloneSkeleton(template), stage = new THREE.Scene(), textures = new Set<THREE.Texture>(), owned: THREE.Material[] = [];
+        visual.traverse((o) => {
+          const mesh = o as THREE.Mesh;
+          if (!mesh.isMesh) return;
+          const own = (source: THREE.Material): THREE.Material => {
+            const material = source.clone(); applyFurLook(material); owned.push(material);
+            for (const value of Object.values(material)) if ((value as THREE.Texture | null)?.isTexture) textures.add(value as THREE.Texture);
+            return material;
+          };
+          mesh.material = Array.isArray(mesh.material) ? mesh.material.map(own) : own(mesh.material);
+        });
+        stage.add(visual);
+        await renderer.compileAsync(stage, camera, lit);
+        for (const texture of textures) renderer.initTexture(texture);
+        for (const material of owned) material.dispose();
+        this.#warmed.add(key); warmed++;
+      } catch { /* that species loads when it is first needed instead */ }
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+    return warmed;
+  }
+
   async #ensureRig(animal: AnimalState): Promise<void> {
     const key = variantKey(animal, this.#airborne.has(animal.id));
     const existing = this.#rigs.get(animal.id);

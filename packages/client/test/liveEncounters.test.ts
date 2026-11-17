@@ -129,6 +129,9 @@ describe('checkpointed live encounter playback', () => {
     expect(player.poses(2000).get('v')?.flightVisualPhase).toBe('gliding');
     expect(player.poses(3750).get('v')?.flightVisualPhase).toBe('descending');
     expect(player.poses(5000).get('v')?.flightVisualPhase).toBeUndefined();
+    // On the wing while a flight segment plays; landed at its last sample, it is not drawn flying.
+    expect(player.poses(2000).get('v')?.animal.locomotionMode).toBe('flight');
+    expect(player.poses(5000).get('v')?.animal.locomotionMode).toBeUndefined();
     expect(player.poses(500, true).size).toBe(0);
     const missing = structuredClone(trace); delete missing.samples[1]!.altitudeM;
     expect(recordedFlightPhase(missing, 5)).toBeNull();
@@ -148,6 +151,16 @@ describe('checkpointed live encounter playback', () => {
       activity: { type: 'drinking', eventId: 'drink', startSeconds: 120, endSeconds: 600,
         position: { ...p(1.5), heading: -Math.PI / 2 }, litres: 2 } }] };
   }
+  it('draws a bird still on its branch as perched, not hanging in the air with its wings spread', () => {
+    const f = frame(); f.encounters = [];
+    f.movements = [{ eventId: 'perch', actor: { id: 'e', speciesId: 'crowned_eagle', sizeRatio: 1, coatVariant: 0 },
+      trace: { version: 1, actorId: 'e', startWorldTime: 0, destinationPatchId: 0, goal: 'rest', completed: true,
+        samples: [{ seconds: 0, position: p(0), altitudeM: 34 }, { seconds: 30, position: p(0), altitudeM: 34 }] } }];
+    const player = new LiveEncounterPlayer(); expect(player.apply(f, 0)).toBe(true);
+    const pose = player.poses(1000).get('e')!;
+    expect(pose.flightVisualPhase).toBeUndefined();
+    expect(pose.animal.locomotionMode).toBe('climb');
+  });
   it('shows drinking only after arrival, inside the recorded half-open window', () => {
     const f = drinkingFrame(), player = new LiveEncounterPlayer();
     expect(player.apply(f, 0)).toBe(true);

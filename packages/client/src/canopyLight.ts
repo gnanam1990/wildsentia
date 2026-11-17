@@ -150,7 +150,11 @@ export class CanopyLight {
     underCanopy: number, seconds: number, reducedMotion: boolean, viewportHeight: number, groundAt: (x: number, z: number) => number,
     /** Whether crowns close overhead there: no shaft stands in an open clearing or over a river. */
     underCrowns: (x: number, z: number) => boolean = () => true): void {
-    const strength = shaftStrength(daylight, underCanopy), budget = CANOPY_LIGHT_BUDGET[this.#tier];
+    const budget = CANOPY_LIGHT_BUDGET[this.#tier];
+    // Seen from above the understory a shaft is a pale pole standing in the forest: they show
+    // only to an eye among the trunks, fading out as it rises from 10 m to 25 m over the floor.
+    const eyeOverFloor = eye.y - groundAt(eye.x, eye.z);
+    const strength = shaftStrength(daylight, underCanopy) * (1 - THREE.MathUtils.smoothstep(eyeOverFloor, 10, 25));
     this.root.visible = strength > 0.01 && (budget.shafts > 0 || budget.motes > 0);
     if (!this.root.visible) return;
 
@@ -173,7 +177,9 @@ export class CanopyLight {
       this.#m.makeBasis(across.multiplyScalar(cell.width), this.#along.copy(axis).multiplyScalar(length), toEye);
       this.#m.setPosition(centre);
       this.#shafts.setMatrixAt(i, this.#m);
-      this.#shafts.setColorAt(i, this.#tint.copy(this.#colour).multiplyScalar(cell.brightness));
+      // Close to the lens a shaft would wash the view out: it fades in from 6 m to 16 m away.
+      const near = THREE.MathUtils.smoothstep(Math.hypot(cell.x - eye.x, cell.z - eye.z), 6, 16);
+      this.#shafts.setColorAt(i, this.#tint.copy(this.#colour).multiplyScalar(cell.brightness * near));
       i++;
     }
     this.#shafts.count = i;

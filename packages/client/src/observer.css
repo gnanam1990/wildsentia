@@ -525,3 +525,12 @@
   #forest-veil .veil-card { padding: 22px 20px 18px; border-radius: 18px; }
   #forest-veil .veil-brand { font-size: 34px; }
 }
+
+/* The curtain over a cut to an animal elsewhere (travelCurtain.ts): frosted for the moment its place is built. */
+#travel-curtain { position: fixed; inset: 0; z-index: 55; display: grid; place-items: center; padding: 16px;
+  background: rgb(46 70 44 / .55); backdrop-filter: blur(18px) saturate(1.1); -webkit-backdrop-filter: blur(18px) saturate(1.1);
+  transition: opacity .35s ease-out, visibility 0s linear .35s; }
+#travel-curtain.is-lifting { opacity: 0; visibility: hidden; pointer-events: none; }
+#travel-curtain .curtain-text { margin: 0; padding: 10px 16px; border: 1px solid rgb(255 255 255 / .3); border-radius: 999px;
+  background: rgb(16 24 18 / .35); color: #f4f3ef; font: 550 13px/1.4 'Manrope Variable', sans-serif; }
+@media (prefers-reduced-motion: reduce) { #travel-curtain { transition: none; } }

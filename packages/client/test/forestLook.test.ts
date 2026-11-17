@@ -45,6 +45,9 @@ describe('canopy light', () => {
     expect(light.root.visible).toBe(false);
     light.update(new THREE.Vector3(), new THREE.Vector3(0.3, 0.8, 0.2), new THREE.Color(1, 1, 1), 1, 1, 0, false, 800, () => 0);
     expect(light.root.visible).toBe(true);
+    // From 30 m over the floor (above the understory) the shafts would read as pale poles: gone.
+    light.update(new THREE.Vector3(0, 30, 0), new THREE.Vector3(0.3, 0.8, 0.2), new THREE.Color(1, 1, 1), 1, 1, 0, false, 800, () => 0);
+    expect(light.root.visible).toBe(false);
     light.dispose();
   });
 });
