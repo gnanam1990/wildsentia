@@ -2,6 +2,9 @@ import { claimRecovery } from './rewardClaimRecovery.js';
 import { rewardTotalsLine, visitorAmount, type RewardSummary } from './rewardTotals.js';
 import { browserClaimStore as storage, describeClaimStatus, forgetClaim, loadClaims, rememberClaim, type StoredClaim } from './rewardReceipts.js';
 
+/** How long to wait before asking again after the server said rewards are not running, ms. */
+export const REWARDS_UNAVAILABLE_RETRY_MS = 5 * 60_000;
+
 interface Drop { id: string; actorId: string; amount: string; network: string; status: string; revealWhen: string }
 export class RewardObserver {
   #actorId: string | null = null;
@@ -10,6 +13,7 @@ export class RewardObserver {
   #queue: Promise<void> = Promise.resolve();
   #version = 0;
   #configured = false;
+  #nextSummaryAt = 0;
   /** When the server will accept a claim for the watched animal (performance.now() time). */
   #claimableAt = 0;
   readonly #dialog = document.createElement('dialog');
@@ -25,12 +29,18 @@ export class RewardObserver {
     this.#badge.onclick = () => this.openClaim();
     this.#badge.ondblclick = () => this.openClaim();
     void this.summary();
-    setInterval(() => { if (!document.hidden) { void this.summary(); this.watch(this.#actorId); } }, 15_000);
+    setInterval(() => {
+      if (document.hidden) return;
+      // A forest without rewards answers 503: ask again every few minutes, not every 15 seconds.
+      if (Date.now() >= this.#nextSummaryAt) void this.summary();
+      this.watch(this.#actorId);
+    }, 15_000);
   }
   async summary(): Promise<void> {
     try {
       const response = await fetch('/api/rewards/summary');
       if (response.status === 503) {
+        this.#nextSummaryAt = Date.now() + REWARDS_UNAVAILABLE_RETRY_MS;
         this.#configured = false; this.#drops = []; this.#badge.hidden = true; this.#panel.replaceChildren();
         this.#total.hidden = true; return;
       }

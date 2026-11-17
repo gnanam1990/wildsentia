@@ -53,6 +53,12 @@ describe('presentation pacing of a recorded hour', () => {
     expect(recordedSecondAt(pacing, 1800)).toBeCloseTo(1800);
   });
 
+  it('glides a crowned eagle between crowns at a raptor\'s speed, and walks it on the ground at its walking pace', () => {
+    const glide = route('crowned_eagle', [{ seconds: 0, position: at(0), altitudeM: 55 }, { seconds: 30, position: at(360), altitudeM: 55 }]);
+    expect(360 / (paceMovement(glide, 'crowned_eagle', 12).display[1]! / 12)).toBeCloseTo(12);
+    const walk = route('crowned_eagle', [{ seconds: 0, position: at(0), altitudeM: 0 }, { seconds: 30, position: at(14), altitudeM: 0 }]);
+    expect(14 / (paceMovement(walk, 'crowned_eagle', 12).display[1]! / 12)).toBeCloseTo(walkingPace('crowned_eagle'));
+  });
   it('runs a fleeing animal, glides a vulture and climbs at a climbing pace', () => {
     const walk = route('chital', [{ seconds: 0, position: at(0) }, { seconds: 60, position: at(60) }]);
     const flee = route('chital', walk.samples, 'flee');

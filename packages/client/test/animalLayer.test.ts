@@ -217,13 +217,13 @@ describe('animal layer render lifecycle', () => {
     layer.sync(new Map([['new', animal('new', 100)]]), 1, 'new', { x: 100, z: 0 });
     await vi.waitFor(() => expect(load).toHaveBeenCalled(), { timeout: 1000, interval: 2 });
     resolve(model()); await ready(layer);
-    expect(layer.root.children.map((c) => c.name)).toEqual(['animal-dots', 'crown-limbs']);
+    expect(layer.root.children.map((c) => c.name)).toEqual(['animal-dots', 'crown-limbs', 'contact-shadows']);
     layer.sync(new Map([['new', animal('new', 100)]]), 2, 'new', { x: 100, z: 0 });
     expect(layer.root.getObjectByName('old')).toBeUndefined();
     expect(layer.root.getObjectByName('new')!.position.x).toBe(100);
     expect(layer.root.getObjectByName('new')!.visible).toBe(true);
     layer.sync(new Map(), 3, null, { x: 0, z: 0 });
-    expect(layer.root.children.map((c) => c.name)).toEqual(['animal-dots', 'crown-limbs']);
+    expect(layer.root.children.map((c) => c.name)).toEqual(['animal-dots', 'crown-limbs', 'contact-shadows']);
     await ready(layer);
   });
   it('cancels stale live loads on replay entry and resumes live dots at their current interpolated positions', async () => {
@@ -258,12 +258,12 @@ describe('animal layer render lifecycle', () => {
     layer.quality = 'smooth'; layer.sync(living, 1, 'a99', { x: 0, z: 0 });
     await vi.waitFor(() => expect(load).toHaveBeenCalled(), { timeout: 1000, interval: 2 });
     resolve(model()); await ready(layer); layer.sync(living, 2, 'a99', { x: 0, z: 0 });
-    expect(layer.root.children.filter((c) => !['animal-dots', 'crown-limbs'].includes(c.name)).length).toBeLessThanOrEqual(2);
+    expect(layer.root.children.filter((c) => !['animal-dots', 'crown-limbs', 'contact-shadows'].includes(c.name)).length).toBeLessThanOrEqual(2);
     expect(layer.root.getObjectByName('a99')).toBeDefined();
     const loadingDots = layer.root.getObjectByName('animal-dots') as THREE.Points;
     expect(loadingDots.geometry.drawRange.count).toBeGreaterThanOrEqual(98);
     for (let frame = 3; frame < 30; frame++) layer.sync(living, frame, 'a99', { x: 0, z: 0 });
-    expect(layer.root.children.filter((c) => !['animal-dots', 'crown-limbs'].includes(c.name))).toHaveLength(24);
+    expect(layer.root.children.filter((c) => !['animal-dots', 'crown-limbs', 'contact-shadows'].includes(c.name))).toHaveLength(24);
     expect(layer.root.getObjectByName('a99')).toBeDefined();
     const dots = layer.root.getObjectByName('animal-dots') as THREE.Points;
     expect(dots.geometry.drawRange.count).toBe(76);
@@ -281,9 +281,9 @@ describe('animal layer render lifecycle', () => {
     const pose = { x: 20, z: 5, heading: 1, moving: false };
     layer.syncReplay(animal('recorded'), pose, 5); await ready(layer);
     layer.syncReplay(animal('recorded'), pose, 5);
-    expect(layer.root.children.map((c) => c.name)).toEqual(['animal-dots', 'crown-limbs', 'recorded']);
+    expect(layer.root.children.map((c) => c.name)).toEqual(['animal-dots', 'crown-limbs', 'contact-shadows', 'recorded']);
     layer.sync(new Map(), 2, null, { x: 0, z: 0 });
-    expect(layer.root.children.map((c) => c.name)).toEqual(['animal-dots', 'crown-limbs']);
+    expect(layer.root.children.map((c) => c.name)).toEqual(['animal-dots', 'crown-limbs', 'contact-shadows']);
     await ready(layer);
   });
 });

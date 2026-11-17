@@ -19,6 +19,8 @@ const WALK_MPS: Record<string, number> = {
   elephant: 1.4, gaur: 1.3, sambar: 1.4, chital: 1.4, boar: 1.2, tiger: 1.3, leopard: 1.1, dhole: 2.0,
   jackal: 1.6, hare: 1.6, langur: 1.4, squirrel: 1.2, vulture: 12,
 };
+/** A soaring or gliding raptor on screen, metres per real second, for its segments in the air. */
+const FLY_MPS: Record<string, number> = { crowned_eagle: 12 };
 const RUN_FACTOR = 3.5;
 const CLIMB_MPS = 0.8;
 const CHASE_MPS = 12;
@@ -96,7 +98,10 @@ export function paceMovement(trace: MovementTrace, speciesId: string, rate: numb
     const a = s[i - 1]!, b = s[i]!;
     const ground = Math.hypot(b.position.x - a.position.x, b.position.z - a.position.z);
     const climb = Math.abs((b.altitudeM ?? 0) - (a.altitudeM ?? 0));
-    const minDisplay = ground > 0 ? ground / walk * rate : climb > 0 ? climb / CLIMB_MPS * rate : null;
+    // A crowned eagle glides between crowns at a raptor's speed, not at its walking pace on the ground.
+    const aloft = FLY_MPS[speciesId] !== undefined && Math.min(a.altitudeM ?? 0, b.altitudeM ?? 0) > 0.5;
+    const pace = aloft ? FLY_MPS[speciesId]! : walk;
+    const minDisplay = ground > 0 ? ground / pace * rate : climb > 0 ? climb / CLIMB_MPS * rate : null;
     inner.push({ from: a.seconds, to: b.seconds, minDisplay });
   }
   return pace(withIdleEnds(s[0]!.seconds, s.at(-1)!.seconds, inner));

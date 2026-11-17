@@ -251,7 +251,13 @@ export class LiveEncounterPlayer {
         ? recordedClimbPhase(m.trace, seconds) : null;
       // Only explicitly recorded drinking gets an action window. Other endpoints stay
       // neutral rather than displaying the newer checkpoint's unrecorded action early.
+      // How it is carried, for the model drawn: on the wing only while a recorded flight segment
+      // plays; still and above the ground it is on a branch (a perched eagle must not be drawn
+      // with its wings spread, hanging in the air over its perch).
+      const perched = !position.moving && ((position as { altitudeM?: number }).altitudeM ?? 0) > 0.5;
+      const locomotionMode = flightVisualPhase !== null ? 'flight' as const : climbVisualPhase !== null || perched ? 'climb' as const : undefined;
       result.set(m.actor.id, { kind: 'movement', animal: { ...m.actor, patchId: patchAtPosition(worldGrid(), position), position,
+        ...(locomotionMode === undefined ? {} : { locomotionMode }),
         state: drinking ? 'drinking' : position.moving ? m.trace.goal === 'flee' ? 'fleeing' : 'travelling' : 'resting',
         currentGoal: m.trace.goal, drives: { hunger: 0, thirst: 0, fatigue: 0, fear: 0 } },
         position, seconds: Math.min(seconds, activity?.endSeconds ?? m.trace.samples.at(-1)!.seconds), clipSeconds,

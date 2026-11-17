@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { ContactShadows, type ContactSpot } from './contactShadows.js';
+import { applyFurLook } from './furLook.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { actClipTime, climbs, clipForObservedMotion, clipForState, clipPhase, elephantTrunkReach, renderStateFor, replayClipTime, struggleClip, vigilance,
   type ClimbVisualPhase, type FlightVisualPhase, climbPose, flies, swimmingClip } from './animation.js';
@@ -156,9 +158,13 @@ export class AnimalLayer {
     return object === this.#dots;
   }
 
+  /** Soft patches where standing animals meet the floor (contactShadows.ts). */
+  readonly #contact = new ContactShadows();
+  readonly #spots: ContactSpot[] = [];
+
   constructor() {
     this.#dotLayer = new AnimalDots(AnimalLayer.MAX_DOTS); this.#dots = this.#dotLayer.mesh;
-    this.root.add(this.#dots, this.#limbs.mesh);
+    this.root.add(this.#dots, this.#limbs.mesh, this.#contact.mesh);
   }
 
   async #template(animal: AnimalState): Promise<THREE.Group> {
@@ -209,6 +215,45 @@ export class AnimalLayer {
       this.#templates.set(key, pending);
     }
     return pending;
+  }
+
+  readonly #warmed = new Set<string>();
+
+  /**
+   * Loads each species' model ahead of need, compiles its shaders and uploads its textures, one
+   * species at a time with a pause between, so an animal walking into view (or chosen from the
+   * list) does not stall a frame the first time its kind is drawn. Costs memory, not frames.
+   */
+  async prewarm(animals: Iterable<AnimalState>, renderer: THREE.WebGLRenderer, camera: THREE.Camera, lit: THREE.Scene): Promise<number> {
+    const representatives = new Map<string, AnimalState>();
+    for (const animal of animals) {
+      const key = variantKey(animal, false);
+      if (!representatives.has(key) && !this.#warmed.has(key)) representatives.set(key, animal);
+    }
+    let warmed = 0;
+    for (const [key, animal] of representatives) {
+      try {
+        const template = await this.#template(animal);
+        const visual = cloneSkeleton(template), stage = new THREE.Scene(), textures = new Set<THREE.Texture>(), owned: THREE.Material[] = [];
+        visual.traverse((o) => {
+          const mesh = o as THREE.Mesh;
+          if (!mesh.isMesh) return;
+          const own = (source: THREE.Material): THREE.Material => {
+            const material = source.clone(); applyFurLook(material); owned.push(material);
+            for (const value of Object.values(material)) if ((value as THREE.Texture | null)?.isTexture) textures.add(value as THREE.Texture);
+            return material;
+          };
+          mesh.material = Array.isArray(mesh.material) ? mesh.material.map(own) : own(mesh.material);
+        });
+        stage.add(visual);
+        await renderer.compileAsync(stage, camera, lit);
+        for (const texture of textures) renderer.initTexture(texture);
+        for (const material of owned) material.dispose();
+        this.#warmed.add(key); warmed++;
+      } catch { /* that species loads when it is first needed instead */ }
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+    return warmed;
   }
 
   async #ensureRig(animal: AnimalState): Promise<void> {
@@ -269,6 +314,7 @@ export class AnimalLayer {
         const own = (source: THREE.Material): THREE.Material => {
           const material = source.clone() as THREE.MeshStandardMaterial;
           if (material.color) materials.push({ material, base: material.color.clone() });
+          applyFurLook(material);
           return material;
         };
         mesh.material = Array.isArray(mesh.material) ? mesh.material.map(own) : own(mesh.material);
@@ -516,6 +562,20 @@ export class AnimalLayer {
   update(deltaSeconds: number): void {
     this.#clockSeconds += deltaSeconds;
     for (const rig of this.#rigs.values()) rig?.mixer?.update(deltaSeconds);
+    this.#layContactShadows();
+  }
+
+  /** One floor patch under each drawn animal standing on the ground: not aloft, climbing or swimming. */
+  #layContactShadows(): void {
+    const spots = this.#spots; spots.length = 0;
+    for (const rig of this.#rigs.values()) {
+      if (!rig || !rig.group.visible || rig.group.parent === null || rig.climbRest !== null || rig.swimming) continue;
+      const { x, y, z } = rig.group.position;
+      const ground = this.groundHeightAt(x, z);
+      if (y - ground > 0.3) continue;
+      spots.push({ x, y: ground, z, lengthM: rig.bodyLengthM, heading: rig.group.rotation.y });
+    }
+    this.#contact.update(spots);
   }
 
   /** Upright against the trunk while a recorded climb plays; back on its feet otherwise. */

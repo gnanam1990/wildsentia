@@ -268,7 +268,7 @@ export function scannedGroundMaps(repeat: readonly [number, number] = [worldGrid
   if (typeof document === 'undefined') return {};
   const loader = new THREE.TextureLoader();
   const load = (suffix: string, colour: boolean): THREE.Texture => {
-    const texture = loader.load(`/assets/ground/forest_ground_04_${suffix}_1k.jpg`);
+    const texture = loader.load(`/assets/ground/forest_ground_04_${suffix}_1k.webp`);
     texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
     texture.repeat.set(repeat[0], repeat[1]);
     texture.anisotropy = 8;

@@ -17,7 +17,8 @@ const REFILL_MOVE_M = 60;
 /** The canopy surface's height over the ground in each forest habitat; bais and rivers are open. */
 export const CANOPY_HEIGHT_M: Record<string, number> = { terra_firme: 29, flooded_forest: 23, swamp_forest: 15 };
 /** The eye's height over the ground at which the canopy's cut-away starts to close, and is closed. */
-const HOLE_CLOSES_FROM_M = 60, HOLE_CLOSED_AT_M = 140;
+// Closed by 90 m: between that and 140 m the cut-away showed the trees thinned out over bare floor.
+const HOLE_CLOSES_FROM_M = 35, HOLE_CLOSED_AT_M = 90;
 /** Below the first height the eye is inside the forest; above the second it looks over it. */
 const UNDER_CANOPY_FROM_M = 12, UNDER_CANOPY_TO_M = 45;
 /** Trees stand a little into the ground, so a buttress never floats on a slope. */
@@ -79,7 +80,7 @@ export class CongoForest {
     const ground = loadedGround(patches);
     this.#replace('shell', this.#buildShell(patches, seed));
     this.#replace('water', ground ? buildCongoWater(seed, ground, flooded) : null);
-    this.#replace('distant', ground ? distantForestAndRivers(seed, ground.regions) : null);
+    this.#replace('distant', ground ? distantForestAndRivers(seed, ground.regions, this.#hole) : null);
   }
 
   /**
@@ -286,7 +287,10 @@ export class CongoForest {
  * 34 m) is shaded as a dome lit by the sun, in its own green, a few in the red-bronze of a flush of
  * new leaves, with dark gaps between crowns.
  */
-function canopyMaterial(hole: { centre: { value: THREE.Vector2 }; radius: { value: number } }): THREE.MeshStandardMaterial {
+/** The cut-away round the eye shared by the canopy surfaces: its centre and radius uniforms. */
+type CanopyHole = { centre: { value: THREE.Vector2 }; radius: { value: number } };
+
+function canopyMaterial(hole: CanopyHole): THREE.MeshStandardMaterial {
   const canopy = congoTexture('canopy_aerial');
   const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide, ...(canopy ? { map: canopy } : {}) });
   material.onBeforeCompile = (shader) => {
@@ -355,10 +359,10 @@ vec4 shellCrowns(vec2 p) {
 let distantCache: { seed: number; attributes: Record<string, THREE.BufferAttribute>; cols: number; rows: number } | null = null;
 
 /** The forest past the loaded regions, with its rivers. */
-function distantForestAndRivers(seed: number, loaded: ReadonlySet<string>): THREE.Group {
+function distantForestAndRivers(seed: number, loaded: ReadonlySet<string>, hole: CanopyHole): THREE.Group {
   const group = new THREE.Group();
   group.name = 'distant';
-  const forest = buildDistantForest(seed, loaded);
+  const forest = buildDistantForest(seed, loaded, hole);
   if (forest) group.add(forest);
   group.add(buildDistantRivers(seed, loaded));
   return group;
@@ -369,7 +373,7 @@ function distantForestAndRivers(seed: number, loaded: ReadonlySet<string>): THRE
  * the rivers, drawn wherever no region is loaded. From above the land then runs on to the
  * world's edge instead of stopping at the loaded regions.
  */
-function buildDistantForest(seed: number, loaded: ReadonlySet<string>): THREE.Mesh | null {
+function buildDistantForest(seed: number, loaded: ReadonlySet<string>, hole: CanopyHole = { centre: { value: new THREE.Vector2() }, radius: { value: 0 } }): THREE.Mesh | null {
   const grid = worldGrid(), origin = -grid.patchM / 2, span = grid.regionPatches * grid.patchM, ratio = DISTANT_STEP_M / CONGO_STEP_M;
   if (distantCache?.seed !== seed) {
     const lattice = congoLattice(seed), near = riversNear(seed);
@@ -400,14 +404,23 @@ function buildDistantForest(seed: number, loaded: ReadonlySet<string>): THREE.Me
     } };
   }
   const { attributes, cols, rows } = distantCache;
-  const index = gridIndex(cols, rows, (col, row) => !loaded.has(`${Math.floor((col + 0.5) * DISTANT_STEP_M / span)},${Math.floor((row + 0.5) * DISTANT_STEP_M / span)}`));
+  const regionOf = (col: number, row: number) => `${Math.floor((col + 0.5) * DISTANT_STEP_M / span)},${Math.floor((row + 0.5) * DISTANT_STEP_M / span)}`;
+  // Drawn past the loaded regions and one cell into them, under the near surface: the two overlap
+  // instead of meeting edge to edge, so no seam of sky shows between them from high above.
+  const index = gridIndex(cols, rows, (col, row) => {
+    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) if (!loaded.has(regionOf(col + dc, row + dr))) return true;
+    return false;
+  });
   if (index.length === 0) return null;
   // Each mesh its own geometry (its index), over the seed's shared vertices.
   const geometry = new THREE.BufferGeometry();
   for (const [name, attribute] of Object.entries(attributes)) geometry.setAttribute(name, attribute);
   geometry.setIndex(index);
   geometry.computeBoundingSphere();
-  const mesh = new THREE.Mesh(geometry, canopyMaterial({ centre: { value: new THREE.Vector2() }, radius: { value: 0 } }));
+  // The near surface's cut-away applies here too, and the near surface wins where the two overlap.
+  const material = canopyMaterial(hole);
+  material.polygonOffset = true; material.polygonOffsetFactor = 2; material.polygonOffsetUnits = 8;
+  const mesh = new THREE.Mesh(geometry, material);
   mesh.name = 'distant-forest'; mesh.receiveShadow = false; mesh.castShadow = false;
   return mesh;
 }

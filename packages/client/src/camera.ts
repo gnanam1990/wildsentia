@@ -96,6 +96,8 @@ export class FollowCamera {
   readonly #keys = new Set<string>();
   /** A zoom the camera eases toward, e.g. when flying from the island overview to an animal. */
   #distanceGoal: number | null = null;
+  /** Set when a new subject is chosen: the next follow cuts to it rather than gliding across the forest. */
+  #cutNext = false;
 
   constructor(private readonly camera: THREE.PerspectiveCamera, private readonly element: HTMLElement) {
     element.addEventListener('pointerdown', (e) => {
@@ -242,16 +244,32 @@ export class FollowCamera {
     this.distance = next;
   }
 
+  /**
+   * The next follow() cuts straight to its subject at its framing distance, as a film cuts
+   * between shots: choosing another animal shows it at once instead of flying over the forest.
+   */
+  cutToNext(): void { this.#cutNext = true; }
+  /** Whether a cut is waiting for the next follow(). */
+  get cutPending(): boolean { return this.#cutNext; }
+
   follow(
     position: { x: number; z: number; heading: number; moving: boolean; y?: number; focusHeight?: number },
     dt: number,
   ): void {
     this.#following = true;
     this.#velocity.set(0, 0);
-    this.target.lerp(
-      new THREE.Vector3(position.x, (position.y ?? 0) + (position.focusHeight ?? 1.2), position.z),
-      Math.min(1, dt * 3),
-    );
+    const subject = new THREE.Vector3(position.x, (position.y ?? 0) + (position.focusHeight ?? 1.2), position.z);
+    if (this.#cutNext) {
+      this.#cutNext = false;
+      this.target.copy(subject);
+      if (this.#distanceGoal !== null) { this.distance = this.#distanceGoal; this.#distanceGoal = null; }
+      // Framed from behind it, as a moving animal would settle to anyway.
+      this.theta = position.heading + Math.PI;
+      this.#terrainLift = 0;
+      this.#apply(0);
+      return;
+    }
+    this.target.lerp(subject, Math.min(1, dt * 3));
 
     // Drift back behind a moving animal only after the viewer has left the view alone a while.
     if (!this.reducedMotion && position.moving && performance.now() - this.#manualAt > MANUAL_HOLD_MS) {
