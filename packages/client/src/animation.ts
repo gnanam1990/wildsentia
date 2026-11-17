@@ -255,3 +255,33 @@ export function climbPose(speciesId: string, phase: ClimbVisualPhase | null, bod
     ? { pitch: Math.PI / 2, back: CLIMB_TRUNK_CLEARANCE_M, lift: bodyLengthM / 2 }
     : { pitch: -Math.PI / 2, back: -CLIMB_TRUNK_CLEARANCE_M, lift: bodyLengthM / 2 };
 }
+
+/** Antelope that bound when they flee: a duiker dives for cover in leaps (its name is Afrikaans for "diver"). */
+export const LEAPERS: ReadonlySet<string> = new Set(['blue_duiker', 'bay_duiker', 'peters_duiker', 'water_chevrotain', 'sitatunga']);
+
+/**
+ * The leap that breaks a fleeing antelope's gallop: for one jump clip's length in every 2.2-3.8 s
+ * (its own rhythm, fixed by the animal), the gallop gives way to Gallop_Jump. Null when it does
+ * not apply: another state or species, no jump clip, or between leaps.
+ */
+export function leapingClip(state: string, wanted: string, clips: readonly string[], speciesId: string,
+  seconds: number, seed: number, jumpSeconds: number): string | null {
+  if (state !== 'fleeing' || !LEAPERS.has(speciesId) || !/^gallop$/i.test(wanted) || !(jumpSeconds > 0)) return null;
+  const jump = clips.find((c) => /^gallop_jump$/i.test(c));
+  if (!jump) return null;
+  const period = 2.2 + (seed % 997) / 997 * 1.6;
+  const at = ((seconds + (seed % 389) / 389 * period) % period + period) % period;
+  return at < Math.min(jumpSeconds, period * 0.6) ? jump : null;
+}
+
+/** The most a flying bird is drawn banked, radians (about 30 degrees). */
+export const MAX_BANK = 0.52;
+
+/**
+ * How far a bird in flight leans into a turn: with the heading it still has to turn (radians,
+ * positive to its left), the wing on the inside of the turn tips down, more in a sharper turn.
+ * Drawn about its forward axis, so a left turn lowers its left wing.
+ */
+export function bankAngle(turnLeft: number): number {
+  return Math.max(-MAX_BANK, Math.min(MAX_BANK, -turnLeft * 0.9));
+}

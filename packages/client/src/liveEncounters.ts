@@ -7,6 +7,7 @@ import { climbs, flies, type ClimbVisualPhase, type FlightVisualPhase } from './
 import type { MovementTrace } from '@vana/shared';
 import { displaySecondAt, paceEncounter, paceMovement, recordedSecondAt, walkingPace, type Pacing } from '@vana/shared';
 import { huntMoment } from './huntActs.js';
+import { naturalMovementAt, wanderSeed } from './naturalPath.js';
 
 /** A wing pose may follow only two explicit adjacent altitude samples from the saved route. */
 export function recordedFlightPhase(trace: MovementTrace, seconds: number): FlightVisualPhase | null {
@@ -238,9 +239,11 @@ export class LiveEncounterPlayer {
     }
     for (const m of frame.movements ?? []) {
       const seconds = paced(m.trace, () => paceMovement(m.trace, m.actor.speciesId, frame.rate));
-      let position = movementAt(m.trace, seconds);
+      // Drawn along a smooth, gently wandering line through the recorded points (naturalPath.ts).
+      let position = naturalMovementAt(m.trace, seconds, wanderSeed(m.actor.id), flies(m.actor.speciesId));
       // On-screen speed over the next real second of display.
-      const ahead = movementAt(m.trace, paced(m.trace, () => paceMovement(m.trace, m.actor.speciesId, frame.rate), frame.rate));
+      const ahead = naturalMovementAt(m.trace, paced(m.trace, () => paceMovement(m.trace, m.actor.speciesId, frame.rate), frame.rate),
+        wanderSeed(m.actor.id), flies(m.actor.speciesId));
       const hurried = position.moving && Math.hypot(ahead.x - position.x, ahead.z - position.z) > walkingPace(m.actor.speciesId) * HURRIED_FACTOR;
       const activity = m.activity;
       const drinking = activity !== undefined && seconds >= activity.startSeconds && seconds < activity.endSeconds;

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { ContactShadows, type ContactSpot } from './contactShadows.js';
 import { applyFurLook } from './furLook.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { actClipTime, climbs, clipForObservedMotion, clipForState, clipPhase, elephantTrunkReach, renderStateFor, replayClipTime, struggleClip, vigilance,
+import { bankAngle, leapingClip, actClipTime, climbs, clipForObservedMotion, clipForState, clipPhase, elephantTrunkReach, renderStateFor, replayClipTime, struggleClip, vigilance,
   type ClimbVisualPhase, type FlightVisualPhase, climbPose, flies, swimmingClip } from './animation.js';
 import { PositionTracker, renderBaseY, swimBaseY, type RenderPosition } from './space.js';
 import type { AnimalState } from './protocol.js';
@@ -41,6 +41,7 @@ const arboreal = climbs;
 
 interface Rig {
   variantKey: string;
+  speciesId: string;
   group: THREE.Group;
   mixer: THREE.AnimationMixer | null;
   actions: Map<string, THREE.AnimationAction>;
@@ -340,7 +341,7 @@ export class AnimalLayer {
 
     const height = visualFor(animal.speciesId).heightM;
     const bodyLengthM = new THREE.Box3().setFromObject(visual).getSize(new THREE.Vector3()).z;
-    const rig: Rig = { variantKey: key, group, mixer, actions, clipNames: clips.map((c) => c.name), playing: null,
+    const rig: Rig = { variantKey: key, speciesId: animal.speciesId, group, mixer, actions, clipNames: clips.map((c) => c.name), playing: null,
       visual, footY: visual.position.y, restRotationZ: visual.rotation.z, bodyLengthM, climbRest: null,
       needsCorpseGrounding: false, gait: new GaitClock(), hipM: hipHeightM(height * characterScale(animal), visualFor(animal.speciesId).hipFraction), swimming: false, seed: idSeed(animal.id), looksUp: animal.speciesId !== 'tiger' && animal.speciesId !== 'leopard',
       appearanceKey: '', materials };
@@ -618,6 +619,9 @@ export class AnimalLayer {
     const current = rig.group.rotation.y;
     const diff = ((position.heading - current + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
     rig.group.rotation.y = current + diff * 0.1;
+    // A bird on the wing banks into its turns, wings tipped toward the inside (bankAngle).
+    const bank = this.#airborne.has(rig.group.name) ? bankAngle(diff) : 0;
+    rig.group.rotation.z += (bank - rig.group.rotation.z) * 0.08;
   }
 
   #animate(rig: Rig, state: string, climbPhase: ClimbVisualPhase | null = null,
@@ -626,9 +630,13 @@ export class AnimalLayer {
     const grounded = climbPhase === null && !unknownAirborne;
     if (grounded) state = stateAtSpeed(state, rig.gait);
     if (grounded && rig.looksUp && vigilance(state, this.#clockSeconds, rig.seed) > 0.5) state = 'standing';
-    const wanted = swimmingClip(rig.swimming, state, rig.clipNames)
+    let wanted = swimmingClip(rig.swimming, state, rig.clipNames)
       ?? (grounded ? clipForGait(state, rig.gait.gait, rig.clipNames) : null)
       ?? clipForObservedMotion(state, rig.clipNames, null, unknownAirborne, climbPhase);
+    // A fleeing duiker bounds: every few seconds a leap breaks its gallop (leapingClip).
+    const leap = wanted === null ? null : leapingClip(state, wanted, rig.clipNames, rig.speciesId, this.#clockSeconds, rig.seed,
+      rig.actions.get('Gallop_Jump')?.getClip().duration ?? 0);
+    if (leap !== null) wanted = leap;
     // Never keep walking/eating after a state changes to one without a supported clip.
     if (wanted === null) {
       rig.mixer.stopAllAction(); rig.playing = null;
