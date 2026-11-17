@@ -116,6 +116,25 @@ describe('observer insights', () => {
     expect(await failing.outlook(agent(), tiger, 0, undefined)).toEqual({ ok: false, reason: 'unavailable' });
   });
 
+  it('gives one visitor network only a twentieth of the day\'s new questions, cached answers free', async () => {
+    let calls = 0;
+    const ask: SystemOne = async (_state, questions) => {
+      calls++;
+      const goals = Object.keys((questions.next as { criteria: Record<string, string> }).criteria);
+      return { model: 'jev', answers: { next: { type: 'choice', choice: goals[0]!, confidence: 0.5,
+        probabilities: Object.fromEntries(goals.map((g) => [g, 1 / goals.length])) } } };
+    };
+    const insights = new Insights(ask, 1000);
+    // 50 new questions (a twentieth of 1000) from one network, each a different checkpoint.
+    for (let i = 0; i < 50; i++) expect((await insights.outlook(agent(), tiger, 3600 * (i + 1), undefined, 'net-a')).ok).toBe(true);
+    expect(await insights.outlook(agent(), tiger, 3600 * 51, undefined, 'net-a')).toEqual({ ok: false, reason: 'budget_exhausted' });
+    // An answer already given is still served to that network; another network still asks.
+    expect((await insights.outlook(agent(), tiger, 3600, undefined, 'net-a')).ok).toBe(true);
+    expect((await insights.outlook(agent(), tiger, 3600 * 51, undefined, 'net-b')).ok).toBe(true);
+    expect(calls).toBe(51);
+    expect(insights.callsToday).toBe(51);
+  });
+
   it('shows a kill once, not as both the hunt and the death', () => {
     const h = (id: string, type: string, actors: string[], score: number) => ({ event: { id, type, actors } as unknown as WorldEvent, score, confidence: 1 });
     const kept = oneMomentEach([h('d', 'died', ['boar_1', 'dhole_2'], 3.1), h('k', 'hunt', ['dhole_2', 'boar_1'], 3.0),

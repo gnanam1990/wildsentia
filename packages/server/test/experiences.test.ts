@@ -433,6 +433,27 @@ database("durable experience API and jobs", () => {
     ).toEqual(saved);
     expect(saved).toMatchObject({ source: "checkpoint", animalId: id });
   });
+  it("counts new arenas per visitor network too, so fresh profile cookies cannot spend the forest's allowance", async () => {
+    const start = (remoteAddress: string) =>
+      api.inject({ method: "POST", url: "/experiences/league", remoteAddress, headers,
+        payload: { ...match, players: ["local:forager", "local:careful"] } });
+    for (let i = 0; i < 4; i++) {
+      // No cookie: each request is a new profile, as a client minting them would send.
+      const res = await start("203.0.113.7");
+      expect(res.statusCode).toBe(202);
+      const cookie = String(res.headers["set-cookie"]).split(";")[0]!;
+      expect((await api.inject({ method: "POST", url: `/experiences/jobs/${res.json().id}/cancel`,
+        remoteAddress: "203.0.113.7", headers: { ...headers, cookie }, payload: {} })).statusCode).toBe(200);
+    }
+    const fifth = await start("203.0.113.7");
+    expect(fifth.statusCode).toBe(429);
+    expect(fifth.json()).toEqual({ error: "arena_busy_or_hourly_limit" });
+    const elsewhere = await start("198.51.100.4");
+    expect(elsewhere.statusCode).toBe(202);
+    const cookie = String(elsewhere.headers["set-cookie"]).split(";")[0]!;
+    await api.inject({ method: "POST", url: `/experiences/jobs/${elsewhere.json().id}/cancel`,
+      remoteAddress: "198.51.100.4", headers: { ...headers, cookie }, payload: {} });
+  });
   it("starts real worker arenas, streams frames, and cancels only the owning profile", async () => {
     const res = await api.inject({
       method: "POST",

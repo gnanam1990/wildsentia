@@ -57,6 +57,18 @@ describe('signed agent requests', () => {
     expect(nonces.claim('k', 'nonce-x-aaaaaaaaaaaa', 0)).toBe('too_many_requests');
     expect(nonces.claim('k', 'nonce-x-aaaaaaaaaaaa', 10 * 60_000)).toBe('ok');
   });
+  it('keeps admitting new keys to register when full, so a flood of fresh keys never locks out registered agents or newcomers', () => {
+    // The store registered agents sign with refuses a new key when full ...
+    const agents = new NonceStore(undefined, 3, 0);
+    for (let i = 0; i < 3; i++) expect(agents.claim(`k${i}`, `nonce-${i}-aaaaaaaaaaaa`, 0)).toBe('ok');
+    expect(agents.claim('k3', 'nonce-3-aaaaaaaaaaaa', 0)).toBe('too_many_requests');
+    // ... while the one unregistered keys register through forgets its oldest key instead.
+    const newcomers = new NonceStore(undefined, 3, 0, 'evict_oldest');
+    for (let i = 0; i < 3; i++) expect(newcomers.claim(`k${i}`, `nonce-${i}-aaaaaaaaaaaa`, 0)).toBe('ok');
+    expect(newcomers.claim('k3', 'nonce-3-aaaaaaaaaaaa', 0)).toBe('ok');
+    expect(newcomers.claim('k3', 'nonce-3-aaaaaaaaaaaa', 0)).toBe('replayed_nonce');
+    expect(newcomers.claim('k1', 'nonce-1-aaaaaaaaaaaa', 0)).toBe('replayed_nonce');
+  });
   it('never refuses an agent that keeps to the published rate limits', () => {
     // Five commands and two observes a second, for five minutes, with an honest clock.
     const nonces = new NonceStore();

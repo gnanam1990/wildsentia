@@ -200,7 +200,10 @@ export function installArcBountyRoutes(scope: FastifyInstance, deps: ArcBountyDe
 
   scope.get<{ Params: { id: string } }>('/congo/arc-bounties/:id/record', async (req, reply) => {
     const b = ID.test(req.params.id) ? await store.get(req.params.id) : null;
-    if (!b || b.outcome === null) return reply.code(404).send({ error: 'not_decided' });
+    // The record carries the target's salt: served once the chain has settled the bounty, as the
+    // salt is in publicArcBounty, never while a decision is pending (a stranded one could still be
+    // decided by a rotated-out evaluator key).
+    if (!b || (b.status !== 'paid' && b.status !== 'voided')) return reply.code(404).send({ error: 'not_decided' });
     return { bountyId: b.bountyId, recordHash: b.recordHash, record: b.record };
   });
 

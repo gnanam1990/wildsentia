@@ -53,6 +53,13 @@ describe('compact observer passport', () => {
     expect(nodes.passport.innerHTML).toContain('A russet pig &#60;b&#62;never&#60;/b&#62; alone.');
     expect(nodes.passport.innerHTML.indexOf('subject-persona')).toBeLessThan(nodes.passport.innerHTML.indexOf('vitals'));
   });
+  it('escapes a skill the HUD has no label for, as it does every other server string', () => {
+    const { nodes, hud } = setup();
+    hud.passport = { ...passport(), skills: [{ skill: '<img src=x onerror=alert(1)>', confidence: 0.5, taughtBy: null }] } as Passport;
+    hud.render('boar_01');
+    expect(nodes.passport.innerHTML).not.toContain('<img');
+    expect(nodes.passport.innerHTML).toContain('&#60;img src=x onerror=alert(1)&#62;');
+  });
   it('does not rebuild the tabbed inspector on unchanged one-second refreshes', () => {
     const { nodes, hud } = setup();
     let writes = 0, html = '';

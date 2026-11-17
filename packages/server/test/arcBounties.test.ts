@@ -49,6 +49,8 @@ maybe('Congo bounties paid on Arc', () => {
   let networks: Map<string, string>;
   let nowShift = 0;
   let leopard: string, duiker: string;
+  // Animals the engine sees as dead though the world steps on: a live kill before its row says so.
+  let dead: Set<string>;
   beforeEach(async () => {
     await pool!.query('truncate arc_bounties');
     // A leopard and a blue duiker close together, both steered by agents with proven wallets.
@@ -60,10 +62,12 @@ maybe('Congo bounties paid on Arc', () => {
     steered = [{ agentId: 'hunter', animalId: leopard, speciesId: 'african_leopard' }, { agentId: 'prey', animalId: duiker, speciesId: 'blue_duiker' }];
     wallets = new Map([['hunter', HUNTER_WALLET], ['prey', PREY_WALLET]]);
     networks = new Map([['hunter', 'net-a'], ['prey', 'net-b']]);
-    notes = []; nowShift = 0;
+    notes = []; nowShift = 0; dead = new Set();
     store = new ArcBountyStore(pool!, 'world-test');
     // The world, as the engine sees it, can be moved on past a deadline without stepping it.
     const shifted = new Proxy({} as World, { get: (_t, key) => key === 'now' ? () => host.world.now() + nowShift
+      : key === 'animal' ? (id: string) => { const a = host.world.animal(id);
+        return a && dead.has(id) ? new Proxy(a, { get: (t, k) => k === 'alive' ? false : Reflect.get(t, k) }) : a; }
       : (Reflect.get(host.world, key) as unknown as { bind?: unknown }) instanceof Function ? (Reflect.get(host.world, key) as (...a: unknown[]) => unknown).bind(host.world)
         : Reflect.get(host.world, key) });
     ports = {
@@ -530,9 +534,43 @@ maybe('Congo bounties paid on Arc', () => {
       decidedWorldTime: b.deadlineWorldTime, record: { test: true }, recordHash: keccak256(stringToHex('{"test":true}')) });
     const deciding = publicArcBounty((await store.get(b.bountyId))!, host.world.now(), engine);
     expect(deciding).not.toHaveProperty('salt'); expect(deciding).not.toHaveProperty('targetKey');
+    // The full record carries the salt too: it is not served while the decision is pending.
+    const app = Fastify();
+    installArcBountyRoutes(app, { store, engine, chain: bountyChain, adminToken: null, now: () => host.world.now() });
+    await app.ready();
+    const pending = await app.inject({ method: 'GET', url: `/congo/arc-bounties/${b.bountyId}/record` });
+    expect(pending.statusCode).toBe(404);
+    expect(pending.body).not.toContain(b.salt.slice(2));
     await engine.processPending();
     const paid = publicArcBounty((await store.get(b.bountyId))!, host.world.now(), engine);
     expect(paid).toMatchObject({ status: 'paid', salt: b.salt, targetKey: b.targetKey });
+    const settled = await app.inject({ method: 'GET', url: `/congo/arc-bounties/${b.bountyId}/record` });
+    expect(settled.statusCode).toBe(200);
+    expect(settled.json()).toMatchObject({ bountyId: b.bountyId, record: { test: true } });
+    await app.close();
+  }, 60_000);
+
+  it('never voids a kill that lands while a pass is deciding from an older read of the bounty', async () => {
+    const b = await publish(3600);
+    // The live kill has already taken the duiker out of the world, and its row is written
+    // while this pass is still gathering the record of a death it read as nobody's.
+    dead.add(duiker);
+    const eventsOf = ports.eventsOf;
+    let landed = false;
+    ports.eventsOf = async (...args) => {
+      if (!landed) {
+        landed = true;
+        await store.recordKill(b.bountyId, { agentId: 'hunter', animalId: leopard, worldTime: Math.ceil(ports.played()), preyAgentId: 'prey' });
+      }
+      return eventsOf(...args);
+    };
+    await engine.adjudicate();
+    // The pass the kill itself queues (onHunt) decides it with the kill.
+    await engine.adjudicate();
+    const after = (await store.get(b.bountyId))!;
+    expect(after.outcome).toBe('predator');
+    expect(after.status).toBe('paid');
+    expect(after.payeeWallet).toBe(HUNTER_WALLET);
   }, 60_000);
 
   it('pays through a Circle developer-controlled wallet: a fresh ciphertext each write, one transaction per idempotency key', async () => {

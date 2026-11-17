@@ -85,7 +85,8 @@ export class NetworkRateLimit {
 export class WindowRateLimit {
   readonly #windows = new Map<string, { count: number; until: number }>();
 
-  constructor(readonly perMinute: number, private readonly maxNetworks = 5000) {}
+  /** `windowMs` stretches the window for a quota (so many a day), `perMinute` then counting per window. */
+  constructor(readonly perMinute: number, private readonly maxNetworks = 5000, private readonly windowMs = 60_000) {}
 
   take(key: string, now = Date.now()): boolean {
     let window = this.#windows.get(key);
@@ -95,7 +96,7 @@ export class WindowRateLimit {
         for (const [k, w] of this.#windows) if (w.until <= now) this.#windows.delete(k);
         if (this.#windows.size >= this.maxNetworks) this.#windows.clear();
       }
-      window = { count: 0, until: now + 60_000 };
+      window = { count: 0, until: now + this.windowMs };
       this.#windows.set(key, window);
     }
     return ++window.count <= this.perMinute;
