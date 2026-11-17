@@ -17,8 +17,9 @@ const REFILL_MOVE_M = 60;
 /** The canopy surface's height over the ground in each forest habitat; bais and rivers are open. */
 export const CANOPY_HEIGHT_M: Record<string, number> = { terra_firme: 29, flooded_forest: 23, swamp_forest: 15 };
 /** The eye's height over the ground at which the canopy's cut-away starts to close, and is closed. */
-// Closed by 90 m: between that and 140 m the cut-away showed the trees thinned out over bare floor.
-const HOLE_CLOSES_FROM_M = 35, HOLE_CLOSED_AT_M = 90;
+// Closed by 70 m over the floor: higher up, the cut-away showed the trees (a Raphia swamp's palms
+// above all) thinned out over bare floor, where from that height the eye sees a closed canopy.
+const HOLE_CLOSES_FROM_M = 30, HOLE_CLOSED_AT_M = 70;
 /** Below the first height the eye is inside the forest; above the second it looks over it. */
 const UNDER_CANOPY_FROM_M = 12, UNDER_CANOPY_TO_M = 45;
 /** Trees stand a little into the ground, so a buttress never floats on a slope. */
@@ -337,7 +338,7 @@ vec4 shellCrowns(vec2 p) {
       float flush = step(0.955, fract(tree.y * 13.7)) * dome;
       diffuseColor.rgb = mix(diffuseColor.rgb, vec3(dot(diffuseColor.rgb, vec3(0.5))) * vec3(1.6, 0.95, 0.62), flush * 0.75);
       // Dark gaps between crowns, the crowns themselves a touch lighter and more saturated.
-      diffuseColor.rgb *= 0.66 + 0.52 * dome;
+      diffuseColor.rgb *= 0.78 + 0.42 * dome;
       diffuseColor.rgb = mix(vec3(dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11))), diffuseColor.rgb, 1.25);
       // In a drier spell the deciduous share of crowns turns yellow-brown and opens to its branches.
       float deciduous = step(fract(crown.y * 7.13), ${CONGO_DECIDUOUS_SHARE.toFixed(3)}) * uSeasonDry;
@@ -351,7 +352,7 @@ vec4 shellCrowns(vec2 p) {
         normal = normalize(mix(normal, normalize((viewMatrix * vec4(crownNormal, 0.0)).xyz), 0.8));
       }`);
   };
-  material.customProgramCacheKey = () => 'congo-canopy-shell-v5';
+  material.customProgramCacheKey = () => 'congo-canopy-shell-v6';
   return material;
 }
 

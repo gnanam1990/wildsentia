@@ -119,6 +119,24 @@ export function animalCues(animals: Iterable<AudioAnimal>, view: CueView, nowMs:
   return chosen;
 }
 
+/** The forest's sound beds: generated soundscapes (see ASSET-CREDITS.md), looped, fetched only after a click. */
+export const BED_FILES = { day: '/assets/audio/congo_day.mp3', night: '/assets/audio/congo_night.mp3', rain: '/assets/audio/congo_rain.mp3' } as const;
+export type BedName = keyof typeof BED_FILES;
+/** The beds are mastered to -20 LUFS; this sets them under the calls and wind. */
+export const BED_GAIN = 0.32;
+
+/**
+ * How loud each bed is: insects and birds by day, frogs and crickets by night (crossfading through
+ * dusk and dawn), rain on the leaves as the season rains. All of it softens as the eye rises above
+ * the forest: 40 m over the floor is among it, a kilometre up hears a faint wash.
+ */
+export function bedLevels(daylight: number, rain: number, eyeOverFloorM: number): Record<BedName, number> {
+  const d = Math.max(0, Math.min(1, daylight)), r = Math.max(0, Math.min(1, rain));
+  const near = 1 - 0.75 * Math.max(0, Math.min(1, (eyeOverFloorM - 40) / 960));
+  const wet = 1 - 0.5 * r; // heavy rain drowns the creatures out a little
+  return { day: d * near * wet, night: (1 - d) * near * wet, rain: r * (0.4 + 0.6 * near) };
+}
+
 /** At most this many synthesized calls sound at once. */
 export const MAX_VOICES = 4;
 
@@ -135,6 +153,8 @@ export class AmbientAudio {
   #waterGain: GainNode | null = null;
   #windGain: GainNode | null = null;
   #windFilter: BiquadFilterNode | null = null;
+  readonly #beds = new Map<BedName, GainNode>();
+  #bedSources: AudioBufferSourceNode[] = [];
   #generation = 0;
   #lastSampleMs = -Infinity;
   readonly #cueMemory = new Map<string, CueMemory>();
@@ -186,6 +206,7 @@ export class AmbientAudio {
       await context.resume();
       if (generation !== this.#generation) return false;
       this.enabled = true; this.#lastSampleMs = -Infinity; this.#cueMemory.clear();
+      void this.#loadBeds(context, generation);
       return true;
     } catch { if (generation === this.#generation) this.stop(); return false; }
   }
@@ -199,6 +220,9 @@ export class AmbientAudio {
     this.#source = null; this.#rainGain = null; this.#waterGain = null; this.#windGain = null;
     this.#windFilter = null; this.#master = null; this.#noise = null;
     this.#cueMemory.clear(); this.#voices = 0;
+    for (const source of this.#bedSources) { try { source.stop(); } catch { /* not started */ } source.disconnect(); }
+    for (const gain of this.#beds.values()) gain.disconnect();
+    this.#bedSources = []; this.#beds.clear();
     const context = this.#context; this.#context = null;
     if (context && context.state !== 'closed') void context.close().catch(() => { /* browser is leaving */ });
   }
@@ -209,7 +233,7 @@ export class AmbientAudio {
    */
   sample(season: string, patches: readonly PatchView[], camera: THREE.PerspectiveCamera,
     heightAt: (x: number, z: number) => number, nowMs: number,
-    wind: Pick<WindState, 'strength'> = { strength: 0 }, animals: () => Iterable<AudioAnimal> = () => []): void {
+    wind: Pick<WindState, 'strength'> = { strength: 0 }, animals: () => Iterable<AudioAnimal> = () => [], daylight = 1): void {
     const context = this.#context;
     if (!this.enabled || !context || !this.#rainGain || !this.#waterGain || !this.#windGain
       || nowMs - this.#lastSampleMs < 900) return;
@@ -225,7 +249,11 @@ export class AmbientAudio {
       },
     }, wind);
     const at = context.currentTime;
-    this.#rainGain.gain.setTargetAtTime(levels.rain * 0.52, at, 0.35);
+    const beds = bedLevels(daylight, levels.rain, camera.position.y - heightAt(camera.position.x, camera.position.z));
+    for (const [name, gain] of this.#beds) gain.gain.setTargetAtTime(beds[name] * BED_GAIN, at, 1.2);
+    // With the recorded rain bed playing, the synthetic hiss only adds a little air on top.
+    const hiss = this.#beds.has('rain') ? 0.18 : 0.52;
+    this.#rainGain.gain.setTargetAtTime(levels.rain * hiss, at, 0.35);
     this.#waterGain.gain.setTargetAtTime(levels.water * 0.7, at, 0.35);
     // Quadratic: a still morning is near silent, a monsoon squall clearly audible.
     this.#windGain.gain.setTargetAtTime(levels.wind * levels.wind * 0.9, at, 0.8);
@@ -238,6 +266,27 @@ export class AmbientAudio {
       },
     }, nowMs, this.#cueMemory);
     for (const cue of cues) this.#play(context, cue);
+  }
+
+  /** Fetches and starts the beds, silent until the next sample sets their levels. A failed one is skipped. */
+  async #loadBeds(context: AudioContext, generation: number): Promise<void> {
+    await Promise.all((Object.keys(BED_FILES) as BedName[]).map(async (name) => {
+      try {
+        const response = await fetch(BED_FILES[name]);
+        if (!response.ok) return;
+        const buffer = await context.decodeAudioData(await response.arrayBuffer());
+        if (generation !== this.#generation || !this.#master) return;
+        const source = context.createBufferSource(); source.buffer = buffer; source.loop = true;
+        // Inside the encoder's padding at either end, so the loop has no gap or click.
+        source.loopStart = Math.min(0.05, buffer.duration / 4); source.loopEnd = Math.max(source.loopStart + 0.1, buffer.duration - 0.05);
+        const gain = context.createGain(); gain.gain.value = 0;
+        source.connect(gain).connect(context.destination);
+        // Each bed starts at its own point so the three never pulse together.
+        source.start(context.currentTime + 0.05, source.loopStart + (buffer.duration / 3) * (Object.keys(BED_FILES).indexOf(name)));
+        this.#bedSources.push(source); this.#beds.set(name, gain);
+        this.#lastSampleMs = -Infinity; // set its level on the next frame
+      } catch { /* that bed stays silent; the synthetic layers carry on */ }
+    }));
   }
 
   #play(context: AudioContext, cue: AnimalCue): void {

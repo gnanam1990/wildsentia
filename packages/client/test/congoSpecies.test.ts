@@ -4,11 +4,13 @@ import { airborne, underWater } from '../src/animals.js';
 
 // Congo 1A.4: the Congo species are drawn, honestly labelled, and a diver is not drawn at all.
 describe('the Congo species in the browser', () => {
-  it('have models at their shoulder heights, honestly labelled', () => {
-    expect(visualFor('african_leopard')).toMatchObject({ heightM: 0.65, model: { file: '/assets/animals/AfricanLeopard.glb' } });
+  // Drawn heights are standing heights, to the top of the head: a model is scaled so its whole
+  // height is heightM, so a shoulder height there drew every animal a fifth too small.
+  it('have models at their standing heights, honestly labelled', () => {
+    expect(visualFor('african_leopard')).toMatchObject({ heightM: 0.78, model: { file: '/assets/animals/AfricanLeopard.glb' } });
     // Their own photoreal surfaces on the Deer rig (no tint: the coat is the model's own).
-    expect(visualFor('blue_duiker')).toMatchObject({ heightM: 0.36, model: { file: '/assets/animals/BlueDuiker.glb' } });
-    expect(visualFor('water_chevrotain')).toMatchObject({ heightM: 0.35, model: { file: '/assets/animals/WaterChevrotain.glb' } });
+    expect(visualFor('blue_duiker')).toMatchObject({ heightM: 0.45, model: { file: '/assets/animals/BlueDuiker.glb' } });
+    expect(visualFor('water_chevrotain')).toMatchObject({ heightM: 0.38, model: { file: '/assets/animals/WaterChevrotain.glb' } });
     expect(visualFor('blue_duiker').model?.tint).toBeUndefined();
     expect(visualFor('water_chevrotain').model?.tint).toBeUndefined();
     expect(modelStatus('african_leopard')).toMatch(/^Generated African leopard on its own big-cat rig/);
@@ -41,8 +43,8 @@ describe('the Congo forest in the happening-now feed', () => {
 // models of their own at their shoulder heights, named in the feed.
 describe('the Congo 2A species in the browser', () => {
   const SIX: Array<[string, string, number]> = [
-    ['bay_duiker', 'BayDuiker', 0.5], ['peters_duiker', 'PetersDuiker', 0.52], ['red_river_hog', 'RedRiverHog', 0.7],
-    ['forest_buffalo', 'ForestBuffalo', 1.2], ['sitatunga', 'Sitatunga', 1.0], ['african_golden_cat', 'AfricanGoldenCat', 0.42],
+    ['bay_duiker', 'BayDuiker', 0.58], ['peters_duiker', 'PetersDuiker', 0.62], ['red_river_hog', 'RedRiverHog', 0.78],
+    ['forest_buffalo', 'ForestBuffalo', 1.4], ['sitatunga', 'Sitatunga', 1.35], ['african_golden_cat', 'AfricanGoldenCat', 0.5],
   ];
   it.each(SIX)('draws %s with %s.glb at %s m, honestly labelled', (id, file, height) => {
     expect(visualFor(id)).toMatchObject({ heightM: height, model: { file: `/assets/animals/${file}.glb` } });

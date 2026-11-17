@@ -45,24 +45,24 @@ export const SPECIES_VISUALS: Record<string, SpeciesVisual> = {
   // Congo forest (1B). Duiker and chevrotain: generated surfaces on the Deer rig
   // (tools/art/build_species.sh). Leopard: a generated surface on its own big-cat rig
   // (tools/art/rig_big_cat.py). Reviews in docs/art-review/congo-2026-10-14.
-  african_leopard:  { heightM: 0.65, model: { file: '/assets/animals/AfricanLeopard.glb' }, colour: 0xc9963e },
-  blue_duiker:      { heightM: 0.36, model: { file: '/assets/animals/BlueDuiker.glb' }, colour: 0x5b5560 },
-  water_chevrotain: { heightM: 0.35, model: { file: '/assets/animals/WaterChevrotain.glb' }, colour: 0x6b4a32 },
+  african_leopard:  { heightM: 0.78, model: { file: '/assets/animals/AfricanLeopard.glb' }, colour: 0xc9963e },
+  blue_duiker:      { heightM: 0.45, model: { file: '/assets/animals/BlueDuiker.glb' }, colour: 0x5b5560 },
+  water_chevrotain: { heightM: 0.38, model: { file: '/assets/animals/WaterChevrotain.glb' }, colour: 0x6b4a32 },
   // Congo 2A: generated surfaces; the antelopes on the Deer rig, the hog and buffalo on the Bull
   // rig (tools/art/build_species.sh), the golden cat on the big-cat rig (tools/art/rig_big_cat.py).
-  bay_duiker:         { heightM: 0.5,  model: { file: '/assets/animals/BayDuiker.glb' }, colour: 0x8a3b1e },
-  peters_duiker:      { heightM: 0.52, model: { file: '/assets/animals/PetersDuiker.glb' }, colour: 0xa24a22 },
-  red_river_hog:      { heightM: 0.7,  model: { file: '/assets/animals/RedRiverHog.glb' }, colour: 0xb4521f },
-  forest_buffalo:     { heightM: 1.2,  model: { file: '/assets/animals/ForestBuffalo.glb' }, colour: 0x6b3a22 },
-  sitatunga:          { heightM: 1.0,  model: { file: '/assets/animals/Sitatunga.glb' }, colour: 0x4a443c },
-  african_golden_cat: { heightM: 0.42, model: { file: '/assets/animals/AfricanGoldenCat.glb' }, colour: 0xb7783a },
+  bay_duiker:         { heightM: 0.58,  model: { file: '/assets/animals/BayDuiker.glb' }, colour: 0x8a3b1e },
+  peters_duiker:      { heightM: 0.62, model: { file: '/assets/animals/PetersDuiker.glb' }, colour: 0xa24a22 },
+  red_river_hog:      { heightM: 0.78,  model: { file: '/assets/animals/RedRiverHog.glb' }, colour: 0xb4521f },
+  forest_buffalo:     { heightM: 1.4,  model: { file: '/assets/animals/ForestBuffalo.glb' }, colour: 0x6b3a22 },
+  sitatunga:          { heightM: 1.35,  model: { file: '/assets/animals/Sitatunga.glb' }, colour: 0x4a443c },
+  african_golden_cat: { heightM: 0.5, model: { file: '/assets/animals/AfricanGoldenCat.glb' }, colour: 0xb7783a },
   // Phase B (docs/2026-10-14-congo-phase-b-research.md). Heights are the models' whole height:
   // the elephant's back, the mangabey's raised tail, the standing eagle, the crocodile's high walk.
   // Its hip joint stands at 0.56 of its height (tools/art/forest_elephant_clips.py sizes the walk
   // to that stride).
-  forest_elephant:    { heightM: 2.3,  model: { file: '/assets/animals/ForestElephant.glb' }, hipFraction: 0.56, colour: 0x5d5a56 },
+  forest_elephant:    { heightM: 2.5,  model: { file: '/assets/animals/ForestElephant.glb' }, hipFraction: 0.56, colour: 0x5d5a56 },
   agile_mangabey:     { heightM: 0.48, model: { file: '/assets/animals/AgileMangabey.glb' }, colour: 0x8a7d62 },
-  crowned_eagle:      { heightM: 0.62, model: { file: '/assets/animals/CrownedEagle.glb' }, colour: 0x3a3632 },
+  crowned_eagle:      { heightM: 0.75, model: { file: '/assets/animals/CrownedEagle.glb' }, colour: 0x3a3632 },
   dwarf_crocodile:    { heightM: 0.4,  model: { file: '/assets/animals/DwarfCrocodile.glb' }, colour: 0x2e2a22 },
 };
 

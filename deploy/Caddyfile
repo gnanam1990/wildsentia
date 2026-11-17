@@ -1,3 +1,12 @@
+{
+	# Proxies in front of Caddy whose X-Forwarded-For is kept: Cloudflare's address ranges when the
+	# site is served through it (VANA_TRUSTED_PROXIES), so rate limits see the visitor, not the CDN.
+	# Anyone else's X-Forwarded-For is replaced with their own address, so it cannot be forged.
+	servers {
+		trusted_proxies static {$VANA_TRUSTED_PROXIES:127.0.0.1/32}
+	}
+}
+
 {$VANA_DOMAIN} {
 	# 3D models are most of a first visit. Geometry compresses well (an animal GLB drops about
 	# 70%, a tree about 40%); Caddy's defaults only cover text types, so name the models too.

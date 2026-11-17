@@ -29,14 +29,14 @@ describe('stride length and rate', () => {
     expect(strideLengthM(11.8, tigerHip)).toBeLessThan(6);
   });
   it('takes a pillar-legged forest elephant\'s stride from its own hip joint, not the generic share of its height', () => {
-    // Its hip joint stands at 0.56 of its drawn height (1.29 m of 2.3 m); a crouching cat's or
-    // deer's at 0.85. At a walk of 1.2 m/s that is a stride of about 1.54 m, of which its planted
-    // feet sweep the 1.0 m its 1.3 m legs reach, rather than 2.07 m, which they could only skate.
+    // Its hip joint stands at 0.56 of its drawn height (1.40 m of 2.5 m); a crouching cat's or
+    // deer's at 0.85. At a walk of 1.2 m/s that is a stride of about 1.64 m, which its 1.4 m legs
+    // can plant, rather than the 2.2 m the generic share would give, which they could only skate.
     const visual = visualFor('forest_elephant');
     const hip = hipHeightM(visual.heightM, visual.hipFraction);
-    expect(hip).toBeCloseTo(1.29, 2);
-    expect(strideLengthM(1.2, hip)).toBeGreaterThan(1.45);
-    expect(strideLengthM(1.2, hip)).toBeLessThan(1.65);
+    expect(hip).toBeCloseTo(1.4, 2);
+    expect(strideLengthM(1.2, hip)).toBeGreaterThan(1.55);
+    expect(strideLengthM(1.2, hip)).toBeLessThan(1.75);
     expect(hipHeightM(2.3)).toBeCloseTo(1.955, 3);
   });
   it('lets a large animal take longer, slower strides than a small one at the same speed', () => {
