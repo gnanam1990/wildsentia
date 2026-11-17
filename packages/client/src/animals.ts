@@ -10,7 +10,7 @@ import type { AnimalState } from './protocol.js';
 import { chooseVisible } from './lod.js';
 import { RENDER_BUDGETS, type RenderTier } from './renderQuality.js';
 import { visualFor, visualForAnimal } from './species.js';
-import { onShore, type Pool } from './pools.js';
+import { onShore, type Pool, HUNTERS, shoreSides } from './pools.js';
 import { inCrown, spreadInCrowns, type CrownPlace, type PerchSubject } from './crownPerch.js';
 import { CrownLimbs } from './crownLimbs.js';
 import { characterScale, coatMultiplier } from './appearance.js';
@@ -492,6 +492,14 @@ export class AnimalLayer {
   #keepApart(visible: ReadonlySet<string>, animals: ReadonlyMap<string, AnimalState>,
     positions: Map<string, RenderPosition>, recorded: ReadonlyMap<string, LivePose>): void {
     const bodies: Body[] = [], fixed: Obstacle[] = [...this.people];
+    // Hunters drinking with their prey get the far shore (shoreSides).
+    const drinkers: Array<{ id: string; x: number; z: number; hunter: boolean; seed: number }> = [];
+    for (const id of visible) {
+      const animal = animals.get(id), position = positions.get(id);
+      if (!animal || !position || (recorded.get(id)?.animal ?? animal).state !== 'drinking') continue;
+      drinkers.push({ id, x: position.x, z: position.z, hunter: HUNTERS.has(animal.speciesId), seed: idSeed(id) });
+    }
+    const sides = drinkers.length > 1 ? shoreSides(drinkers, this.pools) : new Map<string, number>();
     for (const id of visible) {
       const animal = animals.get(id), position = positions.get(id);
       if (!animal || !position || (position.altitudeM ?? 0) > 0 || flies(animal.speciesId)) continue;
@@ -499,7 +507,7 @@ export class AnimalLayer {
       if (arboreal(animal.speciesId) && (animal.locomotionMode === 'climb' || pose?.climbVisualPhase !== undefined)) continue;
       const radius = visualFor(animal.speciesId).heightM * 0.5 * characterScale(animal);
       const shown = pose?.animal ?? animal;
-      const ashore = onShore(position, this.pools, radius, shown.state === 'drinking', idSeed(id));
+      const ashore = onShore(position, this.pools, radius, shown.state === 'drinking', idSeed(id), sides.get(id));
       if (ashore !== position) positions.set(id, ashore);
       // A carcass lies where it fell; scavengers gather round it rather than nudging it.
       if (shown.state === 'dead') { fixed.push({ x: ashore.x, z: ashore.z, radius: radius * 0.8 }); continue; }
@@ -513,7 +521,7 @@ export class AnimalLayer {
       if (clear.x === position.x && clear.z === position.z) continue;
       // Making room for a neighbour must not step an animal back onto the water.
       const shown = recorded.get(id)?.animal ?? animals.get(id)!;
-      positions.set(id, onShore({ ...position, ...clear }, this.pools, sizes.get(id)!, shown.state === 'drinking', idSeed(id)));
+      positions.set(id, onShore({ ...position, ...clear }, this.pools, sizes.get(id)!, shown.state === 'drinking', idSeed(id), sides.get(id)));
     }
   }
 

@@ -43,7 +43,7 @@ export const VEIL_TEXT: Record<VeilStage, string> = {
 
 /** How long the veil may wait on slow assets once the scene is ready, ms: in a living forest new
  * animals keep walking into view, so their models never all finish at once. */
-export const VEIL_ASSET_PATIENCE_MS = 8_000;
+export const VEIL_ASSET_PATIENCE_MS = 2_500;
 
 export interface VeilElements {
   root: HTMLElement;
