@@ -1040,10 +1040,11 @@ function renderFrame(dt: number, now: number): void {
   prepareShadows(performance.now());
   postFx.render();
   veil.frameDrawn();
-  // Once the forest is showing, every species' model is readied in the background (animals.prewarm).
-  if (veil.lifted && !prewarmStarted && quality.tier !== 'smooth' && store.animals.size > 0) {
+  // Every species' model is readied in the background (animals.prewarm).
+  // Started as soon as the scene is in, not when the veil lifts: a kind chosen from the list is then ready sooner.
+  if (!prewarmStarted && quality.tier !== 'smooth' && store.animals.size > 0) {
     prewarmStarted = true;
-    setTimeout(() => { void animals.prewarm(store.animals.values(), renderer, camera, scene); }, 1500);
+    setTimeout(() => { void animals.prewarm(store.animals.values(), renderer, camera, scene); }, 600);
   }
   curtain.frameDrawn();
   if (renderStats.hidden) return;

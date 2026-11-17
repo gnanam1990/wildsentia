@@ -109,7 +109,7 @@ export function insidePool(pool: Pool, x: number, z: number, margin = 0): boolea
  * unchanged. Animals already on dry ground are returned as they are. A drinker faces the water.
  */
 export function onShore<T extends { x: number; z: number; heading: number; moving?: boolean }>(
-  position: T, pools: readonly Pool[], bodyRadiusM: number, drinking: boolean, seed: number,
+  position: T, pools: readonly Pool[], bodyRadiusM: number, drinking: boolean, seed: number, side?: number,
 ): T {
   const margin = bodyRadiusM * 0.6;
   const wet = (x: number, z: number) => pools.find((p) => insidePool(p, x, z, margin));
@@ -117,7 +117,8 @@ export function onShore<T extends { x: number; z: number; heading: number; movin
   if (!water) return position;
   const dx = position.x - water.x, dz = position.z - water.z, d = Math.hypot(dx, dz);
   // Exactly at the centre: spread animals round the pool by a stable per-animal angle.
-  const angle = d > 1e-3 ? Math.atan2(dx, dz) : (seed % 360) * Math.PI / 180;
+  // (A predator sharing the water with its prey is given its own side, opposite them: shoreSides.)
+  const angle = side ?? (d > 1e-3 ? Math.atan2(dx, dz) : (seed % 360) * Math.PI / 180);
   // Walk straight out from this pool's centre until clear of it and of any neighbour it overlaps.
   // From inside the narrowest shore outward in 10 cm steps, so the animal stands at the water's edge.
   let r = water.radius * 0.7, x = 0, z = 0;
@@ -127,4 +128,32 @@ export function onShore<T extends { x: number; z: number; heading: number; movin
   }
   const heading = drinking && !position.moving ? Math.atan2(water.x - x, water.z - z) : position.heading;
   return { ...position, x, z, heading };
+}
+
+/** Species that hunt others: at a shared waterhole they are drawn across the water from their prey. */
+export const HUNTERS: ReadonlySet<string> = new Set(['african_leopard', 'african_golden_cat', 'dwarf_crocodile', 'tiger', 'leopard', 'dhole', 'jackal']);
+
+/**
+ * Sides of the shore for animals at a pool where hunters and others drink together. The simulation
+ * records drinkers at the water's point, so drawn round one small pool a golden cat would stand
+ * shoulder to shoulder with duikers. Prey keep the side they would have; each hunter is drawn
+ * across the water from them (spread a little if there are several). Only pools holding both.
+ */
+export function shoreSides(drinkers: ReadonlyArray<{ id: string; x: number; z: number; hunter: boolean; seed: number }>,
+  pools: readonly Pool[], marginM = 0.3): Map<string, number> {
+  const sides = new Map<string, number>();
+  for (const pool of pools) {
+    const here = drinkers.filter((a) => insidePool(pool, a.x, a.z, marginM));
+    const prey = here.filter((a) => !a.hunter), hunters = here.filter((a) => a.hunter);
+    if (prey.length === 0 || hunters.length === 0) continue;
+    const angleOf = (a: { x: number; z: number; seed: number }) => {
+      const dx = a.x - pool.x, dz = a.z - pool.z;
+      return Math.hypot(dx, dz) > 1e-3 ? Math.atan2(dx, dz) : (a.seed % 360) * Math.PI / 180;
+    };
+    let sx = 0, sz = 0;
+    for (const a of prey) { const t = angleOf(a); sx += Math.sin(t); sz += Math.cos(t); }
+    const across = Math.atan2(sx, sz) + Math.PI;
+    hunters.forEach((h, i) => sides.set(h.id, across + (i - (hunters.length - 1) / 2) * 0.5));
+  }
+  return sides;
 }
