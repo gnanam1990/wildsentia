@@ -31,7 +31,7 @@ const PER_PATCH: Record<string, Partial<Record<CongoKind, number>>> = {
 /** Bank rocks tried per patch beside a river; kept only within this distance of the channel's edge. */
 const ROCK_TRIES = 40, ROCK_BANK_M = 80;
 
-export interface PlacedPlant { kind: CongoKind; x: number; z: number; scale: number; rotY: number }
+export interface PlacedPlant { kind: CongoKind; x: number; z: number; scale: number; rotY: number; spread?: number }
 
 function rng(seed: number): () => number {
   let s = seed >>> 0;
@@ -77,9 +77,21 @@ export function planCongoPatch(patch: Pick<PatchView, 'id' | 'habitat'> & Partia
         const a = random() * Math.PI * 2, r = 1 + random() * 3.5;
         x = Math.max(centre.x - half, Math.min(centre.x + half, clumpX + Math.cos(a) * r));
         z = Math.max(centre.z - half, Math.min(centre.z + half, clumpZ + Math.sin(a) * r));
+      } else if (kind === 'groundcover' || kind === 'herb') {
+        // Seedlings share small beds, leaving patches of leaf litter between them.
+        if (clumpLeft === 0) {
+          clumpLeft = 3 + Math.floor(random() * 6);
+          clumpX = centre.x + (random() * 2 - 1) * (half - 2);
+          clumpZ = centre.z + (random() * 2 - 1) * (half - 2);
+        }
+        clumpLeft--;
+        const angle = random() * Math.PI * 2, radius = Math.sqrt(random()) * 2;
+        x = clumpX + radius * Math.cos(angle);
+        z = clumpZ + radius * Math.sin(angle);
       } else { x = centre.x + (random() * 2 - 1) * half; z = centre.z + (random() * 2 - 1) * half; }
       const scale = tree ? 0.8 + random() * 0.35 : 0.7 + random() * 0.6, rotY = random() * Math.PI * 2;
-      if (!inChannel(x, z)) out.push({ kind, x, z, scale, rotY });
+      if (!inChannel(x, z)) out.push({ kind, x, z, scale, rotY,
+        ...(tree ? { spread: 0.82 + 0.38 * ((rotY * 2.73) % 1) } : {}) });
     }
   }
   // Where an animal climbs or a bird perches (shared/treeAnchor.ts), a real canopy tree stands, at
@@ -206,7 +218,8 @@ function crown(cards: number, size: number, centreY: number, rx: number, ry: num
       .translate(Math.cos(a) * r, y, Math.sin(a) * r);
     const tile = Math.floor(random() * tiles), uv = card.getAttribute('uv');
     for (let k = 0; k < uv.count; k++) uv.setXY(k, (uv.getX(k) + (tile % 2)) / 2, (uv.getY(k) + 1 - Math.floor(tile / 2)) / 2);
-    const v = random(), tint = new THREE.Color(0.82 + v * 0.26, 0.86 + v * 0.22, 0.8 + v * 0.18);
+    const v = random(), tint = v > 0.93 ? new THREE.Color(1.22, 0.74, 0.48)
+      : new THREE.Color(0.82 + v * 0.26, 0.86 + v * 0.22, 0.8 + v * 0.18);
     parts.push(finish(card, () => tint));
   }
   return mergeGeometries(parts)!;
@@ -218,11 +231,24 @@ function crown(cards: number, size: number, centreY: number, rx: number, ry: num
  * random tint keeps neighbours from matching.
  */
 function atlasCard(h: number, tile: number, turn: number, x: number, z: number, v: number): THREE.BufferGeometry {
-  const card = new THREE.PlaneGeometry(h, h).translate(0, h / 2, 0).rotateY(turn).translate(x, 0, z), uv = card.getAttribute('uv');
+  const card = new THREE.PlaneGeometry(h, h).translate(0, h / 2, 0);
+  const points = card.getAttribute('position');
+  // Lean the top of the tuft and fold one upper corner. The base stays planted.
+  for (let i = 0; i < points.count; i++) {
+    if (points.getY(i) <= 0) continue;
+    const outer = points.getX(i) / h + 0.5;
+    points.setY(i, h * (0.96 - outer * v * 0.22));
+    points.setZ(i, h * ((v - 0.45) * 0.62 + outer * 0.18));
+  }
+  card.computeVertexNormals();
+  card.rotateY(turn).translate(x, 0, z);
+  const uv = card.getAttribute('uv');
   const col = tile % 2, row = Math.floor(tile / 2);
   // Textures load flipped, so the image's top row is v 0.5-1.
   for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) + col) / 2, (uv.getY(i) + 1 - row) / 2);
-  return finish(card, () => new THREE.Color(0.86 + v * 0.18, 0.88 + v * 0.16, 0.84 + v * 0.16));
+  const tint = v > 0.78 ? new THREE.Color(1.16, 0.74, 0.46)
+    : new THREE.Color(0.82 + v * 0.20, 0.82 + v * 0.12, 0.79 + v * 0.14);
+  return finish(card, () => tint);
 }
 
 /**
@@ -280,8 +306,10 @@ function plantParts(kind: CongoKind): PlantParts {
         const yaw = random() * Math.PI * 2, height = 0.6 + random() * 1.4, lean = 0.15 + random() * 0.3;
         stalks.push(finish(new THREE.CylinderGeometry(0.012, 0.02, height, 4).translate(0, height / 2, 0).rotateZ(lean).rotateY(yaw), () => new THREE.Color(0x4d6b2a)));
         const tip = new THREE.Vector3(0, height, 0).applyAxisAngle(new THREE.Vector3(0, 0, 1), lean).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
-        const v = random(), tint = new THREE.Color(0.85 + v * 0.25, 0.9 + v * 0.2, 0.85 + v * 0.15);
-        leaves.push(finish(leafCard(0.4 + random() * 0.25, 0.67, 0.18).rotateX(-1.1 + random() * 0.4).rotateY(yaw).translate(tip.x, tip.y, tip.z), () => tint));
+        const v = random(), aged = v > 0.76;
+        const tint = aged ? new THREE.Color(1.22, 0.70, 0.42) : new THREE.Color(0.84 + v * 0.18, 0.88 + v * 0.12, 0.83);
+        leaves.push(finish(leafCard(0.4 + random() * 0.25, 0.67, 0.10 + 0.35 * v)
+          .rotateX((aged ? -1.82 : -1.1) + random() * 0.4).rotateY(yaw).translate(tip.x, tip.y, tip.z), () => tint));
       }
       return { wood: merge(stalks), blades: merge(leaves) };
     }

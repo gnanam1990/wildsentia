@@ -160,7 +160,13 @@ export class CongoForest {
         const mesh = this.#mesh(kind, part, parts[part]!, material, plants.length);
         plants.forEach((plant, i) => {
           p.set(plant.x, ground(plant.x, plant.z) - (TREES.has(kind) ? TREE_SINK_M : 0), plant.z);
-          matrix.compose(p, q.setFromAxisAngle(up, plant.rotY), s.setScalar(plant.scale));
+          s.setScalar(plant.scale);
+          // Keep the fixed climbing tree aligned with its recorded perches.
+          if (plant.spread !== undefined) {
+            s.x *= plant.spread;
+            s.z /= plant.spread;
+          }
+          matrix.compose(p, q.setFromAxisAngle(up, plant.rotY), s);
           mesh.setMatrixAt(i, matrix);
           // No two plants alike: each its own shade of bark or leaf, fixed by where it stands.
           const v = (plant.rotY / (Math.PI * 2) * 7.31) % 1;

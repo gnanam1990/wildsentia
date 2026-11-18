@@ -1,6 +1,7 @@
 import * as THREE from 'three';
-import { ContactShadows, type ContactSpot } from './contactShadows.js';
+import { ContactShadows, standingSoles, type ContactSpot, type Sole } from './contactShadows.js';
 import { applyFurLook } from './furLook.js';
+import { DrinkingRipple } from './drinkingRipple.js';
 import { stabilizeSkinning } from './stableSkinning.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { bankAngle, leapingClip, actClipTime, climbs, clipForObservedMotion, clipForState, clipPhase, elephantTrunkReach, renderStateFor, replayClipTime, struggleClip, vigilance,
@@ -53,6 +54,7 @@ interface Rig {
   restRotationZ: number;
   /** Nose-to-tail length of the placed model, in metres, for standing it upright on a trunk. */
   bodyLengthM: number;
+  soles: Sole[];
   /** The model's own pose before a climb stood it upright; null when not climbing. */
   climbRest: { rotationX: number; z: number; y: number } | null;
   needsCorpseGrounding: boolean;
@@ -162,7 +164,11 @@ export class AnimalLayer {
 
   /** Soft patches where standing animals meet the floor (contactShadows.ts). */
   readonly #contact = new ContactShadows();
+  readonly #ripple = new DrinkingRipple();
+  #watched: string | null = null;
   readonly #spots: ContactSpot[] = [];
+  readonly #shadowFocus = new THREE.Vector2();
+  readonly #soleWorld = new THREE.Vector3();
 
   constructor() {
     this.#dotLayer = new AnimalDots(AnimalLayer.MAX_DOTS); this.#dots = this.#dotLayer.mesh;
@@ -347,7 +353,7 @@ export class AnimalLayer {
     const height = visualFor(animal.speciesId).heightM;
     const bodyLengthM = new THREE.Box3().setFromObject(visual).getSize(new THREE.Vector3()).z;
     const rig: Rig = { variantKey: key, speciesId: animal.speciesId, group, mixer, actions, clipNames: clips.map((c) => c.name), playing: null,
-      visual, footY: visual.position.y, restRotationZ: visual.rotation.z, bodyLengthM, climbRest: null,
+      visual, footY: visual.position.y, restRotationZ: visual.rotation.z, bodyLengthM, soles: standingSoles(visual), climbRest: null,
       needsCorpseGrounding: false, gait: new GaitClock(), hipM: hipHeightM(height * characterScale(animal), visualFor(animal.speciesId).hipFraction), swimming: false, seed: idSeed(animal.id), looksUp: animal.speciesId !== 'tiger' && animal.speciesId !== 'leopard',
       appearanceKey: '', materials };
     this.#pending.delete(animal.id);
@@ -365,6 +371,8 @@ export class AnimalLayer {
     focus: { x: number; z: number },
     recorded: ReadonlyMap<string, LivePose> = new Map(),
   ): void {
+    this.#watched = followedId;
+    this.#shadowFocus.set(focus.x, focus.z);
     const positions = new Map<string, RenderPosition>();
     for (const animal of animals.values()) {
       // A diver under water is not drawn (Congo 1B): nothing of it shows until it surfaces.
@@ -458,6 +466,8 @@ export class AnimalLayer {
   syncReplayGroup(subjects: Array<{ animal: AnimalState; position: RenderPosition; climbPhase?: ClimbVisualPhase | null;
     act?: number; actWeight?: number }>, seconds = 0): void {
     this.#dotLayer.hide();
+    this.#watched = subjects[0]?.animal.id ?? null;
+    if (subjects[0]) this.#shadowFocus.set(subjects[0].position.x, subjects[0].position.z);
     this.#limbs.begin(); this.#limbs.end();
     const ids = new Set(subjects.map(({ animal }) => animal.id));
     this.#wanted = ids;
@@ -576,6 +586,18 @@ export class AnimalLayer {
   update(deltaSeconds: number): void {
     this.#clockSeconds += deltaSeconds;
     for (const rig of this.#rigs.values()) rig?.mixer?.update(deltaSeconds);
+    this.#ripple.mesh.visible = false;
+    const rig = this.#watched ? this.#rigs.get(this.#watched) : null;
+    if (rig?.speciesId === 'forest_elephant' && rig.group.visible) {
+      const drink = rig.actions.get('Drinking');
+      if (drink?.isScheduled() && drink.getEffectiveWeight() > 0.85) {
+        const body = rig.visual.getObjectByName('Body') as THREE.SkinnedMesh | undefined;
+        if (body?.isSkinnedMesh) this.#ripple.update(body, drink.time / drink.getClip().duration, this.pools, this.groundHeightAt);
+      }
+    }
+    const ring = this.#ripple.mesh;
+    if (ring.visible && !ring.parent) this.root.add(ring);
+    else if (!ring.visible && ring.parent) ring.removeFromParent();
     this.#layContactShadows();
   }
 
@@ -587,7 +609,24 @@ export class AnimalLayer {
       const { x, y, z } = rig.group.position;
       const ground = this.groundHeightAt(x, z);
       if (y - ground > 0.3) continue;
-      spots.push({ x, y: ground, z, lengthM: rig.bodyLengthM, heading: rig.group.rotation.y });
+      const lengthM = rig.bodyLengthM * rig.group.scale.y, heading = rig.group.rotation.y;
+      const near = rig.group.name === this.#watched ||
+        (x - this.#shadowFocus.x) ** 2 + (z - this.#shadowFocus.y) ** 2 < 16 ** 2;
+      const body: ContactSpot = { x, y: ground, z, lengthM, heading };
+      spots.push(body);
+      if (!near) continue;
+      const step = Math.max(0.12, lengthM * 0.2);
+      body.slopeX = (this.groundHeightAt(x + step, z) - this.groundHeightAt(x - step, z)) / (2 * step);
+      body.slopeZ = (this.groundHeightAt(x, z + step) - this.groundHeightAt(x, z - step)) / (2 * step);
+      for (const sole of rig.soles) {
+        const foot = sole.bone.localToWorld(this.#soleWorld.copy(sole.point));
+        const floor = this.groundHeightAt(foot.x, foot.z);
+        const contact = 1 - THREE.MathUtils.smoothstep(foot.y - floor, 0.015, Math.max(0.04, lengthM * 0.07));
+        if (contact <= 0) continue;
+        const width = Math.max(0.025, lengthM * 0.12) * contact;
+        spots.push({ x: foot.x, z: foot.z, y: floor, heading, widthM: width,
+          lengthM: width * 1.35, slopeX: body.slopeX, slopeZ: body.slopeZ });
+      }
     }
     this.#contact.update(spots);
   }
