@@ -12,6 +12,32 @@ export interface ContactSpot {
   /** Nose-to-tail length and the heading it faces, radians (as the animal's group). */
   lengthM: number;
   heading: number;
+  /** Full patch width for a foot; a body uses its usual wider penumbra. */
+  widthM?: number;
+  slopeX?: number;
+  slopeZ?: number;
+}
+
+export interface Sole { bone: THREE.Bone; point: THREE.Vector3 }
+
+/** Attach a ground contact point to each foot in the rig's standing pose.
+ * Some rigs end at a lower leg and some have several articulated toe bones. */
+export function standingSoles(visual: THREE.Object3D): Sole[] {
+  visual.updateWorldMatrix(true, true);
+  const bones = new Set<THREE.Bone>();
+  visual.traverse(o => {
+    if ((o as THREE.Bone).isBone && !/ik/i.test(o.name)
+      && /foot|paw|toe|finger|lowerleg|hand/i.test(o.name)) bones.add(o as THREE.Bone);
+  });
+  const endpoints = new Set(bones);
+  for (const bone of bones) {
+    for (let parent = bone.parent; parent; parent = parent.parent) endpoints.delete(parent as THREE.Bone);
+  }
+  return [...endpoints].map(bone => {
+    const point = bone.getWorldPosition(new THREE.Vector3());
+    point.y = 0;
+    return { bone, point: bone.worldToLocal(point) };
+  });
 }
 
 /** How dark the centre of a patch is, and how far past the body it reaches. */
@@ -26,7 +52,8 @@ function gradientTexture(): THREE.Texture {
   const fill = g.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
   // An alpha map is read from the green channel: white where the patch is darkest, black where it fades out.
   g.fillStyle = '#000'; g.fillRect(0, 0, size, size);
-  fill.addColorStop(0, 'rgb(255,255,255)'); fill.addColorStop(0.45, 'rgb(140,140,140)'); fill.addColorStop(1, 'rgb(0,0,0)');
+  fill.addColorStop(0, '#ffffff'); fill.addColorStop(0.22, '#eeeeee');
+  fill.addColorStop(0.52, '#858585'); fill.addColorStop(0.8, '#262626'); fill.addColorStop(1, '#000000');
   g.fillStyle = fill; g.fillRect(0, 0, size, size);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.NoColorSpace;
@@ -38,6 +65,8 @@ export class ContactShadows {
   readonly #matrix = new THREE.Matrix4();
   readonly #rotation = new THREE.Quaternion();
   readonly #scale = new THREE.Vector3();
+  readonly #normal = new THREE.Vector3();
+  readonly #tilt = new THREE.Quaternion();
   readonly #position = new THREE.Vector3();
   static readonly #flat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
   static readonly #up = new THREE.Vector3(0, 1, 0);
@@ -60,10 +89,12 @@ export class ContactShadows {
     let i = 0;
     for (const spot of spots) {
       if (i >= this.capacity) break;
-      const length = Math.max(0.2, spot.lengthM) * REACH;
+      const length = spot.widthM !== undefined ? spot.lengthM : Math.max(0.2, spot.lengthM) * REACH;
       this.#rotation.setFromAxisAngle(ContactShadows.#up, spot.heading).multiply(ContactShadows.#flat);
-      this.#scale.set(length * WIDTH_OF_LENGTH, length, 1);
-      this.#position.set(spot.x, spot.y + 0.02, spot.z);
+      this.#normal.set(-(spot.slopeX ?? 0), 1, -(spot.slopeZ ?? 0)).normalize();
+      this.#rotation.premultiply(this.#tilt.setFromUnitVectors(ContactShadows.#up, this.#normal));
+      this.#scale.set(spot.widthM ?? length * WIDTH_OF_LENGTH, length, 1);
+      this.#position.set(spot.x, spot.y + (spot.widthM !== undefined ? 0.012 : 0.02), spot.z);
       this.mesh.setMatrixAt(i++, this.#matrix.compose(this.#position, this.#rotation, this.#scale));
     }
     this.mesh.count = i;

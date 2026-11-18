@@ -226,8 +226,10 @@ for frame in range(FRAMES + 1):
     ease = lambda x: 0.5 - 0.5 * math.cos(math.pi * max(0.0, min(1.0, x)))
     down = ease(t / 0.3) * (1 - ease((t - 0.45) / 0.2))      # reach down, hold, then leave the water
     curl = ease((t - 0.5) / 0.2) * (1 - ease((t - 0.8) / 0.2))  # curl up to the mouth, then back
-    rotate("Bone.003", SIDE, -12.0 * down - 4.0 * curl)       # head dips toward the water
-    for name, reach, roll in [("Bone.012", -18.0, 12.0), ("Bone.013", -22.0, 30.0), ("Bone.014", -26.0, 42.0)]:
+    rotate("Bone.003", SIDE, -20.0 * down - 4.0 * curl)
+    # Uncurl while the head lowers. On the shipped mesh this puts the trunk tip
+    # at the 4 cm water plane, measured against the standing feet.
+    for name, reach, roll in [("Bone.012", 10.0, 12.0), ("Bone.013", 22.0 * 10 / 18, 30.0), ("Bone.014", 26.0 * 10 / 18, 42.0)]:
         rotate(name, SIDE, reach * down + roll * curl)
     rotate("Bone.004", UP, 4.0 * math.sin(2 * math.pi * t * 2))
     rotate("Bone.005", UP, -4.0 * math.sin(2 * math.pi * t * 2))

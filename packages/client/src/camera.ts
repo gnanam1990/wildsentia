@@ -11,7 +11,10 @@ const DEFAULT_PHI = 0.55;
 export const MANUAL_HOLD_MS = 10_000;
 
 export function followDistanceFor(speciesId: string, heightM: number): number {
-  return Math.max(2.5, Math.min(22, heightM * (speciesId === 'elephant' ? 5 : 9)));
+  const elephant = speciesId === 'elephant' || speciesId === 'forest_elephant';
+  const duiker = speciesId.endsWith('_duiker');
+  const bodyHeights = elephant ? 5 : duiker ? 6.5 : 9;
+  return Math.max(2.5, Math.min(22, heightM * bodyHeights));
 }
 
 export const MIN_DISTANCE = 1;

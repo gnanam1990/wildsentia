@@ -53,7 +53,7 @@ export function observerLights(daylight: number, sunIntensity: number, viewDista
 /** The rainforest's humid air from above, and the sunlit leaf-green mist among its trees. */
 const HAZE = new THREE.Color(0xaabb9c), INTERIOR = new THREE.Color(0x88a86a);
 /** Under the canopy the sky light is light bounced and passed through leaves: green from below. */
-const LEAF_BOUNCE = new THREE.Color(0x6f8f4a), OPEN_GROUND = new THREE.Color(0x3f4a33);
+const LEAF_BOUNCE = new THREE.Color(0x798361), OPEN_GROUND = new THREE.Color(0x3f4a33);
 /** At night the shade is filled with moonlight scattered through the leaves: cool, so it still reads as night. */
 const MOON_FLOOR = new THREE.Color(0x56627a);
 
@@ -105,7 +105,8 @@ export class Atmosphere {
       this.dome.mesh.visible = this.underCanopy < 0.5;
     }
     const lights = observerLights(state.daylight, state.sunIntensity, viewDistance);
-    this.sun.intensity = lights.sun;
+    const clearDay = state.daylight * (1 - state.cloud);
+    this.sun.intensity = lights.sun * (1 + clearDay * (0.16 + 0.16 * this.underCanopy));
     this.sun.target.position.copy(focus);
     this.sun.position.set(focus.x + Math.cos(state.angle) * 130, focus.y + 30 + state.daylight * 180, focus.z + 80);
     this.sun.target.updateMatrixWorld();
@@ -113,7 +114,11 @@ export class Atmosphere {
     // Moonlit observer exposure keeps silhouettes legible without changing world time.
     if (hemi) {
       // Under the canopy by day the shade is filled with light bounced from the leaves.
-      hemi.intensity = lights.sky * (1 + this.underCanopy * (0.6 * state.daylight + 0.7 * (1 - state.daylight)));
+      hemi.intensity = lights.sky * (1 + this.underCanopy * (0.44 * state.daylight + 0.7 * (1 - state.daylight)));
+      // Diffuse skylight enters the understory obliquely through the sunward
+      // canopy. This still models a flank in shade where no direct sun reaches it.
+      const opening = clearDay * (0.30 + 0.95 * this.underCanopy);
+      hemi.position.set(Math.cos(state.angle) * opening, 1, 0.62 * opening).normalize();
       // Sky light cools toward moonlight as the sun goes down.
       hemi.color.copy(DAY_SKY_LIGHT).lerp(MOON_SKY_LIGHT, 1 - state.daylight);
       hemi.groundColor.copy(OPEN_GROUND).lerp(LEAF_BOUNCE, this.underCanopy * state.daylight)
