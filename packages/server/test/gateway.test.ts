@@ -427,7 +427,7 @@ maybe('live agents over the gateway', () => {
       expect(await connect('198.51.100.2')).toBe('scene');
       expect(await connect('198.51.100.3')).toEqual({ code: LIVE_BUSY_CLOSE_CODE, reason: 'busy' });
       expect(capped.connectionCount).toBe(3);
-      expect(capped.stats.refused).toEqual({ busy: 1, busy_network: 2, world_unavailable: 0 });
+      expect(capped.stats.refused).toEqual({ busy: 1, busy_network: 2, busy_reconnects: 0, world_unavailable: 0 });
       // A place freed is a place offered again.
       sockets[0]!.close();
       await vi.waitFor(() => expect(capped.connectionCount).toBe(2));
@@ -436,6 +436,31 @@ maybe('live agents over the gateway', () => {
     } finally {
       for (const ws of sockets) ws.terminate();
       capped.close(); await new Promise((r) => server.close(r));
+    }
+  });
+
+  it('slows a network that opens /live connections in a loop, whatever it closes', async () => {
+    // Audit 17 November: closing each connection kept it under the concurrent cap, yet each new one cost a whole scene.
+    const server = createServer(), limited = new Gateway(host, { connectsPerMinute: 8, trustedProxyHops: 1 });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    limited.attach(server);
+    const port = (server.address() as AddressInfo).port;
+    const connect = (forwardedFor: string) => new Promise<'scene' | { code: number; reason: string }>((resolve) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/live`, { headers: { 'x-forwarded-for': forwardedFor } });
+      ws.once('message', (data) => { ws.close(); resolve(JSON.parse(String(data)).type === 'scene' ? 'scene' : { code: -1, reason: String(data) }); });
+      ws.once('close', (code, reason) => resolve({ code, reason: String(reason) }));
+    });
+    try {
+      // A burst of a quarter of the minute's share (2), then try later.
+      expect(await connect('198.51.100.7')).toBe('scene');
+      expect(await connect('198.51.100.7')).toBe('scene');
+      expect(await connect('198.51.100.7')).toEqual({ code: LIVE_BUSY_CLOSE_CODE, reason: 'busy_reconnects' });
+      // Another network is not held up by it.
+      expect(await connect('198.51.100.8')).toBe('scene');
+      expect(limited.stats.refused.busy_reconnects).toBe(1);
+      await vi.waitFor(() => expect(limited.connectionCount).toBe(0));
+    } finally {
+      limited.close(); await new Promise((r) => server.close(r));
     }
   });
 

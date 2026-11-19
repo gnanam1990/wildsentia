@@ -156,6 +156,11 @@ contract InvariantsTest is Test {
         usdc = new TestUSDC();
         address owner = makeAddr("owner");
         challenges = new WildsentiaChallenges(IERC20(address(usdc)), owner, makeAddr("evaluator"), 1e6, 100e6);
+        // The accounting invariants, without the version 2 rails (tested in WildsentiaChallengesRails.t.sol).
+        vm.startPrank(owner);
+        challenges.setDailyPayoutCap(type(uint256).max);
+        challenges.setMinOpenSeconds(0);
+        vm.stopPrank();
         handler = new ChallengesHandler(challenges, usdc, owner);
         targetContract(address(handler));
     }

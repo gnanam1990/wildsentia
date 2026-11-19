@@ -193,9 +193,40 @@ These per-visitor limits hold everywhere. A visitor network is one IPv4 address 
   highest load tested on the reference machine (1000 viewers plus 500 agents held, with the
   main thread near one full core; `docs/2026-10-05-load-test.md`). Raise it only after running
   `tools/ops/load.ts` on the real host.
+- **`/live` connects** (`VANA_LIVE_CONNECTS_PER_MINUTE`, default 120 new connections per network
+  per minute, in bursts of 30). Each new connection is sent the whole scene, so a network that
+  opens and closes connections in a loop stays under the caps above yet costs a scene each time.
+  Past it, a new connection is closed with code 1013, reason `busy_reconnects`, and the observer
+  backs off as for the caps. The local load test turns it off.
 
 Watch `vana_http_rate_limited_total` and `vana_ws_connections_refused_total`. Refusals that
 grow while the number of visitors is normal mean a limit is too low, often a large NAT.
+
+## Admin routes
+
+The admin routes (`/admin/…` for rewards and social, `/congo/admin/…` for bounties) are guarded by
+their tokens. Setting `VANA_ADMIN_ALLOW_IPS` (addresses and CIDR ranges) also keeps them to those
+addresses: from anywhere else they answer 404 before the token is read. The server prints
+`admin routes: from N listed address(es) only` at start. Behind Cloudflare the address is the
+visitor's own, as Caddy takes it from Cloudflare, so list the operator's own address, not a proxy's.
+
+## Image digests
+
+The Postgres image in the compose files and the Node and Caddy images in `deploy/Dockerfile.*`
+are pinned by digest, so a rebuild runs the image that was reviewed. Production's Postgres is the
+18.7 image it ran when pinned (19 November 2026). To take a newer image, read its digest and
+change it in one commit:
+
+```sh
+docker buildx imagetools inspect node:22-alpine --format '{{json .Manifest.Digest}}'
+```
+
+A newer Postgres minor needs no migration; a new major (19) does, with a dump and restore.
+
+Each container also drops every Linux capability it does not need and runs with
+`no-new-privileges`: the server needs none (Node as the `node` user on 8080), Caddy only
+`NET_BIND_SERVICE` for 80 and 443, and Postgres the five its entrypoint uses to fix the data
+folder's owner and switch to its own user.
 
 ## Metrics
 

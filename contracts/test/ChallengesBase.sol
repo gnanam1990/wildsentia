@@ -26,6 +26,12 @@ abstract contract ChallengesBase is Test {
         (creator, creatorKey) = makeAddrAndKey("creator");
         usdc = new TestUSDC();
         challenges = new WildsentiaChallenges(IERC20(address(usdc)), owner, evaluator, MIN_PRIZE, MAX_PRIZE);
+        // These suites test escrow and settlement; the version 2 rails (daily cap, minimum open time)
+        // have their own suite, WildsentiaChallengesRails.t.sol, on the defaults.
+        vm.startPrank(owner);
+        challenges.setDailyPayoutCap(type(uint256).max);
+        challenges.setMinOpenSeconds(0);
+        vm.stopPrank();
         usdc.mint(creator, 1_000e6);
         vm.prank(creator);
         usdc.approve(address(challenges), type(uint256).max);

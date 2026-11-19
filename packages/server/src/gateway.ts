@@ -3,7 +3,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { formatWorldTime, patchAtPosition, regionIds, regionOfPatch, seasonAt, worldExtentM, type Agent, type Carcass, type Patch } from '@vana/shared';
 import type { CheckpointObservation, SimHost } from './simHost.js';
 import { floweringGuildSummary } from './floweringObservation.js';
-import { ConnectionCaps, GENERAL_LIMIT_DEFAULTS } from './limits.js';
+import { ConnectionCaps, GENERAL_LIMIT_DEFAULTS, NetworkRateLimit } from './limits.js';
 import { forwardedClient, networkKey } from './network.js';
 import { WindowMax } from './metrics.js';
 
@@ -35,6 +35,8 @@ export interface GatewayOptions {
   maxConnections?: number;
   /** Concurrent /live connections from one visitor network; 0 is no cap. */
   maxPerNetwork?: number;
+  /** New /live connections one visitor network may open per minute (bursts of a quarter); 0 is no limit. */
+  connectsPerMinute?: number;
   /** Proxies whose X-Forwarded-For entry is trusted, as for the HTTP API (VANA_TRUSTED_PROXY_HOPS). */
   trustedProxyHops?: number;
 }
@@ -91,17 +93,21 @@ export class Gateway {
   /** A world of more than one region (Congo) is served a region at a time; the island is one region. */
   get #regional(): boolean { return regionIds(this.host.grid).length > 1; }
   readonly #caps: ConnectionCaps;
+  /** Each new viewer is sent the whole scene, so a network that reconnects in a loop is slowed. */
+  readonly #connects: NetworkRateLimit | null;
   readonly #hops: number;
 
   constructor(private readonly host: SimHost, options: GatewayOptions = {}) {
     this.#caps = new ConnectionCaps(options.maxConnections ?? GENERAL_LIMIT_DEFAULTS.liveMaxConnections,
       options.maxPerNetwork ?? GENERAL_LIMIT_DEFAULTS.liveMaxPerNetwork);
+    const connects = options.connectsPerMinute ?? GENERAL_LIMIT_DEFAULTS.liveConnectsPerMinute;
+    this.#connects = connects > 0 ? new NetworkRateLimit(connects) : null;
     this.#hops = options.trustedProxyHops ?? 0;
   }
 
   /** Counted since start, for /metrics (metrics.ts). */
   readonly stats = {
-    accepted: 0, refused: { busy: 0, busy_network: 0, world_unavailable: 0 }, messages: 0, bytes: 0, slowConsumerTerminations: 0,
+    accepted: 0, refused: { busy: 0, busy_network: 0, busy_reconnects: 0, world_unavailable: 0 }, messages: 0, bytes: 0, slowConsumerTerminations: 0,
     /** Sockets ws closed for a bad frame (too large, malformed): each only cut that viewer off. */
     badFrames: 0,
     broadcastSeconds: { scene: new WindowMax(), live: new WindowMax(), roster: new WindowMax() },
@@ -342,6 +348,12 @@ export class Gateway {
       // Every new viewer is sent the whole scene, so connections are capped in total and per
       // visitor network. A refused one is told to try later rather than simply dropped.
       const network = networkKey(forwardedClient(request.socket.remoteAddress ?? '', request.headers['x-forwarded-for'], this.#hops));
+      // A network opening connections faster than its share is told to wait, before any place is taken.
+      if (this.#connects && !this.#connects.take(network).ok) {
+        this.stats.refused.busy_reconnects++;
+        raw.close(LIVE_BUSY_CLOSE_CODE, 'busy_reconnects');
+        return;
+      }
       const admitted = this.#caps.admit(network);
       if (admitted !== 'ok') {
         const reason = admitted === 'total' ? 'busy' : 'busy_network';

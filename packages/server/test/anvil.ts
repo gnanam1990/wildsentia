@@ -74,6 +74,13 @@ export async function startLocalChain(): Promise<LocalChain> {
   const usdc = await deploy('TestUSDC.sol/TestUSDC.json', []);
   const contract = await deploy('WildsentiaChallenges.sol/WildsentiaChallenges.json',
     [usdc, acct.owner.address, acct.evaluator.address, 1_000_000n, 100_000_000n]);
+  // These suites drive the server's flows, created and won within seconds: version 2's rails (a
+  // day's cap of one top prize, 10 minutes open before a payout) are the contract suite's to test.
+  const challengesAbiJson = artifact('WildsentiaChallenges.sol/WildsentiaChallenges.json').abi;
+  for (const [functionName, args] of [['setDailyPayoutCap', [10n ** 30n]], ['setMinOpenSeconds', [0n]]] as const) {
+    const hash = await wallet('owner').writeContract({ address: contract, abi: challengesAbiJson, functionName, args: args as unknown[], chain: null });
+    await client.waitForTransactionReceipt({ hash });
+  }
   const attempts = await deploy('WildsentiaAttempts.sol/WildsentiaAttempts.json', [acct.owner.address, acct.evaluator.address]);
   const identity = await deploy('MockIdentityRegistry.sol/MockIdentityRegistry.json', []);
   const reputation = await deploy('MockReputationRegistry.sol/MockReputationRegistry.json', [identity]);

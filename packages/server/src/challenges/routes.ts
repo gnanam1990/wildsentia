@@ -104,7 +104,8 @@ export function installChallenges(app: FastifyInstance, deps: ChallengeRouteDeps
     return reply.type('application/json; charset=utf-8').send(a.resultRecord);
   });
 
-  app.post('/challenges/drafts', async (req, reply) => {
+  // A draft's terms are a few short fields: a body past 4 KB is refused before it is parsed.
+  app.post('/challenges/drafts', { bodyLimit: 4096 }, async (req, reply) => {
     if (!drafts.take(networkKey(req.ip), clock())) return reply.code(429).send({ error: 'rate_limited' });
     const body = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<string, unknown>;
     // The operator drafts with the token, for any wallet; a signed-in creator only from their own.

@@ -40,7 +40,7 @@ export interface MetricsSources {
     stats: { tickFailures: number; ticksSkipped: number; lastTickSeconds: number; maxTickSeconds: number };
   };
   gateway?: { connectionCount: number; stats: {
-    accepted: number; refused: Record<'busy' | 'busy_network' | 'world_unavailable', number>; messages: number; bytes: number;
+    accepted: number; refused: Record<'busy' | 'busy_network' | 'busy_reconnects' | 'world_unavailable', number>; messages: number; bytes: number;
     slowConsumerTerminations: number; broadcastSeconds: Record<'scene' | 'live' | 'roster', { max: number }>;
   } } | undefined;
   pool?: { totalCount: number; idleCount: number; waitingCount: number; options: { max?: number } } | undefined;

@@ -60,6 +60,19 @@ export const challengesAbi = [
   },
   {
     "type": "function",
+    "name": "MAX_MIN_OPEN",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "MIN_DURATION",
     "inputs": [],
     "outputs": [
@@ -276,6 +289,38 @@ export const challengesAbi = [
   },
   {
     "type": "function",
+    "name": "createdAt",
+    "inputs": [
+      {
+        "name": "id",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "dailyPayoutCap",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "evaluator",
     "inputs": [],
     "outputs": [
@@ -302,6 +347,19 @@ export const challengesAbi = [
   },
   {
     "type": "function",
+    "name": "minOpenSeconds",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "minPrize",
     "inputs": [],
     "outputs": [
@@ -322,6 +380,32 @@ export const challengesAbi = [
         "name": "",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "paidDay",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "paidToday",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -397,12 +481,70 @@ export const challengesAbi = [
   },
   {
     "type": "function",
+    "name": "revokeEvaluator",
+    "inputs": [
+      {
+        "name": "who",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "revoked",
+    "inputs": [
+      {
+        "name": "evaluator",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "setDailyPayoutCap",
+    "inputs": [
+      {
+        "name": "cap",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setEvaluator",
     "inputs": [
       {
         "name": "next",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setMinOpenSeconds",
+    "inputs": [
+      {
+        "name": "seconds_",
+        "type": "uint64",
+        "internalType": "uint64"
       }
     ],
     "outputs": [],
@@ -579,6 +721,19 @@ export const challengesAbi = [
   },
   {
     "type": "event",
+    "name": "DailyPayoutCapSet",
+    "inputs": [
+      {
+        "name": "cap",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "EvaluatorChanged",
     "inputs": [
       {
@@ -592,6 +747,32 @@ export const challengesAbi = [
         "type": "address",
         "indexed": true,
         "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "EvaluatorRevoked",
+    "inputs": [
+      {
+        "name": "evaluator",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "MinOpenSecondsSet",
+    "inputs": [
+      {
+        "name": "seconds_",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
       }
     ],
     "anonymous": false
@@ -673,12 +854,22 @@ export const challengesAbi = [
   },
   {
     "type": "error",
+    "name": "BadLimits",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "BadPrizeLimits",
     "inputs": []
   },
   {
     "type": "error",
     "name": "BadWinner",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "DailyCapReached",
     "inputs": []
   },
   {
@@ -746,6 +937,11 @@ export const challengesAbi = [
   {
     "type": "error",
     "name": "ResolveWindowClosed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "Revoked",
     "inputs": []
   },
   {
