@@ -248,6 +248,16 @@ maybe('accounts', () => {
       expect((await app.inject({ url: '/accounts/wallet/challenge', ...json(session, { address: '0x12' }) })).json()).toEqual({ error: 'invalid_address' });
     });
 
+    it('refuses a body past its few fields before reading it (audit 17 November)', async () => {
+      const { session } = await signIn();
+      const big = { address: key.address, padding: 'x'.repeat(4096) };
+      expect((await app.inject({ url: '/accounts/wallet/challenge', ...json(session, big) })).statusCode).toBe(413);
+      expect((await app.inject({ url: '/accounts/wallet/verify', ...json(session, big) })).statusCode).toBe(413);
+      expect((await app.inject({ url: '/accounts/logout', ...json(session, big) })).statusCode).toBe(413);
+      // The real requests still fit.
+      expect((await (await link(session)).verify()).json()).toEqual({ wallet: key.address.toLowerCase() });
+    });
+
     it('refuses a wallet another player uses', async () => {
       const agents = new AgentStore(pool!);
       expect((await agents.register({ publicKey: 'D'.repeat(43), name: 'Bot', bio: '', networkHash: 'n', wallet: key.address.toLowerCase() },

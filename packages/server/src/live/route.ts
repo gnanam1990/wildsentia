@@ -36,30 +36,36 @@ export function landRoute(grid: WorldGrid, patches: readonly Patch[], from: Rout
   if (clearOverLand(grid, patches, from, to)) return { points: [{ ...to }], metres: Math.hypot(to.x - from.x, to.z - from.z) };
   const start = patchAtPosition(grid, { ...from, heading: 0 }), goal = patchAtPosition(grid, { ...to, heading: 0 });
   const weight = (id: number) => Math.max(1, cost(patches[id]!.habitat));
-  const g = new Map<number, number>([[start, 0]]), came = new Map<number, number>();
-  const open = new Set<number>([start]), f = new Map<number, number>([[start, 0]]);
-  const h = (id: number) => { const a = patchCentre(grid, id), b = patchCentre(grid, goal); return Math.hypot(a.x - b.x, a.z - b.z); };
-  while (open.size) {
-    let current = -1, best = Infinity;
-    for (const id of open) { const v = f.get(id)!; if (v < best) { best = v; current = id; } }
+  // The open set is a binary heap of (estimate, patch), with stale entries skipped when popped: a
+  // walk across the 160 x 160 Congo grid, or a refusal after every reachable patch, stays a few
+  // milliseconds on the world's thread (audit 17 November; tools/ops/routeCost.ts).
+  const n = grid.cols * grid.rows, gc = patchCentre(grid, goal);
+  const g = new Float64Array(n).fill(Infinity), came = new Int32Array(n).fill(-1), done = new Uint8Array(n);
+  const heap = new MinHeap();
+  g[start] = 0; heap.push(0, start);
+  while (heap.size) {
+    const current = heap.pop();
+    if (done[current]) continue;
     if (current === goal) break;
-    open.delete(current);
+    done[current] = 1;
     const cx = current % grid.cols, cy = Math.floor(current / grid.cols);
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
       if (!dx && !dy) continue;
       const next = patchIdAt(grid, cx + dx, cy + dy);
-      if (next === null) continue;
+      if (next === null || done[next]) continue;
       if (!landWalkable(patches[next])) continue;
       if (dx && dy && (!landWalkable(patches[cy * grid.cols + cx + dx]) || !landWalkable(patches[(cy + dy) * grid.cols + cx]))) continue;
       const step = grid.patchM * Math.hypot(dx, dy) * (weight(current) + weight(next)) / 2;
-      const tentative = g.get(current)! + step;
-      if (tentative >= (g.get(next) ?? Infinity)) continue;
-      came.set(next, current); g.set(next, tentative); f.set(next, tentative + h(next)); open.add(next);
+      const tentative = g[current]! + step;
+      if (tentative >= g[next]!) continue;
+      came[next] = current; g[next] = tentative;
+      const c = patchCentre(grid, next);
+      heap.push(tentative + Math.hypot(c.x - gc.x, c.z - gc.z), next);
     }
   }
-  if (!g.has(goal)) return null;
+  if (g[goal] === Infinity) return null;
   const chain: number[] = [goal];
-  while (chain[0] !== start) chain.unshift(came.get(chain[0]!)!);
+  while (chain[0] !== start) chain.unshift(came[chain[0]!]!);
   // Through the patch centres: each leg stays inside two neighbouring land patches.
   const raw: RoutePoint[] = [from, ...chain.map((id) => patchCentre(grid, id)), to];
   const pulled: RoutePoint[] = [];
@@ -73,4 +79,37 @@ export function landRoute(grid: WorldGrid, patches: readonly Patch[], from: Rout
   let metres = 0, prev = from;
   for (const p of pulled) { metres += Math.hypot(p.x - prev.x, p.z - prev.z); prev = p; }
   return { points: pulled, metres };
+}
+
+/** A binary min-heap of patch ids by key; equal keys come out in the order they went in. */
+class MinHeap {
+  readonly #keys: number[] = [];
+  readonly #ids: number[] = [];
+  readonly #order: number[] = [];
+  #pushed = 0;
+  get size(): number { return this.#ids.length; }
+  #less(a: number, b: number): boolean {
+    return this.#keys[a]! < this.#keys[b]! || (this.#keys[a] === this.#keys[b] && this.#order[a]! < this.#order[b]!);
+  }
+  #swap(a: number, b: number): void {
+    for (const arr of [this.#keys, this.#ids, this.#order]) { const t = arr[a]!; arr[a] = arr[b]!; arr[b] = t; }
+  }
+  push(key: number, id: number): void {
+    let i = this.#ids.length;
+    this.#keys.push(key); this.#ids.push(id); this.#order.push(this.#pushed++);
+    while (i > 0) { const up = (i - 1) >> 1; if (!this.#less(i, up)) break; this.#swap(i, up); i = up; }
+  }
+  pop(): number {
+    const top = this.#ids[0]!, last = this.#ids.length - 1;
+    this.#swap(0, last); this.#keys.pop(); this.#ids.pop(); this.#order.pop();
+    let i = 0;
+    for (;;) {
+      const l = 2 * i + 1, r = l + 1; let m = i;
+      if (l < this.#ids.length && this.#less(l, m)) m = l;
+      if (r < this.#ids.length && this.#less(r, m)) m = r;
+      if (m === i) break;
+      this.#swap(i, m); i = m;
+    }
+    return top;
+  }
 }

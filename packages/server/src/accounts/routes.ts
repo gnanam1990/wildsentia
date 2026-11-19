@@ -106,7 +106,7 @@ export function installAccounts(app: FastifyInstance, deps: AccountRouteDeps): v
   const walletChallenges = new Map<string, { accountId: string; address: Address; message: string; expires: number }>();
   /** Each account's one pending wallet-link request: a new one replaces it, so no account can fill the table. */
   const walletChallengeOf = new Map<string, string>();
-  app.post('/accounts/wallet/challenge', async (req, reply) => {
+  app.post('/accounts/wallet/challenge', { bodyLimit: 1024 }, async (req, reply) => {
     if (!deps.wallet) return reply.code(503).send({ error: 'wallet_link_unavailable' });
     const a = await store.fromSession(cookie(req, SESSION_COOKIE));
     if (!a) return reply.code(401).send({ error: 'signed_out' });
@@ -128,7 +128,7 @@ export function installAccounts(app: FastifyInstance, deps: AccountRouteDeps): v
     return { nonce, message, chainId: deps.wallet.chainId, expiresAt: new Date(now + WALLET_MS).toISOString() };
   });
 
-  app.post('/accounts/wallet/verify', async (req, reply) => {
+  app.post('/accounts/wallet/verify', { bodyLimit: 2048 }, async (req, reply) => {
     if (!deps.wallet) return reply.code(503).send({ error: 'wallet_link_unavailable' });
     const a = await store.fromSession(cookie(req, SESSION_COOKIE));
     if (!a) return reply.code(401).send({ error: 'signed_out' });
@@ -147,7 +147,7 @@ export function installAccounts(app: FastifyInstance, deps: AccountRouteDeps): v
     return { wallet };
   });
 
-  app.post('/accounts/logout', async (req, reply) => {
+  app.post('/accounts/logout', { bodyLimit: 1024 }, async (req, reply) => {
     await store.signOut(cookie(req, SESSION_COOKIE));
     reply.header('set-cookie', cookieHeader(SESSION_COOKIE, '', { maxAgeSeconds: 0, secure: config.secure }));
     return { ok: true };

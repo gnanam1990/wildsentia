@@ -5,6 +5,7 @@ import { createPool } from '../src/db/pool.js';
 import { migrate } from '../src/db/migrate.js';
 import { SimHost } from '../src/simHost.js';
 import { buildApi } from '../src/api.js';
+import { adminAllowList } from '../src/adminAllow.js';
 import { testDatabaseUrl } from './testDatabase.js';
 import { makeCarcass } from '@vana/sim';
 import { positionInPatch, type EncounterTrace } from '@vana/shared';
@@ -36,6 +37,24 @@ beforeAll(async () => {
 afterAll(async () => { await api?.close(); await host?.abort(); await pool?.end(); });
 
 maybe('read API', () => {
+  it('keeps the admin routes to the listed addresses, behind the trusted proxy, when a list is set', async () => {
+    // Audit 17 November, hardening: from elsewhere an admin route answers as a missing one would.
+    const listed = buildApi({ host, pool: pool!, trustedProxyHops: 1, limits: { publicReadsPerMinute: 0 },
+      adminAllow: adminAllowList({ VANA_ADMIN_ALLOW_IPS: '203.0.113.0/24' }) });
+    await listed.ready();
+    try {
+      const get = (url: string, from: string) => listed.inject({ url, headers: { 'x-forwarded-for': from } });
+      const open = await api.inject({ url: '/admin/social/x-config' });
+      expect((await get('/admin/social/x-config', '203.0.113.9')).statusCode).toBe(open.statusCode);
+      for (const url of ['/admin/social/x-config', '/admin/rewards', '/congo/admin/bounties']) {
+        expect((await get(url, '198.51.100.9')).statusCode).toBe(404);
+        // A forged leftmost entry is not the visitor.
+        expect((await get(url, '203.0.113.9, 198.51.100.9')).statusCode).toBe(404);
+      }
+      expect((await get('/animals', '198.51.100.9')).statusCode).toBe(200);
+    } finally { await listed.close(); }
+  });
+
   it('lists the living animals to watch, by species, a page at a time, with a search by id', async () => {
     const all = (await api.inject({ method: 'GET', url: '/animals' })).json().animals as Array<{ id: string; speciesId: string }>;
     const sambar = all.filter((a) => a.speciesId === 'sambar');

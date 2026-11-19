@@ -11,6 +11,8 @@ export interface GeneralLimits {
   liveMaxConnections: number;
   /** Concurrent /live connections from one visitor network; 0 turns the cap off. */
   liveMaxPerNetwork: number;
+  /** New /live connections one visitor network may open per minute; 0 turns the limit off. */
+  liveConnectsPerMinute: number;
 }
 
 export const GENERAL_LIMIT_DEFAULTS: GeneralLimits = {
@@ -21,6 +23,9 @@ export const GENERAL_LIMIT_DEFAULTS: GeneralLimits = {
   liveMaxConnections: 1000,
   // A school, office or carrier NAT can put many real viewers behind one address.
   liveMaxPerNetwork: 100,
+  // Each connection is sent the whole scene (about 1.6 MB). 120 a minute, in bursts of 30, lets a
+  // NAT full of viewers come back after a restart (the client backs off on 1013) but not a loop.
+  liveConnectsPerMinute: 120,
 };
 
 function setting(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
@@ -30,12 +35,13 @@ function setting(env: NodeJS.ProcessEnv, name: string, fallback: number): number
   return Number(raw);
 }
 
-/** VANA_PUBLIC_READS_PER_MINUTE, VANA_LIVE_MAX_CONNECTIONS, VANA_LIVE_MAX_CONNECTIONS_PER_NETWORK. */
+/** VANA_PUBLIC_READS_PER_MINUTE, VANA_LIVE_MAX_CONNECTIONS, VANA_LIVE_MAX_CONNECTIONS_PER_NETWORK, VANA_LIVE_CONNECTS_PER_MINUTE. */
 export function generalLimits(env: NodeJS.ProcessEnv): GeneralLimits {
   return {
     publicReadsPerMinute: setting(env, 'VANA_PUBLIC_READS_PER_MINUTE', GENERAL_LIMIT_DEFAULTS.publicReadsPerMinute),
     liveMaxConnections: setting(env, 'VANA_LIVE_MAX_CONNECTIONS', GENERAL_LIMIT_DEFAULTS.liveMaxConnections),
     liveMaxPerNetwork: setting(env, 'VANA_LIVE_MAX_CONNECTIONS_PER_NETWORK', GENERAL_LIMIT_DEFAULTS.liveMaxPerNetwork),
+    liveConnectsPerMinute: setting(env, 'VANA_LIVE_CONNECTS_PER_MINUTE', GENERAL_LIMIT_DEFAULTS.liveConnectsPerMinute),
   };
 }
 

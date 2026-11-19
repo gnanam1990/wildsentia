@@ -89,13 +89,15 @@ describe('generalLimits', () => {
   it('has generous defaults, takes overrides, and refuses nonsense at startup', () => {
     expect(generalLimits({})).toEqual(GENERAL_LIMIT_DEFAULTS);
     expect(generalLimits({ VANA_PUBLIC_READS_PER_MINUTE: '', VANA_LIVE_MAX_CONNECTIONS: ' ' })).toEqual(GENERAL_LIMIT_DEFAULTS);
-    expect(generalLimits({ VANA_PUBLIC_READS_PER_MINUTE: '0', VANA_LIVE_MAX_CONNECTIONS: '5000', VANA_LIVE_MAX_CONNECTIONS_PER_NETWORK: '7' }))
-      .toEqual({ publicReadsPerMinute: 0, liveMaxConnections: 5000, liveMaxPerNetwork: 7 });
+    expect(generalLimits({ VANA_PUBLIC_READS_PER_MINUTE: '0', VANA_LIVE_MAX_CONNECTIONS: '5000', VANA_LIVE_MAX_CONNECTIONS_PER_NETWORK: '7', VANA_LIVE_CONNECTS_PER_MINUTE: '0' }))
+      .toEqual({ publicReadsPerMinute: 0, liveMaxConnections: 5000, liveMaxPerNetwork: 7, liveConnectsPerMinute: 0 });
     for (const bad of ['-1', '1.5', 'lots', '99999999'])
       expect(() => generalLimits({ VANA_LIVE_MAX_CONNECTIONS_PER_NETWORK: bad })).toThrow(/VANA_LIVE_MAX_CONNECTIONS_PER_NETWORK/);
     // Normal observers: well under one read a second and one socket each.
     expect(GENERAL_LIMIT_DEFAULTS.publicReadsPerMinute).toBeGreaterThanOrEqual(600);
     expect(GENERAL_LIMIT_DEFAULTS.liveMaxPerNetwork).toBeGreaterThanOrEqual(50);
+    // A NAT of viewers coming back after a restart, in one burst, is let in.
+    expect(GENERAL_LIMIT_DEFAULTS.liveConnectsPerMinute / 4).toBeGreaterThanOrEqual(25);
   });
 });
 

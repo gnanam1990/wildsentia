@@ -27,7 +27,7 @@ Copy `deploy/env.example` to `deploy/.env` (never commit it) and set:
 | `WORLD_HOURS_PER_REAL_HOUR` | | World speed (default 12; 1 for real time with live agents) |
 | `VANA_LIVE_AGENTS`, `VANA_AGENT_SLOTS`, `VANA_AGENT_REGISTRATIONS_PER_NETWORK`, `VANA_LIVE_SECRET` | | Live agents (see [5. Live agents](05-live-agents.md)) |
 | `TYPESAFE_AI_API_KEY`, `TYPESAFE_DAILY_CALLS`, `TYPESAFE_MODEL` | | Optional observer insights (estimates only; off without a key) |
-| `VANA_PUBLIC_READS_PER_MINUTE`, `VANA_LIVE_MAX_CONNECTIONS`, `VANA_LIVE_MAX_CONNECTIONS_PER_NETWORK` | | Per-visitor limits (see [Limits](#limits)) |
+| `VANA_PUBLIC_READS_PER_MINUTE`, `VANA_LIVE_MAX_CONNECTIONS`, `VANA_LIVE_MAX_CONNECTIONS_PER_NETWORK`, `VANA_LIVE_CONNECTS_PER_MINUTE` | | Per-visitor limits (see [Limits](#limits)) |
 | `VANA_METRICS_PORT`, `VANA_METRICS_HOST` | | The internal metrics port (see [Metrics](#metrics)) |
 
 ## First boot
@@ -138,6 +138,8 @@ to turn it off.
   with code 1013; the observer says the forest is at its viewer limit and retries after 8–120 s.
   The default total is the highest load tested on the reference machine. Raise it only after
   running the load test on the real host.
+- **`/live` connects:** `VANA_LIVE_CONNECTS_PER_MINUTE` (default 120 new connections per network
+  per minute, bursts of 30). Past it, code 1013 with reason `busy_reconnects`.
 
 ## Metrics
 

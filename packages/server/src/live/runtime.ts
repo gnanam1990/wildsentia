@@ -72,6 +72,25 @@ export function holdingGate(env: NodeJS.ProcessEnv): HoldingGate | undefined {
   return { minAtomic: BigInt(raw), tokenAddress: holder.tokenAddress, chainId: holder.chainId, balance: (wallet) => chain.balance(wallet) };
 }
 
+/**
+ * The key for the network hashes that tell players' networks apart (VANA_LIVE_SECRET). It is its own
+ * secret, never an admin token: whoever holds a token should not also be able to work out the hashes
+ * (audit 17 November). Unset, each boot draws one, so hashes from before a restart no longer match.
+ */
+export function liveNetworkSecret(env: NodeJS.ProcessEnv): string {
+  const secret = env.VANA_LIVE_SECRET?.trim();
+  if (!secret) return randomBytes(32).toString('hex');
+  if (secret.length < 32) throw new Error('VANA_LIVE_SECRET must be at least 32 characters');
+  return secret;
+}
+
+/** The simulated bounties' admin token (VANA_BOUNTY_ADMIN_TOKEN): it sees every target, so a guessable one is refused. */
+export function bountyAdminToken(env: NodeJS.ProcessEnv): string | null {
+  const token = env.VANA_BOUNTY_ADMIN_TOKEN?.trim() || null;
+  if (token && (token.length < 32 || token.length > 256 || /\s/.test(token))) throw new Error('VANA_BOUNTY_ADMIN_TOKEN must be 32 to 256 characters with no spaces');
+  return token;
+}
+
 export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | undefined, env: NodeJS.ProcessEnv): LiveRuntime | null {
   if (env.VANA_LIVE_AGENTS !== '1') return null;
   const store = new AgentStore(pool), agentStore = store;
@@ -116,7 +135,7 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
     const engine = new BountyEngine(store, owned.store, host, new DevSettlementAdapter(store), () => host.worldHoursPerRealHour, eventsOf, played);
     owned.bountyActive = async (lifeId) => (await store.activeOnLife(lifeId)) !== null;
     owned.lastBounty = (assetId) => store.lastDecidedOnAsset(assetId);
-    return { store, engine, discovery: new BountyDiscovery(store, () => host.worldId ?? 'unknown'), adminToken: env.VANA_BOUNTY_ADMIN_TOKEN?.trim() || null,
+    return { store, engine, discovery: new BountyDiscovery(store, () => host.worldId ?? 'unknown'), adminToken: bountyAdminToken(env),
       now: played };
   })() : null;
   // Congo free play: agents steer wild animals (VANA_CONGO_OPEN_PLAY=1), as on the island.
@@ -234,7 +253,7 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
     live, world: port, store, ledger, ...(holding ? { holding } : {}), ...(owned ? { owned } : {}), ...(bounties ? { bounties } : {}),
     ...(arcBounties ? { arcBounties } : {}), ...(openPlay ? { openPlay } : {}),
     limits: { slots: positiveSetting(env, 'VANA_AGENT_SLOTS', 500), perNetworkPerDay: positiveSetting(env, 'VANA_AGENT_REGISTRATIONS_PER_NETWORK', 5) },
-    networkSecret: env.VANA_LIVE_SECRET?.trim() || rewards?.adminToken || randomBytes(32).toString('hex'),
+    networkSecret: liveNetworkSecret(env),
     clientScriptPath: fileURLToPath(new URL('../../agent-client/client.mjs', import.meta.url)),
   };
   return {

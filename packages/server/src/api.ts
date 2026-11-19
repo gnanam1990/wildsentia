@@ -1,3 +1,4 @@
+import { ADMIN_PATH, type AdminAllowList } from './adminAllow.js';
 import Fastify, { type FastifyError, type FastifyInstance, type FastifyRequest } from 'fastify';
 import { RECAP_EVENT_TYPES, SKILL_IDS, fitnessOf, formatWorldTime, isCongoProfile, seasonAt, thoughtFor, type Agent, type Patch } from '@vana/shared';
 import { confidenceOf } from '@vana/sim';
@@ -28,6 +29,8 @@ import type { ExperienceService } from './experiences/service.js';
 import { installExperiences } from './experiences/routes.js';
 
 export interface ApiDeps {
+  /** Where the admin routes may be reached from (VANA_ADMIN_ALLOW_IPS); null or absent, anywhere. */
+  adminAllow?: AdminAllowList | null;
   experiences?: ExperienceService;
   host: SimHost;
   pool: Pool;
@@ -77,10 +80,14 @@ export function trustedProxyHops(env: NodeJS.ProcessEnv): number {
  * World routes are read-only. The optional reward ledger has independent write routes and
  * receives only a read-only subject visibility adapter, never a simulation mutation capability.
  */
-export function buildApi({ host, pool, narrator, insights: insightDeps, live, rewards, receiptRpc, social, holder, holderChain, trustedProxyHops: hops = 0, limits, httpStats, challenges, accounts, challengeSocial, experiences }: ApiDeps): FastifyInstance {
+export function buildApi({ host, pool, narrator, insights: insightDeps, live, rewards, receiptRpc, social, holder, holderChain, trustedProxyHops: hops = 0, limits, httpStats, challenges, accounts, challengeSocial, experiences, adminAllow }: ApiDeps): FastifyInstance {
   // Without this, behind Caddy every visitor has the proxy's address and shares one rate limit.
   const app = Fastify({ logger: false, trustProxy: hops > 0 ? (_address: string, hop: number) => hop < hops : false });
   if (httpStats) app.addHook('onResponse', async (_req, reply) => { countResponse(httpStats, reply.statusCode); });
+  // The admin routes answer only from the listed addresses, as a missing route would elsewhere.
+  if (adminAllow) app.addHook('onRequest', async (req, reply) => {
+    if (ADMIN_PATH.test(req.url) && !adminAllow.allows(req.ip)) return reply.code(404).send({ error: 'not_found' });
+  });
   // History routes read the database on every request; one visitor network gets a generous
   // share. Counted on the dispatched route (not the raw URL), and unknown paths count too.
   const perMinute = limits?.publicReadsPerMinute ?? GENERAL_LIMIT_DEFAULTS.publicReadsPerMinute;

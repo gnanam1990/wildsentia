@@ -1,3 +1,4 @@
+import { adminAllowList } from './adminAllow.js';
 import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { createPool } from './db/pool.js';
@@ -28,6 +29,7 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
   const social = socialConfig(process.env);
   const holder = holderConfig(process.env);
   trustedProxyHops(process.env); // Fail at startup, not at the first request.
+  const adminAllow = adminAllowList(process.env); // Where the admin routes answer from (VANA_ADMIN_ALLOW_IPS).
   const limits = generalLimits(process.env);
   const metricsPort = metricsListen(process.env);
   if (metricsPort && metricsPort.port === Number(process.env.PORT ?? 8080)) throw new Error('VANA_METRICS_PORT must differ from PORT');
@@ -154,7 +156,7 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
     const httpStats = newHttpStats();
     experiences = new ExperienceService(new ExperienceStore(pool), host, experienceConfig(process.env), speciesDir);
     await experiences.start();
-    api = buildApi({ host, pool, narrator, insights, rewards, social, holder, experiences, trustedProxyHops: trustedProxyHops(process.env), limits, httpStats,
+    api = buildApi({ host, pool, narrator, insights, rewards, social, holder, experiences, trustedProxyHops: trustedProxyHops(process.env), limits, httpStats, adminAllow,
       ...(live ? { live: { ...live.routes, spot: live.spot, species, ...(challenges ? { challenges: challenges.agent } : {}),
         ...(accounts ? { humans: accounts.humans } : {}), ...(challenges?.identity ? { identity: challenges.identity } : {}) } } : {}),
       ...(challenges ? { challenges: { ...challenges.routes, ...(accounts ? { creators: accounts.creators } : {}) } } : {}),
@@ -162,7 +164,7 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
     await api.ready();
 
     server = createServer((req, res) => { api!.server.emit('request', req, res); });
-    gateway = new Gateway(host, { maxConnections: limits.liveMaxConnections, maxPerNetwork: limits.liveMaxPerNetwork,
+    gateway = new Gateway(host, { maxConnections: limits.liveMaxConnections, maxPerNetwork: limits.liveMaxPerNetwork, connectsPerMinute: limits.liveConnectsPerMinute,
       trustedProxyHops: trustedProxyHops(process.env) });
 
     await new Promise<void>((resolve, reject) => {
@@ -189,6 +191,7 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
       void close().then(() => process.exit(1), () => process.exit(1));
     }, 60_000);
     console.log(`vana listening on :${port}`);
+    console.log(`admin routes: ${adminAllow ? `from ${adminAllow.entries} listed address(es) only` : 'from anywhere, by token'}`);
     if (metricsPort) {
       // Operator metrics on their own internal port; never published and never behind Caddy.
       const runtime = live;

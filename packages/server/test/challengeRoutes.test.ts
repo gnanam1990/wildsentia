@@ -102,6 +102,8 @@ maybe('challenge routes', () => {
     const creator = privateKeyToAccount(generatePrivateKey());
     const body = { creatorWallet: creator.address, terms: { template: 'hunt', speciesId: 'tiger' }, prizeUsdc: '12.5', days: 3 };
     expect((await draft(body, 'wrong-token-'.repeat(4))).statusCode).toBe(401);
+    // A body past a draft's few fields is refused before it is parsed (audit 17 November).
+    expect((await draft({ ...body, terms: { ...body.terms, briefing: 'x'.repeat(5000) } })).statusCode).toBe(413);
     expect((await draft({ ...body, prizeUsdc: '500' })).json()).toEqual({ error: 'bad_prize' });
     expect((await draft({ ...body, terms: { template: 'hunt', speciesId: 'chital' } })).json()).toEqual({ error: 'not_a_hunter' });
     const made = (await draft(body)).json();

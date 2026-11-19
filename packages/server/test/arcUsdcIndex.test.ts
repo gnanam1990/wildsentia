@@ -73,6 +73,21 @@ maybe('the Arc USDC index', () => {
     expect((await pool!.query('select count(*)::int as n from arc_usdc_transfers')).rows[0].n).toBe(3);
   });
 
+  it("reads the system emitter's 18-decimal value as the USDC the ERC-20 log of the same transfer shows", async () => {
+    // Measured 19 November 2026 (docs/2026-11-15-arc-mainnet-readiness.md, "USDC decimals"): one
+    // transfer logs twice, by the emitter in 18 decimals and by USDC (0x3600…) in 6. Arc Testnet
+    // tx 0xdbdb2be8…b1eb0cd: 9491686000000000000 and 9491686; Arc Mainnet: 169966000000000000 and 169966.
+    const chain = node();
+    for (const [block, wei] of [[5n, 9_491_686_000_000_000_000n], [6n, 169_966_000_000_000_000n], [7n, 2_189_466_772_850_220_288n]] as const)
+      chain.add(block, OWNER, HUNTER, 0, { data: `0x${wei.toString(16).padStart(64, '0')}` });
+    chain.setHead(10n);
+    const index = indexOf(chain);
+    await index.watch(HUNTER);
+    await catchUp(index);
+    // 9.491686 + 0.169966 + 2.189466 (a native send's dust below a micro-USDC is not counted).
+    expect(await index.transfers(HUNTER)).toEqual([{ id: `${OWNER}>${HUNTER}`, from: OWNER, to: HUNTER, usdc: 11.851118 }]);
+  });
+
   it('answers only a wallet read to near the head, and nothing while the node has not been heard from', async () => {
     const chain = node();
     chain.setHead(1_000_000n);

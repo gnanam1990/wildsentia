@@ -104,6 +104,8 @@ maybe('X publication reservation and reconciliation', () => {
     const draft = (await post('/admin/social/drafts', { eventId: event.id })).json();
     const id = draft.id as string;
     await post('/admin/social/review', { draftId: id, action: 'approve', note: 'Checked saved death event' });
+    // Counted from here: the runner may clear a mock's history between tests (vitest 5).
+    const createsBefore = create.mock.calls.length;
     verifyAccount.mockRejectedValueOnce(new Error('wrong X account'));
     expect((await post('/admin/social/x-publish', { draftId: id })).json()).toEqual({ error: 'x_account_verification_failed' });
     expect((await pool.query('select * from x_publications where draft_id=$1', [id])).rows).toEqual([]);
@@ -111,7 +113,8 @@ maybe('X publication reservation and reconciliation', () => {
     const first = await post('/admin/social/x-publish', { draftId: id });
     expect(first.json()).toMatchObject({ status: 'published', published: true, xPostId: '654' });
     expect((await post('/admin/social/x-publish', { draftId: id })).json()).toEqual(first.json());
-    expect(create).toHaveBeenCalledTimes(2); // One failed transport for the earlier draft, one success here.
+    // Nothing sent while the account check failed, then one create, never repeated.
+    expect(create.mock.calls.length - createsBefore).toBe(1);
     expect((await pool.query('select action from x_publication_audit where draft_id=$1 order by id', [id])).rows
       .map((row) => row.action)).toEqual(['reserved', 'confirmed']);
   });
