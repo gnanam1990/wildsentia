@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { SPECIES_VISUALS, modelStatus, modelStatusForAnimal, visualFor, visualForAnimal } from './species.js';
 import { elephantTrunkReach } from './animation.js';
+import { softenStrides } from './strideSmoothing.js';
 import { tintHumanScene } from './humans.js';
 import { elephantSurface } from './elephantSurface.js';
 
@@ -109,7 +110,8 @@ async function load(): Promise<void> {
     holder.add(root); holder.scale.setScalar(scale); holder.position.set(-center.x * scale, -box.min.y * scale, -center.z * scale);
     model = holder; scene.add(holder);
     const spray = adultMaleElephant || adultFemaleElephant || calf ? gltf.animations.find(c => c.name === 'SprayWater') : undefined;
-    clips = spray ? [...gltf.animations, elephantTrunkReach(spray)] : gltf.animations;
+    const animations = softenStrides(visual.model.file, gltf.animations);
+    clips = spray ? [...animations, elephantTrunkReach(spray)] : animations;
     mixer = new THREE.AnimationMixer(root);
     for (const c of clips) clip.add(new Option(`${c.name} · ${c.duration.toFixed(1)}s`, c.name));
     clip.disabled = clips.length === 0;
