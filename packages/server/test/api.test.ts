@@ -51,6 +51,11 @@ maybe('read API', () => {
         // A forged leftmost entry is not the visitor.
         expect((await get(url, '203.0.113.9, 198.51.100.9')).statusCode).toBe(404);
       }
+      // However the path is written, the route the router would run is what counts.
+      for (const url of ['/%61dmin/social/x-config', '/congo/%61dmin/bounties', '/admin/social/x-config/', '/admin/social/x-config?x=1']) {
+        const reached = await api.inject({ url });
+        if (reached.statusCode !== 404) expect((await get(url, '198.51.100.9')).statusCode).toBe(404);
+      }
       expect((await get('/animals', '198.51.100.9')).statusCode).toBe(200);
     } finally { await listed.close(); }
   });

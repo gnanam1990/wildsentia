@@ -85,8 +85,11 @@ export function buildApi({ host, pool, narrator, insights: insightDeps, live, re
   const app = Fastify({ logger: false, trustProxy: hops > 0 ? (_address: string, hop: number) => hop < hops : false });
   if (httpStats) app.addHook('onResponse', async (_req, reply) => { countResponse(httpStats, reply.statusCode); });
   // The admin routes answer only from the listed addresses, as a missing route would elsewhere.
+  // Decided on the route the router matched, not the raw URL: the router decodes the path
+  // (/%61dmin/... is /admin/...), so a test of the raw text alone could be walked round.
   if (adminAllow) app.addHook('onRequest', async (req, reply) => {
-    if (ADMIN_PATH.test(req.url) && !adminAllow.allows(req.ip)) return reply.code(404).send({ error: 'not_found' });
+    if ((ADMIN_PATH.test(req.routeOptions.url ?? '') || ADMIN_PATH.test(req.url)) && !adminAllow.allows(req.ip))
+      return reply.code(404).send({ error: 'not_found' });
   });
   // History routes read the database on every request; one visitor network gets a generous
   // share. Counted on the dispatched route (not the raw URL), and unknown paths count too.
