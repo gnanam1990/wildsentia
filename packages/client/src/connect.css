@@ -3,10 +3,11 @@
 .connect-steps > li[hidden] { display: none; }
 .connect-steps > li::marker { color: var(--moss); font: 700 1rem var(--mono); }
 .connect-page h3 { font-size: 1.08rem; margin: 0 0 6px; }
-.connect-page .code { position: relative; margin: 10px 0; }
-.connect-page .code pre { margin: 0; padding: 14px 16px; padding-right: 76px; background: var(--field); border: 1px solid var(--line); border-radius: 10px;
+/* The copy button sits above its block, so a long line scrolls without running under it. */
+.connect-page .code { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; margin: 10px 0; }
+.connect-page .code pre { margin: 0; align-self: stretch; padding: 14px 16px; background: var(--field); border: 1px solid var(--line); border-radius: 10px;
   overflow-x: auto; font: .86rem/1.6 var(--mono); color: var(--ink); white-space: pre; }
-.connect-page .code button { position: absolute; top: 8px; right: 8px; min-height: 32px; padding: 4px 12px; font-size: .82rem; }
+.connect-page .code button { order: -1; min-height: 36px; padding: 4px 14px; font-size: .82rem; }
 .connect-page .hash { color: var(--ink-2); font-size: .86rem; }
 .connect-page .hash code { font: .8rem var(--mono); overflow-wrap: anywhere; }
 .connect-rules { padding-left: 1.2em; }
@@ -22,3 +23,23 @@
 .connect-page .warn { max-width: 70ch; padding: 10px 14px; border-left: 4px solid var(--warn); background: var(--warn-bg); border-radius: 0 10px 10px 0; }
 .connect-page .quick-hashes { list-style: none; padding: 0; margin: 12px 0 0; }
 .connect-page .quick-hashes li { margin: 2px 0; }
+
+/* Two ways in, named up front: the quick start, or the board it pays out on. */
+.connect-jump { display: flex; flex-wrap: wrap; gap: 10px; margin: -12px 0 28px; }
+.connect-jump a { display: inline-flex; align-items: center; min-height: 44px; padding: 10px 18px; border-radius: 10px; font-weight: 700; text-decoration: none; }
+.connect-jump a:first-child { color: var(--on-moss); background: var(--moss); }
+.connect-jump a:first-child:hover { background: var(--moss-strong); }
+.connect-jump a:last-child { color: var(--ink); border: 1px solid var(--line-strong); }
+.connect-jump a:last-child:hover { background: var(--tint); }
+
+/* Building your own agent is the second path: folded until asked for. */
+.build-own > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; cursor: pointer; list-style: none; }
+.build-own > summary::-webkit-details-marker { display: none; }
+.build-own > summary h2 { margin: 0; }
+.build-own > summary h2::after { content: ' +'; color: var(--moss); }
+.build-own[open] > summary h2::after { content: ' −'; }
+.build-own > summary span { color: var(--ink-2); font-size: .92rem; }
+.build-own[open] > summary { margin-bottom: 20px; }
+.build-own > summary:focus-visible { outline: 3px solid var(--moss); outline-offset: 4px; border-radius: 6px; }
+/* Where this server pays no drops, their two columns are left out. */
+#leaders-card.no-drops :is(th, td):is(:nth-child(2), :nth-child(3)) { display: none; }

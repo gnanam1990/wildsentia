@@ -1143,7 +1143,8 @@ const missionInput = document.querySelector<HTMLSelectElement>(
   speciesInput = document.querySelector<HTMLSelectElement>(
     "#league-form [name=species]",
   )!;
-let hunters = new Set(["tiger", "leopard"]);
+// The page opens with the Congo forest's league; the server's own list replaces it.
+let hunters = new Set(["african_leopard", "african_golden_cat", "tiger", "leopard"]);
 missionInput.onchange = () => {
   for (const option of speciesInput.options)
     option.disabled = missionInput.value === "hunt" && !hunters.has(option.value);

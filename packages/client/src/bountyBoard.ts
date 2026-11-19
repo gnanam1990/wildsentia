@@ -1,6 +1,6 @@
 import './pageChrome.js';
 import { short, usdc } from './arcAdminModel.js';
-import { realTimeLeft, resultLines, shareUrl, wantedLine, type PublicBounty } from './bountyBoardModel.js';
+import { realTimeLeft, resultLines, shareUrl, wantedLine, xIntent, type PublicBounty } from './bountyBoardModel.js';
 
 /**
  * The public bounty board (docs/2026-10-19-congo-arc-bounties-design.md): live bounties (never which
@@ -37,6 +37,13 @@ async function share(b: PublicBounty, button: HTMLButtonElement): Promise<void> 
     setTimeout(() => { button.textContent = 'Share'; }, 2000);
   } catch { /* the viewer closed the share sheet */ }
 }
+/** Posting a bounty to X: the server's share page carries its card, so the post shows it. */
+const postOnX = (b: PublicBounty): HTMLElement => {
+  const text = b.outcome ? resultLines(b).headline : `Wanted: ${wantedLine(b)} in the Wildsentia forest`;
+  const a = link(xIntent(text, shareUrl(location.origin, b.bountyId)), 'Post on X');
+  a.classList.add('post-x');
+  return a;
+};
 const shareButton = (b: PublicBounty) => {
   const button = document.createElement('button'); button.type = 'button'; button.className = 'quiet'; button.textContent = 'Share';
   button.addEventListener('click', () => { void share(b, button); });
@@ -52,12 +59,12 @@ function card(b: PublicBounty): HTMLLIElement {
     h.textContent = wantedLine(b);
     const left = realTimeLeft(b.timeLeftWorldSeconds, rate);
     p.textContent = `Somewhere in region ${b.region}. ${left.charAt(0).toUpperCase()}${left.slice(1)} left. Which animal is it? Hunters find out the hard way.`;
-    actions.append(link(b.publishTxUrl, 'Reserved on Arc'), link('/connect.html#quick-start', 'Join the hunt', false), shareButton(b));
+    actions.append(link(b.publishTxUrl, 'Reserved on Arc'), link('/connect.html#quick-start', 'Join the hunt', false), postOnX(b), shareButton(b));
   } else {
     const lines = resultLines(b);
     h.textContent = lines.headline; p.textContent = lines.detail;
     li.classList.add(`board-${b.outcome}`);
-    actions.append(link(b.watchPath, 'Watch it', false), link(b.decideTxUrl, b.outcome === 'void' ? 'Returned on Arc' : 'Paid on Arc'), shareButton(b));
+    actions.append(link(b.watchPath, 'Watch it', false), link(b.decideTxUrl, b.outcome === 'void' ? 'Returned on Arc' : 'Paid on Arc'), postOnX(b), shareButton(b));
   }
   li.append(h, p, actions);
   return li;

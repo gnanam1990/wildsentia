@@ -5,7 +5,23 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="referrer" content="no-referrer" />
     <title>Wildsentia — Forest experiences</title>
-    <script src="/theme-init.js"></script>
+  <link rel="icon" href="/favicon.ico" sizes="48x48" />
+  <link rel="icon" type="image/png" href="/favicon-32.png" sizes="32x32" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="description" content="Short survival matches, saved forest moments and a guide that answers from the forest record." />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Wildsentia" />
+  <meta property="og:title" content="Wildsentia forest experiences" />
+  <meta property="og:description" content="Short survival matches, saved forest moments and a guide that answers from the forest record." />
+  <meta property="og:url" content="https://wildsentia.lol/experiences.html" />
+  <meta property="og:image" content="https://wildsentia.lol/og/forest-card.jpg" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Wildsentia forest experiences" />
+  <meta name="twitter:description" content="Short survival matches, saved forest moments and a guide that answers from the forest record." />
+  <meta name="twitter:image" content="https://wildsentia.lol/og/forest-card.jpg" />
+  <script src="/theme-init.js"></script>
     <link rel="stylesheet" href="/src/style.css" />
     <link rel="stylesheet" href="/src/experiences.css" />
   </head>
@@ -17,14 +33,15 @@
       >
       <nav aria-label="Main navigation">
         <a href="/">Forest</a
-        ><a href="/experiences.html" aria-current="page">Experiences</a
-        ><a href="/challenges.html">Challenges</a><a href="/play.html">Play</a>
+        ><a href="/bounties.html">Bounties</a
+        ><a href="/connect.html">AI agents</a
+        ><a href="/experiences.html" aria-current="page">Experiences</a>
       </nav>
       <button id="experience-theme" type="button" class="quiet">Theme</button>
     </header>
     <main id="experience-main">
       <section class="experience-hero">
-        <p class="eyebrow" id="experiences-eyebrow">One island. A thousand stories.</p>
+        <p class="eyebrow" id="experiences-eyebrow">One forest. A thousand stories.</p>
         <h1>Come closer to the wild.</h1>
         <p>
           Play a short survival match, follow a life, or ask your guide what is
@@ -71,10 +88,10 @@
           >
           <label
             >Animal<select name="species">
-              <option value="tiger">Tiger</option>
-              <option value="leopard">Leopard</option>
-              <option value="chital">Chital</option>
-              <option value="hare">Hare</option>
+              <option value="african_leopard">African leopard</option>
+              <option value="african_golden_cat">African golden cat</option>
+              <option value="blue_duiker">Blue duiker</option>
+              <option value="red_river_hog">Red river hog</option>
             </select></label
           >
           <label
@@ -89,7 +106,7 @@
             </select></label
           >
           <label
-            ><span id="league-seed-label">Island seed</span><input
+            ><span id="league-seed-label">Forest seed</span><input
               name="seed"
               type="number"
               min="0"
@@ -216,12 +233,12 @@
             <p class="pill">Answers from the saved forest</p>
             <div id="safari-transcript" role="log" aria-live="polite"></div>
             <div class="prompt-chips">
-              <button type="button" id="ask-show-me" data-question="Show me a tiger">
-                Show me a tiger</button
+              <button type="button" id="ask-show-me" data-question="Show me a leopard">
+                Show me a leopard</button
               ><button type="button" data-question="What is happening?">
                 What's happening?</button
-              ><button type="button" id="ask-meet" data-question="Tell me about an elephant">
-                Meet an elephant
+              ><button type="button" id="ask-meet" data-question="Tell me about a forest buffalo">
+                Meet a forest buffalo
               </button>
             </div>
             <form id="safari-form">
@@ -231,7 +248,7 @@
                   id="safari-question"
                   maxlength="280"
                   required
-                  placeholder="Why is that tiger resting?"
+                  placeholder="Why is that leopard resting?"
                 /><button type="submit">Ask</button>
               </div>
             </form>
@@ -302,7 +319,7 @@
         <div class="section-heading">
           <div>
             <p class="eyebrow">A question becomes an experiment</p>
-            <h2 id="lab-title">What if the island changed?</h2>
+            <h2 id="lab-title">What if the forest changed?</h2>
             <p>
               Compare two copies of the same saved world. Watch the differences
               emerge.
@@ -344,7 +361,7 @@
           ></progress>
           <div class="chart-legend">
             <span class="baseline-key">Baseline</span
-            ><span class="experiment-key" id="lab-changed-key">Changed island</span>
+            ><span class="experiment-key" id="lab-changed-key">Changed forest</span>
           </div>
           <div id="lab-charts" class="chart-grid"></div>
           <div id="lab-table" class="table-scroll"></div>
@@ -360,7 +377,7 @@
       </section>
     </main>
     <footer class="experience-footer">
-      <span id="footer-story">The island continues its own story.</span> <a href="/">Return to the forest</a>
+      <span id="footer-story">The forest continues its own story.</span> <a href="/">Return to the forest</a>
     </footer>
     <script type="module" src="/src/experiences.ts"></script>
   </body>

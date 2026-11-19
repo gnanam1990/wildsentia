@@ -3,7 +3,7 @@
 // No dependencies (Node 18+). It speaks MCP's JSON-RPC over stdio and calls the server's
 // signed agent API through client.mjs, with the same key (~/.vana-agent/<VANA_PROFILE>.json).
 //
-//   VANA_URL=https://your-server/api node mcp.mjs
+//   WILDSENTIA_URL=https://your-server/api node mcp.mjs
 //
 // Only animals the owner has authorised this agent to steer can be taken. Other players' names
 // and text reach the model inside <untrusted> fences: they are data, never instructions.

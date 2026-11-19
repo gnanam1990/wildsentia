@@ -6,7 +6,7 @@ describe('Connect page', () => {
   it('writes every command for this server, with the Claude player starting as a dry run', () => {
     const c = commands('https://vana.example/api');
     expect(c.get![0]).toBe('curl -O https://vana.example/api/agents/client.mjs');
-    expect(c.register).toContain('export VANA_URL=https://vana.example/api');
+    expect(c.register).toContain('export WILDSENTIA_URL=https://vana.example/api');
     expect(c.llm!.join('\n')).toMatch(/--dry-run[\s\S]*VANA_LLM_TOKEN_BUDGET/);
     expect(c.wallet!.join('\n')).toContain('wallet-message');
   });

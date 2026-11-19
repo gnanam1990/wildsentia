@@ -50,11 +50,11 @@ describe('theme', () => {
 });
 
 describe('site header', () => {
-  const NAV: Array<[string, string]> = [['/', 'Forest'], ['/challenges.html', 'Challenges'], ['/play.html', 'Play'], ['/connect.html', 'AI agents']];
+  const NAV: Array<[string, string]> = [['/', 'Forest'], ['/bounties.html', 'Bounties'], ['/connect.html', 'AI agents'], ['/play.html', 'Play'], ['/challenges.html', 'Challenges']];
   const CURRENT: Record<string, string> = { 'challenges.html': '/challenges.html', 'challenge-new.html': '/challenges.html', 'play.html': '/play.html',
-    'connect.html': '/connect.html', 'holder.html': '' };
+    'connect.html': '/connect.html', 'bounties.html': '/bounties.html', 'congo.html': '', 'holder.html': '' };
 
-  it('is the same on every page: the brand leads home, the four places are named, the current one is marked, and the theme switch is there', () => {
+  it('is the same on every page: the brand leads home, the places are named in one order, the current one is marked, and the theme switch is there', () => {
     for (const [page, current] of Object.entries(CURRENT)) {
       const html = read(page);
       const header = html.slice(html.indexOf('<header class="site-header">'), html.indexOf('</header>'));
@@ -63,9 +63,14 @@ describe('site header', () => {
       const marked = [...header.matchAll(/<a [^>]*href="([^"]+)"[^>]*aria-current="page"/g)].map((m) => m[1]);
       expect(marked, page).toEqual(current ? [current] : []);
       expect(header, page).toContain('id="theme-toggle"');
+      // Play and Challenges wait hidden until this server runs them, except on their own pages.
+      for (const [id, href] of [['nav-play', '/play.html'], ['nav-challenges', '/challenges.html']] as const)
+        expect(header, `${page} ${id}`).toMatch(new RegExp(`<a href="${href.replace('.', '\\.')}" id="${id}"${current === href ? ' aria-current="page"' : ' hidden'}>`));
+      const order = NAV.map(([href]) => header.indexOf(`href="${href}"`));
+      expect(order, page).toEqual([...order].sort((a, b) => a - b));
     }
     // Every page script mounts the switch.
-    for (const script of ['challenges', 'play', 'challengeNew', 'connect', 'holder'])
+    for (const script of ['challenges', 'play', 'challengeNew', 'connect', 'holder', 'bountyBoard'])
       expect(read(`src/${script}.ts`), script).toContain("import './pageChrome.js';");
   });
 });
