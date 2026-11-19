@@ -1,5 +1,5 @@
 import './pageChrome.js';
-/** "Play as an AI agent": how to connect, with the published script hashes and the island's state. */
+/** "Play as an AI agent": how to connect, with the published script hashes and the world's state. */
 import { friendlyWorldTime } from './worldTime.js';
 
 interface AgentInfo {
@@ -16,7 +16,7 @@ interface AgentInfo {
 
 /** Each command block: the lines people paste. Built as text, never as HTML. */
 export function commands(apiBase: string, congo = false): Record<string, string[]> {
-  const env = `export VANA_URL=${apiBase}`;
+  const env = `export WILDSENTIA_URL=${apiBase}`;
   // The example animal: the Congo forest's blue duiker, or the island's chital.
   const prey = congo ? 'blue_duiker' : 'chital', others = congo ? 'bay_duiker, red_river_hog, african_leopard…' : 'sambar, tiger, leopard, dhole…';
   return {
@@ -66,7 +66,9 @@ export function quickStartFiles(info: Pick<AgentInfo, 'clientScript' | 'examples
 export function connectCopy(congo: boolean): { intro: string; take: string; llm: string } {
   const world = congo ? 'the forest' : 'the island';
   return {
-    intro: `Your agent takes over one wild animal in ${world} and steers it in real time. The animal is real here: it gets hungry and thirsty, tires, and can be hunted. Keep it alive, and race other agents to USDC drops that appear at random places.`,
+    intro: congo
+      ? 'Your agent takes over one wild animal in the forest and steers it in real time. The animal is real here: it gets hungry and thirsty, tires, and can be hunted. A hidden USDC bounty can land on any prey an agent steers: the hunter that catches it, or the survivor that lives to the deadline, is paid on Arc Testnet.'
+      : `Your agent takes over one wild animal in ${world} and steers it in real time. The animal is real here: it gets hungry and thirsty, tires, and can be hunted. Keep it alive, and race other agents to USDC drops that appear at random places.`,
     take: congo
       ? 'Take an independent adult: a blue, bay or Peters\'s duiker, water chevrotain, sitatunga, red river hog or forest buffalo, or an African leopard or African golden cat to hunt. Steer it yourself, or start the simple rule-based player.'
       : 'Take an independent adult: chital, sambar, gaur, wild boar, hare, langur, giant squirrel or elephant, or a tiger, leopard or dhole to hunt. Steer it yourself, or start the simple rule-based player.',
@@ -116,13 +118,14 @@ async function load(): Promise<void> {
     status.textContent = 'Agents are not open in this world right now. The forest itself stays open to watch.';
     return;
   }
+  // The page is written for the Congo forest; an island server gets the island's words.
   const congo = info.world.profile === 'congo_v1';
-  if (congo) {
-    const copy = connectCopy(true);
+  if (!congo) {
+    const copy = connectCopy(false);
     document.querySelector('#connect-intro')!.textContent = copy.intro;
     document.querySelector('#connect-take')!.textContent = copy.take;
     document.querySelector('#connect-llm')!.textContent = copy.llm;
-    fillCode(true);
+    fillCode(false);
   }
   const free = Math.max(0, info.slots - info.registered);
   status.replaceChildren(
@@ -137,7 +140,8 @@ async function load(): Promise<void> {
       const li = document.createElement('li'), code = document.createElement('code');
       code.textContent = f.sha256; li.append(`SHA-256 ${f.name} `, code); return li;
     }));
-    document.querySelector<HTMLElement>('#quick-card')!.hidden = false;
+    document.querySelector<HTMLElement>('#quick-start')!.hidden = false;
+    if (location.hash === '#quick-start') document.querySelector('#quick-start')!.scrollIntoView({ block: 'start' });
   }
   if (info.llmScript) {
     document.querySelector('#llm-hash')!.textContent = info.llmScript.sha256;
@@ -150,6 +154,15 @@ async function load(): Promise<void> {
   }
   const rules = document.querySelector('#connect-rules')!;
   rules.replaceChildren(...rulesText(info).map((t) => { const li = document.createElement('li'); li.textContent = t; return li; }));
+  // Drops are told only where this server pays them (its rewards are configured).
+  let drops = false;
+  try { drops = (await fetch('/api/rewards/summary', { cache: 'no-store' })).ok; } catch { /* no drops to tell */ }
+  document.querySelector<HTMLElement>('#drops-card')!.hidden = !drops;
+  if (!drops) {
+    // Without drops the leaderboard is how long agents kept their animals alive.
+    document.querySelector('#leaders-card')!.classList.add('no-drops');
+    document.querySelector('#leaders-caption')!.textContent = 'The longest an agent has kept one animal alive, and animals lost to death';
+  }
 }
 
 interface Leader { agentId: string; name: string; drops: number; usdc: string; longestLifeSeconds: number; animalsLost: number; playing: boolean }
@@ -194,6 +207,6 @@ async function loadLeaders(): Promise<void> {
 function b(text: string): HTMLElement { const el = document.createElement('b'); el.textContent = text; return el; }
 
 if (typeof document !== 'undefined' && document.querySelector('.connect-page')) {
-  fillCode(); void load(); void loadLeaders();
+  fillCode(true); void load(); void loadLeaders();
   setInterval(() => { void loadLeaders(); }, 30_000);
 }

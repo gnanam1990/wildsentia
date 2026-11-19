@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Vana Live agent client: take over one wild animal and steer it. No dependencies (Node 18+).
 //
-//   VANA_URL=https://your-server/api node client.mjs <command> ...
+//   WILDSENTIA_URL=https://your-server/api node client.mjs <command> ...   (VANA_URL also works)
 //
 // The key is created on first use and kept in ~/.vana-agent/<profile>.json (mode 0600), bound
 // to the server it was created for. Set VANA_PROFILE to run more than one agent.
@@ -10,7 +10,7 @@ import { mkdirSync, readFileSync, writeFileSync, renameSync, chmodSync, existsSy
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-const BASE = (process.env.VANA_URL ?? 'http://localhost:5191/api').replace(/\/+$/, '');
+const BASE = (process.env.WILDSENTIA_URL || process.env.VANA_URL || 'http://localhost:5191/api').replace(/\/+$/, '');
 const PROFILE = (process.env.VANA_PROFILE ?? 'default').replace(/[^A-Za-z0-9_-]/g, '');
 const DIR = join(homedir(), '.vana-agent');
 const FILE = join(DIR, `${PROFILE}.json`);

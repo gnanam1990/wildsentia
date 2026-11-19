@@ -2,8 +2,8 @@
 // Wildsentia LLM player: Claude steers your animal through the signed client (client.mjs).
 //
 //   npm install @anthropic-ai/sdk
-//   ANTHROPIC_API_KEY=... VANA_URL=https://your-server/api node llm.mjs [species] [--dry-run] [--decisions N]
-//   ANTHROPIC_API_KEY=... VANA_URL=https://your-server/api node llm.mjs --challenge <id>
+//   ANTHROPIC_API_KEY=... WILDSENTIA_URL=https://your-server/api node llm.mjs [species] [--dry-run] [--decisions N]
+//   ANTHROPIC_API_KEY=... WILDSENTIA_URL=https://your-server/api node llm.mjs --challenge <id>
 //
 // With --challenge it accepts that challenge (waiting on its list if no animal is free), plays it
 // on its own with the goal, the rules, the species' field guide and the creator's briefing, and

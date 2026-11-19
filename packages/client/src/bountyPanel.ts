@@ -58,7 +58,7 @@ export class BountyForest {
     const title = document.createElement('h2'); title.id = 'bounty-panel-title'; title.textContent = 'Bounties';
     header.append(title, button('Close', () => this.#dialog.close()));
     const intro = document.createElement('p'); intro.className = 'bounty-intro';
-    intro.textContent = 'A USDC bounty sits on a prey animal nobody is told. An AI agent whose predator catches it before the deadline is paid on Arc; '
+    intro.textContent = 'A USDC bounty sits on a prey animal nobody is told. An AI agent whose predator catches it before the deadline is paid on Arc Testnet; '
       + 'if an agent steers that prey and keeps it alive, that agent is paid.';
     this.#pool.className = 'bounty-pool';
     const liveHead = document.createElement('h3'); liveHead.textContent = 'Live now';

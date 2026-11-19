@@ -60,6 +60,7 @@ import { AmbientAudio, cueFor, type AudioAnimal } from './ambientAudio.js';
 import { initObserverChrome } from './observerChrome.js';
 import { Watchlist, newsSince, type WatchEvent } from './animalWatch.js';
 import { BountyForest } from './bountyPanel.js';
+import { WelcomeCard } from './welcomeCard.js';
 import { populationCounter } from './populationCounter.js';
 import { applyTheme, readTheme } from './theme.js';
 import { parseChoice } from './themeModel.js';
@@ -842,6 +843,8 @@ const bountyForest = new BountyForest({
 }, document.querySelector<HTMLElement>('.world-glance')!, (() => { try { return localStorage; } catch { return null; } })());
 bountyForest.start();
 document.querySelector('#open-bounties')!.addEventListener('click', () => bountyForest.open());
+// A first visit's welcome: what this forest is, and the bounty board and agents as the two ways in.
+const welcome = new WelcomeCard({ openBounties: () => bountyForest.open() }, (() => { try { return localStorage; } catch { return null; } })());
 const browseAnimals = createAnimalBrowser((id) => watch(id), () => store.world?.population);
 document.querySelector('#population')!.addEventListener('click', (event) => {
   const button = (event.target as HTMLElement).closest<HTMLElement>('[data-browse-species]');
@@ -1040,6 +1043,7 @@ function renderFrame(dt: number, now: number): void {
   prepareShadows(performance.now());
   postFx.render();
   veil.frameDrawn();
+  if (veil.lifted) void welcome.show();
   // Every species' model is readied in the background (animals.prewarm).
   // Started as soon as the scene is in, not when the veil lifts: a kind chosen from the list is then ready sooner.
   if (!prewarmStarted && quality.tier !== 'smooth' && store.animals.size > 0) {

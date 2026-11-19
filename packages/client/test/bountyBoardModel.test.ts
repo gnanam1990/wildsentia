@@ -17,7 +17,7 @@ describe('bounty board', () => {
   it('says who won a decided bounty, or that it went back to the pool', () => {
     expect(resultLines({ ...base, status: 'paid', outcome: 'predator', targetAnimalId: 'blue_duiker_2011', winnerAnimalId: 'african_leopard_8e3f',
       payeeWallet: '0xfe87c08d270f8f99eb3c0050243d621d43c23e09' })).toEqual({ headline: 'Hunter won 1.5 USDC',
-      detail: 'An agent\'s african leopard caught blue_duiker_2011; paid to 0xfe87…3e09.' });
+      detail: 'An agent\'s african leopard caught the blue duiker #2011; paid to 0xfe87…3e09.' });
     expect(resultLines({ ...base, status: 'paid', outcome: 'survived', targetAnimalId: 'blue_duiker_2011', payeeWallet: '0xed147ead816b28dcacbe3bf4f3d327e596ba2d74' }).headline)
       .toBe('Prey survived: 1.5 USDC');
     expect(resultLines({ ...base, status: 'voided', outcome: 'void', targetAnimalId: 'blue_duiker_0207' }).detail).toContain('went back to the pool');

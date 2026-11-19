@@ -53,6 +53,9 @@ export function liveSummary(list: readonly PublicBounty[]): string | null {
 
 const readable = (id: string) => id.replaceAll('_', ' ');
 const animalSpecies = (id: string) => readable(id.replace(/_[0-9a-z]+$/, ''));
+/** "blue duiker #2011": how the forest names one animal (its journal and alerts say the same). */
+const animalName = (id: string) => { const tag = /_([0-9a-z]+)$/.exec(id)?.[1]; return tag ? `${animalSpecies(id)} #${tag}` : readable(id); };
+const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 /** "about 4 h 10 min" or "about 25 min" of real time left, at the world's speed; "ending" when it is due. */
 export function realTimeLeft(worldSeconds: number, rate: number): string {
@@ -70,14 +73,19 @@ export function wantedLine(b: PublicBounty): string {
 
 /** A decided bounty's headline and what happened, in a line each. */
 export function resultLines(b: PublicBounty): { headline: string; detail: string } {
-  const amount = usdc(b.amountAtomic), target = b.targetAnimalId ?? readable(b.speciesId);
+  const amount = usdc(b.amountAtomic), target = b.targetAnimalId ? `the ${animalName(b.targetAnimalId)}` : `a ${readable(b.speciesId)}`;
   if (b.outcome === 'predator') return { headline: `Hunter won ${amount}`,
     detail: `${b.winnerAnimalId ? `An agent's ${animalSpecies(b.winnerAnimalId)}` : 'A hunter'} caught ${target}; paid to ${short(b.payeeWallet)}.` };
-  if (b.outcome === 'survived') return { headline: `Prey survived: ${amount}`, detail: `${target} lived to the deadline; its agent was paid at ${short(b.payeeWallet)}.` };
+  if (b.outcome === 'survived') return { headline: `Prey survived: ${amount}`, detail: `${capital(target)} lived to the deadline; its agent was paid at ${short(b.payeeWallet)}.` };
   return { headline: 'Got away', detail: `Nobody caught ${target}; the ${amount} went back to the pool.` };
 }
 
 /** The link a bounty is shared by: the server's page that carries its card, then opens the board. */
 export function shareUrl(origin: string, bountyId: string): string {
   return `${origin.replace(/\/$/, '')}/api/share/bounty/${bountyId}`;
+}
+
+/** X's compose page with the post written and the link attached; the visitor still chooses to post. */
+export function xIntent(text: string, url: string): string {
+  return `https://x.com/intent/post?${new URLSearchParams({ text, url }).toString()}`;
 }
