@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { clipForGait, GaitClock, gaitFor, hipHeightM, stateAtSpeed, strideCeiling, strideCycles, strideHz, strideLengthM, strideRate } from '../src/gait.js';
+import { carriedStrideTime, clipForGait, GaitClock, gaitFor, hipHeightM, stateAtSpeed, strideCeiling, strideCycles, strideHz, strideLengthM, strideRate } from '../src/gait.js';
 import { visualFor } from '../src/species.js';
 
 const TIGER_CLIPS = ['Death', 'Drinking', 'Eating', 'Gallop', 'Idle', 'Resting', 'Run', 'Sneak', 'Walk'];
@@ -148,5 +148,19 @@ describe('stateAtSpeed', () => {
     for (let i = 0; i <= 30; i++) walking.observe(1.3 * i / 60, 0, i / 60, tigerHip);
     expect(stateAtSpeed('travelling', walking)).toBe('travelling');
     expect(stateAtSpeed('travelling', new GaitClock())).toBe('travelling');
+  });
+});
+
+describe('carriedStrideTime', () => {
+  const clip = (name: string, duration: number) => new THREE.AnimationClip(name, duration, []);
+  it('starts a new gait at the point of the cycle the old one had reached', () => {
+    // A walk a quarter through its cycle hands on to a gallop a quarter through its own.
+    expect(carriedStrideTime(clip('Walk', 0.8), 0.2, clip('Gallop', 0.4))).toBeCloseTo(0.1, 6);
+    expect(carriedStrideTime(clip('Gallop', 0.4), 0.3, clip('Run', 0.6))).toBeCloseTo(0.45, 6);
+    expect(carriedStrideTime(clip('Run', 0.6), 1.5, clip('Walk', 0.8))).toBeCloseTo(0.4, 6);
+  });
+  it('leaves any change to or from a clip that is not a stride to its own phase', () => {
+    expect(carriedStrideTime(clip('Idle', 4), 1, clip('Walk', 0.8))).toBeNull();
+    expect(carriedStrideTime(clip('Walk', 0.8), 0.2, clip('Eating', 2))).toBeNull();
   });
 });

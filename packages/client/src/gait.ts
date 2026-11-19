@@ -88,6 +88,17 @@ export function isStrideClip(name: string): boolean {
 }
 
 /**
+ * Where a new stride clip starts when it takes over from another: at the same point of the cycle,
+ * so a change of gait carries the stride on and the paws do not scissor through the crossfade (on
+ * the big-cat rig every gait starts with the left hind paw landing). Null when either is not a stride.
+ */
+export function carriedStrideTime(previous: THREE.AnimationClip, previousTime: number, next: THREE.AnimationClip): number | null {
+  if (!isStrideClip(previous.name) || !isStrideClip(next.name) || !(previous.duration > 0)) return null;
+  const phase = ((previousTime / previous.duration) % 1 + 1) % 1;
+  return phase * next.duration;
+}
+
+/**
  * How many stride cycles a clip holds, read from its own motion: the most-moving rotation track
  * repeats once per cycle. Most clips are one cycle; the Asian elephants' walk is three.
  */

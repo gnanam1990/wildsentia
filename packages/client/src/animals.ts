@@ -20,7 +20,8 @@ import type { LivePose } from './liveEncounters.js';
 import { AnimalDots } from './animalDots.js';
 import { elephantSurface } from './elephantSurface.js';
 import { ACT_STATES } from './huntActs.js';
-import { clipForGait, GaitClock, hipHeightM, isStrideClip, stateAtSpeed, strideCeiling, strideCycles, strideRate } from './gait.js';
+import { softenStrides } from './strideSmoothing.js';
+import { carriedStrideTime, clipForGait, GaitClock, hipHeightM, isStrideClip, stateAtSpeed, strideCeiling, strideCycles, strideRate } from './gait.js';
 
 /**
  * A plain stand-in for a species with no rigged model yet: a body and a head in the species'
@@ -189,7 +190,9 @@ export class AnimalLayer {
             const source = ['/assets/animals/AsianElephantAdultMale.glb', '/assets/animals/AsianElephantAdultFemale.glb',
               '/assets/animals/AsianElephantCalf.glb'].includes(visual.model?.file ?? '')
               ? gltf.animations.find(clip => clip.name === 'SprayWater') : undefined;
-            const clips = source ? [...gltf.animations, elephantTrunkReach(source)] : gltf.animations;
+            // The big cats' strides, baked sparse, are drawn as soft curves (strideSmoothing.ts).
+            const animations = softenStrides(visual.model!.file, gltf.animations);
+            const clips = source ? [...animations, elephantTrunkReach(source)] : animations;
             // A downed prey's struggle, from its own death pose and gait (see struggleClip).
             const death = clips.find((c) => /^(death|dead)$/i.test(c.name));
             const gait = clips.find((c) => /^(gallop|run|walk)$/i.test(c.name)) ?? null;
@@ -704,23 +707,26 @@ export class AnimalLayer {
     if (state === 'dead') { next.setLoop(THREE.LoopOnce, 1); next.clampWhenFinished = true; }
     else { next.setLoop(THREE.LoopRepeat, Infinity); next.clampWhenFinished = false; }
     next.reset().play();
-    // Animals changing state together (at an hour change) must not then move in unison.
-    if (state !== 'dead') next.time = clipPhase(rig.seed, next.getClip().duration);
+    // Animals changing state together (at an hour change) must not then move in unison; a change
+    // of gait carries the stride on from where it was (carriedStrideTime).
+    if (state !== 'dead') next.time = (previous === null ? null : carriedStrideTime(previous.getClip(), previous.time, next.getClip()))
+      ?? clipPhase(rig.seed, next.getClip().duration);
     if (previous !== null) previous.crossFadeTo(next, 0.35, false);
     rig.playing = wanted;
-    this.#pace(rig, wanted, grounded);
+    this.#pace(rig, wanted, grounded, true);
   }
 
   /** A stride clip turns over at the rate the animal's shown speed needs; anything else at its own. */
-  #pace(rig: Rig, clip: string, grounded: boolean): void {
+  #pace(rig: Rig, clip: string, grounded: boolean, starting = false): void {
     const action = rig.actions.get(clip);
     if (!action) return;
     const source = action.getClip();
     const wanted = grounded && isStrideClip(clip) && rig.gait.speedMs > 0
       // A swimmer's legs paddle slower than they would stride on land at its speed.
       ? strideRate(source, cyclesOf(source), rig.gait.speedMs, rig.hipM, strideCeiling(rig.clipNames)) * (rig.swimming ? 0.6 : 1) : 1;
-    // Eased, so a change of pace is not a visible jolt in the legs.
-    action.timeScale += (wanted - action.timeScale) * 0.15;
+    // Eased, so a change of pace is not a visible jolt in the legs. A clip just started (reset to
+    // a rate of one) takes its pace at once, or a gallop would open in slow motion.
+    action.timeScale = starting ? wanted : action.timeScale + (wanted - action.timeScale) * 0.15;
   }
 
   #appearance(rig: Rig, animal: AnimalState): void {
