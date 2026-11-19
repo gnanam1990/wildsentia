@@ -5,11 +5,11 @@
  * turns 56° in one walk frame) and every footfall reads as a hard step once the clip is played at
  * a stride rate of two or three.
  *
- * Each stride track is resampled densely round its loop and smoothed with a circular Gaussian
- * whose width is a fraction of the cycle, so the softening holds at any stride rate. A leg is
- * softened while its paw is in the air and left as authored while the paw is planted: the planted
- * paw keeps its place on the ground, and the swing between becomes an arc. The body's bones get a
- * light pass of their own. Presentation only: length, footfall timing and stride count are kept.
+ * Each stride track is redrawn as a closed Catmull-Rom curve through its own keys (every authored
+ * pose kept), resampled densely round its loop, then given a light circular Gaussian whose width is
+ * a fraction of the cycle, so the softening holds at any stride rate. The swing keeps its lift and a
+ * planted paw moves a few millimetres at most. Presentation only: length, footfall timing and
+ * stride count are kept.
  */
 import * as THREE from 'three';
 
