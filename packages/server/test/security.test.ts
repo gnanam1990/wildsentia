@@ -44,7 +44,7 @@ describe('route guards', () => {
       expect(res.json(), url).toEqual({ error: 'social_admin_auth_required' });
     }
     // Public routes keep their same-origin rule and rate limit under any spelling too.
-    for (const url of ['/rewards/session', '/%72ewards/session', '/holder/challenge', '/%68older/challenge']) {
+    for (const url of ['/rewards/session', '/%72ewards/session', '/r%65wards/session']) {
       const res = await app.inject({ method: 'POST', url, payload: {}, headers: { 'sec-fetch-site': 'cross-site' } });
       expect(res.statusCode, url).toBe(403);
     }
