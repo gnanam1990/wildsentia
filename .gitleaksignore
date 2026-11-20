@@ -1,0 +1,2 @@
+# Base USDC contract address in a CHECK constraint, not a secret.
+packages/server/migrations/013_verified_reward_payouts.sql:generic-api-key:21
