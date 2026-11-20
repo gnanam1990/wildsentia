@@ -88,8 +88,7 @@ $C exec -T db psql -U vana -d vana_restore_test -Atc 'select count(*) from snaps
 ## Upgrade and rollback
 
 Back up immediately before upgrading: a rollback returns the world to the moment of the backup,
-and anything after it is lost. The procedure is rehearsed by `tools/ops/rollback-drill.sh`
-([`docs/2026-10-05-rollback-drill.md`](../2026-10-05-rollback-drill.md)).
+and anything after it is lost. The procedure is rehearsed by `tools/ops/rollback-drill.sh`.
 
 ```bash
 stamp=$(date -u +%Y%m%dT%H%M%SZ)

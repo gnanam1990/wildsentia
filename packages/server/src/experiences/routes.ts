@@ -37,7 +37,7 @@ export function installExperiences(
     voices = new NetworkRateLimit(2),
     queries = new NetworkRateLimit(30);
   // The profile cookie is the visitor's own to mint, so its limits alone let one client spend
-  // the forest's shared allowance (docs/2026-11-17-security-audit.md L4): new jobs and voice
+  // the forest's shared allowance (the security audit of 17 November 2026 L4): new jobs and voice
   // rooms are counted per visitor network too, as many as one profile may start.
   const jobsPerNetwork = new WindowRateLimit(4, 5000, 3_600_000),
     voiceRoomsPerNetwork = new WindowRateLimit(3, 5000, 86_400_000);

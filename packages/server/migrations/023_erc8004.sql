@@ -1,4 +1,4 @@
--- ERC-8004 identities and reputation (docs/superpowers/plans/2026-10-10-challenges-4b-erc8004-reputation.md):
+-- ERC-8004 identities and reputation (the challenges ERC-8004 plan):
 -- a player links the identity their payout wallet owns, and each met or failed attempt leaves one feedback on it.
 alter table live_agents add column erc8004_agent_id numeric(78, 0) unique check (erc8004_agent_id is null or erc8004_agent_id >= 0);
 -- Feedback goes only for attempts that ended after the identity was linked.

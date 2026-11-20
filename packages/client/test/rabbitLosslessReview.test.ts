@@ -8,7 +8,7 @@ import { visualFor } from '../src/species.js';
 // Both keep the source's non-image bytes, so they are compared with each other.
 const source = readFileSync(new URL('../public/assets/animals/Rabbit.glb', import.meta.url));
 const PINNED_SOURCE = '763c19a2606208f0560386b5e207b4995b0f71f857d75ebfa7f25af04956bfa3';
-const review = readFileSync(new URL('../../../docs/art-review/rabbit-2026-09-25/RabbitLosslessWebPReview.glb', import.meta.url));
+const review = readFileSync(new URL('../../../tools/assets/sources/review/rabbit-2026-09-25/RabbitLosslessWebPReview.glb', import.meta.url));
 const sha = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 function unpack(bytes: Buffer) {
   expect(bytes.toString('ascii', 0, 4)).toBe('glTF');

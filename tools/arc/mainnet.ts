@@ -1,5 +1,5 @@
 /**
- * WildsentiaBounties on Arc Mainnet: real USDC (docs/2026-11-15-arc-mainnet-readiness.md). Run only
+ * WildsentiaBounties on Arc Mainnet: real USDC (the Arc mainnet readiness review of 15 November 2026). Run only
  * after the legal review, by the owner, from their own machine.
  *
  *   npx tsx tools/arc/mainnet.ts <mainnet.env> check          read-only: chain, USDC decimals, balances, the contract if deployed

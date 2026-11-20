@@ -1,4 +1,4 @@
--- Congo 1C (docs/superpowers/specs/2026-10-13-congo-phase1-design.md §3-§4): owned animals,
+-- Congo 1C (the Congo phase 1 design §3-§4): owned animals,
 -- their lives, who steers them, and the simulated store. No row here moves real money: every
 -- money row is SIMULATED, and the database refuses one that is not.
 

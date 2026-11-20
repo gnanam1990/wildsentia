@@ -3,7 +3,7 @@ import { fallback, http, type Transport } from 'viem';
 /**
  * RPC transports that never write a key-bearing URL into an error. Every chain client the server
  * builds goes through here: the Arc bounties, Challenges and the holder check
- * (docs/2026-11-17-security-audit.md C2).
+ * (the security audit of 17 November 2026 C2).
  */
 
 /**

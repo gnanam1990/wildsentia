@@ -39,7 +39,7 @@ describe('the Congo forest in the happening-now feed', () => {
   });
 });
 
-// Congo 2A (docs/superpowers/plans/2026-10-14-congo-2a-species.md): six more species, drawn with
+// Congo 2A (the Congo 2A species plan): six more species, drawn with
 // models of their own at their shoulder heights, named in the feed.
 describe('the Congo 2A species in the browser', () => {
   const SIX: Array<[string, string, number]> = [

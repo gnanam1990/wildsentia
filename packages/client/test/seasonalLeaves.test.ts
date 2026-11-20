@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { addCongoDeciduous, addSeasonalLeaves, CONGO_DECIDUOUS_SHARE, congoSeasonalDryness, seasonalDryness } from '../src/seasonalLeaves.js';
 
-// docs/2026-10-05-environment-realism.md, Limits: ground litter followed the season but canopies
+// the environment realism pass of 5 October 2026, Limits: ground litter followed the season but canopies
 // never thinned. The island is a monsoon forest; its deciduous trees (teak, sal) drop much of
 // their leaf in the dry season and green again with the rains.
 describe('seasonal leaves', () => {

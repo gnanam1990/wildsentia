@@ -13,7 +13,7 @@ evaluator key is compromised: pause payouts, appoint a new evaluator for new cha
 that key's open prizes refund after their deadlines. A long pause can let a winner's payout window
 close; the prize then refunds to the creator.
 
-**Version 2** (19 November 2026, [audit finding C1](../docs/2026-11-17-security-audit.md)) bounds
+**Version 2** (19 November 2026, finding C1 of the security audit of 17 November) bounds
 what a stolen evaluator key can take, as the bounty contract's version 2 did:
 - **Daily cap.** At most `dailyPayoutCap` is paid in one UTC day (refunds do not count). It starts
   at one top prize; the owner may raise it, never below the top prize, and the top prize may not

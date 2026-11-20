@@ -13,7 +13,7 @@ function manifest(file: string) {
 
 describe('generated species replacements', () => {
   // Generated from photoreal reference views and bound to existing rigs by
-  // tools/art/build_species.sh; reviews in docs/art-review/species-2026-10-05.
+  // tools/art/build_species.sh; reviews in tools/assets/sources/review/species-2026-10-05.
   const quadruped = ['Idle', 'Walk', 'Gallop', 'Eating', 'Death'];
   const small = ['Idle', 'Walk', 'Run', 'Eating', 'Drinking', 'Death'];
   it.each([
@@ -143,7 +143,7 @@ describe('free local character assets', () => {
     expect(modelStatus('tiger')).toMatch(/^Generated tiger on its own big-cat rig/);
   });
   it.each(['AfricanLeopard', 'AfricanGoldenCat'])('ships %s on a big-cat rig of its own, with every gait, act and rest the observer plays', (name) => {
-    // tools/art/rig_big_cat.py; review in docs/art-review/congo-2026-10-14.
+    // tools/art/rig_big_cat.py; review in tools/assets/sources/review/congo-2026-10-14.
     const gltf = manifest(`${name}.glb`);
     expect(gltf.skins).toHaveLength(1);
     expect(gltf.skins![0]!.joints.length).toBeGreaterThanOrEqual(30);

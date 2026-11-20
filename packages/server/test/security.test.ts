@@ -9,7 +9,7 @@ import type { Pool } from '../src/db/pool.js';
 import type { SimHost } from '../src/simHost.js';
 
 /**
- * Regression tests from the 5 October 2026 security review (docs/2026-10-05-security-review.md).
+ * Regression tests from the 5 October 2026 security review (the security review of 5 October 2026).
  * None needs a database or a world: the host and pool are stand-ins, and a pool that is reached
  * at all fails the way an unreachable database would.
  */

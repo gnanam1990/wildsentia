@@ -20,8 +20,7 @@ animation channels/keyframes. Both tools refuse unreviewed input and existing ou
 The original binary must not be overwritten or re-exported through the known-problematic Blender
 rig importer. Static Three.js-baked review poses are not rigged runtime replacements.
 
-Latest compact derivative and exact-pose evidence:
-`docs/art-review/elephant-2026-09-24/recovered/AsianElephantCompact.glb` and
-`docs/2026-09-25-elephant-compact-rig.md`, relative to the repository root.
+Latest compact derivative:
+`tools/assets/sources/review/elephant-2026-09-24/recovered/AsianElephantCompact.glb`, relative to the repository root.
 **Not live:** source-scale/forward-axis setup, Walk loop/contact polish, required lifecycle
 motions, close-up texture fidelity and visual acceptance remain unfinished.

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Watches the Arc bounty contract from outside Railway (docs/2026-10-22-security-audit.md, #14):
+ * Watches the Arc bounty contract from outside the server (the security audit of 22 October 2026, #14):
  * run on a schedule by .github/workflows/arc-watch.yml, it exits 1 with each alert when
  *   - the contract's evaluator or owner is not the expected one, an ownership transfer is pending,
  *     settling is paused, or the pool holds less than it has reserved;

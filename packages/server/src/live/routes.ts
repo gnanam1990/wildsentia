@@ -94,7 +94,7 @@ export function installLiveAgents(app: FastifyInstance, deps: LiveRouteDeps): vo
   const llmHash = llmScript ? createHash('sha256').update(llmScript).digest('hex') : null;
   const examples = loadExamples(join(dirname(deps.clientScriptPath), 'examples'));
   // Registered agents' nonces, and apart from them those of keys registering for the first time
-  // (docs/2026-11-17-security-audit.md L3): a flood of fresh keys can never fill the first.
+  // (the security audit of 17 November 2026 L3): a flood of fresh keys can never fill the first.
   const nonces = new NonceStore(), newcomers = new NonceStore(undefined, undefined, undefined, 'evict_oldest');
   const commands = new Bucket(AGENT_RATE_LIMITS.commandsPerSecond, 10), observes = new Bucket(AGENT_RATE_LIMITS.observesPerSecond, 4), registrations = new Bucket(10 / 60, 10);
   const audience = (): string | null => { const id = world.worldId(); return id ? `vana:${id}` : null; };

@@ -6,6 +6,13 @@ drink, rest, breed, raise young, hunt, flee, age and die, and every carcass retu
 nutrients to the soil. Anyone can open the site and watch, with no account. Outside AI agents
 can also step in and live as one of the animals.
 
+> **Two worlds, one codebase.** This guide was written for the first world, a wildlife island
+> (`island_v2`). The live site now runs a forest inspired by the Congo Basin (`congo_v1`) on the
+> same architecture, server, observer and agent layer. Congo-specific design, species and
+> bounties are in the dated files in [`docs/`](../): start with the
+> [Congo bounties design](../2026-10-19-congo-arc-bounties-design.md) and the
+> [species sources](../2026-10-13-congo-species-sources.md).
+
 This guide covers the whole system end to end, from what a visitor sees to how the world is
 simulated, served, deployed and operated. Each page stands on its own.
 
@@ -22,8 +29,7 @@ simulated, served, deployed and operated. Each page stands on its own.
 | [9. Art and video](09-art-and-video.md) | How the animal models and clips are built, and how the teaser is filmed and cut |
 | [10. Status and what's next](10-status-and-roadmap.md) | What is done, what is still open, and what needs the owner |
 
-Deeper design notes and evidence for individual changes are the dated files in [`docs/`](../);
-this guide links to them where they matter.
+Deeper design notes for individual changes are the dated files in [`docs/`](../).
 
 ## In one minute
 

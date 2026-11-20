@@ -3,7 +3,7 @@ import { FundingUnavailable, type FundingSource, type Transfer } from './funding
 
 /**
  * Arc USDC transfers into and out of players' wallets, read from Arc's own RPC and kept in Postgres
- * (migration 038, docs/2026-11-15-arc-mainnet-readiness.md): the funding graph's source on Arc
+ * (migration 038, the Arc mainnet readiness review of 15 November 2026): the funding graph's source on Arc
  * Mainnet, whose explorer refuses servers.
  *
  * Every USDC movement on Arc, native or through the ERC-20 interface, is logged as a Transfer by the

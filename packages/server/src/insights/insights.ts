@@ -127,7 +127,7 @@ export class Insights {
   #calls = 0;
 
   /**
-   * One visitor network's share of the day's calls (docs/2026-11-17-security-audit.md L4): a
+   * One visitor network's share of the day's calls (the security audit of 17 November 2026 L4): a
    * twentieth of the budget, so one network asking after every animal cannot spend it all.
    */
   readonly #perNetwork: WindowRateLimit;
