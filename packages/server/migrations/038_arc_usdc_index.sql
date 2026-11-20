@@ -1,5 +1,5 @@
 -- Arc USDC transfers into and out of the wallets players proved, read from Arc's own RPC
--- (docs/2026-11-15-arc-mainnet-readiness.md): the funding graph's source where the explorer refuses
+-- (the Arc mainnet readiness review of 15 November 2026): the funding graph's source where the explorer refuses
 -- servers. One row a transfer, told apart by transaction and log index, so a range read twice adds
 -- nothing; the graph sums them per pair of addresses.
 create table arc_usdc_transfers (

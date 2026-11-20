@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Upgrade-and-rollback drill on a COPY of the local end-to-end world (docs/2026-10-05-rollback-drill.md).
+# Upgrade-and-rollback drill on a COPY of the local end-to-end world (the rollback drill of 5 October 2026).
 #
 #   tools/ops/rollback-drill.sh [--old-ref REF] [--new-ref REF] [--keep]
 #

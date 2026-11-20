@@ -1,6 +1,6 @@
 # Congo bounties paid on Arc: design (19 October 2026)
 
-Status: being built on `feat/congo-arc-bounties`, Arc Testnet only. Mainnet waits for the owner's go-ahead after the testnet demo.
+Status: built, Arc Testnet only. Mainnet waits for the owner's go-ahead after the testnet demo.
 
 ## What the owner asked for
 

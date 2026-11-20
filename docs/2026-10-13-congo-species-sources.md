@@ -119,7 +119,7 @@ These are the source values for the Phase 1 Congo species configs (sub-project 1
 
 ## Phase 2A (14 October 2026)
 
-Six species join the three of Phase 1 (plan: `docs/superpowers/plans/2026-10-14-congo-2a-species.md`): bay and Peters's duikers, red river hog, forest buffalo, sitatunga and the African golden cat. Field values and their sources are in `config/species-congo.sources.json`; every value without a source is marked as an assumption there. The leopard's prey now leans toward mid-sized prey, as at Lopé [3],[23]: hogs, red duikers, buffalo calves and sitatunga, with blue duikers and chevrotains less preferred.
+Six species join the three of Phase 1: bay and Peters's duikers, red river hog, forest buffalo, sitatunga and the African golden cat. Field values and their sources are in `config/species-congo.sources.json`; every value without a source is marked as an assumption there. The leopard's prey now leans toward mid-sized prey, as at Lopé [3],[23]: hogs, red duikers, buffalo calves and sitatunga, with blue duikers and chevrotains less preferred.
 
 **Food from beyond the roster (14 October 2026).** The one-year soaks lost blue duikers steadily: the cats were taking their whole diet from the nine simulated species. In life much of it is other prey: at Lopé a leopard's food was 18% diurnal primates and 17% large rodents by biomass [23], and a golden cat lives mostly on rodents [30],[31]. `diet.offRosterShare` (leopard 0.35 from [23]; golden cat 0.6, an assumption informed by [31]) is the share of a day's food eaten off-stage; only the rest of the cat's hunger falls on the simulated prey.
 

@@ -11,10 +11,10 @@ import { visualFor } from '../src/species.js';
 import { expectRegeneratedGlb } from './glbRegeneration.js';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
-const source = join(root, 'docs/art-review/elephant-2026-09-24/recovered/AsianElephantCenteredReview.glb');
-const derived = join(root, 'docs/art-review/elephant-2026-09-24/recovered/AsianElephantDrinkingContactReview.glb');
-const regularized = join(root, 'docs/art-review/elephant-2026-09-24/recovered/AsianElephantDrinkingContactRegularizedReview.glb');
-const surface = join(root, 'docs/art-review/elephant-2026-09-24/recovered/AsianElephantDrinkingSurfaceReview.glb');
+const source = join(root, 'tools/assets/sources/review/elephant-2026-09-24/recovered/AsianElephantCenteredReview.glb');
+const derived = join(root, 'tools/assets/sources/review/elephant-2026-09-24/recovered/AsianElephantDrinkingContactReview.glb');
+const regularized = join(root, 'tools/assets/sources/review/elephant-2026-09-24/recovered/AsianElephantDrinkingContactRegularizedReview.glb');
+const surface = join(root, 'tools/assets/sources/review/elephant-2026-09-24/recovered/AsianElephantDrinkingSurfaceReview.glb');
 const tool = join(root, 'tools/assets/elephant/author_drinking_contact_review.mjs');
 const sha = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 function document(bytes: Buffer) {

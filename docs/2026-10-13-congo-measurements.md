@@ -1,6 +1,6 @@
 # Congo forest: first measurements, 13 October 2026
 
-These are the measurements for sub-project 1A of the Congo Phase 1 design. The budget is from §1 of [the spec](superpowers/specs/2026-10-13-congo-phase1-design.md): one world hour of the Congo founding population in 2 s or less.
+These are the measurements for sub-project 1A of the Congo Phase 1 design. The budget: one world hour of the Congo founding population in 2 s or less.
 
 ## How it was measured
 

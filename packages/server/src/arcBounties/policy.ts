@@ -1,7 +1,7 @@
 /** Arc's chain ids (docs.arc.io, Connect to Arc). */
 export const ARC_TESTNET = 5042002, ARC_MAINNET = 5042;
 
-/** Who may be paid, and how much, on the chain bounties run on (docs/2026-11-15-arc-mainnet-readiness.md). */
+/** Who may be paid, and how much, on the chain bounties run on (the Arc mainnet readiness review of 15 November 2026). */
 export interface PayoutPolicy {
   mainnet: boolean;
   /** `x`: only a person whose X account is at least 30 days old, one owner per X account. `none`: any agent with a proven wallet. */

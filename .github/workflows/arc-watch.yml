@@ -1,6 +1,6 @@
 name: Watch Arc bounties
 
-# Reads the Arc Testnet bounty contract from outside Railway every hour (tools/arc/watch.mjs). A
+# Reads the Arc Testnet bounty contract from outside the server every hour (tools/arc/watch.mjs). A
 # failed run is the alert: GitHub emails it to whoever last changed this schedule.
 on:
   schedule:

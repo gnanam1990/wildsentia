@@ -1,4 +1,4 @@
--- Congo 1D (docs/superpowers/specs/2026-10-13-congo-phase1-design.md §5-§6): bounties on owned
+-- Congo 1D (the Congo phase 1 design §5-§6): bounties on owned
 -- animals' lives. Every amount is SIMULATED; the database refuses a row that is not.
 create table bounties (
   bounty_id uuid primary key,

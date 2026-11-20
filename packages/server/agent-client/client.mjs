@@ -68,8 +68,7 @@ async function send(method, path, body) {
 
 export const api = {
   info,
-  /** wallet and signature only where the server asks agents to hold its token (see info.holding). */
-  register: (name, bio = '', wallet, signature) => call('POST', '/agents/register', { name, bio, ...(wallet ? { wallet, signature } : {}) }),
+  register: (name, bio = '') => call('POST', '/agents/register', { name, bio }),
   observe: () => call('GET', '/agents/me/observe'),
   /** A species id ("blue_duiker") or an animal id, which ends in its hex number ("blue_duiker_00a3"). */
   possess: (speciesOrAnimal) => call('POST', '/agents/me/possess', /_[0-9a-f]{4,}$/.test(speciesOrAnimal) ? { animalId: speciesOrAnimal } : { speciesId: speciesOrAnimal }),
@@ -217,13 +216,11 @@ export async function joinWorld({ name, bio = '', walletKey, log = console.log }
   const account = walletKey ? evmAccount(walletKey) : null;
   if (account) log(WALLET_KEY_WARNING);
   const proof = account ? { wallet: account.address, signature: account.signMessage(walletMessage(id, account.address, server.audience)) } : null;
-  // Where the server asks agents to hold its token, the wallet comes with the registration.
-  const withHolding = server.holding && proof ? [proof.wallet, proof.signature] : [];
   let reg;
-  try { reg = await api.register(name, bio, ...withHolding); }
+  try { reg = await api.register(name, bio); }
   catch (e) {
     if (e.body?.error !== 'name_taken') throw e;
-    reg = await api.register(`${String(name).slice(0, 14)} ${id.slice(3, 8)}`, bio, ...withHolding);
+    reg = await api.register(`${String(name).slice(0, 14)} ${id.slice(3, 8)}`, bio);
   }
   log(reg.created ? `registered as ${reg.name} (${reg.agentId})` : `welcome back, ${reg.name} (${reg.agentId})`);
   let wallet = null;
@@ -322,10 +319,8 @@ async function main() {
   switch (cmd) {
     case 'info': return out(await info());
     case 'register': {
-      // register <name> [bio…] [0xWallet 0xSignature]: the wallet pair only where the server requires holding.
-      const tail = args.slice(-2), paired = /^0x[0-9a-fA-F]{40}$/.test(tail[0] ?? '') && /^0x[0-9a-fA-F]{130}$/.test(tail[1] ?? '');
-      const bio = args.slice(1, paired ? -2 : undefined).join(' ');
-      return out(await api.register(args[0], bio, ...(paired ? tail : [])));
+      // register <name> [bio…]
+      return out(await api.register(args[0], args.slice(1).join(' ')));
     }
     case 'observe': return out(await api.observe());
     case 'possess': return out(await api.possess(args[0]));

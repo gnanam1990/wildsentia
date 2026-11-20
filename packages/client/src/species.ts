@@ -44,7 +44,7 @@ export const SPECIES_VISUALS: Record<string, SpeciesVisual> = {
   vulture:  { heightM: 0.8,  model: { file: '/assets/animals/WhiteRumpedVulture.glb' }, colour: 0x3a3430 },
   // Congo forest (1B). Duiker and chevrotain: generated surfaces on the Deer rig
   // (tools/art/build_species.sh). Leopard: a generated surface on its own big-cat rig
-  // (tools/art/rig_big_cat.py). Reviews in docs/art-review/congo-2026-10-14.
+  // (tools/art/rig_big_cat.py). Reviews in tools/assets/sources/review/congo-2026-10-14.
   african_leopard:  { heightM: 0.78, model: { file: '/assets/animals/AfricanLeopard.glb' }, colour: 0xc9963e },
   // The hind leg joint sits at 58% of standing height on these five deer-rig exports.
   blue_duiker:      { heightM: 0.45, hipFraction: 0.58, model: { file: '/assets/animals/BlueDuiker.glb' }, colour: 0x5b5560 },

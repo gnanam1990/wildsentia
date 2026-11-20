@@ -39,8 +39,7 @@ stays playable.
     tree crowns from above, and a distant forest out to the world's edge.
   - **Animation:** gaits checked against ground speed, and the forest elephant walking on its
     own legs.
-  - **The interface:** light frosted panels by default (a dark theme is one tap away). See
-    [the before and after](../art-review/congo-2026-10-16/README.md).
+  - **The interface:** light frosted panels by default (a dark theme is one tap away).
 - **Speed:** the Congo hour runs well within its 2 s budget, with a median of 0.7 s and a p95
   of about 1.2 s over a simulated year.
 - **Operations and quality:**

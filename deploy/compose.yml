@@ -99,7 +99,7 @@ services:
         condition: service_healthy
     environment:
       VANA_DOMAIN: ${VANA_DOMAIN:?set your public domain}
-      # Cloudflare's ranges when the site is behind it (deploy/vultr/README.md); otherwise none.
+      # Cloudflare's ranges when the site is behind it (deploy/single-server/README.md); otherwise none.
       VANA_TRUSTED_PROXIES: ${VANA_TRUSTED_PROXIES:-127.0.0.1/32}
     ports:
       - "80:80"

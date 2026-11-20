@@ -190,7 +190,7 @@ export interface SpeciesConfig {
   };
   /**
    * sim_0.33.0: rare arrival onto a closed island by swimming or crossing, for species that
-   * really do (see docs/2026-10-05-multi-year-ecology.md). Considered once per world day, only
+   * really do (see the multi-year ecology runs of October 2026). Considered once per world day, only
    * while no more than `whenLivingAtMost` of the species live on the island, at most once per
    * `minDaysBetween`, and then with `dailyProbability` from a seed-derived draw. The arriving
    * animal's body is recorded as imported in the nutrient ledger. Ignored on the mainland.
@@ -214,7 +214,7 @@ export interface SpeciesConfig {
   /**
    * sim_0.37.0 daily activity cycle: relative activity for each hour of the day (index 0 is
    * 00:00-01:00), 1 at the species' peak, from camera-trap and telemetry activity curves (sources in
-   * docs/2026-10-05-multi-year-ecology.md). An animal that is not starving starts hunts and ranges
+   * the multi-year ecology runs of October 2026). An animal that is not starving starts hunts and ranges
    * in proportion to it and otherwise rests. Omitted: active at every hour, as before.
    */
   activity?: {

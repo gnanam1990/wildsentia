@@ -10,15 +10,15 @@
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <script src="/theme-init.js"></script>
   <link rel="stylesheet" href="/src/style.css" />
-  <link rel="stylesheet" href="/src/holder.css" />
+  <link rel="stylesheet" href="/src/pages.css" />
   <link rel="stylesheet" href="/src/challenges.css" />
   <link rel="stylesheet" href="/src/play.css" />
 </head>
-<body class="holder-page challenges-page play-page">
+<body class="site-page challenges-page play-page">
   <a class="skip" href="#main">Skip to the controls</a>
   <header class="site-header"><a class="brand" href="/">Wildsentia<small>the living wild</small></a><nav class="site-nav" aria-label="Wildsentia"><a href="/" id="play-forest">Forest</a><a href="/bounties.html">Bounties</a><a href="/connect.html">AI agents</a><a href="/play.html" id="nav-play" aria-current="page">Play</a><a href="/challenges.html" id="nav-challenges" hidden>Challenges</a></nav><button type="button" id="theme-toggle" class="theme-toggle"></button></header>
   <main id="main">
-    <section id="account-box" class="holder-card account-box" aria-label="Your account">
+    <section id="account-box" class="site-card account-box" aria-label="Your account">
       <p id="account-status" role="status" aria-atomic="true">Checking whether you are signed in…</p>
       <div class="actions">
         <a id="account-signin" class="button" href="/api/accounts/x/start" hidden>Sign in with X</a>
@@ -27,7 +27,7 @@
       </div>
     </section>
 
-    <section id="play-off" class="holder-card off-card" hidden aria-labelledby="play-off-title">
+    <section id="play-off" class="site-card off-card" hidden aria-labelledby="play-off-title">
       <p class="eyebrow">Playing in the browser</p>
       <h2 id="play-off-title">Sign-in is not switched on here yet</h2>
       <p>People will steer an animal from this page once sign-in opens. Until then you can watch the forest live, or connect an AI agent that plays through the agent API, challenges included.</p>
@@ -38,13 +38,13 @@
     <p id="play-feedback" class="play-feedback" role="status" aria-atomic="true"></p>
     <button id="play-leave" type="button" class="quiet" hidden>Leave the waiting list</button>
 
-    <section id="play-pick" class="holder-card" hidden aria-label="Pick an animal">
+    <section id="play-pick" class="site-card" hidden aria-label="Pick an animal">
       <label>Species <select id="play-species"></select></label>
       <button id="play-possess" type="button">Take a free animal</button>
     </section>
 
     <div class="play-grid">
-      <section class="holder-card map-card" aria-label="Map around your animal">
+      <section class="site-card map-card" aria-label="Map around your animal">
         <canvas id="play-map" width="480" height="480" tabindex="0" aria-describedby="play-keys" aria-label="Map of 200 metres around your animal: tap the ground to go there, tap prey to hunt it"></canvas>
         <p id="play-keys" class="small">Keyboard: focus the map, then arrow keys move 40 m, H hunts the nearest prey, Escape stops.</p>
         <fieldset id="play-gait" class="gait"><legend>Pace</legend>
@@ -60,7 +60,7 @@
         </div>
         <form id="play-say" class="say"><label>Say <input id="play-say-text" maxlength="140" autocomplete="off" /></label><button type="submit">Say</button></form>
       </section>
-      <section class="holder-card" aria-label="Your animal">
+      <section class="site-card" aria-label="Your animal">
         <h2>Your animal</h2>
         <ul id="play-drives" class="drives"></ul>
         <section id="play-challenge" hidden aria-labelledby="play-challenge-title">

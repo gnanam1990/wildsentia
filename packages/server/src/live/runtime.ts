@@ -1,12 +1,11 @@
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import type { Pool } from '../db/pool.js';
-import { holderChain, holderConfig } from '../holder.js';
 import type { RewardConfig } from '../rewards.js';
 import type { SimHost } from '../simHost.js';
 import { LiveLayer, TICK_HZ } from './liveLayer.js';
 import { AgentStore, PlaceDropLedger } from './liveStore.js';
-import type { HoldingGate, LiveRouteDeps } from './routes.js';
+import type { LiveRouteDeps } from './routes.js';
 import { randomLandSpot, worldPort } from './worldPort.js';
 import { WindowMax } from '../metrics.js';
 import { isCongoProfile } from '@vana/shared';
@@ -56,20 +55,6 @@ export function positiveSetting(env: NodeJS.ProcessEnv, name: string, fallback: 
   if (!raw) return fallback;
   if (!/^[0-9]{1,5}$/.test(raw) || Number(raw) < 1) throw new Error(`Invalid ${name}`);
   return Number(raw);
-}
-
-/**
- * The optional holding gate: VANA_AGENT_MIN_HOLDING_ATOMIC of the holder token (VANA_HOLDER_*)
- * to register an agent, and still held whenever it takes an animal. Off when unset.
- */
-export function holdingGate(env: NodeJS.ProcessEnv): HoldingGate | undefined {
-  const raw = env.VANA_AGENT_MIN_HOLDING_ATOMIC?.trim();
-  if (!raw) return undefined;
-  if (!/^[1-9][0-9]{0,39}$/.test(raw)) throw new Error('Invalid VANA_AGENT_MIN_HOLDING_ATOMIC');
-  const holder = holderConfig(env);
-  if (!holder) throw new Error('VANA_AGENT_MIN_HOLDING_ATOMIC needs the VANA_HOLDER_* token settings');
-  const chain = holderChain(holder);
-  return { minAtomic: BigInt(raw), tokenAddress: holder.tokenAddress, chainId: holder.chainId, balance: (wallet) => chain.balance(wallet) };
 }
 
 /**
@@ -248,9 +233,8 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
   const timers: NodeJS.Timeout[] = [];
   const tickLag = new WindowMax();
   const save = async () => { const id = host.worldId; if (id) await store.savePossessions(id, live.avatars.values()); };
-  const holding = holdingGate(env);
   const routes: LiveRouteDeps = {
-    live, world: port, store, ledger, ...(holding ? { holding } : {}), ...(owned ? { owned } : {}), ...(bounties ? { bounties } : {}),
+    live, world: port, store, ledger, ...(owned ? { owned } : {}), ...(bounties ? { bounties } : {}),
     ...(arcBounties ? { arcBounties } : {}), ...(openPlay ? { openPlay } : {}),
     limits: { slots: positiveSetting(env, 'VANA_AGENT_SLOTS', 500), perNetworkPerDay: positiveSetting(env, 'VANA_AGENT_REGISTRATIONS_PER_NETWORK', 5) },
     networkSecret: liveNetworkSecret(env),
@@ -336,7 +320,7 @@ export function liveRuntime(host: SimHost, pool: Pool, rewards: RewardConfig | u
         wasEmpty = empty;
         broadcast.roster(live.publicState());
       }, 2000));
-      console.log(`live agents: on (${routes.limits.slots} slots, drops ${ledger ? 'on' : 'off: rewards not configured'}, holding gate ${holding ? 'on' : 'off'})`);
+      console.log(`live agents: on (${routes.limits.slots} slots, drops ${ledger ? 'on' : 'off: rewards not configured'})`);
     },
     async stop() {
       for (const t of timers) clearInterval(t);

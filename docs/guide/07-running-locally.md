@@ -54,8 +54,7 @@ VANA_LONG_SOAK=1 VANA_LONG_SOAK_TERRAIN=island_v2 VANA_LONG_SOAK_DAYS=1440 \
 ```
 
 Run one process per seed. A four-year `island_v2` seed takes about 70 minutes on a fast machine
-(`island_v1`, half the land, about half an hour; set `VANA_LONG_SOAK_TERRAIN=island_v1` to gate it). Method and current results:
-[`docs/2026-10-05-multi-year-ecology.md`](../2026-10-05-multi-year-ecology.md).
+(`island_v1`, half the land, about half an hour; set `VANA_LONG_SOAK_TERRAIN=island_v1` to gate it).
 
 ## The local end-to-end stack
 
@@ -121,8 +120,7 @@ slow for the 3D scene.
 
 ## Performance and load
 
-- `tools/e2e/perf.ts` measures frame time and load in the browser
-  ([`docs/2026-10-05-browser-journeys-and-performance.md`](../2026-10-05-browser-journeys-and-performance.md)).
+- `tools/e2e/perf.ts` measures frame time and load in the browser.
 - `tools/ops/load.ts` drives the local stack with spectators and live agents and samples the
   server's metrics ([`docs/2026-10-05-load-test.md`](../2026-10-05-load-test.md)). Never point it
   at a public deployment.

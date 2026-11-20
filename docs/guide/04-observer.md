@@ -85,5 +85,4 @@ rules decide only which clip plays and how fast.
 
 The observer keeps a frame-time budget: detailed models, foliage and grass only near the camera,
 lighter cards and dots farther away, instancing for vegetation, and a quality tier that adapts
-to the device. See [`docs/2026-10-05-browser-journeys-and-performance.md`](../2026-10-05-browser-journeys-and-performance.md)
-for measurements.
+to the device. `tools/e2e/perf.ts` measures it in a real browser.

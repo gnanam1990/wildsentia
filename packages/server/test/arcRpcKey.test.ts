@@ -3,7 +3,6 @@ import { createPublicClient } from 'viem';
 import { describe, expect, it } from 'vitest';
 import { redactUrl, rpcTransport } from '../src/arcBounties/chain.js';
 import { viemChallengeChain } from '../src/challenges/chain.js';
-import { holderChain, holderConfig } from '../src/holder.js';
 
 // A managed RPC's key rides in its URL; the server logs the transport's errors whole.
 const KEY = 'k3yInThePath_DoNotLog';
@@ -40,12 +39,10 @@ describe('the bounty RPC transport', () => {
     expect(error.message).toContain('URL: https://arc.example/…');
   });
 
-  it('keeps the key out of the Challenges and holder clients\' errors too', async () => {
+  it('keeps the key out of the Challenges client\'s errors too', async () => {
     const url = `https://127.0.0.1:9/v2/${KEY}`;
     const challenges = viemChallengeChain({ rpcUrl: url, chainId: 5042002, contract: `0x${'1'.repeat(40)}`, evaluatorKey: `0x${'2'.repeat(64)}` });
-    const holder = holderChain(holderConfig({ VANA_HOLDER_ORIGIN: 'http://127.0.0.1:5179', VANA_HOLDER_CHAIN_ID: '8453',
-      VANA_HOLDER_TOKEN_ADDRESS: `0x${'3'.repeat(40)}`, VANA_HOLDER_MIN_BALANCE_ATOMIC: '1', VANA_HOLDER_RPC_URL: url })!);
-    for (const call of [() => challenges.head(), () => holder.balance(`0x${'4'.repeat(40)}`)]) {
+    for (const call of [() => challenges.head()]) {
       const error = await call().then(() => null, (e: unknown) => e);
       expect(error).toBeInstanceOf(Error);
       expect(`${inspect(error, { depth: 10 })} ${(error as Error).stack}`).not.toContain(KEY);

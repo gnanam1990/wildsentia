@@ -6,7 +6,7 @@ import { ARC_USDC_EMITTER, RangeTooLarge, rpcLogReader, UsdcIndex, type LogReade
 import { testDatabaseUrl } from './testDatabase.js';
 
 /**
- * The funding graph's source on Arc Mainnet (docs/2026-11-15-arc-mainnet-readiness.md): USDC
+ * The funding graph's source on Arc Mainnet (the Arc mainnet readiness review of 15 November 2026): USDC
  * transfers of the wallets players proved, read from the RPC's logs and summed per pair.
  */
 const url = testDatabaseUrl();
@@ -74,7 +74,7 @@ maybe('the Arc USDC index', () => {
   });
 
   it("reads the system emitter's 18-decimal value as the USDC the ERC-20 log of the same transfer shows", async () => {
-    // Measured 19 November 2026 (docs/2026-11-15-arc-mainnet-readiness.md, "USDC decimals"): one
+    // Measured 19 November 2026 (the Arc mainnet readiness review of 15 November 2026, "USDC decimals"): one
     // transfer logs twice, by the emitter in 18 decimals and by USDC (0x3600…) in 6. Arc Testnet
     // tx 0xdbdb2be8…b1eb0cd: 9491686000000000000 and 9491686; Arc Mainnet: 169966000000000000 and 169966.
     const chain = node();

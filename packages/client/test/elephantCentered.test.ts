@@ -12,8 +12,8 @@ import { visualFor } from '../src/species.js';
 import { expectRegeneratedGlb } from './glbRegeneration.js';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
-const source = join(root, 'docs/art-review/elephant-2026-09-24/recovered/AsianElephantLoopReview.glb');
-const centered = join(root, 'docs/art-review/elephant-2026-09-24/recovered/AsianElephantCenteredReview.glb');
+const source = join(root, 'tools/assets/sources/review/elephant-2026-09-24/recovered/AsianElephantLoopReview.glb');
+const centered = join(root, 'tools/assets/sources/review/elephant-2026-09-24/recovered/AsianElephantCenteredReview.glb');
 const tool = join(root, 'tools/assets/elephant/normalize_centered_review.mjs');
 const sha = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 function document(bytes: Buffer) {

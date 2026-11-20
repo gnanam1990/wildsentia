@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ARC_MAINNET, ARC_TESTNET, payoutPolicy } from '../src/arcBounties/policy.js';
 
-/** Who bounties may pay, and how much, on Arc Testnet and Arc Mainnet (docs/2026-11-15-arc-mainnet-readiness.md). */
+/** Who bounties may pay, and how much, on Arc Testnet and Arc Mainnet (the Arc mainnet readiness review of 15 November 2026). */
 describe('the payout policy', () => {
   const approved = { VANA_ARC_BOUNTIES_MAINNET_APPROVED: 'true' };
 

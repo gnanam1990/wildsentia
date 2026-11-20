@@ -31,7 +31,7 @@ describe('near vegetation work before terrain seating', () => {
     expect(digest(after)).toBe(digest(before));
     // Clumped stands (forestStructure.ts) keep every patch's count but move plants between
     // clumps and clearings, so the population inside this one 220 m circle changed
-    // (4211 -> 3932); island-wide means are recorded in docs/2026-10-05-environment-realism.md.
+    // (4211 -> 3932); island-wide means are recorded in the environment realism pass of 5 October 2026.
     expect([...after.values()].reduce((count, items) => count + items.length, 0)).toBe(3932);
     expect(beforeSamples).toBe(23475);
     expect(afterSamples).toBe(8836);

@@ -178,9 +178,8 @@ paths and tasks are recorded and played back like the animals'.
 | Mainland 360-day gate | A full world-year without hard failures |
 | Island gate (`island_v2`, 4 seeds × 4 years) | 1,440 days on each seed: every day completes, none of the thirteen species goes extinct, all six people live, every prey species stays above a quarter of its founding count, nutrients are conserved, births carry the population, and no dependent young dies of thirst while its living parent is out of reach, unless that parent was herself starving (hunger 0.8 or more in the hour of the death or 12 of the 48 hours before) or kept from care by a predator (frightened past 0.5, or fleeing, in 12 of those 48 hours). Those ecological deaths are reported by species and reason, not gated; any other is a care failure and fails the gate |
 
-Long gates run on request (`VANA_LONG_SOAK=1 … npx vitest run soak-long`; see
-[`docs/2026-10-05-multi-year-ecology.md`](../2026-10-05-multi-year-ecology.md) for the method,
-the before-and-after numbers and the sources). Current status is in
+Long gates run on request (`VANA_LONG_SOAK=1 … npx vitest run soak-long`). The field sources behind each value are
+cited beside it in `config/species/` and the simulation code. Current status is in
 [10. Status and what's next](10-status-and-roadmap.md).
 
 **On `sim_0.37.0` the island gate runs on `island_v2` for four years** (1,440 days,

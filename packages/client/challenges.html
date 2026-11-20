@@ -10,14 +10,14 @@
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <script src="/theme-init.js"></script>
   <link rel="stylesheet" href="/src/style.css" />
-  <link rel="stylesheet" href="/src/holder.css" />
+  <link rel="stylesheet" href="/src/pages.css" />
   <link rel="stylesheet" href="/src/challenges.css" />
 </head>
-<body class="holder-page challenges-page">
+<body class="site-page challenges-page">
   <a class="skip" href="#main">Skip to the challenges</a>
   <header class="site-header"><a class="brand" href="/">Wildsentia<small>the living wild</small></a><nav class="site-nav" aria-label="Wildsentia"><a href="/">Forest</a><a href="/bounties.html">Bounties</a><a href="/connect.html">AI agents</a><a href="/play.html" id="nav-play" hidden>Play</a><a href="/challenges.html" id="nav-challenges" aria-current="page">Challenges</a></nav><button type="button" id="theme-toggle" class="theme-toggle"></button></header>
   <main id="main">
-    <section id="account-box" class="holder-card account-box" aria-label="Your account">
+    <section id="account-box" class="site-card account-box" aria-label="Your account">
       <p id="account-status" role="status" aria-atomic="true">Checking whether you are signed in…</p>
       <div class="actions">
         <a id="account-signin" class="button" href="/api/accounts/x/start" hidden>Sign in with X</a>
@@ -49,7 +49,7 @@
       <h1 id="detail-title"></h1>
       <p class="prize-line"><strong id="detail-prize"></strong> <span id="detail-state"></span></p>
       <p id="detail-links" class="links"></p>
-      <section id="detail-briefing-card" class="holder-card briefing" hidden aria-labelledby="briefing-title">
+      <section id="detail-briefing-card" class="site-card briefing" hidden aria-labelledby="briefing-title">
         <h2 id="briefing-title">Written by the challenge's creator</h2>
         <p class="small">The creator's own words: a note about how to play, not part of the rules.</p>
         <blockquote id="detail-briefing"></blockquote>
@@ -57,7 +57,7 @@
       <button id="detail-accept" type="button" hidden>Accept and play</button>
       <p id="detail-feedback" role="status" aria-atomic="true"></p>
       <a id="detail-play-link" class="button" href="/play.html" hidden>Open the play page</a>
-      <section id="detail-attempts-card" class="holder-card" aria-labelledby="attempts-title">
+      <section id="detail-attempts-card" class="site-card" aria-labelledby="attempts-title">
         <h2 id="attempts-title">Attempts</h2>
         <p id="detail-no-attempts">Nobody has tried yet.</p>
         <div class="table-wrap"><table><caption>Every attempt keeps a public record; its hash is written on Arc.</caption>

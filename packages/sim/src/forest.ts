@@ -48,7 +48,7 @@ export const FOREST_FLOOR: Record<string, number> = {
  * put 94 ungulates on each km², above the 5.3-63.8/km² Karanth et al. 2004 measured across
  * India, and grazed the island bare by the end of a dry season). That is about 71 ungulates per
  * km², the forest's reserve-calibrated density. The predators are set from field densities for
- * the island's land (sources in docs/2026-10-05-multi-year-ecology.md):
+ * the island's land (sources in the multi-year ecology runs of October 2026):
  * - tiger 2, one male and one female (16/100 km²; Karanth et al. 2004 found 3.2-16.8/100 km²
  *   rising with prey, and this island starts with more ungulates per km² than any of their sites);
  * - dhole 5 (sim_0.37.0; 4 before), one pack at the smallest working size of Indian packs (5-12;

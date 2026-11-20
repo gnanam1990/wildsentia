@@ -26,7 +26,7 @@ project. Railway's edge provides HTTPS for the custom domain, so Caddy here list
 | `VANA_LIVE_AGENTS` | `1` |
 | `VANA_LIVE_SECRET` | a random 64-character hex value |
 
-Leave the reward, holder, social and model-key settings unset.
+Leave the reward, social and model-key settings unset.
 
 Wildsentia Challenges (USDC prizes on Arc) stay off unless every one of these is set; a partial set
 stops the server. Use Arc Testnet until the mainnet review is done.

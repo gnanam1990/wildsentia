@@ -26,7 +26,7 @@ interface IReceiveWithAuthorization {
 /// Each challenge keeps the evaluator it was created under. The owner can appoint the evaluator
 /// for new challenges, pause payouts and set prize limits, but cannot move escrowed funds.
 ///
-/// Version 2 (docs/2026-11-17-security-audit.md, finding C1), as the bounty contract's version 2
+/// Version 2 (the security audit of 17 November 2026, finding C1), as the bounty contract's version 2
 /// did: a stolen evaluator key is bounded. Prizes paid in one UTC day are capped, a prize can be
 /// paid only once its challenge has been open a minimum time (so a watcher can see it and the owner
 /// can pause), the owner can revoke an evaluator for good (its open prizes can then be refunded at

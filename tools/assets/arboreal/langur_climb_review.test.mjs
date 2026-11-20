@@ -9,7 +9,7 @@ import test from 'node:test';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const source = path.join(root, 'packages/client/public/assets/animals/Langur.glb');
-const candidate = path.join(root, 'docs/art-review/langur-2026-09-25/LangurClimbReview.glb');
+const candidate = path.join(root, 'tools/assets/sources/review/langur-2026-09-25/LangurClimbReview.glb');
 const tool = path.join(root, 'tools/assets/arboreal/author_langur_climb_review.mjs');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 function glb(bytes) {
@@ -35,7 +35,7 @@ test('review-only Langur climb clip appends without rewriting source skin, mater
   assert.equal(b.json.asset.extras.vanaReviewOnly, true);
   assert.equal(b.json.asset.extras.climbReview.sourceSha256, sha(sourceBytes));
   // The experiment is stored outside the live /assets/animals route.
-  assert.equal(candidate.includes('/docs/art-review/'), true);
+  assert.equal(candidate.includes('/tools/assets/sources/review/'), true);
 });
 
 test('Langur climb candidate regenerates byte-for-byte and cannot drift upward per frame', () => {

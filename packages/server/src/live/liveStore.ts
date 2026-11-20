@@ -57,7 +57,7 @@ export class AgentStore {
   }
 
   /** One agent per key and name; at most `slots` agents; a few new ones per network a day. */
-  /** Registers a key. `wallet`, when given, is already proven (the holding gate) and becomes its payout wallet. */
+  /** Registers a key. `wallet`, when given, is already proven and becomes its payout wallet. */
   async register(p: { publicKey: string; name: string; bio: string; networkHash: string; wallet?: string }, limits: RegistrationLimits):
     Promise<{ ok: true; agent: AgentRecord; created: boolean } | { ok: false; reason: string }> {
     const existing = await this.byKey(p.publicKey);

@@ -15,7 +15,6 @@ import { typesafeConfig, typesafeDailyCalls, typesafeSystemOne } from './insight
 import { Gateway } from './gateway.js';
 import { rewardConfig } from './rewards.js';
 import { socialConfig } from './socialOutbox.js';
-import { holderConfig } from './holder.js';
 import { generalLimits } from './limits.js';
 import { worldProfile, worldSettings } from './worldSettings.js';
 import { newHttpStats, renderMetrics, serveMetrics } from './metrics.js';
@@ -27,7 +26,6 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
   const databaseUrl = process.env.DATABASE_URL;
   const rewards = rewardConfig(process.env);
   const social = socialConfig(process.env);
-  const holder = holderConfig(process.env);
   trustedProxyHops(process.env); // Fail at startup, not at the first request.
   const adminAllow = adminAllowList(process.env); // Where the admin routes answer from (VANA_ADMIN_ALLOW_IPS).
   const limits = generalLimits(process.env);
@@ -156,7 +154,7 @@ export async function startServer(): Promise<{ close(): Promise<void> }> {
     const httpStats = newHttpStats();
     experiences = new ExperienceService(new ExperienceStore(pool), host, experienceConfig(process.env), speciesDir);
     await experiences.start();
-    api = buildApi({ host, pool, narrator, insights, rewards, social, holder, experiences, trustedProxyHops: trustedProxyHops(process.env), limits, httpStats, adminAllow,
+    api = buildApi({ host, pool, narrator, insights, rewards, social, experiences, trustedProxyHops: trustedProxyHops(process.env), limits, httpStats, adminAllow,
       ...(live ? { live: { ...live.routes, spot: live.spot, species, ...(challenges ? { challenges: challenges.agent } : {}),
         ...(accounts ? { humans: accounts.humans } : {}), ...(challenges?.identity ? { identity: challenges.identity } : {}) } } : {}),
       ...(challenges ? { challenges: { ...challenges.routes, ...(accounts ? { creators: accounts.creators } : {}) } } : {}),

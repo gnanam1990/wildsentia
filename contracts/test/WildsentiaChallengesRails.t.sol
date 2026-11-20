@@ -5,7 +5,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {WildsentiaChallenges} from "../src/WildsentiaChallenges.sol";
 import {ChallengesBase} from "./ChallengesBase.sol";
 
-/// Version 2's rails (docs/2026-11-17-security-audit.md, finding C1), on a deployment left at its
+/// Version 2's rails (the security audit of 17 November 2026, finding C1), on a deployment left at its
 /// defaults: what a stolen evaluator key can take is bounded.
 contract WildsentiaChallengesRailsTest is ChallengesBase {
     function setUp() public override {

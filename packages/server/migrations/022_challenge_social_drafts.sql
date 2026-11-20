@@ -1,4 +1,4 @@
--- X post drafts about challenges (docs/superpowers/plans/2026-10-10-challenges-3c-social-drafts.md): one per
+-- X post drafts about challenges (the challenges social-drafts plan): one per
 -- challenge and kind, written from the challenge's own facts, posted only after the owner approves and publishes.
 create table challenge_social_drafts (
   id uuid primary key,

@@ -1,7 +1,7 @@
 .account-box .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
-.holder-page a.button { display: inline-flex; align-items: center; min-height: 48px; padding: 10px 20px; border-radius: 10px; background: var(--moss); color: var(--on-moss); font-weight: 700; text-decoration: none; }
-.holder-page a.button[hidden], .holder-page button[hidden] { display: none; }
-.holder-page button.quiet { background: transparent; color: var(--mist); border: 1px solid var(--line); }
+.site-page a.button { display: inline-flex; align-items: center; min-height: 48px; padding: 10px 20px; border-radius: 10px; background: var(--moss); color: var(--on-moss); font-weight: 700; text-decoration: none; }
+.site-page a.button[hidden], .site-page button[hidden] { display: none; }
+.site-page button.quiet { background: transparent; color: var(--mist); border: 1px solid var(--line); }
 #page-notice:not(:empty), #detail-feedback:not(:empty) { padding: 12px 14px; border-left: 3px solid var(--mist); background: var(--surface-2); }
 .challenge-list { display: grid; gap: 12px; margin-top: 16px; }
 /* A challenge card: prize and state on top, the goal, its rules, then the kind of goal, time and tries. */
@@ -24,10 +24,10 @@
 .list-tools { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; }
 .list-tools #challenge-status { color: var(--ink-3); margin: 0; }
 .filters { display: flex; flex-wrap: wrap; gap: 6px; }
-.holder-page .filters button { min-height: 38px; padding: 6px 14px; border-radius: 999px; font-size: .9rem; font-weight: 600;
+.site-page .filters button { min-height: 38px; padding: 6px 14px; border-radius: 999px; font-size: .9rem; font-weight: 600;
   background: transparent; color: var(--ink-2); border: 1px solid var(--line); }
-.holder-page .filters button:hover { color: var(--ink); background: var(--tint); }
-.holder-page .filters button[aria-pressed="true"] { color: var(--on-moss); background: var(--moss); border-color: var(--moss); }
+.site-page .filters button:hover { color: var(--ink); background: var(--tint); }
+.site-page .filters button[aria-pressed="true"] { color: var(--on-moss); background: var(--moss); border-color: var(--moss); }
 .challenge-list .empty { color: var(--ink-3); padding: 24px 0; }
 .links { display: flex; flex-wrap: wrap; gap: 16px; }
 .briefing blockquote { margin: 8px 0 0; padding: 10px 14px; border-left: 3px solid var(--line); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }

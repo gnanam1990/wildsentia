@@ -128,8 +128,7 @@ keeps the animals it was founded with; only new worlds get the calibrated predat
 
 ## Upgrade and rollback
 
-Rehearsed end to end by `tools/ops/rollback-drill.sh` on a copy of a world; the evidence and
-what it shows are in `docs/2026-10-05-rollback-drill.md`. In short: a rollback returns the
+Rehearsed end to end by `tools/ops/rollback-drill.sh` on a copy of a world. In short: a rollback returns the
 world, the reward ledger and live possessions to the moment of the backup, never to a new
 world, and anything after the backup is lost. So back up **immediately** before upgrading.
 
@@ -183,7 +182,7 @@ These per-visitor limits hold everywhere. A visitor network is one IPv4 address 
 
 - **Public reads** (`VANA_PUBLIC_READS_PER_MINUTE`, default 1200 per network per minute, with
   bursts of 300). This covers the world, animals, history, event map, agents list and so on.
-  Past it the server answers `429` with `Retry-After`. `/health`, rewards, admin, holder and
+  Past it the server answers `429` with `Retry-After`. `/health`, rewards, admin and
   signed agent calls have their own limits and are not counted.
 - **`/live` connections** (`VANA_LIVE_MAX_CONNECTIONS`, default 1000 in total;
   `VANA_LIVE_MAX_CONNECTIONS_PER_NETWORK`, default 100). Past either cap, a new connection is
@@ -276,9 +275,8 @@ household samples with zero reported hard failures; all three ended with six liv
 and all 12 listed animal species, but low predator counts and animal-care warnings remain.
 These are ecology samples, **not** 30 real days or visual-quality acceptance. The last full
 isolated PostgreSQL/typecheck/client-build gate before the village fuel-loop fix passed 1,233
-tests; the post-fix full gate must also pass before packaging this candidate. The disposable
-database restore rehearsal is in `docs/2026-09-25-staging-backup-restore-drill.md`, and the
-local Docker packaging smoke is in `docs/2026-09-25-30day-docker-smoke-evidence.md`. These prove
+tests; the post-fix full gate must also pass before packaging this candidate. A disposable
+database restore rehearsal and a local Docker packaging smoke were run. These prove
 specific code paths, **not** 30-day VPS uptime, internet reachability, TLS issuance, arbitrary
 VPS capacity, production-grade art, or a real-USDC payout. The first live 24–48 hours are the
 storage/performance and restart acceptance gate; keep monitoring throughout the 30 days.

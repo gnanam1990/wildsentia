@@ -35,8 +35,8 @@ const image = (bytes: Buffer) => {
 
 describe('licensed elephant candidate preparation', () => {
   it('keeps the anatomically richer but incomplete review rig out of the live observer', () => {
-    const compact = readFileSync(join(root, 'docs/art-review/elephant-2026-09-24/recovered/AsianElephantCompact.glb'));
-    const loop = readFileSync(join(root, 'docs/art-review/elephant-2026-09-24/recovered/AsianElephantLoopReview.glb'));
+    const compact = readFileSync(join(root, 'tools/assets/sources/review/elephant-2026-09-24/recovered/AsianElephantCompact.glb'));
+    const loop = readFileSync(join(root, 'tools/assets/sources/review/elephant-2026-09-24/recovered/AsianElephantLoopReview.glb'));
     const live = readFileSync(join(root, 'packages/client/public/assets/animals/ElephantWalking.glb'));
     expect(document(compact).asset.extras.vanaReviewOnly).toBe(true);
     expect(document(loop).asset.extras.vanaReviewOnly).toBe(true);
@@ -51,7 +51,7 @@ describe('licensed elephant candidate preparation', () => {
   it('authors only the Walk tail, closes the pose seam and reduces sampled velocity mismatch without live promotion', () => {
     const scratch = mkdtempSync(join(tmpdir(), 'vana-elephant-loop-test-'));
     try {
-      const compact = join(root, 'docs/art-review/elephant-2026-09-24/recovered/AsianElephantCompact.glb');
+      const compact = join(root, 'tools/assets/sources/review/elephant-2026-09-24/recovered/AsianElephantCompact.glb');
       const before = readFileSync(compact), beforeDoc = document(before), output = join(scratch, 'loop.glb');
       const close = tool('close_elephant_walk.mjs', compact, output);
       expect(close.status, close.stderr).toBe(0);

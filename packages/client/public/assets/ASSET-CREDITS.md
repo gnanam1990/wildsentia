@@ -71,7 +71,7 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
   bird's wings are modelled folded).
 - Surfaces: generated for this project with Higgsfield under the owner's paid plan (Pro): GPT
   Image 2.5 front, side and back reference views, lifted with Tripo H3.1 multiview. Reference views,
-  per-clip review sheets and an in-game check are in `docs/art-review/species-2026-10-05/`.
+  per-clip review sheets and an in-game check are in `tools/assets/sources/review/species-2026-10-05/`.
 - Skeletons and clips: the existing rigs, refitted (Quaternius Deer, Stag, Bull, Fox, all CC0;
   VANA-authored Langur, Squirrel, Vulture). The old surfaces are not used.
 - Rebuild: `ART=<dir of <species>-tripo.glb> tools/art/build_species.sh` (the species, rig, fit
@@ -87,7 +87,7 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
   Image 2.5 front, side and back reference views (duiker 14002d7a, 73eb7073, f2a9eb31; chevrotain
   766de682, 6031bedb, 89bdaf79), lifted with Tripo H3.1 multiview (20k faces, PBR, detailed
   texture; duiker d236ae94, chevrotain f4c95599). Reference views and per-clip review sheets are
-  in `docs/art-review/congo-2026-10-14/`.
+  in `tools/assets/sources/review/congo-2026-10-14/`.
 - Skeleton and clips: the Quaternius Deer rig and its clips (CC0), rest pose refitted to each body
   (`fit feet`); the deer's surface is not used.
 - Rebuild: `ART=<dir of <species>-tripo.glb> tools/art/build_species.sh duiker chevrotain`.
@@ -107,7 +107,7 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
   hog 78d10205, 0e03007b, dc086427; buffalo bcd47653, d7400cae, af7847de; sitatunga 36c523aa, ccb4d82b,
   f0b1a220; golden cat 6928a9e6, 18150a4d, 1d6dadb4), lifted with Tripo H3.1 multiview (20k faces, PBR,
   detailed texture; bay 932099c3, Peters's 0d252ef4, hog 23e9a930, buffalo ca4efba0, sitatunga 0e2b7e45,
-  golden cat 105a5465). Reference views and review sheets: `docs/art-review/congo-2026-10-14/`.
+  golden cat 105a5465). Reference views and review sheets: `tools/assets/sources/review/congo-2026-10-14/`.
 - Skeletons and clips: the duikers and sitatunga on the Quaternius Deer rig, the hog (body-length fit)
   and buffalo (its skull and horns rigid with the head) on the Quaternius Bull rig, all CC0, by
   `tools/art/build_species.sh`; a dewclaw left as a detached crumb is dropped. The golden cat on the
@@ -122,7 +122,7 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
   Tripo H3.1 multiview (20k faces, PBR, detailed texture; elephant 36714fe4, mangabey a7b68088, eagle
   d88a5833, crocodile 4016618d). The eagle in flight: GPT Image 2.5 views with its wings spread
   (f2f86ed4, 6c12f374, 287d8c4c) lifted with Meshy multi-image to 3D (dec91e64; a Tripo attempt from two views, b59e7972, grew fins where the wing was seen edge-on and was set aside). Meshy read the top-down view as a standing bird, so the mesh is pitched 46.5° nose-down to level its body before it is bound to the Vulture rig (`FORWARD=-Y PITCH=46.5`). Reference views and
-  review sheets: `docs/art-review/congo-2026-10-14/`. (A mandrill mesh, 3bcd639e, was made and set
+  review sheets: `tools/assets/sources/review/congo-2026-10-14/`. (A mandrill mesh, 3bcd639e, was made and set
   aside when the research chose the agile mangabey.)
 - Skeletons and clips, by `tools/art/build_species.sh`: the elephant on the generic CC0 elephant rig
   (ElephantWalking, OpenGameArt, below; its generated mesh, which came out mid-stride, stood square
@@ -176,7 +176,7 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
 - Surface: generated for this project with Higgsfield under the owner's paid plan (Pro). Three
   reference views (front, side, back) from GPT Image 2.5 (jobs 83c21a4e, 8dc52123, 4705dfa7),
   lifted to a textured mesh with Tripo H3.1 multiview (job fa976329). Reference views are kept in
-  `docs/art-review/boar-2026-10-05/`.
+  `tools/assets/sources/review/boar-2026-10-05/`.
 - Skeleton and clips: the Quaternius Bull rig and its clips above (CC0), rest pose refitted to the
   boar's body; the bull's surface is not used.
 - Built with `tools/art/bind_to_rig.py` (voxel-proxy bone-heat weights, texture 1024 px WebP):
@@ -317,13 +317,13 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
   `tools/assets/elephant/build_tuskless_review.mjs`, visually checked front/side, and
   repackaged by `tools/assets/elephant/build_live_adult_female.mjs`. Remaining skin, texture
   and animation bytes are unchanged. The exact review derivative is retained outside the
-  public runtime in `docs/art-review/elephant-2026-09-24/recovered/`.
+  public runtime in `tools/assets/sources/review/elephant-2026-09-24/recovered/`.
   `animals/AsianElephantCalf.glb` is a **calf-proportion proxy** from that pinned female
   derivative: `tools/assets/elephant/build_calf_review.mjs` compacts the torso, modestly
   enlarges the head, and shortens distal trunk-joint translations together with their
   retained animation samples. A first geometry-only attempt produced a hooked walking
   trunk and was rejected; both review copies remain in
-  `docs/art-review/elephant-2026-09-25/`. Front/side Idle and Walk were checked in the
+  `tools/assets/sources/review/elephant-2026-09-25/`. Front/side Idle and Walk were checked in the
   local 3D workbench before `tools/assets/elephant/build_live_calf.mjs` repackaged the
   corrected review GLB. Newborn/juvenile use this model with their saved body-mass scale;
   subadults use a tuskless approximation. This is not measured calf anatomy or an
@@ -343,18 +343,16 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
 - Modifications: first elephant isolated; unused rig branches, other meshes and unrelated maps
   removed. The compact derivative keeps 64 weighted joints with all required ancestors,
   6,994 triangles and four original clips. Vertex data, keyframes and chosen PNG are unchanged.
-- Candidate: `docs/art-review/elephant-2026-09-24/recovered/AsianElephantCompact.glb`.
-  Source-scale setup, gait/loop polish, lifecycle clips and visual acceptance remain pending;
-  see `docs/2026-09-25-elephant-compact-rig.md`. That exact compact candidate remains
+- Candidate: `tools/assets/sources/review/elephant-2026-09-24/recovered/AsianElephantCompact.glb`.
+  Source-scale setup, gait/loop polish, lifecycle clips and visual acceptance remain pending.
+  That exact compact candidate remains
   review-only; the later pinned centred derivative is the interim adult-male live asset.
 - Separate `AsianElephantLoopReview.glb` in the same review folder adds a locally authored
   0.3-second Walk-tail loop correction. Other clips remain unchanged. Numerical continuity
-  is verified, but foot contact/natural gait and visual review remain unaccepted; see
-  `docs/2026-09-25-elephant-walk-loop-review.md`. The same CC BY 4.0 attribution applies.
+  is verified, but foot contact/natural gait and visual review remain unaccepted. The same CC BY 4.0 attribution applies.
 - `AsianElephantCenteredReview.glb` adds a reproducible parent-only centring/unit-height
   transform to the pinned loop-review GLB. Original binary, mesh, skin, clips, texture and
-  attribution remain byte-for-byte unchanged. It is **review-only**, not mapped live; see
-  `docs/2026-09-25-elephant-centered-root.md`. The same CC BY 4.0 attribution applies.
+  attribution remain byte-for-byte unchanged. It is **review-only**, not mapped live. The same CC BY 4.0 attribution applies.
 
 ## OpenGameArt — rabbit (added in the free/local implementation pass)
 
@@ -370,8 +368,8 @@ See `tools/assets/export_natural_tree.py` and its reproduction instructions.
   Basic and Dead are single-frame poses, not full motion cycles.
 - Geometry: 2,640 triangles, two skinned meshes, three embedded images. Exact hare anatomy,
   feeding/drinking contact, injury and age-specific meshes remain pending.
-- A source-preserving **review-only** lossless WebP texture derivative is documented in
-  `docs/2026-09-25-rabbit-lossless-payload-review.md`. It retains this CC0 attribution and
+- A source-preserving **review-only** lossless WebP texture derivative
+  (`tools/assets/sources/review/rabbit-2026-09-25/RabbitLosslessWebPReview.glb`) retains this CC0 attribution and
   all decoded texture pixels/rig/clips, but is not mapped live pending browser visual and
   compatibility acceptance. The original `Rabbit.glb` is unchanged.
 - Reproduction instructions and input/output hashes: `tools/assets/README.md`.

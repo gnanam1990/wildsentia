@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-const input = fileURLToPath(new URL('../../../docs/art-review/elephant-2026-09-24/recovered/AsianElephantGroundWalkReview.glb', import.meta.url));
+const input = fileURLToPath(new URL('../../../tools/assets/sources/review/elephant-2026-09-24/recovered/AsianElephantGroundWalkReview.glb', import.meta.url));
 const output = process.argv[2];
 assert(output && process.argv.length === 3, 'Provide one new output GLB path');
 const bytes = readFileSync(input);

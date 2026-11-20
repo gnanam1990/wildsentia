@@ -343,17 +343,6 @@ describe('live settings', () => {
     expect(() => positiveSetting({ VANA_AGENT_SLOTS: '0' }, 'VANA_AGENT_SLOTS', 500)).toThrow();
     expect(() => positiveSetting({ VANA_AGENT_SLOTS: 'many' }, 'VANA_AGENT_SLOTS', 500)).toThrow();
   });
-
-  it('turns the holding gate on only with a valid amount and the holder token settings', async () => {
-    const { holdingGate } = await import('../src/live/runtime.js');
-    const holder = { VANA_HOLDER_ORIGIN: 'https://vana.example', VANA_HOLDER_CHAIN_ID: '8453', VANA_HOLDER_TOKEN_ADDRESS: `0x${'5'.repeat(40)}`,
-      VANA_HOLDER_MIN_BALANCE_ATOMIC: '1', VANA_HOLDER_RPC_URL: 'https://rpc.example' };
-    expect(holdingGate({})).toBeUndefined();
-    expect(holdingGate({ VANA_AGENT_MIN_HOLDING_ATOMIC: '' })).toBeUndefined();
-    expect(() => holdingGate({ VANA_AGENT_MIN_HOLDING_ATOMIC: '1000' })).toThrow(/VANA_HOLDER_/);
-    expect(() => holdingGate({ ...holder, VANA_AGENT_MIN_HOLDING_ATOMIC: '-5' })).toThrow(/Invalid/);
-    expect(holdingGate({ ...holder, VANA_AGENT_MIN_HOLDING_ATOMIC: '1000' })).toMatchObject({ minAtomic: 1000n, chainId: 8453 });
-  });
 });
 
 describe('indexed lookups', () => {

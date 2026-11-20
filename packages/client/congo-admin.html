@@ -11,10 +11,10 @@
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <script src="/theme-init.js"></script>
   <link rel="stylesheet" href="/src/style.css" />
-  <link rel="stylesheet" href="/src/holder.css" />
+  <link rel="stylesheet" href="/src/pages.css" />
   <link rel="stylesheet" href="/src/congo.css" />
 </head>
-<body class="holder-page congo-page">
+<body class="site-page congo-page">
   <a class="skip" href="#main">Skip to the editor</a>
   <header class="site-header"><a class="brand" href="/">Wildsentia<small>the living wild</small></a><nav class="site-nav" aria-label="Wildsentia"><a href="/">Forest</a><a href="/congo.html">Your animals</a></nav><button type="button" id="theme-toggle" class="theme-toggle"></button></header>
   <main id="main">
@@ -22,7 +22,7 @@
     <h1>Bounty editor</h1>
     <p class="intro">Publish a bounty on an owned animal's life. Publishing reserves the whole reward out of the reward pool and locks its terms. <strong>All amounts are SIMULATED.</strong></p>
 
-    <section class="holder-card" aria-labelledby="token-title">
+    <section class="site-card" aria-labelledby="token-title">
       <h2 id="token-title">Admin token</h2>
       <form id="admin-token-form" class="congo-inline">
         <label for="admin-token">Token (kept in this tab only)</label>
@@ -32,14 +32,14 @@
       <p id="admin-status" role="status" class="small"></p>
     </section>
 
-    <section class="holder-card" aria-labelledby="presets-title">
+    <section class="site-card" aria-labelledby="presets-title">
       <h2 id="presets-title">Presets</h2>
       <div class="table-wrap"><table><caption class="small">Each preset's exact parameters</caption>
         <thead><tr><th scope="col">Preset</th><th scope="col">Reward</th><th scope="col">Window</th></tr></thead>
         <tbody id="admin-presets"></tbody></table></div>
     </section>
 
-    <section class="holder-card" aria-labelledby="draft-title">
+    <section class="site-card" aria-labelledby="draft-title">
       <h2 id="draft-title">New bounty</h2>
       <form id="admin-draft" class="congo-inline">
         <label for="draft-animal">Target animal id (an owned animal's current life)</label>
@@ -50,7 +50,7 @@
       </form>
     </section>
 
-    <section class="holder-card" aria-labelledby="list-title">
+    <section class="site-card" aria-labelledby="list-title">
       <h2 id="list-title">Bounties</h2>
       <ul id="admin-bounties" class="congo-assets"></ul>
       <p id="admin-feedback" role="alert" class="congo-feedback"></p>

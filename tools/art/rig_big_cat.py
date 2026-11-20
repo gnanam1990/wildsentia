@@ -49,7 +49,7 @@ FPS = 30
 # turn: the rotation about Z that brings the mesh's head to -Y. time: natural clip lengths scale
 # with the square root of size (the client sets the rate from speed in any case).
 SPECIES = {
-    # The Congo's generated leopard (docs/art-review/congo-2026-10-14): a walking stance, head +X.
+    # The Congo's generated leopard (tools/assets/sources/review/congo-2026-10-14): a walking stance, head +X.
     "leopard": dict(
         mesh_h=0.556, u0=0.57, turn=-math.pi / 2, time=1.0, name="AfricanLeopard",
         root=((0.50, 0.33), (0.60, 0.33)), hips=(0.33, 0.40),

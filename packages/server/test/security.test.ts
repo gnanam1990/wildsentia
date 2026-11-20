@@ -9,7 +9,7 @@ import type { Pool } from '../src/db/pool.js';
 import type { SimHost } from '../src/simHost.js';
 
 /**
- * Regression tests from the 5 October 2026 security review (docs/2026-10-05-security-review.md).
+ * Regression tests from the 5 October 2026 security review (the security review of 5 October 2026).
  * None needs a database or a world: the host and pool are stand-ins, and a pool that is reached
  * at all fails the way an unreachable database would.
  */
@@ -44,7 +44,7 @@ describe('route guards', () => {
       expect(res.json(), url).toEqual({ error: 'social_admin_auth_required' });
     }
     // Public routes keep their same-origin rule and rate limit under any spelling too.
-    for (const url of ['/rewards/session', '/%72ewards/session', '/holder/challenge', '/%68older/challenge']) {
+    for (const url of ['/rewards/session', '/%72ewards/session', '/r%65wards/session']) {
       const res = await app.inject({ method: 'POST', url, payload: {}, headers: { 'sec-fetch-site': 'cross-site' } });
       expect(res.statusCode, url).toBe(403);
     }
@@ -108,7 +108,7 @@ describe('deploy/Caddyfile', () => {
   });
   it('keeps X-Forwarded-For only from the proxies it is told to trust (Cloudflare), none by default', () => {
     expect(caddyfile).toMatch(/trusted_proxies static \{\$VANA_TRUSTED_PROXIES:127\.0\.0\.1\/32\}/);
-    for (const name of ['compose.yml', 'vultr/compose.yml']) {
+    for (const name of ['compose.yml', 'single-server/compose.yml']) {
       const compose = readFileSync(fileURLToPath(new URL(`../../../deploy/${name}`, import.meta.url)), 'utf8');
       expect(compose).toContain('VANA_TRUSTED_PROXIES: ${VANA_TRUSTED_PROXIES:-127.0.0.1/32}');
     }
