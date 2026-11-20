@@ -108,7 +108,7 @@ describe('deploy/Caddyfile', () => {
   });
   it('keeps X-Forwarded-For only from the proxies it is told to trust (Cloudflare), none by default', () => {
     expect(caddyfile).toMatch(/trusted_proxies static \{\$VANA_TRUSTED_PROXIES:127\.0\.0\.1\/32\}/);
-    for (const name of ['compose.yml', 'vultr/compose.yml']) {
+    for (const name of ['compose.yml', 'single-server/compose.yml']) {
       const compose = readFileSync(fileURLToPath(new URL(`../../../deploy/${name}`, import.meta.url)), 'utf8');
       expect(compose).toContain('VANA_TRUSTED_PROXIES: ${VANA_TRUSTED_PROXIES:-127.0.0.1/32}');
     }
