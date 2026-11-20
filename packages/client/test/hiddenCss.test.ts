@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
-const pages = ['index.html', 'connect.html', 'holder.html', 'rewards-admin.html', 'social-admin.html', 'characters.html'];
+const pages = ['index.html', 'connect.html', 'rewards-admin.html', 'social-admin.html', 'characters.html'];
 
 describe('hidden attribute', () => {
   // The agents list once stayed open over the top bar: its `display: grid` beat `hidden`.

@@ -183,7 +183,7 @@ These per-visitor limits hold everywhere. A visitor network is one IPv4 address 
 
 - **Public reads** (`VANA_PUBLIC_READS_PER_MINUTE`, default 1200 per network per minute, with
   bursts of 300). This covers the world, animals, history, event map, agents list and so on.
-  Past it the server answers `429` with `Retry-After`. `/health`, rewards, admin, holder and
+  Past it the server answers `429` with `Retry-After`. `/health`, rewards, admin and
   signed agent calls have their own limits and are not counted.
 - **`/live` connections** (`VANA_LIVE_MAX_CONNECTIONS`, default 1000 in total;
   `VANA_LIVE_MAX_CONNECTIONS_PER_NETWORK`, default 100). Past either cap, a new connection is

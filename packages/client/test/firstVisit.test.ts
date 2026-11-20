@@ -70,7 +70,7 @@ describe('public pages say what this forest is', () => {
   it('tell one payout story: bounties on Arc Testnet; drops only where this server pays them', () => {
     const connect = read('connect.html'), bounties = read('bounties.html');
     expect(connect).not.toMatch(/on Base/);
-    expect(connect).toMatch(/<section class="holder-card" aria-labelledby="wallet-title" id="drops-card" hidden>/);
+    expect(connect).toMatch(/<section class="site-card" aria-labelledby="wallet-title" id="drops-card" hidden>/);
     expect(read('src/connect.ts')).toMatch(/fetch\('\/api\/rewards\/summary'[\s\S]{0,120}#drops-card'\)!\.hidden = !drops/);
     expect(bounties).toContain('<span class="net-badge">Arc Testnet</span>');
     expect(bounties).toContain('How a bounty is paid');
@@ -81,14 +81,13 @@ describe('public pages say what this forest is', () => {
   it('send nobody to internal review pages from the forest settings', () => {
     const index = read('index.html');
     expect(index).not.toContain('href="/characters.html"');
-    expect(index).not.toContain('href="/holder.html"');
   });
 
   it('keep the quick start the first path, with building your own folded below it', () => {
     const connect = read('connect.html');
     expect(connect).toContain('id="quick-start"');
     expect(connect.indexOf('id="quick-start"')).toBeLessThan(connect.indexOf('id="build-own"'));
-    expect(connect).toMatch(/<details class="holder-card build-own" id="build-own">/);
+    expect(connect).toMatch(/<details class="site-card build-own" id="build-own">/);
   });
 });
 

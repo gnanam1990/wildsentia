@@ -26,5 +26,5 @@
 #play-map:focus-visible { outline: 3px solid var(--moss); outline-offset: 3px; }
 .off-card h2 { font-size: 1.5rem; margin: 6px 0 10px; }
 .off-card .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
-.holder-page a.button.quiet-link { background: transparent; color: var(--ink); border: 1px solid var(--line-strong); }
-.holder-page a.button.quiet-link:hover { background: var(--tint); }
+.site-page a.button.quiet-link { background: transparent; color: var(--ink); border: 1px solid var(--line-strong); }
+.site-page a.button.quiet-link:hover { background: var(--tint); }

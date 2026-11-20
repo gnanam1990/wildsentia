@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { THEME_KEY, nextChoice, parseChoice, themeLabel } from '../src/themeModel.js';
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
-const PAGES = ['index.html', 'challenges.html', 'play.html', 'challenge-new.html', 'connect.html', 'holder.html'];
+const PAGES = ['index.html', 'challenges.html', 'play.html', 'challenge-new.html', 'connect.html'];
 
 describe('theme', () => {
   it('is light unless the viewer picked dark or their device setting, and cycles through all three', () => {
@@ -44,7 +44,7 @@ describe('theme', () => {
   });
 
   it('keeps page styles on the palette instead of fixed dark colours', () => {
-    for (const sheet of ['src/holder.css', 'src/challenges.css', 'src/play.css', 'src/connect.css'])
+    for (const sheet of ['src/pages.css', 'src/challenges.css', 'src/play.css', 'src/connect.css'])
       expect(read(sheet), sheet).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(/);
   });
 });
@@ -52,7 +52,7 @@ describe('theme', () => {
 describe('site header', () => {
   const NAV: Array<[string, string]> = [['/', 'Forest'], ['/bounties.html', 'Bounties'], ['/connect.html', 'AI agents'], ['/play.html', 'Play'], ['/challenges.html', 'Challenges']];
   const CURRENT: Record<string, string> = { 'challenges.html': '/challenges.html', 'challenge-new.html': '/challenges.html', 'play.html': '/play.html',
-    'connect.html': '/connect.html', 'bounties.html': '/bounties.html', 'congo.html': '', 'holder.html': '' };
+    'connect.html': '/connect.html', 'bounties.html': '/bounties.html', 'congo.html': '' };
 
   it('is the same on every page: the brand leads home, the places are named in one order, the current one is marked, and the theme switch is there', () => {
     for (const [page, current] of Object.entries(CURRENT)) {
@@ -70,7 +70,7 @@ describe('site header', () => {
       expect(order, page).toEqual([...order].sort((a, b) => a - b));
     }
     // Every page script mounts the switch.
-    for (const script of ['challenges', 'play', 'challengeNew', 'connect', 'holder', 'bountyBoard'])
+    for (const script of ['challenges', 'play', 'challengeNew', 'connect', 'bountyBoard'])
       expect(read(`src/${script}.ts`), script).toContain("import './pageChrome.js';");
   });
 });
