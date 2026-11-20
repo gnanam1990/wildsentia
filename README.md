@@ -101,5 +101,7 @@ their attribution. Some animal models were generated for this project with Higgs
 
 ## Licence
 
-No licence has been chosen yet. Until a `LICENSE` file is added, the code is all rights
-reserved. Third-party assets keep their own licences, as listed in the asset credits.
+Copyright 2026 the Wildsentia authors. The code is licensed under the
+[Apache License, Version 2.0](LICENSE), except the Solidity contracts in `contracts/`, which
+are MIT as their SPDX headers say (the deployed bounty contract was published that way). Third-party models, textures and sounds keep their own
+licences, as listed in the [asset credits](packages/client/public/assets/ASSET-CREDITS.md).
